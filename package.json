@@ -9,9 +9,11 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@radix-ui/react-slot": "^1.1.0",
     "babel-plugin-react-compiler": "^0.0.0-experimental-7d62301-20240822",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
+    "cmdk": "^1.0.0",
     "lucide-react": "^0.435.0",
     "next": "15.0.0-rc.0",
     "react": "19.0.0-rc-f994737d14-20240522",
