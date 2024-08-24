@@ -26,7 +26,19 @@ const BookmarkBtn = (
     );
 
     const buttonLabel = (isLoading || !data) ? "Loading" : (data.exists ? "Remove bookmark" : "Add bookmark");
-    return <Button className="mt-2" onClick={() => mutate({ params })}>{buttonLabel}</Button>;
+    return <button
+        className="absolute top-2 right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+        onClick={() => console.log("test")} // Your bookmark handling function
+    >
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="currentColor"
+            viewBox="0 0 24 24"
+            className="w-6 h-6 text-gray-800"
+        >
+            <path d="M5 3v18l7-5 7 5V3H5z" />
+        </svg>
+    </button>
 };
 import { useState } from 'react'
 import { useMutation, QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
@@ -100,23 +112,25 @@ function SearchPageContent() {
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                 {data.results.map((result) => (
                                     <div key={result.sha256} className="border rounded p-2">
-                                        <a
-                                            href={`/api/items/file/${result.sha256}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="block relative h-80 mb-2 overflow-hidden"
-                                        >
-                                            <Image
-                                                src={`/api/items/thumbnail/${result.sha256}`}
-                                                alt={`Result ${result.path}`}
-                                                fill
-                                                className="object-cover transition-transform duration-300 hover:scale-105"
-                                                unoptimized={true}
-                                            />
-                                        </a>
+                                        <div className="relative w-full pb-full mb-2 overflow-hidden group">
+                                            <a
+                                                href={`/api/items/file/${result.sha256}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="block relative h-80 mb-2 overflow-hidden"
+                                            >
+                                                <Image
+                                                    src={`/api/items/thumbnail/${result.sha256}`}
+                                                    alt={`Result ${result.path}`}
+                                                    fill
+                                                    className="object-cover transition-transform duration-300 hover:scale-105"
+                                                    unoptimized={true}
+                                                />
+                                            </a>
+                                            <BookmarkBtn sha256={result.sha256} />
+                                        </div>
                                         <p title={result.path} className="text-sm truncate" style={{ direction: 'rtl', textAlign: 'left' }}>{result.path}</p>
                                         <p className="text-xs text-gray-500">{new Date(result.last_modified).toLocaleString()}</p>
-                                        <BookmarkBtn sha256={result.sha256} />
                                     </div>
                                 ))}
                             </div>
