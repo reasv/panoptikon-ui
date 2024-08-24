@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.1.0",
+    "@tanstack/react-query": "^5.52.1",
     "babel-plugin-react-compiler": "^0.0.0-experimental-7d62301-20240822",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
