@@ -361,7 +361,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/bookmarks/namespaces": {
+    "/api/bookmarks/ns": {
         parameters: {
             query?: never;
             header?: never;
@@ -369,7 +369,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get all bookmark namespaces */
-        get: operations["get_ns_list_api_bookmarks_namespaces_get"];
+        get: operations["get_ns_list_api_bookmarks_ns_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -395,7 +395,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/bookmarks/{namespace}": {
+    "/api/bookmarks/ns/{namespace}": {
         parameters: {
             query?: never;
             header?: never;
@@ -414,7 +414,7 @@ export interface paths {
          *     The `order` parameter can be used to sort the results in ascending or descending order.
          *     The `include_wildcard` parameter can be used to include bookmarks with the `*` user value.
          */
-        get: operations["get_bookmarks_by_namespace_api_bookmarks__namespace__get"];
+        get: operations["get_bookmarks_by_namespace_api_bookmarks_ns__namespace__get"];
         put?: never;
         /**
          * Add multiple bookmarks to a namespace
@@ -444,19 +444,19 @@ export interface paths {
          *     }
          *     ```
          */
-        post: operations["add_bookmarks_by_sha256_api_bookmarks__namespace__post"];
+        post: operations["add_bookmarks_by_sha256_api_bookmarks_ns__namespace__post"];
         /**
-         * Delete multiple bookmarks in a namespace
+         * Delete all/many bookmarks in a namespace
          * @description Delete all bookmarks in a namespace. If `exclude_last_n` is provided, the last `n` added bookmarks will be kept.
          *     Alternatively, a list of `sha256` values can be provided in the request body to only delete specific bookmarks.
          */
-        delete: operations["delete_bookmarks_by_namespace_api_bookmarks__namespace__delete"];
+        delete: operations["delete_bookmarks_by_namespace_api_bookmarks_ns__namespace__delete"];
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/bookmarks/{namespace}/{sha256}": {
+    "/api/bookmarks/ns/{namespace}/{sha256}": {
         parameters: {
             query?: never;
             header?: never;
@@ -468,17 +468,38 @@ export interface paths {
          * @description Get a bookmark by namespace and sha256.
          *     Returns whether the bookmark exists and the metadata.
          */
-        get: operations["get_bookmark_api_bookmarks__namespace___sha256__get"];
+        get: operations["get_bookmark_api_bookmarks_ns__namespace___sha256__get"];
         /**
          * Add a bookmark by namespace and sha256
          * @description Add a bookmark by namespace and sha256.
          *     Optionally, metadata can be provided as the request body.
          *     Metadata should be a dictionary of key-value pairs.
          */
-        put: operations["add_bookmark_by_sha256_api_bookmarks__namespace___sha256__put"];
+        put: operations["add_bookmark_by_sha256_api_bookmarks_ns__namespace___sha256__put"];
         post?: never;
-        /** Delete a bookmark by namespace and sha256 */
-        delete: operations["delete_bookmark_by_sha256_api_bookmarks__namespace___sha256__delete"];
+        /** Delete a specific bookmark by namespace and sha256 */
+        delete: operations["delete_bookmark_by_sha256_api_bookmarks_ns__namespace___sha256__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bookmarks/item/{sha256}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get all bookmarks for an item
+         * @description Get all bookmarks for an item.
+         *     Returns a list of namespaces and metadata for each bookmark.
+         */
+        get: operations["get_bookmarks_for_item_api_bookmarks_item__sha256__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -746,6 +767,8 @@ export interface components {
         BookmarkMetadata: {
             /** Exists */
             exists: boolean;
+            /** Namespace */
+            namespace?: string | null;
             /** Metadata */
             metadata?: Record<string, never> | null;
         };
@@ -792,6 +815,13 @@ export interface components {
         DBInfo: {
             index: components["schemas"]["SingleDBInfo"];
             user_data: components["schemas"]["SingleDBInfo"];
+        };
+        /** ExistingBookmarkMetadata */
+        ExistingBookmarkMetadata: {
+            /** Namespace */
+            namespace?: string | null;
+            /** Metadata */
+            metadata?: Record<string, never> | null;
         };
         /** ExtractedText */
         ExtractedText: {
@@ -905,6 +935,11 @@ export interface components {
             query: string;
             /** Model */
             model: string;
+        };
+        /** ItemBookmarks */
+        ItemBookmarks: {
+            /** Bookmarks */
+            bookmarks: components["schemas"]["ExistingBookmarkMetadata"][];
         };
         /** ItemMetadata */
         ItemMetadata: {
@@ -1147,7 +1182,9 @@ export interface operations {
         parameters: {
             query?: {
                 path?: string;
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
@@ -1182,7 +1219,9 @@ export interface operations {
         parameters: {
             query?: {
                 path?: string;
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
@@ -1216,7 +1255,9 @@ export interface operations {
     search_api_search_post: {
         parameters: {
             query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
@@ -1263,7 +1304,9 @@ export interface operations {
                 user?: string;
                 /** @description Include namespaces from bookmarks with the * user value */
                 include_wildcard?: boolean;
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
@@ -1309,7 +1352,9 @@ export interface operations {
                 /** @description The minimum confidence threshold for tags */
                 confidence_threshold?: number | null;
                 limit?: number;
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
@@ -1351,7 +1396,9 @@ export interface operations {
                 /** @description The (partial) tag name to search for */
                 name: string;
                 limit?: number;
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
@@ -1393,7 +1440,9 @@ export interface operations {
                 /** @description The source model names to restrict the search to. These are the models that produced the text for the items from which the text embeddings were produced. */
                 src_setter_names?: string[] | null;
                 limit?: number;
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
@@ -1436,7 +1485,9 @@ export interface operations {
     get_item_by_sha256_api_items_item__sha256__get: {
         parameters: {
             query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
@@ -1477,7 +1528,9 @@ export interface operations {
     get_item_by_path_api_items_from_path__path__get: {
         parameters: {
             query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
@@ -1518,7 +1571,9 @@ export interface operations {
     get_file_by_sha256_api_items_file__sha256__get: {
         parameters: {
             query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
@@ -1561,7 +1616,9 @@ export interface operations {
         parameters: {
             query?: {
                 big?: boolean;
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
@@ -1604,7 +1661,9 @@ export interface operations {
         parameters: {
             query?: {
                 setters?: string[];
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
@@ -1647,7 +1706,9 @@ export interface operations {
             query?: {
                 setters?: string[];
                 confidence_threshold?: number;
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
@@ -1685,10 +1746,12 @@ export interface operations {
             };
         };
     };
-    get_ns_list_api_bookmarks_namespaces_get: {
+    get_ns_list_api_bookmarks_ns_get: {
         parameters: {
             query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
@@ -1727,7 +1790,9 @@ export interface operations {
     get_user_list_api_bookmarks_users_get: {
         parameters: {
             query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
@@ -1763,7 +1828,7 @@ export interface operations {
             };
         };
     };
-    get_bookmarks_by_namespace_api_bookmarks__namespace__get: {
+    get_bookmarks_by_namespace_api_bookmarks_ns__namespace__get: {
         parameters: {
             query?: {
                 user?: string;
@@ -1773,11 +1838,14 @@ export interface operations {
                 order?: ("asc" | "desc") | null;
                 /** @description Whether or not to include bookmarks set under the wildcard user. */
                 include_wildcard?: boolean;
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
             path: {
+                /** @description The namespace to get the bookmarks from. Wildcard ('*') results in getting bookmarks from all namespaces. */
                 namespace: string;
             };
             cookie?: never;
@@ -1811,16 +1879,19 @@ export interface operations {
             };
         };
     };
-    add_bookmarks_by_sha256_api_bookmarks__namespace__post: {
+    add_bookmarks_by_sha256_api_bookmarks_ns__namespace__post: {
         parameters: {
             query?: {
                 /** @description The user to save the bookmark under. The wildcard '*' can be used to set `wildcard user` bookmarks that apply to all users. */
                 user?: string;
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
             path: {
+                /** @description The namespace to save the bookmarks under. Wildcard is not allowed here. */
                 namespace: string;
             };
             cookie?: never;
@@ -1858,17 +1929,20 @@ export interface operations {
             };
         };
     };
-    delete_bookmarks_by_namespace_api_bookmarks__namespace__delete: {
+    delete_bookmarks_by_namespace_api_bookmarks_ns__namespace__delete: {
         parameters: {
             query?: {
                 /** @description The user to delete the bookmarks from. */
                 user?: string;
                 exclude_last_n?: number;
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
             path: {
+                /** @description The namespace to delete the bookmarks from. Wildcard ('*') results in deleting bookmarks from all namespaces. */
                 namespace: string;
             };
             cookie?: never;
@@ -1906,17 +1980,21 @@ export interface operations {
             };
         };
     };
-    get_bookmark_api_bookmarks__namespace___sha256__get: {
+    get_bookmark_api_bookmarks_ns__namespace___sha256__get: {
         parameters: {
             query?: {
                 /** @description The user to get the bookmark from. The wildcard '*' can be used to get `wildcard user` bookmarks that apply to all users. */
                 user?: string;
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
             path: {
+                /** @description The namespace to get the bookmark from. Use '*' wildcard to mean 'any namespace', in which case it will return the first result found. */
                 namespace: string;
+                /** @description The sha256 of the item */
                 sha256: string;
             };
             cookie?: never;
@@ -1950,17 +2028,21 @@ export interface operations {
             };
         };
     };
-    add_bookmark_by_sha256_api_bookmarks__namespace___sha256__put: {
+    add_bookmark_by_sha256_api_bookmarks_ns__namespace___sha256__put: {
         parameters: {
             query?: {
                 /** @description The user to save the bookmark under. The wildcard '*' can be used to set `wildcard user` bookmarks that apply to all users. */
                 user?: string;
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
             path: {
+                /** @description The namespace to save the bookmark under. Wildcard is not allowed here. */
                 namespace: string;
+                /** @description The sha256 of the item */
                 sha256: string;
             };
             cookie?: never;
@@ -1998,17 +2080,21 @@ export interface operations {
             };
         };
     };
-    delete_bookmark_by_sha256_api_bookmarks__namespace___sha256__delete: {
+    delete_bookmark_by_sha256_api_bookmarks_ns__namespace___sha256__delete: {
         parameters: {
             query?: {
                 /** @description The user to delete the bookmark from. */
                 user?: string;
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
             path: {
+                /** @description The namespace to delete the bookmark from. Wildcard ('*') results in deleting bookmarks for an item from all namespaces. */
                 namespace: string;
+                /** @description The sha256 of the item */
                 sha256: string;
             };
             cookie?: never;
@@ -2022,6 +2108,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessageResult"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_bookmarks_for_item_api_bookmarks_item__sha256__get: {
+        parameters: {
+            query?: {
+                /** @description The user to get the bookmark from. The wildcard '*' can be used to get `wildcard user` bookmarks that apply to all users. */
+                user?: string;
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path: {
+                sha256: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemBookmarks"];
                 };
             };
             /** @description Not found */
