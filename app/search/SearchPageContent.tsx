@@ -52,92 +52,120 @@ import {
     PaginationPrevious,
 } from "@/components/ui/pagination"
 const range = (start: number, end: number) => Array.from({ length: end - start + 1 }, (_, i) => start + i);
-export function PageSelect({ total_pages, current_page, max_pages, setPage }:
-    {
-        total_pages: number,
-        current_page: number,
-        max_pages: number,
-        setPage: (page: number) => void
-    }
-) {
-    // Remove the first and last page from max_pages since they are already shown
+export function PageSelect({
+    total_pages,
+    current_page,
+    max_pages,
+    setPage
+}: {
+    total_pages: number;
+    current_page: number;
+    max_pages: number;
+    setPage: (page: number) => void;
+}) {
+    // Remove the first and last page from max_pages since they are always shown
     max_pages = Math.max(max_pages - 2, 1);
 
-    const firstPage = current_page > max_pages ? current_page - Math.ceil(max_pages / 2) : 2;
-    const lastPage = Math.min(firstPage + max_pages, total_pages - 1);
+    // Calculate the range of pages to display
+    const half_max_pages = Math.floor(max_pages / 2);
+    let startPage = Math.max(current_page - half_max_pages, 2);
+    let endPage = Math.min(current_page + half_max_pages, total_pages - 1);
+
+    // Adjust if the calculated range is too close to the start or end
+    if (current_page - half_max_pages < 2) {
+        startPage = 2;
+        endPage = Math.min(2 + max_pages - 1, total_pages - 1);
+    }
+    if (current_page + half_max_pages > total_pages - 1) {
+        startPage = Math.max(total_pages - max_pages, 2);
+        endPage = total_pages - 1;
+    }
+
     return (
         <Pagination className="mt-4">
             <PaginationContent>
+                {/* Previous Button */}
                 <PaginationItem>
                     <PaginationPrevious
                         href="#"
                         onClick={(e) => {
-                            e.preventDefault()
-                            if (current_page > 1) setPage(current_page - 1)
+                            e.preventDefault();
+                            if (current_page > 1) setPage(current_page - 1);
                         }}
                     />
                 </PaginationItem>
+
+                {/* First Page */}
                 <PaginationItem>
                     <PaginationLink
                         href="#"
                         isActive={1 === current_page}
                         onClick={(e) => {
-                            e.preventDefault()
-                            setPage(1)
+                            e.preventDefault();
+                            setPage(1);
                         }}
-                    >1</PaginationLink>
+                    >
+                        1
+                    </PaginationLink>
                 </PaginationItem>
-                {firstPage > 2 && (
-                    <PaginationItem>
-                        <PaginationEllipsis />
-                    </PaginationItem>
-                )}
-                {
-                    range(firstPage, lastPage).map((page) => (
-                        <PaginationItem key={page}>
-                            <PaginationLink
-                                href="#"
-                                isActive={page === current_page}
-                                onClick={(e) => {
-                                    e.preventDefault()
-                                    setPage(page)
-                                }}
-                            >
-                                {page}
-                            </PaginationLink>
-                        </PaginationItem>
-                    ))
-                }
 
-                {lastPage < total_pages - 1 && (
+                {/* Ellipsis before middle pages */}
+                {startPage > 2 && (
                     <PaginationItem>
                         <PaginationEllipsis />
                     </PaginationItem>
                 )}
+
+                {/* Middle Pages */}
+                {range(startPage, endPage).map((page) => (
+                    <PaginationItem key={page}>
+                        <PaginationLink
+                            href="#"
+                            isActive={page === current_page}
+                            onClick={(e) => {
+                                e.preventDefault();
+                                setPage(page);
+                            }}
+                        >
+                            {page}
+                        </PaginationLink>
+                    </PaginationItem>
+                ))}
+
+                {/* Ellipsis after middle pages */}
+                {endPage < total_pages - 1 && (
+                    <PaginationItem>
+                        <PaginationEllipsis />
+                    </PaginationItem>
+                )}
+
+                {/* Last Page */}
                 <PaginationItem>
                     <PaginationLink
                         href="#"
                         isActive={total_pages === current_page}
                         onClick={(e) => {
-                            e.preventDefault()
-                            setPage(total_pages)
+                            e.preventDefault();
+                            setPage(total_pages);
                         }}
                     >
                         {total_pages}
                     </PaginationLink>
                 </PaginationItem>
+
+                {/* Next Button */}
                 <PaginationItem>
                     <PaginationNext
                         href="#"
                         onClick={(e) => {
-                            e.preventDefault()
-                            if (current_page < total_pages) setPage(current_page + 1)
+                            e.preventDefault();
+                            if (current_page < total_pages) setPage(current_page + 1);
                         }}
                     />
                 </PaginationItem>
             </PaginationContent>
         </Pagination>
-    )
+    );
 }
 
 function SearchPageContent() {
