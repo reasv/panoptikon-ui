@@ -26,19 +26,41 @@ const BookmarkBtn = (
     );
 
     const buttonLabel = (isLoading || !data) ? "Loading" : (data.exists ? "Remove bookmark" : "Add bookmark");
-    return <button
-        className="absolute top-2 right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-        onClick={() => console.log("test")} // Your bookmark handling function
-    >
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            fill="currentColor"
-            viewBox="0 0 24 24"
-            className="w-6 h-6 text-gray-800"
+    const [isBookmarked, setIsBookmarked] = useState(false);
+    const handleBookmarkClick = () => {
+        setIsBookmarked(!isBookmarked);
+    };
+
+    return (
+        <button
+            className="absolute top-2 right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+            onClick={handleBookmarkClick}
         >
-            <path d="M5 3v18l7-5 7 5V3H5z" />
-        </svg>
-    </button>
+            {isBookmarked ? (
+                // Filled bookmark icon (when bookmarked)
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="currentColor"
+                    viewBox="0 0 24 24"
+                    className="w-6 h-6 text-gray-800"
+                >
+                    <path d="M5 3v18l7-5 7 5V3H5z" />
+                </svg>
+            ) : (
+                // Outlined bookmark icon (when not bookmarked)
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                    className="w-6 h-6 text-gray-800"
+                >
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />
+                </svg>
+            )}
+        </button>
+    );
 };
 import { useState } from 'react'
 import { useMutation, QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
