@@ -55,7 +55,7 @@ export const BookmarkBtn = (
     return (
         <button
             title={isBookmarked ? "Remove bookmark" : "Add to bookmarks"}
-            className="absolute top-2 right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+            className="hover:scale-105 absolute top-2 right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
             onClick={handleBookmarkClick}
         >
             {isBookmarked ? (
@@ -100,7 +100,7 @@ export const OpenFile = (
         <button
             onClick={() => mutate({ params: { path: { sha256 }, query } })}
             title="Open file with your system's default application"
-            className="absolute bottom-3 left-1 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+            className="hover:scale-105 absolute bottom-3 left-1 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
         >
             <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -128,7 +128,7 @@ export const OpenFolder = (
         <button
             title="Show file in folder"
             onClick={() => mutate({ params: { path: { sha256 }, query } })}
-            className="absolute bottom-3 left-12 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+            className="hover:scale-105 absolute bottom-3 left-12 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
         >
             <svg
                 xmlns="http://www.w3.org/2000/svg"
