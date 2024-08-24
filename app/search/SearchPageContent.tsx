@@ -108,6 +108,7 @@ function SearchPageContent() {
                                             alt={`Result ${result.path}`}
                                             fill
                                             className="object-cover transition-transform duration-300 hover:scale-105"
+                                            unoptimized={true}
                                         />
                                     </a>
                                     <p className="text-sm truncate">{result.path}</p>
