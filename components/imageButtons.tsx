@@ -1,17 +1,17 @@
 "use client"
 import { $api } from "@/lib/api";
-import { useState } from "react";
+import { useBookmarkNs, useDatabase } from "@/lib/zust";
 
 export const BookmarkBtn = (
     { sha256, }: {
         sha256: string;
     }
 ) => {
+    const query = useDatabase((state) => state);
+    const namespace = useBookmarkNs((state) => state.namespace);
     const params = {
-        path: { namespace: "default", sha256: sha256 },
-        query: {
-            index_db: "default"
-        }
+        path: { namespace, sha256 },
+        query
     }
     const { data, error, isLoading, isError, status } = $api.useQuery(
         "get",
@@ -21,15 +21,22 @@ export const BookmarkBtn = (
         },
     );
 
-    const { mutate } = $api.useMutation(
+    const addBookmark = $api.useMutation(
         "put",
         "/api/bookmarks/ns/{namespace}/{sha256}",
     );
 
-    const buttonLabel = (isLoading || !data) ? "Loading" : (data.exists ? "Remove bookmark" : "Add bookmark");
-    const [isBookmarked, setIsBookmarked] = useState(false);
+    const removeBookmark = $api.useMutation(
+        "delete",
+        "/api/bookmarks/ns/{namespace}/{sha256}",
+    );
+
+    const isBookmarked = data?.exists || false;
+
     const handleBookmarkClick = () => {
-        setIsBookmarked(!isBookmarked);
+        if (isBookmarked) removeBookmark.mutate({ params });
+        else
+            addBookmark.mutate({ params });
     };
 
     return (
@@ -70,6 +77,7 @@ export const OpenFile = (
         sha256: string;
     }
 ) => {
+    const query = useDatabase((state) => state);
     const { mutate } = $api.useMutation(
         "post",
         "/api/open/file/{sha256}",
@@ -77,7 +85,7 @@ export const OpenFile = (
 
     return (
         <button
-            onClick={() => mutate({ params: { path: { sha256 } } })}
+            onClick={() => mutate({ params: { path: { sha256 }, query } })}
             title="Open file with your system's default application"
             className="absolute bottom-3 left-1 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
         >
@@ -97,6 +105,7 @@ export const OpenFolder = (
         sha256: string;
     }
 ) => {
+    const query = useDatabase((state) => state);
     const { mutate } = $api.useMutation(
         "post",
         "/api/open/folder/{sha256}",
@@ -105,7 +114,7 @@ export const OpenFolder = (
     return (
         <button
             title="Show file in folder"
-            onClick={() => mutate({ params: { path: { sha256 } } })}
+            onClick={() => mutate({ params: { path: { sha256 }, query } })}
             className="absolute bottom-3 left-12 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
         >
             <svg
