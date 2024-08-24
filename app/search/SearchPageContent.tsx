@@ -1,18 +1,21 @@
 "use client"
 import { $api } from "@/lib/api"
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import Image from 'next/image'
 import { PageSelect } from "@/components/pageselect";
-import { BookmarkBtn, OpenFile, OpenFolder } from "@/components/imageButtons"
+import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons"
 
 
 function SearchPageContent() {
     const [searchQuery, setSearchQuery] = useState('')
     const page_size = 9
     const [page, setPage] = useState(1)
+    useEffect(() => {
+        setPage(1);
+    }, [searchQuery]);
     const { data, error, isLoading, isError, status } = $api.useQuery(
         "post",
         "/api/search",
@@ -91,7 +94,7 @@ function SearchPageContent() {
                                             <OpenFile sha256={result.sha256} />
                                             <OpenFolder sha256={result.sha256} />
                                         </div>
-                                        <p title={result.path} className="text-sm truncate" style={{ direction: 'rtl', textAlign: 'left' }}>{result.path}</p>
+                                        <FilePathComponent path={result.path} />
                                         <p className="text-xs text-gray-500">{new Date(result.last_modified).toLocaleString()}</p>
                                     </div>
                                 ))}
@@ -99,13 +102,11 @@ function SearchPageContent() {
                         </CardContent>
 
                     </Card>
-                    <PageSelect total_pages={total_pages} current_page={page} setPage={setPage} max_pages={25} />
+                    {data.count > page_size &&
+                        <PageSelect total_pages={total_pages} current_page={page} setPage={setPage} max_pages={25} />
+                    }
                 </>
 
-            )}
-
-            {data && data.results.length === 0 && (
-                <p>No results found.</p>
             )}
         </div>
     )

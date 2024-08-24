@@ -141,3 +141,26 @@ export const OpenFolder = (
         </button>
     );
 };
+
+import React from 'react';
+
+const handleCopyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+        // Optionally, you can provide feedback to the user here
+    }).catch((err) => {
+        console.error('Failed to copy text: ', err);
+    });
+};
+
+export const FilePathComponent = ({ path }: { path: string }) => {
+    return (
+        <p
+            title={path}
+            className="text-sm truncate cursor-pointer" // Added cursor-pointer for better UX
+            style={{ direction: 'rtl', textAlign: 'left' }}
+            onClick={() => handleCopyToClipboard(path)} // Copy path on click
+        >
+            {path}
+        </p>
+    );
+};
