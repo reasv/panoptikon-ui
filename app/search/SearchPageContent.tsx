@@ -63,22 +63,38 @@ export function PageSelect({
     max_pages: number;
     setPage: (page: number) => void;
 }) {
-    // Remove the first and last page from max_pages since they are always shown
-    max_pages = Math.max(max_pages - 2, 1);
+    // Reserve 2 slots for the first and last pages
+    const min_pages = 2;
+    let visible_pages = Math.max(max_pages - min_pages, 1);
 
-    // Calculate the range of pages to display
-    const half_max_pages = Math.floor(max_pages / 2);
-    let startPage = Math.max(current_page - half_max_pages, 2);
-    let endPage = Math.min(current_page + half_max_pages, total_pages - 1);
+    let showLeftEllipsis = false;
+    let showRightEllipsis = false;
 
-    // Adjust if the calculated range is too close to the start or end
-    if (current_page - half_max_pages < 2) {
-        startPage = 2;
-        endPage = Math.min(2 + max_pages - 1, total_pages - 1);
+    // Determine if we need ellipses and adjust visible_pages
+    if (current_page > Math.ceil(visible_pages / 2) + 1) {
+        showLeftEllipsis = true;
+        visible_pages -= 1; // Account for the left ellipsis
     }
-    if (current_page + half_max_pages > total_pages - 1) {
-        startPage = Math.max(total_pages - max_pages, 2);
+    if (current_page < total_pages - Math.floor(visible_pages / 2) - 1) {
+        showRightEllipsis = true;
+        visible_pages -= 1; // Account for the right ellipsis
+    }
+
+    // Calculate the middle pages range
+    const half_visible_pages = Math.floor(visible_pages / 2);
+    let startPage = Math.max(current_page - half_visible_pages, 2);
+    let endPage = Math.min(current_page + half_visible_pages, total_pages - 1);
+
+    // Adjust if near the start
+    if (startPage <= 2) {
+        startPage = 2;
+        endPage = Math.min(startPage + visible_pages - 1, total_pages - 1);
+    }
+
+    // Adjust if near the end
+    if (endPage >= total_pages - 1) {
         endPage = total_pages - 1;
+        startPage = Math.max(endPage - visible_pages + 1, 2);
     }
 
     return (
@@ -110,7 +126,7 @@ export function PageSelect({
                 </PaginationItem>
 
                 {/* Ellipsis before middle pages */}
-                {startPage > 2 && (
+                {showLeftEllipsis && (
                     <PaginationItem>
                         <PaginationEllipsis />
                     </PaginationItem>
@@ -133,7 +149,7 @@ export function PageSelect({
                 ))}
 
                 {/* Ellipsis after middle pages */}
-                {endPage < total_pages - 1 && (
+                {showRightEllipsis && (
                     <PaginationItem>
                         <PaginationEllipsis />
                     </PaginationItem>
