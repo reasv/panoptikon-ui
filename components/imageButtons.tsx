@@ -1,6 +1,7 @@
 "use client"
 import { $api } from "@/lib/api";
 import { useBookmarkNs, useDatabase } from "@/lib/zust";
+import { useQueryClient } from "@tanstack/react-query";
 
 export const BookmarkBtn = (
     { sha256, }: {
@@ -13,9 +14,10 @@ export const BookmarkBtn = (
         path: { namespace, sha256 },
         query
     }
+    const bookmarkPath = "/api/bookmarks/ns/{namespace}/{sha256}"
     const { data, error, isLoading, isError, status } = $api.useQuery(
         "get",
-        "/api/bookmarks/ns/{namespace}/{sha256}",
+        bookmarkPath,
         {
             params,
         },
@@ -23,20 +25,31 @@ export const BookmarkBtn = (
 
     const addBookmark = $api.useMutation(
         "put",
-        "/api/bookmarks/ns/{namespace}/{sha256}",
+        bookmarkPath,
     );
 
     const removeBookmark = $api.useMutation(
         "delete",
-        "/api/bookmarks/ns/{namespace}/{sha256}",
+        bookmarkPath,
     );
+
+    const queryClient = useQueryClient()
 
     const isBookmarked = data?.exists || false;
 
     const handleBookmarkClick = () => {
-        if (isBookmarked) removeBookmark.mutate({ params });
+        const onSuccess = () => queryClient.invalidateQueries({
+            queryKey: [
+                "get",
+                bookmarkPath,
+                { params },
+            ]
+        })
+        if (isBookmarked) {
+            removeBookmark.mutate({ params }, { onSuccess });
+        }
         else
-            addBookmark.mutate({ params });
+            addBookmark.mutate({ params }, { onSuccess });
     };
 
     return (

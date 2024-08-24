@@ -111,14 +111,9 @@ function SearchPageContent() {
     )
 }
 
-// Create a new client
-const queryClient = new QueryClient()
-
 // Wrap the component with QueryClientProvider
 export default function SearchPageWrapper() {
     return (
-        <QueryClientProvider client={queryClient}>
-            <SearchPageContent />
-        </QueryClientProvider>
+        <SearchPageContent />
     )
 }
