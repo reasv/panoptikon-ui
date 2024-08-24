@@ -51,7 +51,7 @@ import {
     PaginationNext,
     PaginationPrevious,
 } from "@/components/ui/pagination"
-
+const range = (start: number, end: number) => Array.from({ length: end - start + 1 }, (_, i) => start + i);
 export function PageSelect({ total_pages, current_page, max_pages, setPage }:
     {
         total_pages: number,
@@ -60,6 +60,11 @@ export function PageSelect({ total_pages, current_page, max_pages, setPage }:
         setPage: (page: number) => void
     }
 ) {
+    // Remove the first and last page from max_pages since they are already shown
+    max_pages = Math.max(max_pages - 2, 1);
+
+    const firstPage = current_page > max_pages ? current_page - Math.ceil(max_pages / 2) : 2;
+    const lastPage = Math.min(firstPage + max_pages, total_pages - 1);
     return (
         <Pagination className="mt-4">
             <PaginationContent>
@@ -70,11 +75,25 @@ export function PageSelect({ total_pages, current_page, max_pages, setPage }:
                             e.preventDefault()
                             if (current_page > 1) setPage(current_page - 1)
                         }}
-                    // enabled={current_page <= 1}
                     />
                 </PaginationItem>
+                <PaginationItem>
+                    <PaginationLink
+                        href="#"
+                        isActive={1 === current_page}
+                        onClick={(e) => {
+                            e.preventDefault()
+                            setPage(1)
+                        }}
+                    >1</PaginationLink>
+                </PaginationItem>
+                {firstPage > 2 && (
+                    <PaginationItem>
+                        <PaginationEllipsis />
+                    </PaginationItem>
+                )}
                 {
-                    Array.from({ length: Math.min(total_pages, max_pages) }, (_, i) => i + 1).map((page) => (
+                    range(firstPage, lastPage).map((page) => (
                         <PaginationItem key={page}>
                             <PaginationLink
                                 href="#"
@@ -89,6 +108,24 @@ export function PageSelect({ total_pages, current_page, max_pages, setPage }:
                         </PaginationItem>
                     ))
                 }
+
+                {lastPage < total_pages - 1 && (
+                    <PaginationItem>
+                        <PaginationEllipsis />
+                    </PaginationItem>
+                )}
+                <PaginationItem>
+                    <PaginationLink
+                        href="#"
+                        isActive={total_pages === current_page}
+                        onClick={(e) => {
+                            e.preventDefault()
+                            setPage(total_pages)
+                        }}
+                    >
+                        {total_pages}
+                    </PaginationLink>
+                </PaginationItem>
                 <PaginationItem>
                     <PaginationNext
                         href="#"
@@ -96,7 +133,6 @@ export function PageSelect({ total_pages, current_page, max_pages, setPage }:
                             e.preventDefault()
                             if (current_page < total_pages) setPage(current_page + 1)
                         }}
-                    // enabled={current_page >= total_pages}
                     />
                 </PaginationItem>
             </PaginationContent>
