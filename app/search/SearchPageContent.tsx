@@ -71,7 +71,7 @@ function SearchPageContent() {
                         <CardContent>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                 {data.results.map((result) => (
-                                    <div key={result.sha256} className="border rounded p-2">
+                                    <div key={result.path} className="border rounded p-2">
                                         <div className="relative w-full pb-full mb-2 overflow-hidden group">
                                             <a
                                                 href={`/api/items/file/${result.sha256}`}
