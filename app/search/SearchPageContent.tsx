@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import Image from 'next/image'
 import { PageSelect } from "@/components/pageselect";
 import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons"
+import { useDatabase } from "@/lib/zust"
 
 
 function SearchPageContent() {
@@ -16,10 +17,14 @@ function SearchPageContent() {
     useEffect(() => {
         setPage(1);
     }, [searchQuery]);
+    const query = useDatabase((state) => state);
     const { data, error, isLoading, isError, status } = $api.useQuery(
         "post",
         "/api/search",
         {
+            params: {
+                query
+            },
             body: {
                 query: {
                     filters: {
