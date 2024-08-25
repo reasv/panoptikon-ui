@@ -8,10 +8,9 @@ import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/componen
 import { useDatabase, useSearchQuery } from "@/lib/zust"
 import { Toggle } from "@/components/ui/toggle"
 
-import { Italic, Settings, Lock } from "lucide-react"
+import { Settings } from "lucide-react"
 import { AnimatedNumber } from "@/components/ui/animatedNumber"
 import { Fts5ToggleButton } from "@/components/FTS5Toggle"
-import { useToast } from "@/components/ui/use-toast"
 import { keepPreviousData } from "@tanstack/react-query"
 import { InstantSearchLock } from "@/components/InstantSearchLock"
 

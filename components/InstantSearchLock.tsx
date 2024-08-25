@@ -13,9 +13,9 @@ export function InstantSearchLock() {
     const onClickToggle = () => {
         const newValue = !enabled
         setUserEnabled(newValue)
-        let description = "Results will be updated automatically"
+        let description = "New results will be fetched automatically"
         if (!newValue) {
-            description = "Refetch manually to update search results"
+            description = "Refresh manually to get new search results"
         }
         toast({
             title: `Auto Update Lock ${newValue ? "OFF" : "ON"}`,
@@ -24,7 +24,7 @@ export function InstantSearchLock() {
         })
     }
     return (
-        <Toggle onClick={onClickToggle} title={enabled ? "Update Lock is OFF. Results are updated automatically" : "Update Lock is ON. Click on the refetch button to update results"} aria-label="Toggle bold">
+        <Toggle onClick={onClickToggle} title={enabled ? "Update Lock is OFF. Results are updated automatically" : "Update Lock is ON. Click on the refresh button to update results"} aria-label="Toggle bold">
             <Lock className="h-4 w-4" />
         </Toggle>
     )
