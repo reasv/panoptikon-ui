@@ -14,7 +14,7 @@ export function Fts5ToggleButton({
     isError: boolean
     error: unknown
 }) {
-    const rawFts5Match = useSearchQuery((state) => state.raw_fts5_match)
+    const rawFts5Match = useSearchQuery((state) => state.any_text.raw_fts5_match)
     const setRawFts5Match = useSearchQuery((state) => state.setRawFts5Match)
 
     const { toast } = useToast()
