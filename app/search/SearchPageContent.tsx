@@ -78,6 +78,23 @@ function SearchPageContent() {
             duration: 3000
         })
     }
+    useEffect(() => {
+        if (isError) {
+            let action = undefined
+            let message = (error as Error).message
+            if (!message && raw_fts5_match) {
+                message = "Make sure your query follows FTS5 MATCH syntax or disable the option"
+                action = <ToastAction onClick={() => window.open("https://www.sqlite.org/fts5.html#full_text_query_syntax", "_blank")} altText="FTS5 Docs">Docs</ToastAction>
+            }
+            toast({
+                title: "Error occurred while fetching results",
+                description: message,
+                variant: "destructive",
+                action,
+                duration: 5000
+            })
+        }
+    }, [isError])
     const total_pages = Math.ceil((data?.count || 1) / page_size) || 1
     const nResults = data?.count || 0
     return (
@@ -103,8 +120,6 @@ function SearchPageContent() {
                     </Toggle>
                 </div>
             </div>
-
-            {isError && <p>Error occurred while fetching results: {(error as Error).message}</p>}
 
             <Card>
                 <CardHeader>
