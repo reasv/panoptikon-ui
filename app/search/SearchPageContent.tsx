@@ -27,7 +27,7 @@ function SearchPageContent() {
     const queryEnabled = useSearchQuery((state) => state.getSearchEnabled())
     const queryIsEnabled = (condition = false) => condition
     const setEnabled = useSearchQuery((state) => state.setEnableSearch)
-    const { data, error, isLoading, isError, status } = $api.useQuery(
+    const { data, error, isError, refetch } = $api.useQuery(
         "post",
         "/api/search",
         {

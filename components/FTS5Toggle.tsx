@@ -56,6 +56,7 @@ export function Fts5ToggleButton({
     return (
         <Toggle
             onClick={() => onClickFTS5Toggle()}
+            pressed={rawFts5Match}
             title={`FTS5 MATCH syntax in query is ${rawFts5Match ? "enabled" : "disabled"}`}
             aria-label="Toggle bold">
             <MSquare className="h-4 w-4" />

@@ -24,7 +24,11 @@ export function InstantSearchLock() {
         })
     }
     return (
-        <Toggle onClick={onClickToggle} title={enabled ? "Update Lock is OFF. Results are updated automatically" : "Update Lock is ON. Click on the refresh button to update results"} aria-label="Toggle bold">
+        <Toggle
+            pressed={!enabled}
+            onClick={onClickToggle}
+            title={enabled ? "Update Lock is OFF. Results are updated automatically" : "Update Lock is ON. Click on the refresh button to update results"}
+            aria-label="Toggle bold">
             <Lock className="h-4 w-4" />
         </Toggle>
     )
