@@ -1,24 +1,21 @@
 "use client"
 import { $api } from "@/lib/api"
 import { useEffect, useState } from 'react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import Image from 'next/image'
 import { PageSelect } from "@/components/pageselect";
 import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons"
-import { useDatabase } from "@/lib/zust"
+import { useDatabase, useSearchQuery } from "@/lib/zust"
 import { Toggle } from "@/components/ui/toggle"
 
-import { Italic, Settings, MSquare } from "lucide-react"
+import { Italic, Settings } from "lucide-react"
 import { AnimatedNumber } from "@/components/ui/animatedNumber"
-import { useToast } from "@/components/ui/use-toast"
-import { ToastAction } from "@/components/ui/toast"
-
+import { Fts5ToggleButton } from "@/components/FTS5Toggle"
 
 function SearchPageContent() {
     const [searchQuery, setSearchQuery] = useState('')
-    const [raw_fts5_match, setRawFts5Match] = useState(false)
+    const raw_fts5_match = useSearchQuery((state) => state.raw_fts5_match)
     const page_size = 9
     const [page, setPage] = useState(1)
     useEffect(() => {
@@ -59,42 +56,7 @@ function SearchPageContent() {
             }
         },
     );
-    const { toast } = useToast()
-    const onClickFTS5Toggle = () => {
-        const newValue = !raw_fts5_match
-        setRawFts5Match(newValue)
-        let description = "You can now use natural language queries"
-        if (newValue) {
-            description = "Consult the SQLite FTS5 documentation for the correct syntax"
-        }
-        let action = undefined
-        if (newValue) {
-            action = <ToastAction onClick={() => window.open("https://www.sqlite.org/fts5.html#full_text_query_syntax", "_blank")} altText="FTS5 Docs">Docs</ToastAction>
-        }
-        toast({
-            title: `${newValue ? "Enabled" : "Disabled"} FTS5 MATCH syntax`,
-            description,
-            action,
-            duration: 3000
-        })
-    }
-    useEffect(() => {
-        if (isError) {
-            let action = undefined
-            let message = (error as Error).message
-            if (!message && raw_fts5_match) {
-                message = "Make sure your query follows FTS5 MATCH syntax or disable the option"
-                action = <ToastAction onClick={() => window.open("https://www.sqlite.org/fts5.html#full_text_query_syntax", "_blank")} altText="FTS5 Docs">Docs</ToastAction>
-            }
-            toast({
-                title: "Error occurred while fetching results",
-                description: message,
-                variant: "destructive",
-                action,
-                duration: 5000
-            })
-        }
-    }, [isError])
+
     const total_pages = Math.ceil((data?.count || 1) / page_size) || 1
     const nResults = data?.count || 0
     return (
@@ -112,12 +74,7 @@ function SearchPageContent() {
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="flex-grow"
                     />
-                    <Toggle
-                        onClick={() => onClickFTS5Toggle()}
-                        title={`FTS5 MATCH syntax in query is ${raw_fts5_match ? "enabled" : "disabled"}`}
-                        aria-label="Toggle bold">
-                        <MSquare className="h-4 w-4" />
-                    </Toggle>
+                    <Fts5ToggleButton isError={isError} error={error} />
                 </div>
             </div>
 
