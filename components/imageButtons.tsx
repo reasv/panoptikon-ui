@@ -2,6 +2,7 @@
 import { $api } from "@/lib/api";
 import { useBookmarkNs, useDatabase } from "@/lib/zust";
 import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/components/ui/use-toast"
 
 export const BookmarkBtn = (
     { sha256, }: {
@@ -34,22 +35,42 @@ export const BookmarkBtn = (
     );
 
     const queryClient = useQueryClient()
+    const { toast } = useToast()
 
     const isBookmarked = data?.exists || false;
 
     const handleBookmarkClick = () => {
-        const onSuccess = () => queryClient.invalidateQueries({
-            queryKey: [
-                "get",
-                bookmarkPath,
-                { params },
-            ]
-        })
+        const onSuccess = (deleted: boolean) => {
+            queryClient.invalidateQueries({
+                queryKey: [
+                    "get",
+                    bookmarkPath,
+                    { params },
+                ]
+            })
+            toast({
+                title: `Bookmark ${deleted ? "removed" : "added"}`,
+                description: `File has been ${deleted ? "removed from" : "added to"} the ${namespace} group`,
+                duration: 2000,
+            })
+        }
+        const onError = (error: any) => {
+            toast({
+                title: "Failed to update bookmark",
+                description: error.message,
+                variant: "destructive",
+                duration: 2000,
+            })
+        }
         if (isBookmarked) {
-            removeBookmark.mutate({ params }, { onSuccess });
+            removeBookmark.mutate({ params }, {
+                onSuccess: () => onSuccess(true), onError(error, variables, context) {
+                    onError(error)
+                },
+            });
         }
         else
-            addBookmark.mutate({ params }, { onSuccess });
+            addBookmark.mutate({ params }, { onSuccess: () => onSuccess(false), onError: onError });
     };
 
     return (
