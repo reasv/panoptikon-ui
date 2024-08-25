@@ -10,12 +10,14 @@ import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/componen
 import { useDatabase } from "@/lib/zust"
 import { Toggle } from "@/components/ui/toggle"
 
-import { Italic, Settings } from "lucide-react"
+import { Italic, Settings, MSquare } from "lucide-react"
 import { AnimatedNumber } from "@/components/ui/animatedNumber"
+import { useToast } from "@/components/ui/use-toast"
 
 
 function SearchPageContent() {
     const [searchQuery, setSearchQuery] = useState('')
+    const [raw_fts5_match, setRawFts5Match] = useState(false)
     const page_size = 9
     const [page, setPage] = useState(1)
     useEffect(() => {
@@ -34,27 +36,42 @@ function SearchPageContent() {
                     filters: {
                         any_text: {
                             extracted_text: {
-                                query: searchQuery
+                                query: searchQuery,
+                                raw_fts5_match,
                             },
                             path: {
                                 query: searchQuery,
-                                only_match_filename: false
+                                only_match_filename: false,
+                                raw_fts5_match,
                             }
                         }
                     }
                 },
                 order_args: {
                     order_by: "last_modified",
-                    order: "asc",
+                    order: null,
                     page,
                     page_size,
                 },
                 count: true,
                 check_path: true
             }
-        }
+        },
     );
-
+    const { toast } = useToast()
+    const onClickFTS5Toggle = () => {
+        const newValue = !raw_fts5_match
+        setRawFts5Match(newValue)
+        let description = "You can now use natural language queries"
+        if (newValue) {
+            description = "Consult the SQLite FTS5 documentation for the correct syntax"
+        }
+        toast({
+            title: `${newValue ? "Enabled" : "Disabled"} FTS5 MATCH syntax`,
+            description,
+            duration: 2000
+        })
+    }
     const total_pages = Math.ceil((data?.count || 1) / page_size) || 1
     const nResults = data?.count || 0
     return (
@@ -62,18 +79,21 @@ function SearchPageContent() {
             {/* <h1 className="text-2xl font-bold mb-4">Search Page</h1> */}
             <div className="mb-4">
                 <div className="flex gap-2">
-                    <Toggle aria-label="Toggle bold">
+                    <Toggle title="Advanced Search Options hidden" aria-label="Toggle bold">
                         <Settings className="h-4 w-4" />
                     </Toggle>
                     <Input
                         type="text"
-                        placeholder="Enter search query"
+                        placeholder="What do your eyes seek?"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="flex-grow"
                     />
-                    <Toggle aria-label="Toggle bold">
-                        <Italic className="h-4 w-4" />
+                    <Toggle
+                        onClick={() => onClickFTS5Toggle()}
+                        title={`FTS5 MATCH syntax in query is ${raw_fts5_match ? "enabled" : "disabled"}`}
+                        aria-label="Toggle bold">
+                        <MSquare className="h-4 w-4" />
                     </Toggle>
                 </div>
             </div>

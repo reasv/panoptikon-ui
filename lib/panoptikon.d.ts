@@ -868,6 +868,11 @@ export interface components {
             language_min_confidence?: number | null;
             /** Min Confidence */
             min_confidence?: number | null;
+            /**
+             * Raw Fts5 Match
+             * @default true
+             */
+            raw_fts5_match: boolean;
         };
         /** ExtractedTextStats */
         ExtractedTextStats: {
@@ -1027,6 +1032,11 @@ export interface components {
              * @default false
              */
             only_match_filename: boolean;
+            /**
+             * Raw Fts5 Match
+             * @default true
+             */
+            raw_fts5_match: boolean;
         };
         /** QueryFilters */
         QueryFilters: {
