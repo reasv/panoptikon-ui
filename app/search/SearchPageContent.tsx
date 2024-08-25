@@ -8,11 +8,13 @@ import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/componen
 import { useDatabase, useSearchQuery } from "@/lib/zust"
 import { Toggle } from "@/components/ui/toggle"
 
-import { Settings } from "lucide-react"
+import { Settings, RefreshCw } from "lucide-react"
 import { AnimatedNumber } from "@/components/ui/animatedNumber"
 import { Fts5ToggleButton } from "@/components/FTS5Toggle"
 import { keepPreviousData } from "@tanstack/react-query"
 import { InstantSearchLock } from "@/components/InstantSearchLock"
+import { Button } from "@/components/ui/button"
+import { useToast } from "@/components/ui/use-toast"
 
 function SearchPageContent() {
     const searchQuery = useSearchQuery((state) => state.getSearchQuery())
@@ -48,6 +50,15 @@ function SearchPageContent() {
     const onTextInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setAnyTextQuery(e.target.value)
     }
+    const { toast } = useToast()
+    const onRefresh = async () => {
+        await refetch()
+        toast({
+            title: "Refreshed results",
+            description: "Results have been updated",
+            duration: 2000
+        })
+    }
     return (
         <div className="container mx-auto p-4">
             <div className="mb-4">
@@ -57,13 +68,16 @@ function SearchPageContent() {
                     </Toggle>
                     <Input
                         type="text"
-                        placeholder="What do your eyes seek?"
+                        placeholder="What do you seek?"
                         value={anyTextQuery}
                         onChange={onTextInputChange}
                         className="flex-grow"
                     />
                     <Fts5ToggleButton isError={isError} error={error} />
                     <InstantSearchLock />
+                    <Button title="Refresh search results" onClick={onRefresh} variant="ghost" size="icon">
+                        <RefreshCw className="h-4 w-4" />
+                    </Button>
                 </div>
             </div>
 
