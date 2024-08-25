@@ -13,6 +13,7 @@ import { Toggle } from "@/components/ui/toggle"
 import { Italic, Settings, MSquare } from "lucide-react"
 import { AnimatedNumber } from "@/components/ui/animatedNumber"
 import { useToast } from "@/components/ui/use-toast"
+import { ToastAction } from "@/components/ui/toast"
 
 
 function SearchPageContent() {
@@ -66,10 +67,15 @@ function SearchPageContent() {
         if (newValue) {
             description = "Consult the SQLite FTS5 documentation for the correct syntax"
         }
+        let action = undefined
+        if (newValue) {
+            action = <ToastAction onClick={() => window.open("https://www.sqlite.org/fts5.html#full_text_query_syntax", "_blank")} altText="FTS5 Docs">Docs</ToastAction>
+        }
         toast({
             title: `${newValue ? "Enabled" : "Disabled"} FTS5 MATCH syntax`,
             description,
-            duration: 2000
+            action,
+            duration: 3000
         })
     }
     const total_pages = Math.ceil((data?.count || 1) / page_size) || 1
@@ -79,7 +85,7 @@ function SearchPageContent() {
             {/* <h1 className="text-2xl font-bold mb-4">Search Page</h1> */}
             <div className="mb-4">
                 <div className="flex gap-2">
-                    <Toggle title="Advanced Search Options hidden" aria-label="Toggle bold">
+                    <Toggle disabled title="Advanced Search Options hidden" aria-label="Toggle bold">
                         <Settings className="h-4 w-4" />
                     </Toggle>
                     <Input
