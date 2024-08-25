@@ -107,8 +107,9 @@ export const BookmarkBtn = (
 };
 
 export const OpenFile = (
-    { sha256, }: {
+    { sha256, path }: {
         sha256: string;
+        path?: string;
     }
 ) => {
     const query = useDatabase((state) => state);
@@ -116,10 +117,30 @@ export const OpenFile = (
         "post",
         "/api/open/file/{sha256}",
     );
+    const { toast } = useToast()
+    const handleClick = () => {
+        mutate({ params: { path: { sha256 }, query: { ...query, path: path } } }, {
+            onError: (error: any) => {
+                toast({
+                    title: "Failed to open file",
+                    description: error.message,
+                    variant: "destructive",
+                    duration: 2000,
+                })
+            },
+            onSuccess: () => {
+                toast({
+                    title: "Opening file",
+                    description: "File is being opened with your system's default application",
+                    duration: 2000,
+                })
+            }
+        })
+    }
 
     return (
         <button
-            onClick={() => mutate({ params: { path: { sha256 }, query } })}
+            onClick={() => handleClick()}
             title="Open file with your system's default application"
             className="hover:scale-105 absolute bottom-3 left-1 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
         >
@@ -135,8 +156,9 @@ export const OpenFile = (
     );
 };
 export const OpenFolder = (
-    { sha256, }: {
-        sha256: string;
+    { sha256, path }: {
+        sha256: string
+        path?: string;
     }
 ) => {
     const query = useDatabase((state) => state);
@@ -145,10 +167,30 @@ export const OpenFolder = (
         "/api/open/folder/{sha256}",
     );
 
+    const { toast } = useToast()
+    const handleClick = () => {
+        mutate({ params: { path: { sha256 }, query: { ...query, path: path } } }, {
+            onError: (error: any) => {
+                toast({
+                    title: "Failed to open folder",
+                    description: error.message,
+                    variant: "destructive",
+                    duration: 2000,
+                })
+            },
+            onSuccess: () => {
+                toast({
+                    title: "Opening folder",
+                    description: "Showing file in folder with your system's default file manager",
+                    duration: 2000,
+                })
+            }
+        })
+    }
     return (
         <button
             title="Show file in folder"
-            onClick={() => mutate({ params: { path: { sha256 }, query } })}
+            onClick={() => handleClick()}
             className="hover:scale-105 absolute bottom-3 left-12 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
         >
             <svg
@@ -163,17 +205,20 @@ export const OpenFolder = (
     );
 };
 
-import React from 'react';
-
-const handleCopyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-        // Optionally, you can provide feedback to the user here
-    }).catch((err) => {
-        console.error('Failed to copy text: ', err);
-    });
-};
-
 export const FilePathComponent = ({ path }: { path: string }) => {
+    const { toast } = useToast()
+    const handleCopyToClipboard = (text: string) => {
+        navigator.clipboard.writeText(text).then(() => {
+            // Optionally, you can provide feedback to the user here
+        }).catch((err) => {
+            console.error('Failed to copy text: ', err);
+        });
+        toast({
+            title: "Path copied to clipboard",
+            description: text,
+            duration: 2000,
+        })
+    };
     return (
         <p
             title={path}

@@ -8,6 +8,10 @@ import Image from 'next/image'
 import { PageSelect } from "@/components/pageselect";
 import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons"
 import { useDatabase } from "@/lib/zust"
+import { Toggle } from "@/components/ui/toggle"
+
+import { Italic, Settings } from "lucide-react"
+import { AnimatedNumber } from "@/components/ui/animatedNumber"
 
 
 function SearchPageContent() {
@@ -52,12 +56,15 @@ function SearchPageContent() {
     );
 
     const total_pages = Math.ceil((data?.count || 1) / page_size) || 1
-
+    const nResults = data?.count || 0
     return (
         <div className="container mx-auto p-4">
             {/* <h1 className="text-2xl font-bold mb-4">Search Page</h1> */}
             <div className="mb-4">
                 <div className="flex gap-2">
+                    <Toggle aria-label="Toggle bold">
+                        <Settings className="h-4 w-4" />
+                    </Toggle>
                     <Input
                         type="text"
                         placeholder="Enter search query"
@@ -65,54 +72,51 @@ function SearchPageContent() {
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="flex-grow"
                     />
+                    <Toggle aria-label="Toggle bold">
+                        <Italic className="h-4 w-4" />
+                    </Toggle>
                 </div>
             </div>
 
             {isError && <p>Error occurred while fetching results: {(error as Error).message}</p>}
 
-            {data && (
-                <>
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Search Results (Total: {data.count})</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {data.results.map((result) => (
-                                    <div key={result.path} className="border rounded p-2">
-                                        <div className="relative w-full pb-full mb-2 overflow-hidden group">
-                                            <a
-                                                href={`/api/items/file/${result.sha256}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="block relative h-80 mb-2 overflow-hidden"
-                                            >
-                                                <Image
-                                                    src={`/api/items/thumbnail/${result.sha256}`}
-                                                    alt={`Result ${result.path}`}
-                                                    fill
-                                                    className="object-cover transition-transform duration-300 hover:scale-105"
-                                                    unoptimized={true}
-                                                />
-                                            </a>
-                                            <BookmarkBtn sha256={result.sha256} />
-                                            <OpenFile sha256={result.sha256} />
-                                            <OpenFolder sha256={result.sha256} />
-                                        </div>
-                                        <FilePathComponent path={result.path} />
-                                        <p className="text-xs text-gray-500">{new Date(result.last_modified).toLocaleString()}</p>
-                                    </div>
-                                ))}
+            <Card>
+                <CardHeader>
+                    <CardTitle><AnimatedNumber value={nResults} /> {nResults == 1 ? "Result" : "Results"}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {data && data.results.map((result) => (
+                            <div key={result.path} className="border rounded p-2">
+                                <div className="relative w-full pb-full mb-2 overflow-hidden group">
+                                    <a
+                                        href={`/api/items/file/${result.sha256}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="block relative h-80 mb-2 overflow-hidden"
+                                    >
+                                        <Image
+                                            src={`/api/items/thumbnail/${result.sha256}`}
+                                            alt={`Result ${result.path}`}
+                                            fill
+                                            className="object-cover transition-transform duration-300 hover:scale-105"
+                                            unoptimized={true}
+                                        />
+                                    </a>
+                                    <BookmarkBtn sha256={result.sha256} />
+                                    <OpenFile sha256={result.sha256} path={result.path} />
+                                    <OpenFolder sha256={result.sha256} path={result.path} />
+                                </div>
+                                <FilePathComponent path={result.path} />
+                                <p className="text-xs text-gray-500">{new Date(result.last_modified).toLocaleString()}</p>
                             </div>
-                        </CardContent>
-
-                    </Card>
-                    {data.count > page_size &&
-                        <PageSelect total_pages={total_pages} current_page={page} setPage={setPage} max_pages={25} />
-                    }
-                </>
-
-            )}
+                        ))}
+                    </div>
+                </CardContent>
+            </Card>
+            {data && data.count > page_size &&
+                <PageSelect total_pages={total_pages} current_page={page} setPage={setPage} max_pages={25} />
+            }
         </div>
     )
 }
