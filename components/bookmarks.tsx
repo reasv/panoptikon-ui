@@ -36,9 +36,16 @@ export function SwitchBookmarkNs() {
         setInputValue('')
     }
     return (
-        <>
-            <Label htmlFor="bkNsSelect">Group bookmarks are saved in</Label>
-            <div id="bkNsSelect" className="flex items-center space-x-2 mt-3 mb-4">
+        <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
+            <div className="space-y-0.5">
+                <Label className="text-base">
+                    Bookmarks Group
+                </Label>
+                <div className="text-gray-400">
+                    New bookmarks will be added to this group
+                </div>
+            </div>
+            <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-center">
                 <Select value={namespace} onValueChange={(value) => setBookmarks(value)}>
                     <SelectTrigger className="w-[180px]">
                         <SelectValue placeholder="Search in..." />
@@ -63,6 +70,6 @@ export function SwitchBookmarkNs() {
                     <Plus className="h-4 w-4" />
                 </Button>
             </div>
-        </>
+        </div>
     )
 }
