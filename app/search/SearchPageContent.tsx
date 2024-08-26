@@ -1,6 +1,5 @@
 "use client"
 import { $api } from "@/lib/api"
-import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import Image from 'next/image'
 import { PageSelect } from "@/components/pageselect";
@@ -15,7 +14,6 @@ import { keepPreviousData } from "@tanstack/react-query"
 import { InstantSearchLock } from "@/components/InstantSearchLock"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/use-toast"
-import { useSQLite } from "@/lib/sqliteChecker"
 import { SearchBar } from "@/components/searchBar"
 
 function SearchPageContent() {
