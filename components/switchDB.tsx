@@ -3,6 +3,7 @@ import { $api } from "@/lib/api"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useDatabase } from "@/lib/zust"
 import { Label } from "./ui/label"
+import { ComboBoxResponsive } from "./combobox";
 
 export function SwitchDB() {
     const { data } = $api.useQuery("get", "/api/db")
@@ -20,21 +21,12 @@ export function SwitchDB() {
                     </div>
                 </div>
                 <div>
-                    <Select value={index_db || data?.index.current} onValueChange={(value) => setIndexDB(value)}>
-                        <SelectTrigger className="w-[180px]">
-                            <SelectValue placeholder="Search in..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectGroup>
-                                <SelectLabel>Index DBs</SelectLabel>
-                                {
-                                    data?.index.all.map((db) => (
-                                        <SelectItem key={db} value={db}>{db}</SelectItem>
-                                    ))
-                                }
-                            </SelectGroup>
-                        </SelectContent>
-                    </Select>
+                    <ComboBoxResponsive
+                        options={data?.index.all.map((db) => ({ value: db, label: db })) || []}
+                        currentOption={index_db ? { value: index_db, label: index_db } : (data ? { value: data?.index.current, label: data?.index.current } : null)}
+                        onSelectOption={(option) => setIndexDB(option?.value || null)}
+                        placeholder="Search in..."
+                    />
                 </div>
             </div>
         </>

@@ -6,8 +6,8 @@ import { persistentStorage } from "./store"
 interface Database {
   index_db: string | null
   user_data_db: string | null
-  setIndexDB: (db: string) => void
-  setUserDataDB: (db: string) => void
+  setIndexDB: (db: string | null) => void
+  setUserDataDB: (db: string | null) => void
   getDBs: () => { index_db: string | null; user_data_db: string | null }
 }
 
@@ -21,8 +21,8 @@ export const useDatabase = create(
     (set, get) => ({
       index_db: null,
       user_data_db: null,
-      setIndexDB: (db: string) => set({ index_db: db }),
-      setUserDataDB: (db: string) => set({ user_data_db: db }),
+      setIndexDB: (db: string | null) => set({ index_db: db }),
+      setUserDataDB: (db: string | null) => set({ user_data_db: db }),
       getDBs: () => {
         return {
           index_db: get().index_db,
