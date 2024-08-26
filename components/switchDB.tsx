@@ -10,23 +10,32 @@ export function SwitchDB() {
     const setIndexDB = useDatabase((state) => state.setIndexDB)
     return (
         <>
-            <Label htmlFor="indexSelect">Index DB</Label>
-            <div id="indexSelect" className="flex items-center space-x-2 mt-3 mb-4">
-                <Select value={index_db || data?.index.current} onValueChange={(value) => setIndexDB(value)}>
-                    <SelectTrigger className="w-[180px]">
-                        <SelectValue placeholder="Search in..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectGroup>
-                            <SelectLabel>Index DBs</SelectLabel>
-                            {
-                                data?.index.all.map((db) => (
-                                    <SelectItem key={db} value={db}>{db}</SelectItem>
-                                ))
-                            }
-                        </SelectGroup>
-                    </SelectContent>
-                </Select>
+            <div className="flex flex-row items-center justify-between rounded-lg border p-4">
+                <div className="space-y-0.5">
+                    <Label className="text-base">
+                        Index Database
+                    </Label>
+                    <div className="text-gray-400">
+                        Choose the database you're searching in
+                    </div>
+                </div>
+                <div>
+                    <Select value={index_db || data?.index.current} onValueChange={(value) => setIndexDB(value)}>
+                        <SelectTrigger className="w-[180px]">
+                            <SelectValue placeholder="Search in..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectGroup>
+                                <SelectLabel>Index DBs</SelectLabel>
+                                {
+                                    data?.index.all.map((db) => (
+                                        <SelectItem key={db} value={db}>{db}</SelectItem>
+                                    ))
+                                }
+                            </SelectGroup>
+                        </SelectContent>
+                    </Select>
+                </div>
             </div>
         </>
     )
