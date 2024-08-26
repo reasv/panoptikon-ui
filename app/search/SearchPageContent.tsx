@@ -96,7 +96,7 @@ function SearchPageContent() {
                                     <OpenFolder sha256={result.sha256} path={result.path} />
                                 </div>
                                 <FilePathComponent path={result.path} />
-                                <p className="text-xs text-gray-500">{new Date(result.last_modified).toLocaleString()}</p>
+                                <p className="text-xs text-gray-500">{new Date(result.last_modified).toLocaleString('en-US')}</p>
                             </div>
                         ))}
                     </div>
