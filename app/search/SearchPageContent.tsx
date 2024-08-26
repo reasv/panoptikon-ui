@@ -16,6 +16,7 @@ import { InstantSearchLock } from "@/components/InstantSearchLock"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/use-toast"
 import { useSQLite } from "@/lib/sqliteChecker"
+import { SearchBar } from "@/components/searchBar"
 
 function SearchPageContent() {
     const searchQuery = useSearchQuery((state) => state.getSearchQuery())
@@ -48,23 +49,6 @@ function SearchPageContent() {
     );
     const total_pages = Math.ceil((data?.count || 1) / (page_size)) || 1
     const nResults = data?.count || 0
-    const rawFts5Match = useSearchQuery((state) => state.any_text.raw_fts5_match)
-    const syntaxChecker = useSQLite(rawFts5Match)
-    const onTextInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const match_string = e.target.value
-        let error = false
-        if (rawFts5Match) {
-            const valid = syntaxChecker.executeQuery(match_string)
-            if (!valid) {
-                setEnabled(false)
-                error = true
-            }
-        }
-        if (!error) {
-            setEnabled(true)
-        }
-        setAnyTextQuery(match_string)
-    }
     const { toast } = useToast()
     const onRefresh = async () => {
         await refetch()
@@ -81,20 +65,7 @@ function SearchPageContent() {
                     <Toggle disabled title="Advanced Search Options hidden" aria-label="Toggle bold">
                         <Settings className="h-4 w-4" />
                     </Toggle>
-                    <div className="relative w-full">
-                        <Input
-                            type="text"
-                            placeholder="What do you seek?"
-                            value={anyTextQuery}
-                            onChange={onTextInputChange}
-                            className="flex-grow"
-                        />
-                        {syntaxChecker.error && anyTextQuery && rawFts5Match && (
-                            <div className="absolute left-0 mt-2 w-full bg-red-500 text-white text-sm p-2 rounded-md shadow-md">
-                                {syntaxChecker.error}
-                            </div>
-                        )}
-                    </div>
+                    <SearchBar />
                     <Fts5ToggleButton isError={isError} error={error} />
                     <InstantSearchLock />
                     <Button title="Refresh search results" onClick={onRefresh} variant="ghost" size="icon">
