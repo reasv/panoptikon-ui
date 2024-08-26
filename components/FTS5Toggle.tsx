@@ -2,7 +2,6 @@
 import { useEffect } from 'react'
 import { useSearchQuery } from "@/lib/zust"
 import { Toggle } from "@/components/ui/toggle"
-
 import { MSquare } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { ToastAction } from "@/components/ui/toast"
