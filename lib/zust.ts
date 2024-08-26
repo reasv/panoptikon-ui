@@ -76,6 +76,9 @@ interface SearchQueryState {
   user_enable_search: boolean
   order_args: components["schemas"]["OrderParams"]
   any_text: AnyTextSettings
+  bookmarks: components["schemas"]["BookmarksFilter"]
+  setBookmarkFilterEnabled: (value: boolean) => void
+  setBookmarkFilterNs: (ns: string[]) => void
   setRawFts5Match: (value: boolean) => void
   setAnyTextQuery: (query: string) => void
   setPage: (page: number) => void
@@ -109,6 +112,34 @@ export const useSearchQuery = create<SearchQueryState>((set, get) => ({
       raw_fts5_match: false,
     },
   },
+  bookmarks: {
+    restrict_to_bookmarks: false,
+    namespaces: [],
+    user: "user",
+    include_wildcard: true,
+  },
+  setBookmarkFilterEnabled: (value: boolean) => {
+    set((state) => {
+      return {
+        ...state,
+        bookmarks: {
+          ...state.bookmarks,
+          restrict_to_bookmarks: value,
+        },
+      }
+    })
+  },
+  setBookmarkFilterNs: (ns: string[]) => {
+    set((state) => {
+      return {
+        ...state,
+        bookmarks: {
+          ...state.bookmarks,
+          namespaces: ns,
+        },
+      }
+    })
+  },
   getSearchQuery: () => {
     const query: components["schemas"]["SearchQuery"] = {
       order_args: get().order_args,
@@ -135,6 +166,9 @@ export const useSearchQuery = create<SearchQueryState>((set, get) => ({
         query.query!.filters!.any_text!.extracted_text.raw_fts5_match =
           get().any_text.raw_fts5_match
       }
+    }
+    if (get().bookmarks.restrict_to_bookmarks) {
+      query.query!.filters!.bookmarks = get().bookmarks
     }
 
     return query

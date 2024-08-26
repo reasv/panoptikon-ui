@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 
 import { SwitchDB } from "./switchDB"
 import { SwitchBookmarkNs } from "./bookmarks"
+import { BookmarksFilter } from "./bookmarkFilter"
 
 export function AdvancedSearchOptions({
     onClose,
@@ -21,7 +22,7 @@ export function AdvancedSearchOptions({
                 <CardHeader>
                     <CardTitle>
                         <div className="flex gap-2">
-                            <h2 className="text-lg font-semibold w-full">Advanced Search Options</h2>
+                            <h2 className="text-lg font-semibold w-full mt-3">Advanced Search Options</h2>
                             <Button title="Close Advanced Options" onClick={onClose} variant="ghost" size="icon">
                                 <SidebarClose className="h-4 w-4" />
                             </Button>
@@ -31,6 +32,7 @@ export function AdvancedSearchOptions({
                 <CardContent>
                     <SwitchDB />
                     <SwitchBookmarkNs />
+                    <BookmarksFilter />
                 </CardContent>
             </Card>
         </div>

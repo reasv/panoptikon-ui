@@ -37,8 +37,8 @@ export function SwitchBookmarkNs() {
     }
     return (
         <>
-            <Label htmlFor="indexSelect">Group bookmarks are saved in</Label>
-            <div id="indexSelect" className="flex items-center space-x-2 mt-3 mb-4">
+            <Label htmlFor="bkNsSelect">Group bookmarks are saved in</Label>
+            <div id="bkNsSelect" className="flex items-center space-x-2 mt-3 mb-4">
                 <Select value={namespace} onValueChange={(value) => setBookmarks(value)}>
                     <SelectTrigger className="w-[180px]">
                         <SelectValue placeholder="Search in..." />

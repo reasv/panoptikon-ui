@@ -787,10 +787,8 @@ export interface components {
             /**
              * Restrict To Bookmarks
              * @default true
-             * @constant
-             * @enum {boolean}
              */
-            restrict_to_bookmarks: true;
+            restrict_to_bookmarks: boolean;
             /** Namespaces */
             namespaces?: string[];
             /**
