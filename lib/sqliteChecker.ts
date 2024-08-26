@@ -10,16 +10,21 @@ export const useSQLite = (enabled: boolean) => {
 
   // Initialize the database if enabled is true
   useEffect(() => {
-    if (enabled && !db && !loading) {
-      setLoading(true)
-      initializeSQLite()
-        .then((initializedDb: Database | undefined) => {
-          if (initializedDb) {
-            setDb(initializedDb)
-          }
-        })
-        .catch((err) => setError(err.message))
-        .finally(() => setLoading(false))
+    if (enabled) {
+      if (!db && !loading) {
+        setLoading(true)
+        initializeSQLite()
+          .then((initializedDb: Database | undefined) => {
+            if (initializedDb) {
+              setDb(initializedDb)
+            }
+          })
+          .catch((err) => setError(err.message))
+          .finally(() => setLoading(false))
+      }
+    } else {
+      // Reset the error if enabled is set to false
+      setError(null)
     }
   }, [enabled, db, loading])
 
