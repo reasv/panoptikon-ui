@@ -7,6 +7,7 @@ import { Input } from "./ui/input";
 import { useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "./ui/button";
+import { ComboBoxResponsive } from "./combobox";
 
 export function SwitchBookmarkNs() {
     const { data } = $api.useQuery("get", "/api/bookmarks/ns")
@@ -35,6 +36,10 @@ export function SwitchBookmarkNs() {
         setBookmarkCustomNs(inputValue)
         setInputValue('')
     }
+    function onSelectOption(option: string | null) {
+        if (option === null) return
+        setBookmarks(option)
+    }
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
             <div className="space-y-0.5">
@@ -46,21 +51,12 @@ export function SwitchBookmarkNs() {
                 </div>
             </div>
             <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-center">
-                <Select value={namespace} onValueChange={(value) => setBookmarks(value)}>
-                    <SelectTrigger className="w-[180px]">
-                        <SelectValue placeholder="Search in..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectGroup>
-                            <SelectLabel>Bookmark Groups</SelectLabel>
-                            {
-                                mergedNamespaces.map((ns) => (
-                                    <SelectItem key={ns} value={ns}>{ns}</SelectItem>
-                                ))
-                            }
-                        </SelectGroup>
-                    </SelectContent>
-                </Select>
+                <ComboBoxResponsive
+                    options={mergedNamespaces.map((ns) => ({ value: ns, label: ns }))}
+                    currentOption={{ value: namespace, label: namespace }}
+                    onSelectOption={(option) => onSelectOption(option?.value || null)}
+                    placeholder="Groups..."
+                />
                 <Input
                     onChange={(e) => setInputValue(e.target.value)}
                     value={inputValue}
