@@ -1,6 +1,5 @@
 "use client"
 import { $api } from "@/lib/api"
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useBookmarkCustomNs, useBookmarkNs } from "@/lib/zust"
 import { Label } from "./ui/label"
 import { Input } from "./ui/input";
