@@ -9,11 +9,11 @@ export function SearchBar() {
     const setEnabled = useSearchQuery((state) => state.setEnableSearch)
     const rawFts5Match = useSearchQuery((state) => state.any_text.raw_fts5_match)
     const syntaxChecker = useSQLite(rawFts5Match)
-    const onTextInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const match_string = e.target.value
+
+    const checkInput = (query: string) => {
         let error = false
         if (rawFts5Match) {
-            const valid = syntaxChecker.executeQuery(match_string)
+            const valid = syntaxChecker.executeQuery(query)
             if (!valid) {
                 setEnabled(false)
                 error = true
@@ -22,6 +22,11 @@ export function SearchBar() {
         if (!error) {
             setEnabled(true)
         }
+    }
+
+    const onTextInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const match_string = e.target.value
+        checkInput(match_string)
         // Trigram search requires at least 3 characters
         if (match_string.length > 0 && match_string.length < 3) {
             setEnabled(false)
@@ -39,7 +44,7 @@ export function SearchBar() {
                 className="flex-grow"
             />
             {syntaxChecker.error && anyTextQuery && rawFts5Match && (
-                <div className="absolute left-0 mt-2 w-full bg-red-500 text-white text-sm p-2 rounded-md shadow-md">
+                <div className="absolute left-0 mt-2 bg-red-500 text-white text-sm p-2 rounded-md shadow-md">
                     {syntaxChecker.error}
                 </div>
             )}

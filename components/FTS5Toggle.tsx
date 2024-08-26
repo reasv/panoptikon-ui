@@ -17,8 +17,9 @@ export function Fts5ToggleButton({
     const setRawFts5Match = useSearchQuery((state) => state.setRawFts5Match)
     useEffect(() => {
         const storedValue = localStorage.getItem("fts5-any-text-enabled")
+        const storedValueBool = storedValue ? JSON.parse(storedValue) : false
         if (storedValue !== null) {
-            setRawFts5Match(JSON.parse(storedValue))
+            setRawFts5Match(storedValueBool)
         }
     }, [setRawFts5Match])
 
