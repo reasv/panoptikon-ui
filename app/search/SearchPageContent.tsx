@@ -15,6 +15,7 @@ import { InstantSearchLock } from "@/components/InstantSearchLock"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/use-toast"
 import { SearchBar } from "@/components/searchBar"
+import { useEffect } from "react";
 
 function SearchPageContent() {
     const searchQuery = useSearchQuery((state) => state.getSearchQuery())
@@ -52,6 +53,14 @@ function SearchPageContent() {
             duration: 2000
         })
     }
+    const queryEnabledByUser = useSearchQuery((state) => state.user_enable_search)
+    const queryEnabledBySystem = useSearchQuery((state) => state.enable_search)
+    useEffect(() => {
+        if (!queryEnabledByUser && queryEnabledBySystem) {
+            // Make pagination work if the user has disabled search
+            refetch()
+        }
+    }, [page])
     return (
         <div className="container mx-auto p-4">
             <div className="mb-4">
