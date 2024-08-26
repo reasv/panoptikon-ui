@@ -6,9 +6,6 @@ import { SidebarClose } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useDatabase } from "@/lib/zust"
-import { Label } from "./ui/label"
 import { SwitchDB } from "./switchDB"
 import { SwitchBookmarkNs } from "./bookmarks"
 
