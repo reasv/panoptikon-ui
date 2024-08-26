@@ -2,6 +2,7 @@
 import { Input } from "@/components/ui/input"
 import { useSearchQuery } from "@/lib/zust"
 import { useSQLite } from "@/lib/sqliteChecker"
+import { useEffect } from "react"
 
 export function SearchBar() {
     const setAnyTextQuery = useSearchQuery((state) => state.setAnyTextQuery)
@@ -9,8 +10,11 @@ export function SearchBar() {
     const setEnabled = useSearchQuery((state) => state.setEnableSearch)
     const rawFts5Match = useSearchQuery((state) => state.any_text.raw_fts5_match)
     const syntaxChecker = useSQLite(rawFts5Match)
-
     const checkInput = (query: string) => {
+        if (query.length === 0) {
+            setEnabled(true)
+            return
+        }
         let error = false
         if (rawFts5Match) {
             const valid = syntaxChecker.executeQuery(query)
@@ -23,6 +27,9 @@ export function SearchBar() {
             setEnabled(true)
         }
     }
+    useEffect(() => {
+        checkInput(anyTextQuery)
+    }, [rawFts5Match])
 
     const onTextInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const match_string = e.target.value

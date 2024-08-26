@@ -20,17 +20,13 @@ import { SearchBar } from "@/components/searchBar"
 
 function SearchPageContent() {
     const searchQuery = useSearchQuery((state) => state.getSearchQuery())
-    const setAnyTextQuery = useSearchQuery((state) => state.setAnyTextQuery)
-    const anyTextQuery = useSearchQuery((state) => state.any_text.query)
-
     const setPage = useSearchQuery((state) => state.setPage)
     const page = useSearchQuery((state) => state.order_args.page)
     const page_size = useSearchQuery((state) => state.order_args.page_size)
-
     const queryArgs = useDatabase((state) => state);
     const queryEnabled = useSearchQuery((state) => state.getSearchEnabled())
     const queryIsEnabled = (condition = false) => condition
-    const setEnabled = useSearchQuery((state) => state.setEnableSearch)
+
     const { data, error, isError, refetch } = $api.useQuery(
         "post",
         "/api/search",
