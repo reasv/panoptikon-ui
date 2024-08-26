@@ -135,7 +135,7 @@ export const useSearchQuery = create<SearchQueryState>((set, get) => ({
         ...state,
         bookmarks: {
           ...state.bookmarks,
-          namespaces: ns,
+          namespaces: [...ns],
         },
       }
     })
