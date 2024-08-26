@@ -9,7 +9,7 @@ export const BookmarkBtn = (
         sha256: string;
     }
 ) => {
-    const query = useDatabase((state) => state);
+    const query = useDatabase((state) => state.getDBs());
     const namespace = useBookmarkNs((state) => state.namespace);
     const params = {
         path: { namespace, sha256 },
@@ -112,7 +112,7 @@ export const OpenFile = (
         path?: string;
     }
 ) => {
-    const query = useDatabase((state) => state);
+    const query = useDatabase((state) => state.getDBs());
     const { mutate } = $api.useMutation(
         "post",
         "/api/open/file/{sha256}",
@@ -161,7 +161,7 @@ export const OpenFolder = (
         path?: string;
     }
 ) => {
-    const query = useDatabase((state) => state);
+    const query = useDatabase((state) => state.getDBs());
     const { mutate } = $api.useMutation(
         "post",
         "/api/open/folder/{sha256}",

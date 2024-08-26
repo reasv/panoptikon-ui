@@ -22,7 +22,7 @@ function SearchPageContent() {
     const setPage = useSearchQuery((state) => state.setPage)
     const page = useSearchQuery((state) => state.order_args.page)
     const page_size = useSearchQuery((state) => state.order_args.page_size)
-    const queryArgs = useDatabase((state) => state);
+    const queryArgs = useDatabase((state) => state.getDBs());
     const queryEnabled = useSearchQuery((state) => state.getSearchEnabled())
     const queryIsEnabled = (condition = false) => condition
 

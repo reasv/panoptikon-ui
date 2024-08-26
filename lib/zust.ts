@@ -6,13 +6,20 @@ interface Database {
   user_data_db: string | null
   setIndexDB: (db: string) => void
   setUserDataDB: (db: string) => void
+  getDBs: () => { index_db: string | null; user_data_db: string | null }
 }
 
-export const useDatabase = create<Database>((set) => ({
+export const useDatabase = create<Database>((set, get) => ({
   index_db: null,
   user_data_db: null,
   setIndexDB: (db: string) => set({ index_db: db }),
   setUserDataDB: (db: string) => set({ user_data_db: db }),
+  getDBs: () => {
+    return {
+      index_db: get().index_db,
+      user_data_db: get().user_data_db,
+    }
+  },
 }))
 
 interface BookmarkNs {
