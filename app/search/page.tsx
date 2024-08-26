@@ -1,5 +1,5 @@
 import { serverFetchClient } from '@/lib/api';
-import SearchPageWrapper from './SearchPageContent'
+import { SearchPageContent } from './SearchPageContent'
 
 import {
     dehydrate,
@@ -27,7 +27,7 @@ const defaultQuery: components["schemas"]["SearchQuery"] = {
 const defaultArgs = {
     "params": {
         "query": {
-            "index_db": null,
+            "index_db": "default",
             "user_data_db": null
         }
     },
@@ -62,7 +62,7 @@ export default async function SearchPage() {
 
     return (
         <HydrationBoundary state={dehydrate(queryClient)}>
-            <SearchPageWrapper />
+            <SearchPageContent />
         </HydrationBoundary>
     )
 }

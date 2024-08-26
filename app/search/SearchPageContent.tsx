@@ -7,7 +7,7 @@ import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/componen
 import { useDatabase, useSearchQuery } from "@/lib/zust"
 import { Toggle } from "@/components/ui/toggle"
 
-import { Settings, RefreshCw } from "lucide-react"
+import { Settings, RefreshCw, SidebarClose } from "lucide-react"
 import { AnimatedNumber } from "@/components/ui/animatedNumber"
 import { Fts5ToggleButton } from "@/components/FTS5Toggle"
 import { keepPreviousData } from "@tanstack/react-query"
@@ -15,14 +15,16 @@ import { InstantSearchLock } from "@/components/InstantSearchLock"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/use-toast"
 import { SearchBar } from "@/components/searchBar"
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { Input } from "@/components/ui/input";
+import { AdvancedSearchOptions } from "@/components/advancedSearchOptions";
 
-function SearchPageContent() {
+export function SearchPageContent() {
     const searchQuery = useSearchQuery((state) => state.getSearchQuery())
     const setPage = useSearchQuery((state) => state.setPage)
     const page = useSearchQuery((state) => state.order_args.page)
     const page_size = useSearchQuery((state) => state.order_args.page_size)
-    const queryArgs = useDatabase((state) => state.getDBs());
+    const dbs = useDatabase((state) => state.getDBs());
     const queryEnabled = useSearchQuery((state) => state.getSearchEnabled())
     const queryIsEnabled = (condition = false) => condition
 
@@ -31,7 +33,7 @@ function SearchPageContent() {
         "/api/search",
         {
             params: {
-                query: queryArgs,
+                query: dbs,
             },
             body: {
                 ...searchQuery
@@ -61,11 +63,25 @@ function SearchPageContent() {
             refetch()
         }
     }, [page])
+    const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+    const toggleAdvancedOptions = () => {
+        setShowAdvancedOptions((prev) => !prev);
+    };
+    function getFileURL(sha256: string) {
+        // Only use the DB values if they are set
+        return `${sha256}?index_db=${dbs.index_db || ''}&user_data_db=${dbs.user_data_db || ''}`
+    }
     return (
-        <div className="container mx-auto p-4">
+        <div className="container mx-auto p-4 relative">
+            {/* Main Content Area */}
             <div className="mb-4">
                 <div className="flex gap-2">
-                    <Toggle disabled title="Advanced Search Options hidden" aria-label="Toggle bold">
+                    <Toggle
+                        pressed={showAdvancedOptions}
+                        onClick={toggleAdvancedOptions}
+                        title={"Advanced Search Options Are " + (showAdvancedOptions ? "Open" : "Closed")}
+                        aria-label="Toggle Advanced Search Options"
+                    >
                         <Settings className="h-4 w-4" />
                     </Toggle>
                     <SearchBar />
@@ -79,7 +95,9 @@ function SearchPageContent() {
 
             <Card>
                 <CardHeader>
-                    <CardTitle><AnimatedNumber value={nResults} /> {nResults == 1 ? "Result" : "Results"}</CardTitle>
+                    <CardTitle>
+                        <AnimatedNumber value={nResults} /> {nResults === 1 ? "Result" : "Results"}
+                    </CardTitle>
                 </CardHeader>
                 <CardContent>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -87,13 +105,13 @@ function SearchPageContent() {
                             <div key={result.path} className="border rounded p-2">
                                 <div className="relative w-full pb-full mb-2 overflow-hidden group">
                                     <a
-                                        href={`/api/items/file/${result.sha256}`}
+                                        href={`/api/items/file/${getFileURL(result.sha256)}`}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="block relative h-80 mb-2 overflow-hidden"
                                     >
                                         <Image
-                                            src={`/api/items/thumbnail/${result.sha256}`}
+                                            src={`/api/items/thumbnail/${getFileURL(result.sha256)}`}
                                             alt={`Result ${result.path}`}
                                             fill
                                             className="object-cover transition-transform duration-300 hover:scale-105"
@@ -105,22 +123,22 @@ function SearchPageContent() {
                                     <OpenFolder sha256={result.sha256} path={result.path} />
                                 </div>
                                 <FilePathComponent path={result.path} />
-                                <p className="text-xs text-gray-500">{new Date(result.last_modified).toLocaleString('en-US')}</p>
+                                <p className="text-xs text-gray-500">
+                                    {new Date(result.last_modified).toLocaleString('en-US')}
+                                </p>
                             </div>
                         ))}
                     </div>
                 </CardContent>
             </Card>
-            {data && data.count > page_size &&
+            {data && data.count > page_size && (
                 <PageSelect total_pages={total_pages} current_page={page} setPage={setPage} max_pages={25} />
-            }
-        </div>
-    )
-}
+            )}
 
-// Wrap the component with QueryClientProvider
-export default function SearchPageWrapper() {
-    return (
-        <SearchPageContent />
-    )
+            {/* Advanced Search Options Panel */}
+            {showAdvancedOptions && (
+                <AdvancedSearchOptions onClose={toggleAdvancedOptions} />
+            )}
+        </div>
+    );
 }

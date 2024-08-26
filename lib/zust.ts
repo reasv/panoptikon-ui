@@ -1,5 +1,7 @@
 import { create } from "zustand"
 import { components, paths } from "./panoptikon"
+import { createJSONStorage, persist } from "zustand/middleware"
+import { persistentStorage } from "./store"
 
 interface Database {
   index_db: string | null
@@ -9,27 +11,55 @@ interface Database {
   getDBs: () => { index_db: string | null; user_data_db: string | null }
 }
 
-export const useDatabase = create<Database>((set, get) => ({
-  index_db: null,
-  user_data_db: null,
-  setIndexDB: (db: string) => set({ index_db: db }),
-  setUserDataDB: (db: string) => set({ user_data_db: db }),
-  getDBs: () => {
-    return {
-      index_db: get().index_db,
-      user_data_db: get().user_data_db,
-    }
-  },
-}))
+const dbStorageOptions = {
+  name: "dbOptsStore",
+  storage: createJSONStorage<Database>(() => persistentStorage),
+}
 
+export const useDatabase = create(
+  persist<Database>(
+    (set, get) => ({
+      index_db: null,
+      user_data_db: null,
+      setIndexDB: (db: string) => set({ index_db: db }),
+      setUserDataDB: (db: string) => set({ user_data_db: db }),
+      getDBs: () => {
+        return {
+          index_db: get().index_db,
+          user_data_db: get().user_data_db,
+        }
+      },
+    }),
+    dbStorageOptions
+  )
+)
+const nsStorageOptions = {
+  name: "nsOptsStore",
+  storage: createJSONStorage<BookmarkNs>(() => persistentStorage),
+}
 interface BookmarkNs {
   namespace: string
   setBookmarks: (ns: string) => void
 }
 
-export const useBookmarkNs = create<BookmarkNs>((set) => ({
-  namespace: "default",
-  setBookmarks: (ns: string) => set({ namespace: ns }),
+export const useBookmarkNs = create(
+  persist<BookmarkNs>(
+    (set) => ({
+      namespace: "default",
+      setBookmarks: (ns: string) => set({ namespace: ns }),
+    }),
+    nsStorageOptions
+  )
+)
+interface BookmarksCustom {
+  namespaces: string[]
+  addNs: (ns: string) => void
+}
+
+export const useBookmarkCustomNs = create<BookmarksCustom>((set) => ({
+  namespaces: [],
+  addNs: (ns: string) =>
+    set((state) => ({ namespaces: [...state.namespaces, ns] })),
 }))
 
 interface AnyTextSettings {
