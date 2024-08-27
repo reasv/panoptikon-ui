@@ -75,6 +75,13 @@ interface AnyTextSettings {
   et_filter: components["schemas"]["ExtractedTextFilter"]
 }
 
+interface SearchQueryStateState {
+  enable_search: boolean
+  user_enable_search: boolean
+  order_args: components["schemas"]["OrderParams"]
+  any_text: AnyTextSettings
+  bookmarks: components["schemas"]["BookmarksFilter"]
+}
 interface SearchQueryState {
   enable_search: boolean
   user_enable_search: boolean
@@ -102,38 +109,42 @@ const queryStorageOptions = {
   name: "query",
   storage: createJSONStorage<SearchQueryState>(() => compactUrlOnlyStorage),
 }
+
+export const initialSearchQueryState: SearchQueryStateState = {
+  enable_search: true,
+  user_enable_search: true,
+  order_args: {
+    order_by: "last_modified",
+    order: null,
+    page: 1,
+    page_size: 9,
+  },
+  any_text: {
+    query: "",
+    raw_fts5_match: false,
+    enable_path_filter: true,
+    enable_et_filter: true,
+    path_filter: {
+      query: "",
+      only_match_filename: false,
+      raw_fts5_match: false,
+    },
+    et_filter: {
+      query: "",
+      raw_fts5_match: false,
+    },
+  },
+  bookmarks: {
+    restrict_to_bookmarks: false,
+    namespaces: [],
+    user: "user",
+    include_wildcard: true,
+  },
+}
 export const useSearchQuery = create(
   persist<SearchQueryState>(
     (set, get) => ({
-      enable_search: true,
-      user_enable_search: true,
-      order_args: {
-        order_by: "last_modified",
-        order: null,
-        page: 1,
-        page_size: 9,
-      },
-      any_text: {
-        query: "",
-        raw_fts5_match: false,
-        enable_path_filter: true,
-        enable_et_filter: true,
-        path_filter: {
-          query: "",
-          only_match_filename: false,
-          raw_fts5_match: false,
-        },
-        et_filter: {
-          query: "",
-          raw_fts5_match: false,
-        },
-      },
-      bookmarks: {
-        restrict_to_bookmarks: false,
-        namespaces: [],
-        user: "user",
-        include_wildcard: true,
-      },
+      ...initialSearchQueryState,
       setAnyTextETFilterLanguages: (value: string[]) => {
         set((state) => {
           return {
