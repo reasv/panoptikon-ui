@@ -18,15 +18,18 @@ import { SearchBar } from "@/components/searchBar"
 import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { AdvancedSearchOptions } from "@/components/advancedSearchOptions";
+import { SearchQueryArgs } from "./page";
 
-export function SearchPageContent() {
-    const searchQuery = useSearchQuery((state) => state.getSearchQuery())
+export function SearchPageContent({ initialQuery }:
+    { initialQuery: SearchQueryArgs }
+) {
+    const isClient = typeof window !== "undefined"
+    const searchQuery = isClient ? useSearchQuery((state) => state.getSearchQuery()) : initialQuery.body
+    const dbs = isClient ? useDatabase((state) => state.getDBs()) : initialQuery.params.query
     const setPage = useSearchQuery((state) => state.setPage)
     const page = useSearchQuery((state) => state.order_args.page)
     const page_size = useSearchQuery((state) => state.order_args.page_size)
-    const dbs = useDatabase((state) => state.getDBs());
     const queryEnabled = useSearchQuery((state) => state.getSearchEnabled())
-    const queryIsEnabled = (condition = false) => condition
 
     const { data, error, isError, refetch } = $api.useQuery(
         "post",
@@ -40,7 +43,7 @@ export function SearchPageContent() {
             }
         },
         {
-            enabled: queryIsEnabled(queryEnabled),
+            enabled: queryEnabled,
             placeholderData: keepPreviousData
         }
     );

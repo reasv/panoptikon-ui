@@ -14,13 +14,17 @@ interface queryParams {
     index_db: string | null
     user_data_db: string | null
 }
-export async function fetchSearch(query: components["schemas"]["SearchQuery"], query_params: queryParams) {
+export interface SearchQueryArgs {
+    params: {
+        query: queryParams
+    }
+    body: components["schemas"]["SearchQuery"]
+}
+export async function fetchSearch(args: SearchQueryArgs) {
     try {
         const { data, error } = await serverFetchClient.POST("/api/search", {
-            params: {
-                query: query_params,
-            },
-            body: query
+            params: args.params,
+            body: args.body
         })
         if (!data || error) {
             console.error(error)
@@ -55,12 +59,12 @@ export default async function SearchPage({
     const queryClient = new QueryClient()
     await queryClient.prefetchQuery({
         queryKey: ["post", "/api/search", request],
-        queryFn: () => fetchSearch(query, dbs),
+        queryFn: () => fetchSearch(request),
     })
 
     return (
         <HydrationBoundary state={dehydrate(queryClient)}>
-            <SearchPageContent />
+            <SearchPageContent initialQuery={request} />
         </HydrationBoundary>
     )
 }
