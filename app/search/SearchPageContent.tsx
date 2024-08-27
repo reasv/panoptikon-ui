@@ -9,7 +9,6 @@ import { Toggle } from "@/components/ui/toggle"
 
 import { Settings, RefreshCw } from "lucide-react"
 import { AnimatedNumber } from "@/components/ui/animatedNumber"
-import { Fts5ToggleButton } from "@/components/FTS5Toggle"
 import { keepPreviousData } from "@tanstack/react-query"
 import { InstantSearchLock } from "@/components/InstantSearchLock"
 import { Button } from "@/components/ui/button"
