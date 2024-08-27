@@ -1,7 +1,11 @@
 import { create } from "zustand"
 import { components } from "./panoptikon"
 import { createJSONStorage, persist } from "zustand/middleware"
-import { persistentStorage } from "./store"
+import {
+  persistentStorage,
+  compactUrlLocalStorage,
+  compactUrlOnlyStorage,
+} from "./store"
 
 interface Database {
   index_db: string | null
@@ -12,8 +16,8 @@ interface Database {
 }
 
 const dbStorageOptions = {
-  name: "dbOptsStore",
-  storage: createJSONStorage<Database>(() => persistentStorage),
+  name: "db",
+  storage: createJSONStorage<Database>(() => compactUrlLocalStorage),
 }
 
 export const useDatabase = create(
@@ -34,7 +38,7 @@ export const useDatabase = create(
   )
 )
 const nsStorageOptions = {
-  name: "nsOptsStore",
+  name: "nsOpts",
   storage: createJSONStorage<BookmarkNs>(() => persistentStorage),
 }
 interface BookmarkNs {
@@ -84,175 +88,246 @@ interface SearchQueryState {
   setAnyTextPathFilterEnabled: (value: boolean) => void
   setAnyTextPathFilterFilenameOnly: (value: boolean) => void
   setAnyTextETFilterEnabled: (value: boolean) => void
+  setAnyTextETFilterTargets: (value: string[]) => void
+  setAnyTextETFilterLanguages: (value: string[]) => void
+  setAnyTextETFilterMinConfidence: (value: number) => void
+  setAnyTextETFilterMinLanguageConfidence: (value: number) => void
   setPage: (page: number) => void
   getSearchQuery: () => components["schemas"]["SearchQuery"]
   setEnableSearch: (value: boolean) => void
   setUserSearchEnabled: (value: boolean) => void
   getSearchEnabled: () => boolean
 }
-
-export const useSearchQuery = create<SearchQueryState>((set, get) => ({
-  enable_search: true,
-  user_enable_search: true,
-  order_args: {
-    order_by: "last_modified",
-    order: null,
-    page: 1,
-    page_size: 9,
-  },
-  any_text: {
-    query: "",
-    raw_fts5_match: false,
-    enable_path_filter: true,
-    enable_et_filter: true,
-    path_filter: {
-      query: "",
-      only_match_filename: false,
-      raw_fts5_match: false,
-    },
-    et_filter: {
-      query: "",
-      raw_fts5_match: false,
-    },
-  },
-  bookmarks: {
-    restrict_to_bookmarks: false,
-    namespaces: [],
-    user: "user",
-    include_wildcard: true,
-  },
-  setAnyTextPathFilterEnabled: (value: boolean) => {
-    set((state) => {
-      return {
-        ...state,
-        any_text: {
-          ...state.any_text,
-          enable_path_filter: value,
+const queryStorageOptions = {
+  name: "query",
+  storage: createJSONStorage<SearchQueryState>(() => compactUrlOnlyStorage),
+}
+export const useSearchQuery = create(
+  persist<SearchQueryState>(
+    (set, get) => ({
+      enable_search: true,
+      user_enable_search: true,
+      order_args: {
+        order_by: "last_modified",
+        order: null,
+        page: 1,
+        page_size: 9,
+      },
+      any_text: {
+        query: "",
+        raw_fts5_match: false,
+        enable_path_filter: true,
+        enable_et_filter: true,
+        path_filter: {
+          query: "",
+          only_match_filename: false,
+          raw_fts5_match: false,
         },
-      }
-    })
-  },
-  setAnyTextETFilterEnabled: (value: boolean) => {
-    set((state) => {
-      return {
-        ...state,
-        any_text: {
-          ...state.any_text,
-          enable_et_filter: value,
-        },
-      }
-    })
-  },
-  setAnyTextPathFilterFilenameOnly: (value: boolean) => {
-    set((state) => {
-      return {
-        ...state,
-        any_text: {
-          ...state.any_text,
-          path_filter: {
-            ...state.any_text.path_filter,
-            only_match_filename: value,
-          },
-        },
-      }
-    })
-  },
-  setBookmarkFilterEnabled: (value: boolean) => {
-    set((state) => {
-      return {
-        ...state,
-        bookmarks: {
-          ...state.bookmarks,
-          restrict_to_bookmarks: value,
-        },
-      }
-    })
-  },
-  setBookmarkFilterNs: (ns: string[]) => {
-    set((state) => {
-      return {
-        ...state,
-        bookmarks: {
-          ...state.bookmarks,
-          namespaces: [...ns],
-        },
-      }
-    })
-  },
-  getSearchQuery: () => {
-    const query: components["schemas"]["SearchQuery"] = {
-      order_args: get().order_args,
-      count: true,
-      check_path: true,
-      query: {
-        filters: {
-          any_text: {},
+        et_filter: {
+          query: "",
+          raw_fts5_match: false,
         },
       },
-    }
-    if (get().any_text.query) {
-      if (get().any_text.enable_path_filter) {
-        query.query!.filters!.any_text!.path = get().any_text.path_filter
-        query.query!.filters!.any_text!.path.query = get().any_text.query
-        query.query!.filters!.any_text!.path.raw_fts5_match =
-          get().any_text.raw_fts5_match
-      }
-      if (get().any_text.enable_et_filter) {
-        query.query!.filters!.any_text!.extracted_text =
-          get().any_text.et_filter
-        query.query!.filters!.any_text!.extracted_text.query =
-          get().any_text.query
-        query.query!.filters!.any_text!.extracted_text.raw_fts5_match =
-          get().any_text.raw_fts5_match
-      }
-    }
-    if (get().bookmarks.restrict_to_bookmarks) {
-      query.query!.filters!.bookmarks = get().bookmarks
-    }
-
-    return query
-  },
-  getSearchEnabled: () => {
-    return get().enable_search && get().user_enable_search
-  },
-  setUserSearchEnabled: (value: boolean) => {
-    set({ user_enable_search: value })
-  },
-  setEnableSearch: (value: boolean) => {
-    set({ enable_search: value })
-  },
-  setRawFts5Match: (value: boolean) => {
-    get().setPage(1)
-    set((state) => {
-      return {
-        ...state,
-        any_text: {
-          ...state.any_text,
-          raw_fts5_match: value,
-        },
-      }
-    })
-  },
-  setPage: (page: number) =>
-    set((state) => {
-      return {
-        ...state,
-        order_args: {
-          ...state.order_args,
-          page,
-        },
-      }
+      bookmarks: {
+        restrict_to_bookmarks: false,
+        namespaces: [],
+        user: "user",
+        include_wildcard: true,
+      },
+      setAnyTextETFilterLanguages: (value: string[]) => {
+        set((state) => {
+          return {
+            ...state,
+            any_text: {
+              ...state.any_text,
+              et_filter: {
+                ...state.any_text.et_filter,
+                languages: [...value],
+              },
+            },
+          }
+        })
+      },
+      setAnyTextETFilterMinConfidence: (value: number) => {
+        set((state) => {
+          return {
+            ...state,
+            any_text: {
+              ...state.any_text,
+              et_filter: {
+                ...state.any_text.et_filter,
+                min_confidence: value,
+              },
+            },
+          }
+        })
+      },
+      setAnyTextETFilterMinLanguageConfidence: (value: number) => {
+        set((state) => {
+          return {
+            ...state,
+            any_text: {
+              ...state.any_text,
+              et_filter: {
+                ...state.any_text.et_filter,
+                min_language_confidence: value,
+              },
+            },
+          }
+        })
+      },
+      setAnyTextETFilterTargets: (value: string[]) => {
+        set((state) => {
+          return {
+            ...state,
+            any_text: {
+              ...state.any_text,
+              et_filter: {
+                ...state.any_text.et_filter,
+                targets: [...value],
+              },
+            },
+          }
+        })
+      },
+      setAnyTextPathFilterEnabled: (value: boolean) => {
+        set((state) => {
+          return {
+            ...state,
+            any_text: {
+              ...state.any_text,
+              enable_path_filter: value,
+            },
+          }
+        })
+      },
+      setAnyTextETFilterEnabled: (value: boolean) => {
+        set((state) => {
+          return {
+            ...state,
+            any_text: {
+              ...state.any_text,
+              enable_et_filter: value,
+            },
+          }
+        })
+      },
+      setAnyTextPathFilterFilenameOnly: (value: boolean) => {
+        set((state) => {
+          return {
+            ...state,
+            any_text: {
+              ...state.any_text,
+              path_filter: {
+                ...state.any_text.path_filter,
+                only_match_filename: value,
+              },
+            },
+          }
+        })
+      },
+      setBookmarkFilterEnabled: (value: boolean) => {
+        set((state) => {
+          return {
+            ...state,
+            bookmarks: {
+              ...state.bookmarks,
+              restrict_to_bookmarks: value,
+            },
+          }
+        })
+      },
+      setBookmarkFilterNs: (ns: string[]) => {
+        set((state) => {
+          return {
+            ...state,
+            bookmarks: {
+              ...state.bookmarks,
+              namespaces: [...ns],
+            },
+          }
+        })
+      },
+      getSearchQuery: () => {
+        return queryFromState(get())
+      },
+      getSearchEnabled: () => {
+        return get().enable_search && get().user_enable_search
+      },
+      setUserSearchEnabled: (value: boolean) => {
+        set({ user_enable_search: value })
+      },
+      setEnableSearch: (value: boolean) => {
+        set({ enable_search: value })
+      },
+      setRawFts5Match: (value: boolean) => {
+        get().setPage(1)
+        set((state) => {
+          return {
+            ...state,
+            any_text: {
+              ...state.any_text,
+              raw_fts5_match: value,
+            },
+          }
+        })
+      },
+      setPage: (page: number) =>
+        set((state) => {
+          return {
+            ...state,
+            order_args: {
+              ...state.order_args,
+              page,
+            },
+          }
+        }),
+      setAnyTextQuery: (query_string: string) => {
+        get().setPage(1)
+        set((state) => {
+          return {
+            ...state,
+            any_text: {
+              ...state.any_text,
+              query: query_string,
+            },
+          }
+        })
+      },
     }),
-  setAnyTextQuery: (query_string: string) => {
-    get().setPage(1)
-    set((state) => {
-      return {
-        ...state,
-        any_text: {
-          ...state.any_text,
-          query: query_string,
-        },
-      }
-    })
-  },
-}))
+    queryStorageOptions
+  )
+)
+
+export function queryFromState(state: SearchQueryState) {
+  const query: components["schemas"]["SearchQuery"] = {
+    order_args: state.order_args,
+    count: true,
+    check_path: true,
+    query: {
+      filters: {
+        any_text: {},
+      },
+    },
+  }
+  if (state.any_text.query) {
+    if (state.any_text.enable_path_filter) {
+      query.query!.filters!.any_text!.path = state.any_text.path_filter
+      query.query!.filters!.any_text!.path.query = state.any_text.query
+      query.query!.filters!.any_text!.path.raw_fts5_match =
+        state.any_text.raw_fts5_match
+    }
+    if (state.any_text.enable_et_filter) {
+      query.query!.filters!.any_text!.extracted_text = state.any_text.et_filter
+      query.query!.filters!.any_text!.extracted_text.query =
+        state.any_text.query
+      query.query!.filters!.any_text!.extracted_text.raw_fts5_match =
+        state.any_text.raw_fts5_match
+    }
+  }
+  if (state.bookmarks.restrict_to_bookmarks) {
+    query.query!.filters!.bookmarks = state.bookmarks
+  }
+
+  return query
+}

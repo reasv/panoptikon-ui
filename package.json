@@ -25,6 +25,7 @@
     "cmdk": "^1.0.0",
     "framer-motion": "^11.3.30",
     "lucide-react": "^0.435.0",
+    "msgpack-lite": "^0.1.26",
     "next": "15.0.0-rc.0",
     "openapi-fetch": "^0.11.1",
     "openapi-react-query": "^0.1.2",
@@ -36,6 +37,7 @@
     "zustand": "^4.5.5"
   },
   "devDependencies": {
+    "@types/msgpack-lite": "^0.1.11",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
