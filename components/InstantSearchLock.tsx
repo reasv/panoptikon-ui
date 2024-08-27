@@ -11,17 +11,9 @@ export function InstantSearchLock() {
 
     const { toast } = useToast()
 
-    useEffect(() => {
-        const storedValue = localStorage.getItem("auto-update-enabled")
-        if (storedValue !== null) {
-            setUserEnabled(JSON.parse(storedValue))
-        }
-    }, [setUserEnabled])
-
     const onClickToggle = () => {
         const newValue = !enabled
         setUserEnabled(newValue)
-        localStorage.setItem("auto-update-enabled", JSON.stringify(newValue))
 
         let description = "New results will be fetched automatically"
         if (!newValue) {

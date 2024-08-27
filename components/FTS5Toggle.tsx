@@ -15,19 +15,11 @@ export function Fts5ToggleButton({
 }) {
     const rawFts5Match = useSearchQuery((state) => state.any_text.raw_fts5_match)
     const setRawFts5Match = useSearchQuery((state) => state.setRawFts5Match)
-    useEffect(() => {
-        const storedValue = localStorage.getItem("fts5-any-text-enabled")
-        const storedValueBool = storedValue ? JSON.parse(storedValue) : false
-        if (storedValue !== null) {
-            setRawFts5Match(storedValueBool)
-        }
-    }, [setRawFts5Match])
 
     const { toast } = useToast()
     const onClickFTS5Toggle = () => {
         const newValue = !rawFts5Match
         setRawFts5Match(newValue)
-        localStorage.setItem("fts5-any-text-enabled", JSON.stringify(newValue))
         let description = "You can now use natural language queries"
         if (newValue) {
             description = "Consult the SQLite FTS5 documentation for the correct syntax"
