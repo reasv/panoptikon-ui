@@ -19,7 +19,10 @@ const dbStorageOptions = {
   name: "db",
   storage: createJSONStorage<Database>(() => compactUrlLocalStorage),
 }
-
+export const initialDBOpts = {
+  index_db: null,
+  user_data_db: null,
+}
 export const useDatabase = create(
   persist<Database>(
     (set, get) => ({
@@ -37,6 +40,7 @@ export const useDatabase = create(
     dbStorageOptions
   )
 )
+
 const nsStorageOptions = {
   name: "nsOpts",
   storage: createJSONStorage<BookmarkNs>(() => persistentStorage),
