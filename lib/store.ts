@@ -5,31 +5,31 @@ const getUrlSearch = () => {
   return window.location.search.slice(1)
 }
 
-export const urlStorage: StateStorage = {
-  getItem: (key): string => {
-    // Check URL first
-    if (getUrlSearch()) {
-      const searchParams = new URLSearchParams(getUrlSearch())
-      const storedValue = searchParams.get(key)
-      return JSON.parse(storedValue as string)
-    } else {
-      // Otherwise, we should load from localstorage or alternative storage
-      return JSON.parse(localStorage.getItem(key) as string)
-    }
-  },
-  setItem: (key, newValue): void => {
-    const searchParams = new URLSearchParams(getUrlSearch())
-    searchParams.set(key, JSON.stringify(newValue))
-    window.history.replaceState(null, "", `?${searchParams.toString()}`)
-    localStorage.setItem(key, JSON.stringify(newValue))
-  },
-  removeItem: (key): void => {
-    const searchParams = new URLSearchParams(getUrlSearch())
-    searchParams.delete(key)
-    window.location.search = searchParams.toString()
-    localStorage.removeItem(key)
-  },
-}
+// export const urlStorage: StateStorage = {
+//   getItem: (key): string => {
+//     // Check URL first
+//     if (getUrlSearch()) {
+//       const searchParams = new URLSearchParams(getUrlSearch())
+//       const storedValue = searchParams.get(key)
+//       return JSON.parse(storedValue as string)
+//     } else {
+//       // Otherwise, we should load from localstorage or alternative storage
+//       return JSON.parse(localStorage.getItem(key) as string)
+//     }
+//   },
+//   setItem: (key, newValue): void => {
+//     const searchParams = new URLSearchParams(getUrlSearch())
+//     searchParams.set(key, JSON.stringify(newValue))
+//     window.history.replaceState(null, "", `?${searchParams.toString()}`)
+//     localStorage.setItem(key, JSON.stringify(newValue))
+//   },
+//   removeItem: (key): void => {
+//     const searchParams = new URLSearchParams(getUrlSearch())
+//     searchParams.delete(key)
+//     window.location.search = searchParams.toString()
+//     localStorage.removeItem(key)
+//   },
+// }
 
 export const persistentStorage: StateStorage = {
   getItem: (key): string => {
@@ -42,6 +42,16 @@ export const persistentStorage: StateStorage = {
     localStorage.removeItem(key)
   },
 }
+function msgEncode(value: string): string {
+  const obj = JSON.parse(value)
+  const buffer = msgpack.encode(obj)
+  return buffer.toString("base64")
+}
+function msgDecode(value: string): string {
+  const buffer = Buffer.from(value, "base64")
+  const obj = msgpack.decode(buffer)
+  return JSON.stringify(obj)
+}
 
 export const compactUrlLocalStorage: StateStorage = {
   getItem: (key) => {
@@ -51,8 +61,7 @@ export const compactUrlLocalStorage: StateStorage = {
       const storedValue = searchParams.get(key) as string
       if (storedValue) {
         try {
-          const buffer = Buffer.from(storedValue, "base64")
-          return msgpack.decode(buffer)
+          return msgDecode(storedValue)
         } catch (e) {
           console.error(e)
           const searchParams = new URLSearchParams(getUrlSearch())
@@ -68,7 +77,7 @@ export const compactUrlLocalStorage: StateStorage = {
   },
   setItem: (key, newValue): void => {
     const searchParams = new URLSearchParams(getUrlSearch())
-    searchParams.set(key, msgpack.encode(newValue).toString("base64"))
+    searchParams.set(key, msgEncode(newValue))
     window.history.replaceState(null, "", `?${searchParams.toString()}`)
     localStorage.setItem(key, JSON.stringify(newValue))
   },
@@ -88,8 +97,7 @@ export const compactUrlOnlyStorage: StateStorage = {
       const storedValue = searchParams.get(key) as string
       if (storedValue) {
         try {
-          const buffer = Buffer.from(storedValue, "base64")
-          return msgpack.decode(buffer)
+          return msgDecode(storedValue)
         } catch (e) {
           console.error(e)
           const searchParams = new URLSearchParams(getUrlSearch())
@@ -103,7 +111,7 @@ export const compactUrlOnlyStorage: StateStorage = {
   },
   setItem: (key, newValue): void => {
     const searchParams = new URLSearchParams(getUrlSearch())
-    searchParams.set(key, msgpack.encode(newValue).toString("base64"))
+    searchParams.set(key, msgEncode(newValue))
     window.history.replaceState(null, "", `?${searchParams.toString()}`)
   },
   removeItem: (key): void => {

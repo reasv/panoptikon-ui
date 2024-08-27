@@ -15,7 +15,7 @@ export function decodeQueryParam<T>(
 
     // Msgpack decode the buffer into an object
     const decodedObject = msgpack.decode(buffer) as any
-    return decodedObject["state"] as T
+    return decodedObject.state as T
   } catch (error) {
     console.error("Error decoding query parameter:", error)
     return null
