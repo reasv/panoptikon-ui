@@ -1,6 +1,6 @@
 import { StateStorage } from "zustand/middleware"
 import msgpack from "msgpack-lite"
-
+import lz4 from "lz4js"
 const getUrlSearch = () => {
   return window.location.search.slice(1)
 }
@@ -17,13 +17,19 @@ export const persistLocalStorage: StateStorage = {
   },
 }
 function msgEncode(value: string): string {
+  // Parse the JSON string into an object
   const obj = JSON.parse(value)
   const buffer = msgpack.encode(obj)
-  return buffer.toString("base64")
+  const compressedBuffer = Buffer.from(lz4.compress(buffer))
+  return compressedBuffer.toString("base64")
 }
+
 function msgDecode(value: string): string {
-  const buffer = Buffer.from(value, "base64")
-  const obj = msgpack.decode(buffer)
+  const compressedBuffer = Buffer.from(value, "base64")
+  const decompressedBuffer = Buffer.from(lz4.decompress(compressedBuffer))
+  const obj = msgpack.decode(decompressedBuffer)
+
+  // Convert the object back to a JSON string
   return JSON.stringify(obj)
 }
 
