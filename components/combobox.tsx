@@ -46,7 +46,7 @@ export function ComboBoxResponsive({
         return (
             <Popover open={open} onOpenChange={setOpen}>
                 <PopoverTrigger asChild>
-                    <Button variant="outline" className="w-[150px] justify-start">
+                    <Button variant="outline" className=" justify-start">
                         {currentOption ? <>{currentOption.label}</> : <>{placeholder}</>}
                     </Button>
                 </PopoverTrigger>
