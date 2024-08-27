@@ -4,8 +4,8 @@ import { useSearchQuery } from "@/lib/zust"
 import { Label } from "./ui/label"
 import { Switch } from "./ui/switch";
 import { ComboBoxResponsive } from "./combobox";
-import { SearchBar } from "./searchBar";
 import { Input } from "./ui/input";
+import { MultiBoxResponsive } from "./multiCombobox";
 
 export function AnyTextFilter() {
     const anyTextQuery = useSearchQuery((state) => state.any_text.query)
@@ -103,28 +103,13 @@ function AnyTextETFilter() {
     const setMinConfidence = useSearchQuery((state) => state.setAnyTextETFilterMinConfidence)
     const minLanguageConfidence = useSearchQuery((state) => state.any_text.et_filter.language_min_confidence)
     const setMinLanguageConfidence = useSearchQuery((state) => state.setAnyTextETFilterMinLanguageConfidence)
-    const textTargets = [{ value: "all", label: "All Sources" }, ...(
+    const textTargets = [{ value: "*", label: "All Sources" }, ...(
         data?.setters
             .filter((setter) => setter[0] === "text")
             .map((setter) => ({ value: setter[1], label: setter[1] })) || [])
     ]
 
-    const textLanguages = [{ value: "all", label: "All Languages" }, ...(data?.text_stats.languages || []).map(lang => ({ value: lang, label: lang }))]
-
-    function onSelectTargets(option: string) {
-        if (option === "all") {
-            setTargets([])
-        } else {
-            setTargets([option])
-        }
-    }
-    function onSelectLanguages(option: string) {
-        if (option === "all") {
-            setLanguages([])
-        } else {
-            setLanguages([option])
-        }
-    }
+    const textLanguages = [{ value: "*", label: "All Languages" }, ...(data?.text_stats.languages || []).map(lang => ({ value: lang, label: lang }))]
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
             <div className="flex flex-row items-center justify-between">
@@ -139,16 +124,20 @@ function AnyTextETFilter() {
                 <Switch checked={enableETFilter} onCheckedChange={(value) => setETFilterEnabled(value)} />
             </div>
             <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
-                <ComboBoxResponsive
+                <MultiBoxResponsive
                     options={textTargets}
-                    currentOption={targets.length > 0 ? { value: targets[0], label: targets[0] } : { value: "all", label: "All Sources" }}
-                    onSelectOption={(option) => onSelectTargets(option?.value || "all")}
+                    resetValue="*" // Reset value is the value that will clear the selection
+                    currentValues={targets}
+                    onSelectionChange={setTargets}
+                    maxDisplayed={1}
                     placeholder="Targets..."
                 />
-                <ComboBoxResponsive
+                <MultiBoxResponsive
                     options={textLanguages}
-                    currentOption={languages.length > 0 ? { value: languages[0], label: languages[0] } : { value: "all", label: "All Languages" }}
-                    onSelectOption={(option) => onSelectLanguages(option?.value || "all")}
+                    resetValue="*" // Reset value is the value that will clear the selection
+                    currentValues={languages}
+                    onSelectionChange={setLanguages}
+                    maxDisplayed={1}
                     placeholder="Languages..."
                 />
             </div>

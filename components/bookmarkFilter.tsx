@@ -4,6 +4,7 @@ import { useSearchQuery } from "@/lib/zust"
 import { Label } from "./ui/label"
 import { Switch } from "./ui/switch";
 import { ComboBoxResponsive } from "./combobox";
+import { MultiBoxResponsive } from "./multiCombobox";
 
 export function BookmarksFilter() {
     const { data } = $api.useQuery("get", "/api/bookmarks/ns")
@@ -12,13 +13,7 @@ export function BookmarksFilter() {
     const bookmarksFilterEnabled = useSearchQuery((state) => state.bookmarks.restrict_to_bookmarks)
     const bookmarksFilterNs = useSearchQuery((state) => state.bookmarks.namespaces!)
     const setBookmarksFilterNs = useSearchQuery((state) => state.setBookmarkFilterNs)
-    const bookmarksNsChange = (ns: string) => {
-        if (ns === "*") {
-            setBookmarksFilterNs([])
-        } else {
-            setBookmarksFilterNs([ns])
-        }
-    }
+
     const namespacesWithAll = ["*", ...(data?.namespaces || [])]
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
@@ -34,11 +29,13 @@ export function BookmarksFilter() {
                 <Switch checked={bookmarksFilterEnabled} onCheckedChange={(value) => setBookmarksFilterEnabled(value)} />
             </div>
             <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
-                <ComboBoxResponsive
-                    options={namespacesWithAll.map((ns) => ({ value: ns, label: (ns === "*" ? "All Groups" : ns) }))}
-                    currentOption={{ value: bookmarksFilterNs.length > 0 ? bookmarksFilterNs[0] : "*", label: bookmarksFilterNs.length > 0 ? bookmarksFilterNs[0] : "All Groups" }}
-                    onSelectOption={(option) => bookmarksNsChange(option?.value || "")}
-                    placeholder="Groups..."
+                <MultiBoxResponsive
+                    options={namespacesWithAll.map((ns) => ({ value: ns, label: ns === "*" ? "All Groups" : ns }))}
+                    currentValues={bookmarksFilterNs}
+                    onSelectionChange={setBookmarksFilterNs}
+                    placeholder="Select namespaces"
+                    resetValue="*"
+                    maxDisplayed={4}
                 />
             </div>
         </div>
