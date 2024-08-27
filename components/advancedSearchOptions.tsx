@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { SwitchDB } from "./switchDB"
 import { SwitchBookmarkNs } from "./bookmarks"
 import { BookmarksFilter } from "./bookmarkFilter"
+import { AnyTextFilter } from "./anyTextFilter"
 
 export function AdvancedSearchOptions({
     onClose,
@@ -33,6 +34,7 @@ export function AdvancedSearchOptions({
                     <SwitchDB />
                     <SwitchBookmarkNs />
                     <BookmarksFilter />
+                    <AnyTextFilter />
                 </CardContent>
             </Card>
         </div>

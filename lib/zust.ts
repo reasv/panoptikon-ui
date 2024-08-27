@@ -1,5 +1,5 @@
 import { create } from "zustand"
-import { components, paths } from "./panoptikon"
+import { components } from "./panoptikon"
 import { createJSONStorage, persist } from "zustand/middleware"
 import { persistentStorage } from "./store"
 
@@ -65,8 +65,8 @@ export const useBookmarkCustomNs = create<BookmarksCustom>((set) => ({
 interface AnyTextSettings {
   query: string
   raw_fts5_match: boolean
-  enable_path_filter: true
-  enable_et_filter: true
+  enable_path_filter: boolean
+  enable_et_filter: boolean
   path_filter: components["schemas"]["PathTextFilter"]
   et_filter: components["schemas"]["ExtractedTextFilter"]
 }
@@ -81,6 +81,9 @@ interface SearchQueryState {
   setBookmarkFilterNs: (ns: string[]) => void
   setRawFts5Match: (value: boolean) => void
   setAnyTextQuery: (query: string) => void
+  setAnyTextPathFilterEnabled: (value: boolean) => void
+  setAnyTextPathFilterFilenameOnly: (value: boolean) => void
+  setAnyTextETFilterEnabled: (value: boolean) => void
   setPage: (page: number) => void
   getSearchQuery: () => components["schemas"]["SearchQuery"]
   setEnableSearch: (value: boolean) => void
@@ -117,6 +120,42 @@ export const useSearchQuery = create<SearchQueryState>((set, get) => ({
     namespaces: [],
     user: "user",
     include_wildcard: true,
+  },
+  setAnyTextPathFilterEnabled: (value: boolean) => {
+    set((state) => {
+      return {
+        ...state,
+        any_text: {
+          ...state.any_text,
+          enable_path_filter: value,
+        },
+      }
+    })
+  },
+  setAnyTextETFilterEnabled: (value: boolean) => {
+    set((state) => {
+      return {
+        ...state,
+        any_text: {
+          ...state.any_text,
+          enable_et_filter: value,
+        },
+      }
+    })
+  },
+  setAnyTextPathFilterFilenameOnly: (value: boolean) => {
+    set((state) => {
+      return {
+        ...state,
+        any_text: {
+          ...state.any_text,
+          path_filter: {
+            ...state.any_text.path_filter,
+            only_match_filename: value,
+          },
+        },
+      }
+    })
   },
   setBookmarkFilterEnabled: (value: boolean) => {
     set((state) => {
