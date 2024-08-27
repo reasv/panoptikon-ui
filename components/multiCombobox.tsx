@@ -50,7 +50,9 @@ export function MultiBoxResponsive({
     const optionsMap = new Map(options.map((option) => [option.value, option]))
 
     let buttonLabel = placeholder
-    if (currentValues.length === 0) {
+    if (currentValues.length === 0 && resetValue) {
+        buttonLabel = buttonLabel = optionsMap.get(resetValue)?.label || resetValue
+    } else if (currentValues.length === 0) {
         buttonLabel = placeholder
     } else if (currentValues.length === 1) {
         buttonLabel = optionsMap.get(currentValues[0])?.label || currentValues[0]
