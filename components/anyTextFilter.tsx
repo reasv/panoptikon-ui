@@ -6,6 +6,8 @@ import { Switch } from "./ui/switch";
 import { ComboBoxResponsive } from "./combobox";
 import { Input } from "./ui/input";
 import { MultiBoxResponsive } from "./multiCombobox";
+import { Slider } from "./ui/slider";
+import { useEffect, useState } from "react";
 
 export function AnyTextFilter() {
     const anyTextQuery = useSearchQuery((state) => state.any_text.query)
@@ -99,9 +101,9 @@ function AnyTextETFilter() {
     const languages = useSearchQuery((state) => state.any_text.et_filter.languages || [])
     const setLanguages = useSearchQuery((state) => state.setAnyTextETFilterLanguages)
     const setTargets = useSearchQuery((state) => state.setAnyTextETFilterTargets)
-    const minConfidence = useSearchQuery((state) => state.any_text.et_filter.min_confidence)
+    const minConfidence = useSearchQuery((state) => state.any_text.et_filter.min_confidence || 0)
     const setMinConfidence = useSearchQuery((state) => state.setAnyTextETFilterMinConfidence)
-    const minLanguageConfidence = useSearchQuery((state) => state.any_text.et_filter.language_min_confidence)
+    const minLanguageConfidence = useSearchQuery((state) => state.any_text.et_filter.language_min_confidence || 0)
     const setMinLanguageConfidence = useSearchQuery((state) => state.setAnyTextETFilterMinLanguageConfidence)
     const textTargets = [{ value: "*", label: "All Sources" }, ...(
         data?.setters
@@ -110,6 +112,15 @@ function AnyTextETFilter() {
     ]
 
     const textLanguages = [{ value: "*", label: "All Languages" }, ...(data?.text_stats.languages || []).map(lang => ({ value: lang, label: lang }))]
+    const [confidenceSlider, setConfidenceSlider] = useState([minConfidence])
+    const [languageConfidenceSlider, setLanguageConfidenceSlider] = useState([minLanguageConfidence])
+    const updateConfidence = (value: number[]) => {
+        setMinConfidence(value[0])
+    }
+    const updateLanguageConfidence = (value: number[]) => {
+        console.log(value[0])
+        setMinLanguageConfidence(value[0])
+    }
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
             <div className="flex flex-row items-center justify-between">
@@ -139,6 +150,50 @@ function AnyTextETFilter() {
                     onSelectionChange={setLanguages}
                     maxDisplayed={1}
                     placeholder="Languages..."
+                />
+            </div>
+            <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
+                <div className="flex flex-row items-center justify-between">
+                    <div className="space-y-0.5">
+                        <Label className="text-base">
+                            Confidence Threshold
+                        </Label>
+                        <div className="text-gray-400">
+                            Minimum confidence for the extracted text
+                        </div>
+                    </div>
+                    <div className="text-lg">{confidenceSlider}</div>
+                </div>
+                <Slider
+                    value={confidenceSlider}
+                    onValueChange={setConfidenceSlider}
+                    onValueCommit={updateConfidence}
+                    max={1}
+                    min={0}
+                    step={0.01}
+                    className="mt-4"
+                />
+            </div>
+            <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
+                <div className="flex flex-row items-center justify-between">
+                    <div className="space-y-0.5">
+                        <Label className="text-base">
+                            Language Confidence Threshold
+                        </Label>
+                        <div className="text-gray-400">
+                            Minimum confidence for language detection
+                        </div>
+                    </div>
+                    <div className="text-lg">{languageConfidenceSlider}</div>
+                </div>
+                <Slider
+                    value={languageConfidenceSlider}
+                    onValueChange={setLanguageConfidenceSlider}
+                    onValueCommit={updateLanguageConfidence}
+                    max={1}
+                    min={0}
+                    step={0.01}
+                    className="mt-4"
                 />
             </div>
         </div>

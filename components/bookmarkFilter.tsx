@@ -3,7 +3,6 @@ import { $api } from "@/lib/api"
 import { useSearchQuery } from "@/lib/zust"
 import { Label } from "./ui/label"
 import { Switch } from "./ui/switch";
-import { ComboBoxResponsive } from "./combobox";
 import { MultiBoxResponsive } from "./multiCombobox";
 
 export function BookmarksFilter() {

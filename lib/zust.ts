@@ -202,7 +202,7 @@ export const useSearchQuery = create(
               ...state.any_text,
               et_filter: {
                 ...state.any_text.et_filter,
-                min_language_confidence: value,
+                language_min_confidence: value,
               },
             },
           }
