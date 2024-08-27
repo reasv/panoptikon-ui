@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import Image from 'next/image'
 import { PageSelect } from "@/components/pageselect";
 import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons"
-import { useDatabase, useSearchQuery } from "@/lib/zust"
+import { useDatabase, useInstantSearch, useSearchQuery } from "@/lib/zust"
 import { Toggle } from "@/components/ui/toggle"
 
 import { Settings, RefreshCw } from "lucide-react"
@@ -28,7 +28,8 @@ export function SearchPageContent({ initialQuery }:
     const setPage = useSearchQuery((state) => state.setPage)
     const page = useSearchQuery((state) => state.order_args.page)
     const page_size = useSearchQuery((state) => state.order_args.page_size)
-    const queryEnabled = useSearchQuery((state) => state.getSearchEnabled())
+    const searchEnabled = useSearchQuery((state) => state.enable_search)
+    const instantSearch = useInstantSearch((state) => state.enabled)
 
     const { data, error, isError, refetch } = $api.useQuery(
         "post",
@@ -42,7 +43,7 @@ export function SearchPageContent({ initialQuery }:
             }
         },
         {
-            enabled: queryEnabled,
+            enabled: searchEnabled && instantSearch,
             placeholderData: keepPreviousData
         }
     );
@@ -57,11 +58,9 @@ export function SearchPageContent({ initialQuery }:
             duration: 2000
         })
     }
-    const queryEnabledByUser = useSearchQuery((state) => state.user_enable_search)
-    const queryEnabledBySystem = useSearchQuery((state) => state.enable_search)
     useEffect(() => {
-        if (!queryEnabledByUser && queryEnabledBySystem) {
-            // Make pagination work if the user has disabled search
+        if (!instantSearch && searchEnabled) {
+            // Make pagination work if the user has disabled instant search
             refetch()
         }
     }, [page])

@@ -1,19 +1,18 @@
 "use client"
-import { useEffect } from "react"
-import { useSearchQuery } from "@/lib/zust"
+import { useInstantSearch } from "@/lib/zust"
 import { Toggle } from "@/components/ui/toggle"
 import { Lock } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 
 export function InstantSearchLock() {
-    const setUserEnabled = useSearchQuery((state) => state.setUserSearchEnabled)
-    const enabled = useSearchQuery((state) => state.user_enable_search)
+    const setInstantSearch = useInstantSearch((state) => state.setEnabled)
+    const enabled = useInstantSearch((state) => state.enabled)
 
     const { toast } = useToast()
 
     const onClickToggle = () => {
         const newValue = !enabled
-        setUserEnabled(newValue)
+        setInstantSearch(newValue)
 
         let description = "New results will be fetched automatically"
         if (!newValue) {

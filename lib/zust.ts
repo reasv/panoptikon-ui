@@ -55,6 +55,7 @@ export const useBookmarkNs = create(
     nsStorageOptions
   )
 )
+
 interface BookmarksCustom {
   namespaces: string[]
   addNs: (ns: string) => void
@@ -66,6 +67,24 @@ export const useBookmarkCustomNs = create<BookmarksCustom>((set) => ({
     set((state) => ({ namespaces: [...state.namespaces, ns] })),
 }))
 
+const instantSearchStorageOptions = {
+  name: "instantSearch",
+  storage: createJSONStorage<InstantSearchState>(() => persistLocalStorage),
+}
+interface InstantSearchState {
+  enabled: boolean
+  setEnabled: (enabled: boolean) => void
+}
+
+export const useInstantSearch = create(
+  persist<InstantSearchState>(
+    (set) => ({
+      enabled: true,
+      setEnabled: (enabled: boolean) => set({ enabled }),
+    }),
+    instantSearchStorageOptions
+  )
+)
 interface AnyTextSettings {
   query: string
   raw_fts5_match: boolean
@@ -77,14 +96,12 @@ interface AnyTextSettings {
 
 export interface SearchQueryStateState {
   enable_search: boolean
-  user_enable_search: boolean
   order_args: components["schemas"]["OrderParams"]
   any_text: AnyTextSettings
   bookmarks: components["schemas"]["BookmarksFilter"]
 }
 interface SearchQueryState {
   enable_search: boolean
-  user_enable_search: boolean
   order_args: components["schemas"]["OrderParams"]
   any_text: AnyTextSettings
   bookmarks: components["schemas"]["BookmarksFilter"]
@@ -103,8 +120,6 @@ interface SearchQueryState {
   setPage: (page: number) => void
   getSearchQuery: () => components["schemas"]["SearchQuery"]
   setEnableSearch: (value: boolean) => void
-  setUserSearchEnabled: (value: boolean) => void
-  getSearchEnabled: () => boolean
 }
 const queryStorageOptions = {
   name: "query",
@@ -113,7 +128,6 @@ const queryStorageOptions = {
 
 export const initialSearchQueryState: SearchQueryStateState = {
   enable_search: true,
-  user_enable_search: true,
   order_args: {
     order_by: "last_modified",
     order: null,
@@ -265,12 +279,6 @@ export const useSearchQuery = create(
       },
       getSearchQuery: () => {
         return queryFromState(get())
-      },
-      getSearchEnabled: () => {
-        return get().enable_search && get().user_enable_search
-      },
-      setUserSearchEnabled: (value: boolean) => {
-        set({ user_enable_search: value })
       },
       setEnableSearch: (value: boolean) => {
         set({ enable_search: value })
