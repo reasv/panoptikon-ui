@@ -22,8 +22,8 @@ export function SwitchDB() {
                 <div>
                     <ComboBoxResponsive
                         options={data?.index.all.map((db) => ({ value: db, label: db })) || []}
-                        currentOption={index_db ? { value: index_db, label: index_db } : (data ? { value: data?.index.current, label: data?.index.current } : null)}
-                        onSelectOption={(option) => setIndexDB(option?.value || null)}
+                        currentValue={index_db ? index_db : data?.index.current || null}
+                        onChangeValue={(v) => setIndexDB(v)}
                         placeholder="Search in..."
                     />
                 </div>

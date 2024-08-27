@@ -4,7 +4,7 @@ import * as React from "react"
 
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { Button } from "@/components/ui/button"
-import { Check, ChevronsUpDown } from "lucide-react"
+import { Check } from "lucide-react"
 import {
     Command,
     CommandEmpty,
@@ -32,28 +32,30 @@ export type Option = {
 
 export function ComboBoxResponsive({
     options,
-    currentOption,
-    onSelectOption,
+    currentValue,
+    onChangeValue,
     placeholder,
 }: {
     options: Option[]
-    currentOption: Option | null,
-    onSelectOption: (option: Option | null) => void
+    currentValue: string | null,
+    resetValue?: string,
+    onChangeValue: (value: string | null) => void
     placeholder: string
 }) {
     const [open, setOpen] = React.useState(false)
     const isDesktop = useMediaQuery("(min-width: 768px)")
-
+    const optionsMap = new Map(options.map((option) => [option.value, option]))
+    const buttonLabel = currentValue ? (optionsMap.get(currentValue)?.label || placeholder) : placeholder
     if (isDesktop) {
         return (
             <Popover open={open} onOpenChange={setOpen}>
                 <PopoverTrigger asChild>
                     <Button variant="outline" className=" justify-start">
-                        {currentOption ? <>{currentOption.label}</> : <>{placeholder}</>}
+                        {buttonLabel}
                     </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-[200px] p-0" align="start">
-                    <OptionList selectedOption={currentOption} options={options} setOpen={setOpen} setSelectedOption={onSelectOption} />
+                    <OptionList currentValue={currentValue} options={options} setOpen={setOpen} onChangeValue={onChangeValue} />
                 </PopoverContent>
             </Popover>
         )
@@ -63,12 +65,12 @@ export function ComboBoxResponsive({
         <Drawer open={open} onOpenChange={setOpen}>
             <DrawerTrigger asChild>
                 <Button variant="outline" className="w-[150px] justify-start">
-                    {currentOption ? <>{currentOption.label}</> : <>{placeholder}</>}
+                    {buttonLabel}
                 </Button>
             </DrawerTrigger>
             <DrawerContent>
                 <div className="mt-4 border-t">
-                    <OptionList selectedOption={currentOption} options={options} setOpen={setOpen} setSelectedOption={onSelectOption} />
+                    <OptionList currentValue={currentValue} options={options} setOpen={setOpen} onChangeValue={onChangeValue} />
                 </div>
             </DrawerContent>
         </Drawer>
@@ -76,16 +78,24 @@ export function ComboBoxResponsive({
 }
 
 function OptionList({
-    selectedOption,
+    currentValue,
+    resetValue,
     setOpen,
-    setSelectedOption,
+    onChangeValue,
     options,
 }: {
+    resetValue?: string,
     setOpen: (open: boolean) => void
-    setSelectedOption: (option: Option | null) => void,
+    onChangeValue: (value: string | null) => void,
     options: Option[],
-    selectedOption: Option | null
+    currentValue: string | null
 }) {
+    function isSelected(value: string) {
+        if (resetValue && value === resetValue) {
+            return currentValue === null
+        }
+        return value === currentValue
+    }
     return (
         <Command>
             <CommandInput placeholder="Filter..." />
@@ -97,16 +107,14 @@ function OptionList({
                             key={option.value}
                             value={option.value}
                             onSelect={(value) => {
-                                setSelectedOption(
-                                    options.find((priority) => priority.value === value) || null
-                                )
+                                onChangeValue(value === resetValue ? null : value)
                                 setOpen(false)
                             }}
                         >
                             <Check
                                 className={cn(
                                     "mr-2 h-4 w-4",
-                                    selectedOption?.value === option.value ? "opacity-100" : "opacity-0"
+                                    isSelected(option.value) ? "opacity-100" : "opacity-0"
                                 )}
                             />
                             {option.label}

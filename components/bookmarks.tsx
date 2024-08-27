@@ -52,8 +52,8 @@ export function SwitchBookmarkNs() {
             <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-center">
                 <ComboBoxResponsive
                     options={mergedNamespaces.map((ns) => ({ value: ns, label: ns }))}
-                    currentOption={{ value: namespace, label: namespace }}
-                    onSelectOption={(option) => onSelectOption(option?.value || null)}
+                    currentValue={namespace}
+                    onChangeValue={onSelectOption}
                     placeholder="Groups..."
                 />
                 <Input

@@ -82,8 +82,8 @@ function AnyTextPathFilter() {
                         { value: "true", label: "Filename Only" },
                         { value: "false", label: "Full Path" },
                     ]}
-                    currentOption={{ value: pathRestrictToFilename ? "true" : "false", label: pathRestrictToFilename ? "Filename Only" : "Full Path" }}
-                    onSelectOption={(option) => onOptionSelected(option?.value || null)}
+                    currentValue={pathRestrictToFilename ? "true" : "false"}
+                    onChangeValue={onOptionSelected}
                     placeholder="Filename or Path..."
                 />
             </div>
