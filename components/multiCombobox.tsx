@@ -32,47 +32,44 @@ export type Option = {
 
 export function MultiBoxResponsive({
     options,
-    resetOption,
-    currentOptions,
+    resetValue,
+    currentValues,
     onSelectionChange,
     maxDisplayed,
     placeholder,
 }: {
     options: Option[],
-    resetOption: Option,
-    currentOptions: Option[],
-    onSelectionChange: (options: Option[]) => void
+    resetValue?: string,
+    currentValues: string[],
+    onSelectionChange: (values: string[]) => void
     placeholder: string,
     maxDisplayed: number
 }) {
     const [open, setOpen] = React.useState(false)
     const isDesktop = useMediaQuery("(min-width: 768px)")
+    const optionsMap = new Map(options.map((option) => [option.value, option]))
+
     let buttonLabel = placeholder
-    if (currentOptions.length === 0) {
+    if (currentValues.length === 0) {
         buttonLabel = placeholder
-    } else if (currentOptions.length === 1) {
-        buttonLabel = currentOptions[0].label
-    } else if (currentOptions.length <= maxDisplayed) {
-        buttonLabel = currentOptions.map((option) => option.label).join(", ")
+    } else if (currentValues.length === 1) {
+        buttonLabel = optionsMap.get(currentValues[0])?.label || currentValues[0]
+    } else if (currentValues.length <= maxDisplayed) {
+        buttonLabel = currentValues.map((v) => optionsMap.get(v)?.label || v).join(", ")
     } else {
-        buttonLabel = `${currentOptions[0].label},...`
+        buttonLabel = `${optionsMap.get(currentValues[0])?.label || currentValues[0]},...`
     }
 
-    function onOptionToggle(option: Option | null) {
-        if (option === null) {
-            onSelectionChange([resetOption])
-            return
+    function onOptionToggle(value: string) {
+        if (resetValue && value === resetValue) {
+            onSelectionChange([])
         }
-        if (option.value === resetOption.value) {
-            onSelectionChange([resetOption])
-        }
-        if (currentOptions.some(o => o.value === option.value)) {
-            onSelectionChange(currentOptions.filter((o) => o.value !== option.value))
+        if (currentValues.includes(value)) {
+            onSelectionChange(currentValues.filter((v) => v !== value))
         } else {
-            onSelectionChange([...currentOptions, option])
+            onSelectionChange([...currentValues, value])
         }
     }
-
 
     if (isDesktop) {
         return (
@@ -83,7 +80,7 @@ export function MultiBoxResponsive({
                     </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-[200px] p-0" align="start">
-                    <OptionList selectedOptions={currentOptions} options={options} toggleSelectedOption={onOptionToggle} />
+                    <OptionList defaultValue={resetValue} selectedValues={currentValues} options={options} toggleValue={onOptionToggle} />
                 </PopoverContent>
             </Popover>
         )
@@ -98,7 +95,7 @@ export function MultiBoxResponsive({
             </DrawerTrigger>
             <DrawerContent>
                 <div className="mt-4 border-t">
-                    <OptionList selectedOptions={currentOptions} options={options} toggleSelectedOption={onOptionToggle} />
+                    <OptionList defaultValue={resetValue} selectedValues={currentValues} options={options} toggleValue={onOptionToggle} />
                 </div>
             </DrawerContent>
         </Drawer>
@@ -106,14 +103,22 @@ export function MultiBoxResponsive({
 }
 
 function OptionList({
-    selectedOptions,
-    toggleSelectedOption,
+    selectedValues,
+    toggleValue,
     options,
+    defaultValue,
 }: {
-    toggleSelectedOption: (option: Option | null) => void,
+    toggleValue: (value: string) => void,
     options: Option[],
-    selectedOptions: Option[]
+    selectedValues: string[],
+    defaultValue?: string
 }) {
+    const isSelected = (value: string) => {
+        if (selectedValues.length === 0 && defaultValue) {
+            return value === defaultValue
+        }
+        return selectedValues.includes(value)
+    }
     return (
         <Command>
             <CommandInput placeholder="Filter..." />
@@ -125,15 +130,13 @@ function OptionList({
                             key={option.value}
                             value={option.value}
                             onSelect={(value) => {
-                                toggleSelectedOption(
-                                    options.find((priority) => priority.value === value) || null
-                                )
+                                toggleValue(value)
                             }}
                         >
                             <Check
                                 className={cn(
                                     "mr-2 h-4 w-4",
-                                    selectedOptions.find((priority) => priority.value === option.value) ? "opacity-100" : "opacity-0"
+                                    isSelected(option.value) ? "opacity-100" : "opacity-0"
                                 )}
                             />
                             {option.label}
