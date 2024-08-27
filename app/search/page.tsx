@@ -7,36 +7,13 @@ import {
     QueryClient,
 } from '@tanstack/react-query'
 import { components } from '@/lib/panoptikon';
+import { initialSearchQueryState, queryFromState } from '@/lib/zust';
 
-const defaultQuery: components["schemas"]["SearchQuery"] = {
-    "order_args": {
-        "order_by": "last_modified",
-        "order": null,
-        "page": 1,
-        "page_size": 9
-    },
-    "count": true,
-    "check_path": true,
-    "query": {
-        "filters": {
-            "any_text": {}
-        }
-    }
-}
+const defaultQuery: components["schemas"]["SearchQuery"] = queryFromState(initialSearchQueryState)
 
-const defaultArgs = {
-    "params": {
-        "query": {
-            "index_db": "default",
-            "user_data_db": null
-        }
-    },
-    "body": defaultQuery
-}
-
-export async function fetchSearch() {
+export async function fetchSearch(query: components["schemas"]["SearchQuery"]) {
     try {
-        const { data, error } = await serverFetchClient.POST("/api/search", defaultArgs)
+        const { data, error } = await serverFetchClient.POST("/api/search", query)
         if (!data || error) {
             console.error(error)
             console.log("Error fetching search results")
@@ -56,8 +33,8 @@ export default async function SearchPage() {
 
     // We can use the queryClient to prefetch data
     await queryClient.prefetchQuery({
-        queryKey: ["post", "/api/search", defaultArgs],
-        queryFn: () => fetchSearch(),
+        queryKey: ["post", "/api/search", defaultQuery],
+        queryFn: () => fetchSearch(defaultQuery),
     })
 
     return (

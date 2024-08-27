@@ -310,7 +310,9 @@ export const useSearchQuery = create(
   )
 )
 
-export function queryFromState(state: SearchQueryState) {
+export function queryFromState(
+  state: SearchQueryState | SearchQueryStateState
+) {
   const query: components["schemas"]["SearchQuery"] = {
     order_args: state.order_args,
     count: true,
