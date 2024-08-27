@@ -1,11 +1,7 @@
 import { create } from "zustand"
 import { components } from "./panoptikon"
 import { createJSONStorage, persist } from "zustand/middleware"
-import {
-  persistentStorage,
-  compactUrlLocalStorage,
-  compactUrlOnlyStorage,
-} from "./store"
+import { persistentStorage, compactUrlOnlyStorage } from "./store"
 
 interface Database {
   index_db: string | null
@@ -17,7 +13,7 @@ interface Database {
 
 const dbStorageOptions = {
   name: "db",
-  storage: createJSONStorage<Database>(() => compactUrlLocalStorage),
+  storage: createJSONStorage<Database>(() => compactUrlOnlyStorage),
 }
 export const initialDBOpts = {
   index_db: null,
