@@ -12,13 +12,14 @@ import { BookmarksFilter } from "./bookmarkFilter"
 import { AnyTextFilter } from "./anyTextFilter"
 import { OrderBy } from "./orderBy"
 import { PageSizeSlider } from "./pageSize"
+import { useAdvancedOptions } from "@/lib/zust"
+import { useMediaQuery } from "@/hooks/use-media-query"
 
-export function AdvancedSearchOptions({
-    onClose,
-}: {
-    onClose: () => void
-}) {
-
+export function AdvancedSearchOptions() {
+    const isDesktop = useMediaQuery("(min-width: 768px)")
+    const isOpen = useAdvancedOptions((state) => state.isOpen)
+    const toggleOpen = useAdvancedOptions((state) => state.toggle)
+    const setOpened = useAdvancedOptions((state) => state.setOpened)
     return (
         <div className="fixed top-0 left-0 w-1/4 h-full p-4 shadow-lg z-50">
             <Card>
@@ -26,7 +27,7 @@ export function AdvancedSearchOptions({
                     <CardTitle>
                         <div className="flex gap-2">
                             <h2 className="text-lg font-semibold w-full mt-3">Advanced Search Options</h2>
-                            <Button title="Close Advanced Options" onClick={onClose} variant="ghost" size="icon">
+                            <Button title="Close Advanced Options" onClick={() => setOpened(false)} variant="ghost" size="icon">
                                 <SidebarClose className="h-4 w-4" />
                             </Button>
                         </div>

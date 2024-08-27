@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import Image from 'next/image'
 import { PageSelect } from "@/components/pageselect";
 import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons"
-import { useDatabase, useInstantSearch, useSearchQuery } from "@/lib/zust"
+import { useAdvancedOptions, useDatabase, useInstantSearch, useSearchQuery } from "@/lib/zust"
 import { Toggle } from "@/components/ui/toggle"
 
 import { Settings, RefreshCw } from "lucide-react"
@@ -64,23 +64,21 @@ export function SearchPageContent({ initialQuery }:
             refetch()
         }
     }, [page])
-    const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
-    const toggleAdvancedOptions = () => {
-        setShowAdvancedOptions((prev) => !prev);
-    };
     function getFileURL(sha256: string) {
         // Only use the DB values if they are set
         return `${sha256}?index_db=${dbs.index_db || ''}&user_data_db=${dbs.user_data_db || ''}`
     }
+    const toggleOptions = useAdvancedOptions((state) => state.toggle)
+    const advancedIsOpen = useAdvancedOptions((state) => state.isOpen)
     return (
         <div className="container mx-auto p-4 relative">
             <SearchErrorToast isError={isError} error={error} />
             <div className="mb-4">
                 <div className="flex gap-2">
                     <Toggle
-                        pressed={showAdvancedOptions}
-                        onClick={toggleAdvancedOptions}
-                        title={"Advanced Search Options Are " + (showAdvancedOptions ? "Open" : "Closed")}
+                        pressed={advancedIsOpen}
+                        onClick={toggleOptions}
+                        title={"Advanced Search Options Are " + (advancedIsOpen ? "Open" : "Closed")}
                         aria-label="Toggle Advanced Search Options"
                     >
                         <Settings className="h-4 w-4" />
@@ -135,10 +133,7 @@ export function SearchPageContent({ initialQuery }:
                 <PageSelect total_pages={total_pages} current_page={page} setPage={setPage} max_pages={25} />
             )}
 
-            {/* Advanced Search Options Panel */}
-            {showAdvancedOptions && (
-                <AdvancedSearchOptions onClose={toggleAdvancedOptions} />
-            )}
+            <AdvancedSearchOptions />
         </div>
     );
 }
