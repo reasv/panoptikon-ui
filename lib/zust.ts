@@ -106,6 +106,19 @@ interface SearchQueryState {
   any_text: AnyTextSettings
   bookmarks: components["schemas"]["BookmarksFilter"]
   setInitialState: (state: SearchQueryStateState) => void
+  setOrderBy: (
+    order_by:
+      | "last_modified"
+      | "path"
+      | "rank_fts"
+      | "rank_path_fts"
+      | "time_added"
+      | "rank_any_text"
+      | "text_vec_distance"
+      | "image_vec_distance"
+      | null
+  ) => void
+  setOrder: (order: "asc" | "desc" | null | undefined) => void
   setBookmarkFilterEnabled: (value: boolean) => void
   setBookmarkFilterNs: (ns: string[]) => void
   setRawFts5Match: (value: boolean) => void
@@ -120,6 +133,16 @@ interface SearchQueryState {
   setPage: (page: number) => void
   getSearchQuery: () => components["schemas"]["SearchQuery"]
   setEnableSearch: (value: boolean) => void
+  getIsAnyTextEnabled: () => boolean
+  getOrderBy: () =>
+    | "last_modified"
+    | "path"
+    | "rank_fts"
+    | "rank_path_fts"
+    | "time_added"
+    | "rank_any_text"
+    | "text_vec_distance"
+    | "image_vec_distance"
 }
 const queryStorageOptions = {
   name: "query",
@@ -162,6 +185,43 @@ export const useSearchQuery = create(
       ...initialSearchQueryState,
       setInitialState: (state: SearchQueryStateState) => {
         set(state)
+      },
+      getOrderBy: () => getOrderBy(get()),
+      getIsAnyTextEnabled: () => getIsAnyTextEnabled(get()),
+      setOrderBy: (
+        order_by:
+          | "last_modified"
+          | "path"
+          | "rank_fts"
+          | "rank_path_fts"
+          | "time_added"
+          | "rank_any_text"
+          | "text_vec_distance"
+          | "image_vec_distance"
+          | null
+      ) => {
+        get().setPage(1)
+        set((state) => {
+          return {
+            ...state,
+            order_args: {
+              ...state.order_args,
+              order_by,
+            },
+          }
+        })
+      },
+      setOrder: (order: "asc" | "desc" | null | undefined) => {
+        get().setPage(1)
+        set((state) => {
+          return {
+            ...state,
+            order_args: {
+              ...state.order_args,
+              order,
+            },
+          }
+        })
       },
       setAnyTextETFilterLanguages: (value: string[]) => {
         get().setPage(1)
@@ -331,6 +391,29 @@ export const useSearchQuery = create(
   )
 )
 
+function getIsAnyTextEnabled(state: SearchQueryState | SearchQueryStateState) {
+  return (
+    (state.any_text.enable_et_filter || state.any_text.enable_path_filter) &&
+    state.any_text.query !== ""
+  )
+}
+function getOrderBy(state: SearchQueryState | SearchQueryStateState) {
+  const current_order_by = state.order_args.order_by
+  if (current_order_by === null) {
+    return "last_modified"
+  }
+  if (current_order_by === "rank_any_text") {
+    if (!getIsAnyTextEnabled(state)) {
+      return "last_modified"
+    }
+  }
+  if (current_order_by === "time_added") {
+    if (!state.bookmarks.restrict_to_bookmarks) {
+      return "last_modified"
+    }
+  }
+  return current_order_by
+}
 export function queryFromState(
   state: SearchQueryState | SearchQueryStateState
 ): components["schemas"]["SearchQuery"] {
@@ -362,6 +445,6 @@ export function queryFromState(
   if (state.bookmarks.restrict_to_bookmarks) {
     query.query!.filters!.bookmarks = state.bookmarks
   }
-
+  query.order_args!.order_by = getOrderBy(state)
   return query
 }

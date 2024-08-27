@@ -34,6 +34,7 @@ export function ComboBoxResponsive({
     options,
     currentValue,
     onChangeValue,
+    resetValue,
     placeholder,
 }: {
     options: Option[]
@@ -55,7 +56,7 @@ export function ComboBoxResponsive({
                     </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-[200px] p-0" align="start">
-                    <OptionList currentValue={currentValue} options={options} setOpen={setOpen} onChangeValue={onChangeValue} />
+                    <OptionList resetValue={resetValue} currentValue={currentValue} options={options} setOpen={setOpen} onChangeValue={onChangeValue} />
                 </PopoverContent>
             </Popover>
         )
@@ -70,7 +71,7 @@ export function ComboBoxResponsive({
             </DrawerTrigger>
             <DrawerContent>
                 <div className="mt-4 border-t">
-                    <OptionList currentValue={currentValue} options={options} setOpen={setOpen} onChangeValue={onChangeValue} />
+                    <OptionList resetValue={resetValue} currentValue={currentValue} options={options} setOpen={setOpen} onChangeValue={onChangeValue} />
                 </div>
             </DrawerContent>
         </Drawer>

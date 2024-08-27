@@ -10,6 +10,7 @@ import { SwitchDB } from "./switchDB"
 import { SwitchBookmarkNs } from "./bookmarks"
 import { BookmarksFilter } from "./bookmarkFilter"
 import { AnyTextFilter } from "./anyTextFilter"
+import { OrderBy } from "./orderBy"
 
 export function AdvancedSearchOptions({
     onClose,
@@ -34,6 +35,7 @@ export function AdvancedSearchOptions({
                     <SwitchDB />
                     <SwitchBookmarkNs />
                     <BookmarksFilter />
+                    <OrderBy />
                     <AnyTextFilter />
                 </CardContent>
             </Card>
