@@ -4,6 +4,7 @@ import * as React from "react"
 
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { Button } from "@/components/ui/button"
+import { Check, ChevronsUpDown } from "lucide-react"
 import {
     Command,
     CommandEmpty,
@@ -22,6 +23,7 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from "@/components/ui/popover"
+import { cn } from "@/lib/utils"
 
 export type Option = {
     value: string
@@ -51,7 +53,7 @@ export function ComboBoxResponsive({
                     </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-[200px] p-0" align="start">
-                    <OptionList options={options} setOpen={setOpen} setSelectedOption={onSelectOption} />
+                    <OptionList selectedOption={currentOption} options={options} setOpen={setOpen} setSelectedOption={onSelectOption} />
                 </PopoverContent>
             </Popover>
         )
@@ -66,7 +68,7 @@ export function ComboBoxResponsive({
             </DrawerTrigger>
             <DrawerContent>
                 <div className="mt-4 border-t">
-                    <OptionList options={options} setOpen={setOpen} setSelectedOption={onSelectOption} />
+                    <OptionList selectedOption={currentOption} options={options} setOpen={setOpen} setSelectedOption={onSelectOption} />
                 </div>
             </DrawerContent>
         </Drawer>
@@ -74,13 +76,15 @@ export function ComboBoxResponsive({
 }
 
 function OptionList({
+    selectedOption,
     setOpen,
     setSelectedOption,
     options,
 }: {
     setOpen: (open: boolean) => void
     setSelectedOption: (option: Option | null) => void,
-    options: Option[]
+    options: Option[],
+    selectedOption: Option | null
 }) {
     return (
         <Command>
@@ -99,6 +103,12 @@ function OptionList({
                                 setOpen(false)
                             }}
                         >
+                            <Check
+                                className={cn(
+                                    "mr-2 h-4 w-4",
+                                    selectedOption?.value === option.value ? "opacity-100" : "opacity-0"
+                                )}
+                            />
                             {option.label}
                         </CommandItem>
                     ))}
