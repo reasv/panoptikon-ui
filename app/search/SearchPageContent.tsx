@@ -72,7 +72,9 @@ export function SearchPageContent({ initialQuery }:
     const toggleOptions = useAdvancedOptions((state) => state.toggle)
     const advancedIsOpen = useAdvancedOptions((state) => state.isOpen)
     const isMobile = useMediaQuery("(max-width: 768px)")
-    const maxPagesButtons = isMobile ? 5 : 25
+    const isTablet = useMediaQuery("(max-width: 1024px)")
+    const isSmallDesktop = useMediaQuery("(max-width: 1600px)")
+    const maxPagesButtons = isMobile ? 5 : isTablet ? 10 : isSmallDesktop ? 15 : 25
     return (
         <div className="container mx-auto p-4 relative">
             <SearchErrorToast isError={isError} error={error} />

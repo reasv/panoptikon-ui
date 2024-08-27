@@ -44,7 +44,7 @@ export function SearchOptions() {
 }
 
 export function AdvancedSearchOptions() {
-    const isDesktop = useMediaQuery("(min-width: 768px)")
+    const isDesktop = useMediaQuery("(min-width: 1024px)")
     const isOpen = useAdvancedOptions((state) => state.isOpen)
     const setOpen = useAdvancedOptions((state) => state.setOpened)
     if (!isOpen) {
@@ -52,7 +52,6 @@ export function AdvancedSearchOptions() {
     }
     if (isDesktop) {
         return (
-
             <div className="fixed top-0 left-0 w-1/4 h-full p-4 shadow-lg z-50">
                 <ScrollArea className="h-full">
                     <SearchOptions />
