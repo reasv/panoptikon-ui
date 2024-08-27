@@ -1,7 +1,7 @@
 import { create } from "zustand"
 import { components } from "./panoptikon"
 import { createJSONStorage, persist } from "zustand/middleware"
-import { persistentStorage, compactUrlOnlyStorage } from "./store"
+import { persistLocalStorage, compactUrlOnlyStorage } from "./store"
 
 interface Database {
   index_db: string | null
@@ -39,7 +39,7 @@ export const useDatabase = create(
 
 const nsStorageOptions = {
   name: "nsOpts",
-  storage: createJSONStorage<BookmarkNs>(() => persistentStorage),
+  storage: createJSONStorage<BookmarkNs>(() => persistLocalStorage),
 }
 interface BookmarkNs {
   namespace: string
