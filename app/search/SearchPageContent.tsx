@@ -18,6 +18,7 @@ import { useEffect, useState } from "react";
 import { AdvancedSearchOptions } from "@/components/advancedSearchOptions";
 import { SearchQueryArgs } from "./page";
 import { SearchErrorToast } from "@/components/searchErrorToaster";
+import { useMediaQuery } from "@/hooks/use-media-query";
 
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }
@@ -70,6 +71,8 @@ export function SearchPageContent({ initialQuery }:
     }
     const toggleOptions = useAdvancedOptions((state) => state.toggle)
     const advancedIsOpen = useAdvancedOptions((state) => state.isOpen)
+    const isMobile = useMediaQuery("(max-width: 768px)")
+    const maxPagesButtons = isMobile ? 5 : 25
     return (
         <div className="container mx-auto p-4 relative">
             <SearchErrorToast isError={isError} error={error} />
@@ -130,7 +133,7 @@ export function SearchPageContent({ initialQuery }:
                 </CardContent>
             </Card>
             {data && data.count > page_size && (
-                <PageSelect total_pages={total_pages} current_page={page} setPage={setPage} max_pages={25} />
+                <PageSelect total_pages={total_pages} current_page={page} setPage={setPage} max_pages={maxPagesButtons} />
             )}
 
             <AdvancedSearchOptions />
