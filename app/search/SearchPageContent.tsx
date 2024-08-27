@@ -7,7 +7,7 @@ import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/componen
 import { useDatabase, useSearchQuery } from "@/lib/zust"
 import { Toggle } from "@/components/ui/toggle"
 
-import { Settings, RefreshCw, SidebarClose } from "lucide-react"
+import { Settings, RefreshCw } from "lucide-react"
 import { AnimatedNumber } from "@/components/ui/animatedNumber"
 import { Fts5ToggleButton } from "@/components/FTS5Toggle"
 import { keepPreviousData } from "@tanstack/react-query"
@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/use-toast"
 import { SearchBar } from "@/components/searchBar"
 import { useEffect, useState } from "react";
-import { Input } from "@/components/ui/input";
 import { AdvancedSearchOptions } from "@/components/advancedSearchOptions";
 import { SearchQueryArgs } from "./page";
 
