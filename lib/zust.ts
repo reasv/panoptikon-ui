@@ -88,6 +88,7 @@ interface SearchQueryState {
   order_args: components["schemas"]["OrderParams"]
   any_text: AnyTextSettings
   bookmarks: components["schemas"]["BookmarksFilter"]
+  setInitialState: (state: SearchQueryStateState) => void
   setBookmarkFilterEnabled: (value: boolean) => void
   setBookmarkFilterNs: (ns: string[]) => void
   setRawFts5Match: (value: boolean) => void
@@ -145,6 +146,9 @@ export const useSearchQuery = create(
   persist<SearchQueryState>(
     (set, get) => ({
       ...initialSearchQueryState,
+      setInitialState: (state: SearchQueryStateState) => {
+        set(state)
+      },
       setAnyTextETFilterLanguages: (value: string[]) => {
         set((state) => {
           return {

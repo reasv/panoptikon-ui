@@ -4,6 +4,7 @@ import lz4 from "lz4js"
 const getUrlSearch = () => {
   return window.location.search.slice(1)
 }
+const isClient = typeof window !== "undefined"
 
 export const persistLocalStorage: StateStorage = {
   getItem: (key): string => {
@@ -33,44 +34,11 @@ function msgDecode(value: string): string {
   return JSON.stringify(obj)
 }
 
-export const compactUrlLocalStorage: StateStorage = {
-  getItem: (key) => {
-    // Check URL first
-    if (getUrlSearch()) {
-      const searchParams = new URLSearchParams(getUrlSearch())
-      const storedValue = searchParams.get(key) as string
-      if (storedValue) {
-        try {
-          return msgDecode(storedValue)
-        } catch (e) {
-          console.error(e)
-          const searchParams = new URLSearchParams(getUrlSearch())
-          searchParams.delete(key)
-          window.location.search = searchParams.toString()
-        }
-      }
-    } else {
-      // Otherwise, we should load from localstorage or alternative storage
-      return JSON.parse(localStorage.getItem(key) as string)
-    }
-    return null
-  },
-  setItem: (key, newValue): void => {
-    const searchParams = new URLSearchParams(getUrlSearch())
-    searchParams.set(key, msgEncode(newValue))
-    window.history.replaceState(null, "", `?${searchParams.toString()}`)
-    localStorage.setItem(key, JSON.stringify(newValue))
-  },
-  removeItem: (key): void => {
-    const searchParams = new URLSearchParams(getUrlSearch())
-    searchParams.delete(key)
-    window.location.search = searchParams.toString()
-    localStorage.removeItem(key)
-  },
-}
-
 export const compactUrlOnlyStorage: StateStorage = {
   getItem: (key) => {
+    if (!isClient) {
+      return null
+    }
     // Check URL first
     if (getUrlSearch()) {
       const searchParams = new URLSearchParams(getUrlSearch())
@@ -90,11 +58,17 @@ export const compactUrlOnlyStorage: StateStorage = {
     return null
   },
   setItem: (key, newValue): void => {
+    if (!isClient) {
+      return
+    }
     const searchParams = new URLSearchParams(getUrlSearch())
     searchParams.set(key, msgEncode(newValue))
     window.history.replaceState(null, "", `?${searchParams.toString()}`)
   },
   removeItem: (key): void => {
+    if (!isClient) {
+      return
+    }
     const searchParams = new URLSearchParams(getUrlSearch())
     searchParams.delete(key)
     window.location.search = searchParams.toString()
