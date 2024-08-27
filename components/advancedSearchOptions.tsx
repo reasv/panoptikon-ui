@@ -11,6 +11,7 @@ import { SwitchBookmarkNs } from "./bookmarks"
 import { BookmarksFilter } from "./bookmarkFilter"
 import { AnyTextFilter } from "./anyTextFilter"
 import { OrderBy } from "./orderBy"
+import { PageSizeSlider } from "./pageSize"
 
 export function AdvancedSearchOptions({
     onClose,
@@ -36,6 +37,7 @@ export function AdvancedSearchOptions({
                     <SwitchBookmarkNs />
                     <BookmarksFilter />
                     <OrderBy />
+                    <PageSizeSlider />
                     <AnyTextFilter />
                 </CardContent>
             </Card>

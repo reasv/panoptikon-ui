@@ -134,6 +134,7 @@ interface SearchQueryState {
   getSearchQuery: () => components["schemas"]["SearchQuery"]
   setEnableSearch: (value: boolean) => void
   getIsAnyTextEnabled: () => boolean
+  setPageSize: (size: number) => void
   getOrderBy: () =>
     | "last_modified"
     | "path"
@@ -185,6 +186,17 @@ export const useSearchQuery = create(
       ...initialSearchQueryState,
       setInitialState: (state: SearchQueryStateState) => {
         set(state)
+      },
+      setPageSize: (size: number) => {
+        set((state) => {
+          return {
+            ...state,
+            order_args: {
+              ...state.order_args,
+              page_size: size,
+            },
+          }
+        })
       },
       getOrderBy: () => getOrderBy(get()),
       getIsAnyTextEnabled: () => getIsAnyTextEnabled(get()),
