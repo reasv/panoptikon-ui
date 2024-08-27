@@ -164,6 +164,7 @@ export const useSearchQuery = create(
         set(state)
       },
       setAnyTextETFilterLanguages: (value: string[]) => {
+        get().setPage(1)
         set((state) => {
           return {
             ...state,
@@ -178,6 +179,7 @@ export const useSearchQuery = create(
         })
       },
       setAnyTextETFilterMinConfidence: (value: number) => {
+        get().setPage(1)
         set((state) => {
           return {
             ...state,
@@ -192,6 +194,7 @@ export const useSearchQuery = create(
         })
       },
       setAnyTextETFilterMinLanguageConfidence: (value: number) => {
+        get().setPage(1)
         set((state) => {
           return {
             ...state,
@@ -206,6 +209,7 @@ export const useSearchQuery = create(
         })
       },
       setAnyTextETFilterTargets: (value: string[]) => {
+        get().setPage(1)
         set((state) => {
           return {
             ...state,
@@ -220,6 +224,7 @@ export const useSearchQuery = create(
         })
       },
       setAnyTextPathFilterEnabled: (value: boolean) => {
+        get().setPage(1)
         set((state) => {
           return {
             ...state,
@@ -231,6 +236,7 @@ export const useSearchQuery = create(
         })
       },
       setAnyTextETFilterEnabled: (value: boolean) => {
+        get().setPage(1)
         set((state) => {
           return {
             ...state,
@@ -242,6 +248,7 @@ export const useSearchQuery = create(
         })
       },
       setAnyTextPathFilterFilenameOnly: (value: boolean) => {
+        get().setPage(1)
         set((state) => {
           return {
             ...state,
@@ -256,6 +263,7 @@ export const useSearchQuery = create(
         })
       },
       setBookmarkFilterEnabled: (value: boolean) => {
+        get().setPage(1)
         set((state) => {
           return {
             ...state,
@@ -267,6 +275,7 @@ export const useSearchQuery = create(
         })
       },
       setBookmarkFilterNs: (ns: string[]) => {
+        get().setPage(1)
         set((state) => {
           return {
             ...state,
@@ -324,7 +333,7 @@ export const useSearchQuery = create(
 
 export function queryFromState(
   state: SearchQueryState | SearchQueryStateState
-) {
+): components["schemas"]["SearchQuery"] {
   const query: components["schemas"]["SearchQuery"] = {
     order_args: state.order_args,
     count: true,
