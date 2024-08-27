@@ -79,7 +79,7 @@ interface AnyTextSettings {
   et_filter: components["schemas"]["ExtractedTextFilter"]
 }
 
-interface SearchQueryStateState {
+export interface SearchQueryStateState {
   enable_search: boolean
   user_enable_search: boolean
   order_args: components["schemas"]["OrderParams"]

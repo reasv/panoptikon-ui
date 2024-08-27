@@ -7,10 +7,8 @@ import {
     QueryClient,
 } from '@tanstack/react-query'
 import { components } from '@/lib/panoptikon';
-import { initialDBOpts, initialSearchQueryState, queryFromState } from '@/lib/zust';
-
-const defaultQuery: components["schemas"]["SearchQuery"] = queryFromState(initialSearchQueryState)
-const defaultDBOpts = initialDBOpts
+import { initialDBOpts, initialSearchQueryState, queryFromState, SearchQueryStateState } from '@/lib/zust';
+import { decodeQueryParam } from '@/lib/decodeQuery';
 
 interface queryParams {
     index_db: string | null
@@ -38,18 +36,26 @@ export async function fetchSearch(query: components["schemas"]["SearchQuery"], q
     }
 }
 
-export default async function SearchPage() {
-    const queryClient = new QueryClient()
+export default async function SearchPage({
+    searchParams,
+}: {
+    searchParams?: { [key: string]: string | string[] | undefined };
+}) {
+    const decodedQueryState = decodeQueryParam<SearchQueryStateState>("query", searchParams)
+    const decodedDBs = decodeQueryParam<queryParams>("db", searchParams)
+    const query = queryFromState(decodedQueryState || initialSearchQueryState)
+    const dbs = decodedDBs || initialDBOpts
     const request = {
         params: {
-            query: initialDBOpts,
+            query: dbs,
         },
-        body: defaultQuery
+        body: query
     }
-    // We can use the queryClient to prefetch data
+
+    const queryClient = new QueryClient()
     await queryClient.prefetchQuery({
         queryKey: ["post", "/api/search", request],
-        queryFn: () => fetchSearch(defaultQuery, defaultDBOpts),
+        queryFn: () => fetchSearch(query, dbs),
     })
 
     return (
