@@ -20,7 +20,6 @@ export function AnyTextFilter() {
                         Returns items that match any of these filters
                     </div>
                 </div>
-                {/* <Switch checked={bookmarksFilterEnabled} onCheckedChange={(value) => setBookmarksFilterEnabled(value)} /> */}
             </div>
             <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
                 <div className="flex flex-row items-center justify-between">
@@ -93,9 +92,39 @@ function AnyTextPathFilter() {
 }
 
 function AnyTextETFilter() {
-
+    const { data } = $api.useQuery("get", "/api/search/stats")
     const enableETFilter = useSearchQuery((state) => state.any_text.enable_et_filter)
     const setETFilterEnabled = useSearchQuery((state) => state.setAnyTextETFilterEnabled)
+    const targets = useSearchQuery((state) => state.any_text.et_filter.targets || [])
+    const languages = useSearchQuery((state) => state.any_text.et_filter.languages || [])
+    const setLanguages = useSearchQuery((state) => state.setAnyTextETFilterLanguages)
+    const setTargets = useSearchQuery((state) => state.setAnyTextETFilterTargets)
+    const minConfidence = useSearchQuery((state) => state.any_text.et_filter.min_confidence)
+    const setMinConfidence = useSearchQuery((state) => state.setAnyTextETFilterMinConfidence)
+    const minLanguageConfidence = useSearchQuery((state) => state.any_text.et_filter.language_min_confidence)
+    const setMinLanguageConfidence = useSearchQuery((state) => state.setAnyTextETFilterMinLanguageConfidence)
+    const textTargets = [{ value: "all", label: "All Sources" }, ...(
+        data?.setters
+            .filter((setter) => setter[0] === "text")
+            .map((setter) => ({ value: setter[1], label: setter[1] })) || [])
+    ]
+
+    const textLanguages = [{ value: "all", label: "All Languages" }, ...(data?.text_stats.languages || []).map(lang => ({ value: lang, label: lang }))]
+
+    function onSelectTargets(option: string) {
+        if (option === "all") {
+            setTargets([])
+        } else {
+            setTargets([option])
+        }
+    }
+    function onSelectLanguages(option: string) {
+        if (option === "all") {
+            setLanguages([])
+        } else {
+            setLanguages([option])
+        }
+    }
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
             <div className="flex flex-row items-center justify-between">
@@ -109,17 +138,20 @@ function AnyTextETFilter() {
                 </div>
                 <Switch checked={enableETFilter} onCheckedChange={(value) => setETFilterEnabled(value)} />
             </div>
-            {/* <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
+            <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
                 <ComboBoxResponsive
-                    options={[
-                        { value: "true", label: "Filename Only" },
-                        { value: "false", label: "Full Path" },
-                    ]}
-                    currentOption={{ value: pathRestrictToFilename ? "true" : "false", label: pathRestrictToFilename ? "Filename Only" : "Full Path" }}
-                    onSelectOption={(option) => onOptionSelected(option?.value || null)}
-                    placeholder="Filename or Path..."
+                    options={textTargets}
+                    currentOption={targets.length > 0 ? { value: targets[0], label: targets[0] } : { value: "all", label: "All Sources" }}
+                    onSelectOption={(option) => onSelectTargets(option?.value || "all")}
+                    placeholder="Targets..."
                 />
-            </div> */}
+                <ComboBoxResponsive
+                    options={textLanguages}
+                    currentOption={languages.length > 0 ? { value: languages[0], label: languages[0] } : { value: "all", label: "All Languages" }}
+                    onSelectOption={(option) => onSelectLanguages(option?.value || "all")}
+                    placeholder="Languages..."
+                />
+            </div>
         </div>
     )
 }
