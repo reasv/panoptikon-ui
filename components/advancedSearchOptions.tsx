@@ -15,7 +15,7 @@ import { PageSizeSlider } from "./pageSize"
 import { useAdvancedOptions } from "@/lib/zust"
 import { useMediaQuery } from "@/hooks/use-media-query"
 
-export function AdvancedSearchOptions() {
+export function SearchOptions() {
     const isDesktop = useMediaQuery("(min-width: 768px)")
     const isOpen = useAdvancedOptions((state) => state.isOpen)
     const toggleOpen = useAdvancedOptions((state) => state.toggle)
@@ -44,4 +44,9 @@ export function AdvancedSearchOptions() {
             </Card>
         </div>
     )
+}
+
+export function AdvancedSearchOptions() {
+    const isOpen = useAdvancedOptions((state) => state.isOpen)
+    return isOpen ? <SearchOptions /> : null
 }
