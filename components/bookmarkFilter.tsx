@@ -33,7 +33,7 @@ export function BookmarksFilter() {
                     options={namespacesWithAll.map((ns) => ({ value: ns, label: ns === "*" ? "All Groups" : ns }))}
                     currentValues={bookmarksFilterNs}
                     onSelectionChange={setBookmarksFilterNs}
-                    placeholder="Select namespaces"
+                    placeholder="Select groups"
                     resetValue="*"
                     maxDisplayed={4}
                 />
