@@ -50,21 +50,23 @@ export function MultiBoxResponsive({
     const optionsMap = new Map(options.map((option) => [option.value, option]))
 
     let buttonLabel = placeholder
-    if (currentValues.length === 0 && resetValue) {
-        buttonLabel = buttonLabel = optionsMap.get(resetValue)?.label || resetValue
-    } else if (currentValues.length === 0) {
-        buttonLabel = placeholder
+    if (currentValues.length === 0) {
+        buttonLabel = resetValue ? (optionsMap.get(resetValue)?.label || resetValue) : placeholder
     } else if (currentValues.length === 1) {
         buttonLabel = optionsMap.get(currentValues[0])?.label || currentValues[0]
     } else if (currentValues.length <= maxDisplayed) {
         buttonLabel = currentValues.map((v) => optionsMap.get(v)?.label || v).join(", ")
+    } else if (maxDisplayed === 1) {
+        buttonLabel = `${optionsMap.get(currentValues[0])?.label || currentValues[0]}, ...`
     } else {
-        buttonLabel = `${optionsMap.get(currentValues[0])?.label || currentValues[0]},...`
+        // Show the first maxDisplayed values
+        buttonLabel = currentValues.slice(0, maxDisplayed).map((v) => optionsMap.get(v)?.label || v).join(", ") + ", ..."
     }
 
     function onOptionToggle(value: string) {
         if (resetValue && value === resetValue) {
             onSelectionChange([])
+            return
         }
         if (currentValues.includes(value)) {
             onSelectionChange(currentValues.filter((v) => v !== value))
