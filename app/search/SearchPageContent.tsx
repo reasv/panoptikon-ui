@@ -18,6 +18,7 @@ import { SearchBar } from "@/components/searchBar"
 import { useEffect, useState } from "react";
 import { AdvancedSearchOptions } from "@/components/advancedSearchOptions";
 import { SearchQueryArgs } from "./page";
+import { SearchErrorToast } from "@/components/searchErrorToaster";
 
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }
@@ -74,7 +75,7 @@ export function SearchPageContent({ initialQuery }:
     }
     return (
         <div className="container mx-auto p-4 relative">
-            {/* Main Content Area */}
+            <SearchErrorToast isError={isError} error={error} />
             <div className="mb-4">
                 <div className="flex gap-2">
                     <Toggle
@@ -86,7 +87,6 @@ export function SearchPageContent({ initialQuery }:
                         <Settings className="h-4 w-4" />
                     </Toggle>
                     <SearchBar />
-                    <Fts5ToggleButton isError={isError} error={error} />
                     <InstantSearchLock />
                     <Button title="Refresh search results" onClick={onRefresh} variant="ghost" size="icon">
                         <RefreshCw className="h-4 w-4" />
