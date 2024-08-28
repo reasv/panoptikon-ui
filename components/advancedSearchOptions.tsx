@@ -52,7 +52,7 @@ export function AdvancedSearchOptions() {
     }
     if (isDesktop) {
         return (
-            <div className="fixed top-0 left-0 w-1/4 h-full p-4 shadow-lg z-50">
+            <div className="md:w-1/2 lg:w-1/2 xl:w-1/3 2xl:w-1/4 p-4 shadow-lg z-50 hidden lg:block">
                 <ScrollArea className="h-full">
                     <SearchOptions />
                 </ScrollArea>

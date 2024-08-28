@@ -19,6 +19,7 @@ import { AdvancedSearchOptions } from "@/components/advancedSearchOptions";
 import { SearchQueryArgs } from "./page";
 import { SearchErrorToast } from "@/components/searchErrorToaster";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { cn } from "@/lib/utils";
 
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }
@@ -76,69 +77,77 @@ export function SearchPageContent({ initialQuery }:
     const isSmallDesktop = useMediaQuery("(max-width: 1600px)")
     const maxPagesButtons = isMobile ? 5 : isTablet ? 10 : isSmallDesktop ? 15 : 25
     return (
-        <div className="container mx-auto p-4 relative">
-            <SearchErrorToast isError={isError} error={error} />
-            <div className="mb-4">
-                <div className="flex gap-2">
-                    <Toggle
-                        pressed={advancedIsOpen}
-                        onClick={toggleOptions}
-                        title={"Advanced Search Options Are " + (advancedIsOpen ? "Open" : "Closed")}
-                        aria-label="Toggle Advanced Search Options"
-                    >
-                        <Settings className="h-4 w-4" />
-                    </Toggle>
-                    <SearchBar />
-                    <InstantSearchLock />
-                    <Button title="Refresh search results" onClick={onRefresh} variant="ghost" size="icon">
-                        <RefreshCw className="h-4 w-4" />
-                    </Button>
-                </div>
-            </div>
-
-            <Card>
-                <CardHeader>
-                    <CardTitle>
-                        <AnimatedNumber value={nResults} /> {nResults === 1 ? "Result" : "Results"}
-                    </CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {data && data.results.map((result) => (
-                            <div key={result.path} className="border rounded p-2">
-                                <div className="relative w-full pb-full mb-2 overflow-hidden group">
-                                    <a
-                                        href={`/api/items/file/${getFileURL(result.sha256)}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="block relative h-80 mb-2 overflow-hidden"
-                                    >
-                                        <Image
-                                            src={`/api/items/thumbnail/${getFileURL(result.sha256)}`}
-                                            alt={`Result ${result.path}`}
-                                            fill
-                                            className="object-cover transition-transform duration-300 hover:scale-105"
-                                            unoptimized={true}
-                                        />
-                                    </a>
-                                    <BookmarkBtn sha256={result.sha256} />
-                                    <OpenFile sha256={result.sha256} path={result.path} />
-                                    <OpenFolder sha256={result.sha256} path={result.path} />
-                                </div>
-                                <FilePathComponent path={result.path} />
-                                <p className="text-xs text-gray-500">
-                                    {new Date(result.last_modified).toLocaleString('en-US')}
-                                </p>
-                            </div>
-                        ))}
-                    </div>
-                </CardContent>
-            </Card>
-            {data && data.count > page_size && (
-                <PageSelect total_pages={total_pages} current_page={page} setPage={setPage} max_pages={maxPagesButtons} />
-            )}
-
+        <div className="flex min-h-screen w-full">
             <AdvancedSearchOptions />
+            <div className={cn('flex-grow p-4 transition-all duration-300 mx-auto',
+                advancedIsOpen ? 'md:w-1/2 lg:w-1/2 xl:w-2/3 2xl:w-3/4' : 'md:w-full lg:w-full xl:w-full 2xl:w-full'
+            )}>
+                <SearchErrorToast isError={isError} error={error} />
+                <div className="mb-4">
+                    <div className="flex gap-2">
+                        <Toggle
+                            pressed={advancedIsOpen}
+                            onClick={toggleOptions}
+                            title={"Advanced Search Options Are " + (advancedIsOpen ? "Open" : "Closed")}
+                            aria-label="Toggle Advanced Search Options"
+                        >
+                            <Settings className="h-4 w-4" />
+                        </Toggle>
+                        <SearchBar />
+                        <InstantSearchLock />
+                        <Button title="Refresh search results" onClick={onRefresh} variant="ghost" size="icon">
+                            <RefreshCw className="h-4 w-4" />
+                        </Button>
+                    </div>
+                </div>
+
+                <Card>
+                    <CardHeader>
+                        <CardTitle>
+                            <AnimatedNumber value={nResults} /> {nResults === 1 ? "Result" : "Results"}
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+
+                        <div className={cn('grid gap-4',
+                            advancedIsOpen ? 'md:grid-cols-1 lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4' :
+                                'md:grid-cols-1 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5')}>
+
+                            {data && data.results.map((result) => (
+                                <div key={result.path} className="border rounded p-2">
+                                    <div className="relative w-full pb-full mb-2 overflow-hidden group">
+                                        <a
+                                            href={`/api/items/file/${getFileURL(result.sha256)}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="block relative h-80 mb-2 overflow-hidden"
+                                        >
+                                            <Image
+                                                src={`/api/items/thumbnail/${getFileURL(result.sha256)}`}
+                                                alt={`Result ${result.path}`}
+                                                fill
+                                                className="object-cover transition-transform duration-300 hover:scale-105"
+                                                unoptimized={true}
+                                            />
+                                        </a>
+                                        <BookmarkBtn sha256={result.sha256} />
+                                        <OpenFile sha256={result.sha256} path={result.path} />
+                                        <OpenFolder sha256={result.sha256} path={result.path} />
+                                    </div>
+                                    <FilePathComponent path={result.path} />
+                                    <p className="text-xs text-gray-500">
+                                        {new Date(result.last_modified).toLocaleString('en-US')}
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                    </CardContent>
+                </Card>
+                {data && data.count > page_size && (
+                    <PageSelect total_pages={total_pages} current_page={page} setPage={setPage} max_pages={maxPagesButtons} />
+                )}
+
+            </div>
         </div>
     );
 }
