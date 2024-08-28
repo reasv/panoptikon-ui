@@ -26,4 +26,4 @@ export const PLACEHOLDERS = [
   "Search for the golden ticket.",
   "Seek and you shall find.",
   "Search for the moon, reach the stars.",
-]
+] as const
