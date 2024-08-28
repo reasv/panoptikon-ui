@@ -43,12 +43,14 @@ export function PathPrefixFilter() {
     ]));
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
-            <div className="space-y-0.5">
-                <Label className="text-base">
-                    Path Prefix Filter
-                </Label>
-                <div className="text-gray-400">
-                    Paths must start with one of these
+            <div className="flex flex-row items-center justify-between">
+                <div className="space-y-0.5">
+                    <Label className="text-base">
+                        Path Prefix Filter
+                    </Label>
+                    <div className="text-gray-400">
+                        Paths must start with one of these
+                    </div>
                 </div>
                 <Switch checked={pathsEnabled} onCheckedChange={(value) => setPathsEnabled(value)} />
             </div>
