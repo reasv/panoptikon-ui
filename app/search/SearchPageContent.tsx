@@ -185,12 +185,23 @@ export function ImageGallery({
     const nextImage = useGallery((state) => state.nextImage)
     const prevImage = useGallery((state) => state.prevImage)
     const index = useGallery((state) => state.selectedImageIndex)
+
+    // Function to handle clicks on the left or right side of the image
+    const handleImageClick = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
+        const { clientX, currentTarget } = e
+        e.stopPropagation()
+        const { left, right } = currentTarget.getBoundingClientRect()
+        const middle = (left + right) / 2
+        if (clientX > middle) {
+            nextImage(items.length)
+        } else {
+            prevImage(items.length)
+        }
+    }
+
     return (
         <div key={items[index].path} className="flex flex-col max-h-[calc(100vh-250px)] border rounded p-2">
             <div className="flex justify-between mb-2">
-                <Button onClick={() => closeGallery()} variant="ghost" size="icon" title="Close Gallery">
-                    <X className="h-4 w-4" />
-                </Button>
                 <div>
                     <Button onClick={() => prevImage(items.length)} variant="ghost" size="icon" title="Previous Image">
                         <ArrowBigLeft className="h-4 w-4" />
@@ -199,13 +210,20 @@ export function ImageGallery({
                         <ArrowBigRight className="h-4 w-4" />
                     </Button>
                 </div>
+                <Button onClick={() => closeGallery()} variant="ghost" size="icon" title="Close Gallery">
+                    <X className="h-4 w-4" />
+                </Button>
             </div>
-            <div className="relative flex-grow h-[calc(100vh-300px)] flex justify-center items-center overflow-hidden"> {/* Set explicit height */}
+            <div
+                className="relative flex-grow h-[calc(100vh-300px)] flex justify-center items-center overflow-hidden cursor-pointer"
+                onClick={handleImageClick} // Attach click handler to the entire area
+            >
                 <a
                     href={`/api/items/file/${getFileURL(items[index].sha256)}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="absolute inset-0"
+                    onClick={(e) => e.preventDefault()}
                 >
                     <Image
                         src={`/api/items/thumbnail/${getFileURL(items[index].sha256)}`}
