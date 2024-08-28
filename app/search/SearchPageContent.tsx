@@ -181,13 +181,12 @@ export function ImageGallery({
         // Only use the DB values if they are set
         return `${sha256}?index_db=${dbs.index_db || ''}&user_data_db=${dbs.user_data_db || ''}`
     }
-    const openGallery = useGallery((state) => state.openGallery)
     const closeGallery = useGallery((state) => state.closeGallery)
     const nextImage = useGallery((state) => state.nextImage)
     const prevImage = useGallery((state) => state.prevImage)
     const index = useGallery((state) => state.selectedImageIndex)
     return (
-        <div key={items[index].path} className="max-h-[calc(100vh-250px)] border rounded p-2 overflow-hidden">
+        <div key={items[index].path} className="flex flex-col max-h-[calc(100vh-250px)] border rounded p-2">
             <div className="flex justify-between mb-2">
                 <Button onClick={() => closeGallery()} variant="ghost" size="icon" title="Close Gallery">
                     <X className="h-4 w-4" />
@@ -201,7 +200,7 @@ export function ImageGallery({
                     </Button>
                 </div>
             </div>
-            <div className="relative w-full max-h-[calc(100vh-300px)] pb-[56.25%] mb-2 overflow-hidden"> {/* Adjust height */}
+            <div className="relative flex-grow h-[calc(100vh-300px)] flex justify-center items-center overflow-hidden"> {/* Set explicit height */}
                 <a
                     href={`/api/items/file/${getFileURL(items[index].sha256)}`}
                     target="_blank"
@@ -216,9 +215,6 @@ export function ImageGallery({
                         unoptimized={true}
                     />
                 </a>
-                <BookmarkBtn sha256={items[index].sha256} />
-                <OpenFile sha256={items[index].sha256} path={items[index].path} />
-                <OpenFolder sha256={items[index].sha256} path={items[index].path} />
             </div>
             <FilePathComponent path={items[index].path} />
             <p className="text-xs text-gray-500">
