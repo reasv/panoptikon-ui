@@ -136,7 +136,7 @@ export function SearchPageContent({ initialQuery }:
                                                     src={`/api/items/thumbnail/${getFileURL(result.sha256)}`}
                                                     alt={`Result ${result.path}`}
                                                     fill
-                                                    className="object-cover transition-transform duration-300 hover:scale-105"
+                                                    className="object-cover object-top transition-transform duration-300 hover:scale-105"
                                                     unoptimized={true}
                                                 />
                                             </a>
