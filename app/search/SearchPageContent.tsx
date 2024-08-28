@@ -198,11 +198,13 @@ export function ImageGallery({
             prevImage(items.length)
         }
     }
-
+    const dateString = new Date(items[index].last_modified).toLocaleString('en-US')
+    const thumbnailURL = `/api/items/thumbnail/${getFileURL(items[index].sha256)}`
+    const fileURL = `/api/items/file/${getFileURL(items[index].sha256)}`
     return (
         <div key={items[index].path} className="flex flex-col max-h-[calc(100vh-250px)] border rounded p-2">
-            <div className="flex justify-between mb-2">
-                <div>
+            <div className="flex justify-between items-center mb-2">
+                <div className="flex items-center">
                     <Button onClick={() => prevImage(items.length)} variant="ghost" size="icon" title="Previous Image">
                         <ArrowBigLeft className="h-4 w-4" />
                     </Button>
@@ -210,6 +212,14 @@ export function ImageGallery({
                         <ArrowBigRight className="h-4 w-4" />
                     </Button>
                 </div>
+
+                <div className="max-w-[33%] text-center">
+                    <FilePathComponent path={items[index].path} />
+                    <p className="text-xs text-gray-500 truncate">
+                        {dateString}
+                    </p>
+                </div>
+
                 <Button onClick={() => closeGallery()} variant="ghost" size="icon" title="Close Gallery">
                     <X className="h-4 w-4" />
                 </Button>
@@ -219,14 +229,14 @@ export function ImageGallery({
                 onClick={handleImageClick} // Attach click handler to the entire area
             >
                 <a
-                    href={`/api/items/file/${getFileURL(items[index].sha256)}`}
+                    href={fileURL}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="absolute inset-0"
                     onClick={(e) => e.preventDefault()}
                 >
                     <Image
-                        src={`/api/items/thumbnail/${getFileURL(items[index].sha256)}`}
+                        src={thumbnailURL}
                         alt={`${items[index].path}`}
                         fill
                         className="object-contain"
@@ -234,10 +244,7 @@ export function ImageGallery({
                     />
                 </a>
             </div>
-            <FilePathComponent path={items[index].path} />
-            <p className="text-xs text-gray-500">
-                {new Date(items[index].last_modified).toLocaleString('en-US')}
-            </p>
+
         </div>
     );
 }
