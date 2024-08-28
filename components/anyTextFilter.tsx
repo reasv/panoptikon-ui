@@ -8,21 +8,18 @@ import { Input } from "./ui/input";
 import { MultiBoxResponsive } from "./multiCombobox";
 import { Slider } from "./ui/slider";
 import { useEffect, useState } from "react";
+import { FilterContainer } from "./FilterContainer";
 
 export function AnyTextFilter() {
     const anyTextQuery = useSearchQuery((state) => state.any_text.query)
     return (
-        <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
-            <div className="flex flex-row items-center justify-between">
-                <div className="space-y-0.5">
-                    <Label className="text-base">
-                        Flexible Search
-                    </Label>
-                    <div className="text-gray-400">
-                        Returns items that match any of these filters
-                    </div>
-                </div>
-            </div>
+        <FilterContainer
+            storageKey="flexibleSearchContainer" // Add a storageKey prop to make the localStorage key unique
+            label={<span>Flexible Search</span>}
+            description={
+                <span>Returns items that match any of these filters</span>
+            }
+        >
             <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
                 <div className="flex flex-row items-center justify-between">
                     <div className="space-y-0.5">
@@ -46,7 +43,7 @@ export function AnyTextFilter() {
             </div>
             <AnyTextPathFilter />
             <AnyTextETFilter />
-        </div>
+        </FilterContainer>
     )
 }
 
