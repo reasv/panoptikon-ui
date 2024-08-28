@@ -121,6 +121,12 @@ function AnyTextETFilter() {
         console.log(value[0])
         setMinLanguageConfidence(value[0])
     }
+    useEffect(() => {
+        setConfidenceSlider([minConfidence])
+    }, [minConfidence])
+    useEffect(() => {
+        setLanguageConfidenceSlider([minLanguageConfidence])
+    }, [minLanguageConfidence])
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
             <div className="flex flex-row items-center justify-between">

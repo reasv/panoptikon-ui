@@ -5,6 +5,7 @@ import { useSQLite } from "@/lib/sqliteChecker"
 import { useEffect, useMemo } from "react"
 import { Fts5ToggleButton } from "./FTS5Toggle"
 import { PLACEHOLDERS } from "@/lib/placeholders"
+import { ClearSearch } from "./ClearSearch"
 
 export function SearchBar() {
     const setAnyTextQuery = useSearchQuery((state) => state.setAnyTextQuery)
@@ -68,6 +69,7 @@ export function SearchBar() {
                     </div>
                 )}
             </div>
+            <ClearSearch />
             <Fts5ToggleButton onFTS5Enable={onFTS5Enable} />
         </>
     )

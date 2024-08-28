@@ -1,16 +1,12 @@
 "use client"
-import { $api } from "@/lib/api"
 import { useSearchQuery } from "@/lib/zust"
 import { Label } from "./ui/label"
-import { Switch } from "./ui/switch";
-import { MultiBoxResponsive } from "./multiCombobox";
 import { Slider } from "./ui/slider";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "./ui/button";
 import { PlusCircle, MinusCircle } from "lucide-react";
 
 export function PageSizeSlider() {
-    const { data } = $api.useQuery("get", "/api/bookmarks/ns")
     const pageSize = useSearchQuery((state) => state.order_args.page_size)
     const [pageSizeSlider, setPageSizeSlider] = useState([pageSize])
     const setPageSize = useSearchQuery((state) => state.setPageSize)
@@ -25,6 +21,9 @@ export function PageSizeSlider() {
         setPageSizeSlider([pageSizeSlider[0] - 1])
         setPageSize(pageSizeSlider[0] - 1)
     }
+    useEffect(() => {
+        setPageSizeSlider([pageSize])
+    }, [pageSize])
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
             <div className="flex flex-row items-center justify-between">
