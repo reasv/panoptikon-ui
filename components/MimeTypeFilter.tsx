@@ -77,7 +77,6 @@ export function MimeTypeFilter() {
                         value: "*",
                         label: "Any Path Allowed"
                     }]}
-                    popoverClassName="w-[50vw]"
                     currentValues={types}
                     onSelectionChange={setTypes}
                     placeholder="Select groups"
