@@ -11,7 +11,7 @@ export function ExclusiveFilters() {
                     Exclusive Filters
                 </Label>
                 <div className="text-gray-400">
-                    These filters exclude any item that does NOT match them
+                    They exclude any items that do NOT match all of them
                 </div>
             </div>
             <PathPrefixFilter />
