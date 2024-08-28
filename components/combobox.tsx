@@ -44,7 +44,7 @@ export function ComboBoxResponsive({
     placeholder: string
 }) {
     const [open, setOpen] = React.useState(false)
-    const isDesktop = useMediaQuery("(min-width: 768px)")
+    const isDesktop = useMediaQuery("(min-width: 1024px)")
     const optionsMap = new Map(options.map((option) => [option.value, option]))
     const buttonLabel = currentValue ? (optionsMap.get(currentValue)?.label || placeholder) : placeholder
     if (isDesktop) {

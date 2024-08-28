@@ -46,7 +46,7 @@ export function MultiBoxResponsive({
     maxDisplayed: number
 }) {
     const [open, setOpen] = React.useState(false)
-    const isDesktop = useMediaQuery("(min-width: 768px)")
+    const isDesktop = useMediaQuery("(min-width: 1024px)")
     const optionsMap = new Map(options.map((option) => [option.value, option]))
 
     let buttonLabel = placeholder
