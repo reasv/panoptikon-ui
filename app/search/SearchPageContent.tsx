@@ -107,15 +107,15 @@ export function SearchPageContent({ initialQuery }:
                     </div>
                 </div>
 
-                <Card className="flex-grow flex flex-col">
+                <Card>
                     <CardHeader>
                         <CardTitle>
                             <AnimatedNumber value={nResults} /> {nResults === 1 ? "Result" : "Results"}
                         </CardTitle>
                     </CardHeader>
-                    <CardContent className="flex-grow overflow-hidden">
-                        <ScrollArea className="h-full max-h-[calc(100vh-250px)] overflow-y-auto" >
-                            <div className={cn('grid gap-4',
+                    <CardContent>
+                        <ScrollArea className="overflow-y-auto" >
+                            <div className={cn('grid gap-4 max-h-[calc(100vh-250px)]',
                                 advancedIsOpen ? 'sm:grid-cols-1 md:grid-cols-1 lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4' :
                                     'sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5')}>
 
