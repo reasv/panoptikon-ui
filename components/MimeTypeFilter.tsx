@@ -38,11 +38,16 @@ export function MimeTypeFilter() {
     function onClickAdd() {
         addNewCustomMime()
     }
+    function onRemoveCustomMime(value: string) {
+        setTypes(types.filter((t) => t !== value))
+        removeCustomMime(value)
+    }
     const allMimes = Array.from(new Set([
         "*",
         ...(data?.files.mime_types || []),
         ...(customTypes || []),
     ]));
+    const isCustom = (mime: string) => (!(data?.files.mime_types || []).includes(mime)) && mime !== "*"
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
             <div className="flex flex-row items-center justify-between">
@@ -68,7 +73,7 @@ export function MimeTypeFilter() {
             </div>
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
                 <MultiBoxResponsive
-                    options={allMimes.map((ns) => ({ value: ns, label: ns === "*" ? "Any Type Allowed" : ns })) || [{
+                    options={allMimes.map((ns) => ({ removable: isCustom(ns), value: ns, label: ns === "*" ? "Any Type Allowed" : ns })) || [{
                         value: "*",
                         label: "Any Path Allowed"
                     }]}
@@ -78,6 +83,7 @@ export function MimeTypeFilter() {
                     placeholder="Select groups"
                     resetValue="*"
                     maxDisplayed={4}
+                    onRemoveOption={onRemoveCustomMime}
                 />
             </div>
         </div>

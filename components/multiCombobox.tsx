@@ -4,7 +4,7 @@ import * as React from "react"
 
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { Button } from "@/components/ui/button"
-import { Check } from "lucide-react"
+import { Check, Delete } from "lucide-react"
 import {
     Command,
     CommandEmpty,
@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils"
 export type Option = {
     value: string
     label: string
+    removable?: boolean
 }
 
 export function MultiBoxResponsive({
@@ -38,6 +39,7 @@ export function MultiBoxResponsive({
     maxDisplayed,
     placeholder,
     popoverClassName,
+    onRemoveOption,
 }: {
     options: Option[],
     resetValue?: string,
@@ -46,6 +48,7 @@ export function MultiBoxResponsive({
     placeholder: string,
     maxDisplayed: number
     popoverClassName?: string
+    onRemoveOption?: (value: string) => void
 }) {
     const [open, setOpen] = React.useState(false)
     const isDesktop = useMediaQuery("(min-width: 1024px)")
@@ -86,7 +89,7 @@ export function MultiBoxResponsive({
                     </Button>
                 </PopoverTrigger>
                 <PopoverContent className={cn("w-[200px] p-0", popoverClassName)} align="start">
-                    <OptionList defaultValue={resetValue} selectedValues={currentValues} options={options} toggleValue={onOptionToggle} />
+                    <OptionList removeOption={onRemoveOption} defaultValue={resetValue} selectedValues={currentValues} options={options} toggleValue={onOptionToggle} />
                 </PopoverContent>
             </Popover>
         )
@@ -101,7 +104,7 @@ export function MultiBoxResponsive({
             </DrawerTrigger>
             <DrawerContent>
                 <div className="mt-4 border-t">
-                    <OptionList defaultValue={resetValue} selectedValues={currentValues} options={options} toggleValue={onOptionToggle} />
+                    <OptionList removeOption={onRemoveOption} defaultValue={resetValue} selectedValues={currentValues} options={options} toggleValue={onOptionToggle} />
                 </div>
             </DrawerContent>
         </Drawer>
@@ -113,11 +116,13 @@ function OptionList({
     toggleValue,
     options,
     defaultValue,
+    removeOption,
 }: {
     toggleValue: (value: string) => void,
     options: Option[],
     selectedValues: string[],
     defaultValue?: string
+    removeOption?: (value: string) => void
 }) {
     const isSelected = (value: string) => {
         if (selectedValues.length === 0 && defaultValue) {
@@ -146,6 +151,13 @@ function OptionList({
                                 )}
                             />
                             {option.label}
+                            {option.removable && removeOption && (
+                                <Button className="ml-4 h-5 w-5 hover:outline" onClick={(e) => {
+                                    e.stopPropagation()
+                                    removeOption(option.value)
+                                }} title="Remove custom value" variant="ghost" size="icon">
+                                    <Delete className="h-4 w-4" />
+                                </Button>)}
                         </CommandItem>
                     ))}
                 </CommandGroup>
