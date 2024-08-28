@@ -88,7 +88,7 @@ export function MultiBoxResponsive({
                         <span className="truncate">{buttonLabel}</span>
                     </Button>
                 </PopoverTrigger>
-                <PopoverContent className={cn("max-w-[300px] p-0", popoverClassName)} align="start">
+                <PopoverContent className={cn("max-w-[50vw] w-full p-0", popoverClassName)} align="start">
                     <OptionList removeOption={onRemoveOption} defaultValue={resetValue} selectedValues={currentValues} options={options} toggleValue={onOptionToggle} />
                 </PopoverContent>
             </Popover>

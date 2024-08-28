@@ -77,7 +77,6 @@ export function PathPrefixFilter() {
                         value: "*",
                         label: "Any Path Allowed"
                     }]}
-                    popoverClassName="w-[50vw]"
                     currentValues={paths}
                     onSelectionChange={setPaths}
                     placeholder="Select groups"
