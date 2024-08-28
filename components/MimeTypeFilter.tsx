@@ -1,6 +1,6 @@
 "use client"
 import { $api } from "@/lib/api"
-import { useCustomPaths, useSearchQuery } from "@/lib/zust"
+import { useCustomMimes, useSearchQuery } from "@/lib/zust"
 import { Label } from "./ui/label"
 import { Input } from "./ui/input";
 import { useState } from "react";
@@ -9,71 +9,71 @@ import { Button } from "./ui/button";
 import { MultiBoxResponsive } from "./multiCombobox";
 import { Switch } from "./ui/switch";
 
-export function PathPrefixFilter() {
+export function MimeTypeFilter() {
     const { data } = $api.useQuery("get", "/api/search/stats")
-    const paths = useSearchQuery((state) => state.paths)
-    const setPaths = useSearchQuery((state) => state.setPaths)
-    const customPaths = useCustomPaths((state) => state.strings)
-    const addCustomPath = useCustomPaths((state) => state.add)
-    const removeCustomPath = useCustomPaths((state) => state.remove)
-    const pathsEnabled = useSearchQuery((state) => state.e_path)
-    const setPathsEnabled = useSearchQuery((state) => state.setEnablePaths)
+    const types = useSearchQuery((state) => state.types)
+    const setTypes = useSearchQuery((state) => state.setTypes)
+    const customTypes = useCustomMimes((state) => state.strings)
+    const addCustomMime = useCustomMimes((state) => state.add)
+    const removeCustomMime = useCustomMimes((state) => state.remove)
+    const mimesEnabled = useSearchQuery((state) => state.e_types)
+    const setMimesEnabled = useSearchQuery((state) => state.setEnableTypes)
     const [inputValue, setInputValue] = useState('');
 
-    function addNewCustomPath() {
+    function addNewCustomMime() {
         if (inputValue === '') return
-        if (!paths.includes(inputValue)) {
-            if (!customPaths.includes(inputValue)) {
-                addCustomPath(inputValue)
+        if (!types.includes(inputValue)) {
+            if (!customTypes.includes(inputValue)) {
+                addCustomMime(inputValue)
             }
-            setPaths([...paths, inputValue])
+            setTypes([...types, inputValue])
         }
         setInputValue('')
     }
     function handleKeyPress(e: React.KeyboardEvent<HTMLInputElement>) {
         if (e.key === 'Enter') {
-            addNewCustomPath()
+            addNewCustomMime()
         }
     }
     function onClickAdd() {
-        addNewCustomPath()
+        addNewCustomMime()
     }
-    const allPaths = Array.from(new Set([
+    const allMimes = Array.from(new Set([
         "*",
-        ...(data?.folders || []),
-        ...(customPaths || []),
+        ...(data?.files.mime_types || []),
+        ...(customTypes || []),
     ]));
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
             <div className="flex flex-row items-center justify-between">
                 <div className="space-y-0.5">
                     <Label className="text-base">
-                        Path Prefix Filter
+                        Mime Type Filter
                     </Label>
                     <div className="text-gray-400">
-                        Paths must start with one of these strings
+                        Mime Type must start with one of these strings
                     </div>
                 </div>
-                <Switch checked={pathsEnabled} onCheckedChange={(value) => setPathsEnabled(value)} />
+                <Switch checked={mimesEnabled} onCheckedChange={(value) => setMimesEnabled(value)} />
             </div>
             <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-center mb-3">
                 <Input
                     onChange={(e) => setInputValue(e.target.value)}
                     value={inputValue}
                     onKeyDown={handleKeyPress}
-                    placeholder="Type a path and press Enter" />
-                <Button title="Add new path name" onClick={onClickAdd} variant="ghost" size="icon">
+                    placeholder="Type a mime type or prefix and press Enter" />
+                <Button title="Add new type" onClick={onClickAdd} variant="ghost" size="icon">
                     <Plus className="h-4 w-4" />
                 </Button>
             </div>
             <MultiBoxResponsive
-                options={allPaths.map((ns) => ({ value: ns, label: ns === "*" ? "Any Path Allowed" : ns })) || [{
+                options={allMimes.map((ns) => ({ value: ns, label: ns === "*" ? "Any Type Allowed" : ns })) || [{
                     value: "*",
                     label: "Any Path Allowed"
                 }]}
                 popoverClassName="w-[50vw]"
-                currentValues={paths}
-                onSelectionChange={setPaths}
+                currentValues={types}
+                onSelectionChange={setTypes}
                 placeholder="Select groups"
                 resetValue="*"
                 maxDisplayed={4}

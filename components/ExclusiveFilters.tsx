@@ -1,5 +1,6 @@
 "use client"
 
+import { MimeTypeFilter } from "./MimeTypeFilter"
 import { PathPrefixFilter } from "./PathFilter"
 import { Label } from "./ui/label"
 export function ExclusiveFilters() {
@@ -11,10 +12,11 @@ export function ExclusiveFilters() {
                     Exclusive Filters
                 </Label>
                 <div className="text-gray-400">
-                    They exclude any items that do NOT match all of them
+                    They exclude items that do <b>not</b> match <b>all</b> of them
                 </div>
             </div>
             <PathPrefixFilter />
+            <MimeTypeFilter />
         </div>
     )
 }

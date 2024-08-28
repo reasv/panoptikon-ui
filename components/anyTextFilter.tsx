@@ -70,7 +70,7 @@ function AnyTextPathFilter() {
             <div className="flex flex-row items-center justify-between">
                 <div className="space-y-0.5">
                     <Label className="text-base">
-                        Path Search Filter
+                        Path Search
                     </Label>
                     <div className="text-gray-400">
                         Searches in the path and filename of files
@@ -132,7 +132,7 @@ function AnyTextETFilter() {
             <div className="flex flex-row items-center justify-between">
                 <div className="space-y-0.5">
                     <Label className="text-base">
-                        Extracted Text Filter
+                        Extracted Text Search
                     </Label>
                     <div className="text-gray-400">
                         Searches in all text extracted from items, including OCR and tags
