@@ -7,7 +7,7 @@ import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/componen
 import { useAdvancedOptions, useDatabase, useInstantSearch, useSearchQuery } from "@/lib/zust"
 import { Toggle } from "@/components/ui/toggle"
 
-import { Settings, RefreshCw } from "lucide-react"
+import { Settings, RefreshCw, X, ArrowBigLeft, ArrowBigRight } from "lucide-react"
 import { AnimatedNumber } from "@/components/ui/animatedNumber"
 import { keepPreviousData } from "@tanstack/react-query"
 import { InstantSearchLock } from "@/components/InstantSearchLock"
@@ -21,6 +21,8 @@ import { SearchErrorToast } from "@/components/searchErrorToaster";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { components } from "@/lib/panoptikon";
+import { useGallery } from "@/lib/gallery";
 
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }
@@ -82,6 +84,8 @@ export function SearchPageContent({ initialQuery }:
     if (advancedIsOpen) {
         maxPagesButtons = isMobile ? 5 : isTablet ? 5 : isSmallDesktop ? 7 : isMediumDesktop ? 10 : isMediumLargeDesktop ? 20 : 25
     }
+    const openGallery = useGallery((state) => state.openGallery)
+    const galleryOpen = useGallery((state) => state.isGalleryOpen)
     return (
         <div className="flex w-full h-screen">
             <AdvancedSearchOptions />
@@ -116,42 +120,47 @@ export function SearchPageContent({ initialQuery }:
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <ScrollArea className="overflow-y-auto" >
-                            <div className={cn('grid gap-4 max-h-[calc(100vh-250px)]',
-                                advancedIsOpen ? 'grid-cols-1 sm:grid-cols-1 md:grid-cols-1 lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4' :
-                                    'grid-cols-1 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5')}>
+                        {galleryOpen && data ? <ImageGallery items={data?.results} /> :
+                            <ScrollArea className="overflow-y-auto" >
+                                <div className={cn('grid gap-4 max-h-[calc(100vh-250px)]',
+                                    advancedIsOpen ? 'grid-cols-1 sm:grid-cols-1 md:grid-cols-1 lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4' :
+                                        'grid-cols-1 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5')}>
 
-                                {data && data.results.map((result) => (
-                                    <div key={result.path} className="border rounded p-2">
-                                        <div className="overflow-hidden relative w-full pb-full mb-2 group">
-                                            <a
-                                                href={`/api/items/file/${getFileURL(result.sha256)}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className={cn("block relative mb-2 h-80",
-                                                    advancedIsOpen ? 'sm:h-96 md:h-80 lg:h-96 xl:h-80 2xl:h-80' : 'sm:h-96 md:h-80 lg:h-96 xl:h-96 2xl:h-96'
-                                                )}
-                                            >
-                                                <Image
-                                                    src={`/api/items/thumbnail/${getFileURL(result.sha256)}`}
-                                                    alt={`Result ${result.path}`}
-                                                    fill
-                                                    className="hover:object-contain object-cover object-top hover:object-center"
-                                                    unoptimized={true}
-                                                />
-                                            </a>
-                                            <BookmarkBtn sha256={result.sha256} />
-                                            <OpenFile sha256={result.sha256} path={result.path} />
-                                            <OpenFolder sha256={result.sha256} path={result.path} />
+                                    {data && data.results.map((result, index) => (
+                                        <div key={result.path} className="border rounded p-2">
+                                            <div className="overflow-hidden relative w-full pb-full mb-2 group">
+                                                <a
+                                                    href={`/api/items/file/${getFileURL(result.sha256)}`}
+                                                    target="_blank"
+                                                    onClick={(e) => {
+                                                        e.preventDefault()
+                                                        openGallery(index)
+                                                    }}
+                                                    rel="noopener noreferrer"
+                                                    className={cn("block relative mb-2 h-80",
+                                                        advancedIsOpen ? 'sm:h-96 md:h-80 lg:h-96 xl:h-80 2xl:h-80' : 'sm:h-96 md:h-80 lg:h-96 xl:h-96 2xl:h-96'
+                                                    )}
+                                                >
+                                                    <Image
+                                                        src={`/api/items/thumbnail/${getFileURL(result.sha256)}`}
+                                                        alt={`Result ${result.path}`}
+                                                        fill
+                                                        className="hover:object-contain object-cover object-top hover:object-center"
+                                                        unoptimized={true}
+                                                    />
+                                                </a>
+                                                <BookmarkBtn sha256={result.sha256} />
+                                                <OpenFile sha256={result.sha256} path={result.path} />
+                                                <OpenFolder sha256={result.sha256} path={result.path} />
+                                            </div>
+                                            <FilePathComponent path={result.path} />
+                                            <p className="text-xs text-gray-500">
+                                                {new Date(result.last_modified).toLocaleString('en-US')}
+                                            </p>
                                         </div>
-                                        <FilePathComponent path={result.path} />
-                                        <p className="text-xs text-gray-500">
-                                            {new Date(result.last_modified).toLocaleString('en-US')}
-                                        </p>
-                                    </div>
-                                ))}
-                            </div>
-                        </ScrollArea>
+                                    ))}
+                                </div>
+                            </ScrollArea>}
                     </CardContent>
                 </Card>
                 {data && data.count > page_size && (
@@ -159,6 +168,59 @@ export function SearchPageContent({ initialQuery }:
                 )}
 
             </div>
+        </div>
+    );
+}
+
+export function ImageGallery({
+    items
+}: {
+    items: components["schemas"]["FileSearchResult"][]
+}) {
+    const dbs = useDatabase((state) => state.getDBs())
+    function getFileURL(sha256: string) {
+        // Only use the DB values if they are set
+        return `${sha256}?index_db=${dbs.index_db || ''}&user_data_db=${dbs.user_data_db || ''}`
+    }
+    const openGallery = useGallery((state) => state.openGallery)
+    const closeGallery = useGallery((state) => state.closeGallery)
+    const nextImage = useGallery((state) => state.nextImage)
+    const prevImage = useGallery((state) => state.prevImage)
+    const index = useGallery((state) => state.selectedImageIndex)
+    return (
+        <div key={items[index].path} className="max-h-[calc(100vh-250px)] border rounded p-2">
+            <Button onClick={() => closeGallery()} variant="ghost" size="icon" title="Close Gallery">
+                <X className="h-4 w-4" />
+            </Button>
+            <Button onClick={() => prevImage(items.length)} variant="ghost" size="icon" title="Previous Image">
+                <ArrowBigLeft className="h-4 w-4" />
+            </Button>
+            <Button onClick={() => nextImage(items.length)} variant="ghost" size="icon" title="Next Image">
+                <ArrowBigRight className="h-4 w-4" />
+            </Button>
+            <div className="relative w-full pb-[56.25%] mb-2"> {/* 16:9 aspect ratio (56.25%) */}
+                <a
+                    href={`/api/items/file/${getFileURL(items[index].sha256)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="absolute inset-0"
+                >
+                    <Image
+                        src={`/api/items/thumbnail/${getFileURL(items[index].sha256)}`}
+                        alt={`${items[index].path}`}
+                        fill
+                        className="object-contain"
+                        unoptimized={true}
+                    />
+                </a>
+                <BookmarkBtn sha256={items[index].sha256} />
+                <OpenFile sha256={items[index].sha256} path={items[index].path} />
+                <OpenFolder sha256={items[index].sha256} path={items[index].path} />
+            </div>
+            <FilePathComponent path={items[index].path} />
+            <p className="text-xs text-gray-500">
+                {new Date(items[index].last_modified).toLocaleString('en-US')}
+            </p>
         </div>
     );
 }
