@@ -260,6 +260,7 @@ export const useSearchQuery = create(
         set(state)
       },
       setEnablePaths: (value: boolean) => {
+        get().setPage(1)
         set((state) => {
           return {
             ...state,
@@ -268,6 +269,7 @@ export const useSearchQuery = create(
         })
       },
       setEnableTypes: (value: boolean) => {
+        get().setPage(1)
         set((state) => {
           return {
             ...state,
@@ -276,6 +278,9 @@ export const useSearchQuery = create(
         })
       },
       setPaths: (paths: string[]) => {
+        if (get().e_path) {
+          get().setPage(1)
+        }
         set((state) => {
           return {
             ...state,
@@ -284,6 +289,9 @@ export const useSearchQuery = create(
         })
       },
       setTypes: (types: string[]) => {
+        if (get().e_types) {
+          get().setPage(1)
+        }
         set((state) => {
           return {
             ...state,
@@ -527,6 +535,7 @@ function getIsAnyTextEnabled(state: SearchQueryState | SearchQueryStateState) {
 }
 function getOrderBy(state: SearchQueryState | SearchQueryStateState) {
   const current_order_by = state.order_args.order_by
+  console.log(`Current order by ${current_order_by}`)
   if (current_order_by === null) {
     return "last_modified"
   }
@@ -546,7 +555,9 @@ export function queryFromState(
   state: SearchQueryState | SearchQueryStateState
 ): components["schemas"]["SearchQuery"] {
   const query: components["schemas"]["SearchQuery"] = {
-    order_args: state.order_args,
+    order_args: {
+      ...state.order_args,
+    },
     count: true,
     check_path: true,
     query: {
@@ -557,13 +568,15 @@ export function queryFromState(
   }
   if (state.any_text.query) {
     if (state.any_text.enable_path_filter) {
-      query.query!.filters!.any_text!.path = state.any_text.path_filter
+      query.query!.filters!.any_text!.path = { ...state.any_text.path_filter }
       query.query!.filters!.any_text!.path.query = state.any_text.query
       query.query!.filters!.any_text!.path.raw_fts5_match =
         state.any_text.raw_fts5_match
     }
     if (state.any_text.enable_et_filter) {
-      query.query!.filters!.any_text!.extracted_text = state.any_text.et_filter
+      query.query!.filters!.any_text!.extracted_text = {
+        ...state.any_text.et_filter,
+      }
       query.query!.filters!.any_text!.extracted_text.query =
         state.any_text.query
       query.query!.filters!.any_text!.extracted_text.raw_fts5_match =
@@ -571,7 +584,7 @@ export function queryFromState(
     }
   }
   if (state.bookmarks.restrict_to_bookmarks) {
-    query.query!.filters!.bookmarks = state.bookmarks
+    query.query!.filters!.bookmarks = { ...state.bookmarks }
   }
   if (getIsPathPrefixEnabled(state)) {
     query.query!.filters!.files = {
