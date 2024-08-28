@@ -72,27 +72,44 @@ interface StringStore {
   add: (p: string) => void
   remove: (p: string) => void
 }
-
-export const useCustomPaths = create<StringStore>((set) => ({
-  strings: [],
-  add: (p: string) => set((state) => ({ strings: [...state.strings, p] })),
-  remove: (p: string) => {
-    set((state) => {
-      const paths = state.strings.filter((path) => path !== p)
-      return { strings: paths }
-    })
-  },
-}))
-export const useCustomMimes = create<StringStore>((set) => ({
-  strings: [],
-  add: (p: string) => set((state) => ({ strings: [...state.strings, p] })),
-  remove: (p: string) => {
-    set((state) => {
-      const paths = state.strings.filter((path) => path !== p)
-      return { strings: paths }
-    })
-  },
-}))
+const pathStorageOptions = {
+  name: "customPaths",
+  storage: createJSONStorage<StringStore>(() => persistLocalStorage),
+}
+export const useCustomPaths = create(
+  persist<StringStore>(
+    (set) => ({
+      strings: [],
+      add: (p: string) => set((state) => ({ strings: [...state.strings, p] })),
+      remove: (p: string) => {
+        set((state) => {
+          const paths = state.strings.filter((path) => path !== p)
+          return { strings: paths }
+        })
+      },
+    }),
+    pathStorageOptions
+  )
+)
+const mimeStorageOptions = {
+  name: "customMimes",
+  storage: createJSONStorage<StringStore>(() => persistLocalStorage),
+}
+export const useCustomMimes = create(
+  persist<StringStore>(
+    (set) => ({
+      strings: [],
+      add: (p: string) => set((state) => ({ strings: [...state.strings, p] })),
+      remove: (p: string) => {
+        set((state) => {
+          const paths = state.strings.filter((path) => path !== p)
+          return { strings: paths }
+        })
+      },
+    }),
+    mimeStorageOptions
+  )
+)
 
 interface AdvancedOptionsState {
   isOpen: boolean
