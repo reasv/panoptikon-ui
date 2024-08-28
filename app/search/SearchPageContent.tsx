@@ -171,7 +171,6 @@ export function SearchPageContent({ initialQuery }:
         </div>
     );
 }
-
 export function ImageGallery({
     items
 }: {
@@ -188,17 +187,21 @@ export function ImageGallery({
     const prevImage = useGallery((state) => state.prevImage)
     const index = useGallery((state) => state.selectedImageIndex)
     return (
-        <div key={items[index].path} className="max-h-[calc(100vh-250px)] border rounded p-2">
-            <Button onClick={() => closeGallery()} variant="ghost" size="icon" title="Close Gallery">
-                <X className="h-4 w-4" />
-            </Button>
-            <Button onClick={() => prevImage(items.length)} variant="ghost" size="icon" title="Previous Image">
-                <ArrowBigLeft className="h-4 w-4" />
-            </Button>
-            <Button onClick={() => nextImage(items.length)} variant="ghost" size="icon" title="Next Image">
-                <ArrowBigRight className="h-4 w-4" />
-            </Button>
-            <div className="relative w-full pb-[56.25%] mb-2"> {/* 16:9 aspect ratio (56.25%) */}
+        <div key={items[index].path} className="max-h-[calc(100vh-250px)] border rounded p-2 overflow-hidden">
+            <div className="flex justify-between mb-2">
+                <Button onClick={() => closeGallery()} variant="ghost" size="icon" title="Close Gallery">
+                    <X className="h-4 w-4" />
+                </Button>
+                <div>
+                    <Button onClick={() => prevImage(items.length)} variant="ghost" size="icon" title="Previous Image">
+                        <ArrowBigLeft className="h-4 w-4" />
+                    </Button>
+                    <Button onClick={() => nextImage(items.length)} variant="ghost" size="icon" title="Next Image">
+                        <ArrowBigRight className="h-4 w-4" />
+                    </Button>
+                </div>
+            </div>
+            <div className="relative w-full max-h-[calc(100vh-300px)] pb-[56.25%] mb-2 overflow-hidden"> {/* Adjust height */}
                 <a
                     href={`/api/items/file/${getFileURL(items[index].sha256)}`}
                     target="_blank"
