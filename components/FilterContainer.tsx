@@ -8,19 +8,25 @@ interface FilterContainerProps {
     label: ReactNode;
     description?: ReactNode;
     children: ReactNode;
-    storageKey: string; // Add a storageKey prop to make the localStorage key unique
+    storageKey: string;
+    defaultIsCollapsed?: boolean; // Optional prop to set the default collapsed state
 }
 
-export function FilterContainer({ label, description, children, storageKey }: FilterContainerProps) {
-    const [isExpanded, setIsExpanded] = useState(true);
-
-    // Load the expanded/collapsed state from localStorage on mount
-    useEffect(() => {
+export function FilterContainer({
+    label,
+    description,
+    children,
+    storageKey,
+    defaultIsCollapsed = false, // Set default to false if not provided
+}: FilterContainerProps) {
+    const [isExpanded, setIsExpanded] = useState<boolean>(() => {
+        // Check localStorage first, then fallback to defaultIsCollapsed
         const savedState = localStorage.getItem(storageKey);
         if (savedState !== null) {
-            setIsExpanded(savedState === "true");
+            return savedState === "true";
         }
-    }, [storageKey]);
+        return !defaultIsCollapsed; // Default to true if not collapsed
+    });
 
     // Toggle the expanded/collapsed state and save it to localStorage
     const toggleFilters = () => {
