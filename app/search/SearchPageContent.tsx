@@ -83,7 +83,9 @@ export function SearchPageContent({ initialQuery }:
                 advancedIsOpen ? 'md:w-1/2 lg:w-1/2 xl:w-2/3 2xl:w-3/4' : 'md:w-full lg:w-full xl:w-full 2xl:w-full'
             )}>
                 <SearchErrorToast isError={isError} error={error} />
-                <div className="mb-4">
+                <div className={cn("mb-4 2xl:mx-auto",
+                    advancedIsOpen ? '2xl:w-2/3' : '2xl:w-1/2'
+                )}>
                     <div className="flex gap-2">
                         <Toggle
                             pressed={advancedIsOpen}
