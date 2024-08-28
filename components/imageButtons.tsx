@@ -208,16 +208,24 @@ export const OpenFolder = (
 export const FilePathComponent = ({ path }: { path: string }) => {
     const { toast } = useToast()
     const handleCopyToClipboard = (text: string) => {
-        navigator.clipboard.writeText(text).then(() => {
-            // Optionally, you can provide feedback to the user here
+        // This is necessary to prevent the browser from adding file:// to the path
+        const blob = new Blob([text], { type: 'text/plain' });
+        const data = [new ClipboardItem({ 'text/plain': blob })];
+        navigator.clipboard.write(data).then(() => {
+            toast({
+                title: "Path copied to clipboard",
+                description: text,
+                duration: 2000,
+            });
         }).catch((err) => {
             console.error('Failed to copy text: ', err);
+            toast({
+                title: "Failed to copy path to clipboard",
+                description: err.message,
+                variant: "destructive",
+                duration: 2000,
+            });
         });
-        toast({
-            title: "Path copied to clipboard",
-            description: text,
-            duration: 2000,
-        })
     };
     return (
         <p
