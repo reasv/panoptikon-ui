@@ -1,37 +1,49 @@
 "use client";
 
-import { ReactNode, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { Button } from "./ui/button";
 
-// Define the prop types for the CollapsibleFilters component
-interface CollapsibleFiltersProps {
-    label: ReactNode;  // The label can be a string, JSX, or any valid React node
-    description?: ReactNode;  // The description is optional and can also be any React node
-    children: ReactNode;  // The children will be the content inside the collapsible area
+interface FilterContainerProps {
+    label: ReactNode;
+    description?: ReactNode;
+    children: ReactNode;
+    storageKey: string; // Add a storageKey prop to make the localStorage key unique
 }
 
-export function FilterContainer({ label, description, children }: CollapsibleFiltersProps) {
+export function FilterContainer({ label, description, children, storageKey }: FilterContainerProps) {
     const [isExpanded, setIsExpanded] = useState(true);
 
+    // Load the expanded/collapsed state from localStorage on mount
+    useEffect(() => {
+        const savedState = localStorage.getItem(storageKey);
+        if (savedState !== null) {
+            setIsExpanded(savedState === "true");
+        }
+    }, [storageKey]);
+
+    // Toggle the expanded/collapsed state and save it to localStorage
     const toggleFilters = () => {
-        setIsExpanded((prev) => !prev);
+        setIsExpanded((prev) => {
+            const newState = !prev;
+            localStorage.setItem(storageKey, newState.toString());
+            return newState;
+        });
     };
 
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
             <div className="flex flex-row items-center justify-between">
                 <div className="space-y-0.5">
-                    <div className="text-base font-medium">
-                        {label}
-                    </div>
-                    {description && (
-                        <div className="text-gray-400">
-                            {description}
-                        </div>
-                    )}
+                    <div className="text-base font-medium">{label}</div>
+                    {description && <div className="text-gray-400">{description}</div>}
                 </div>
-                <Button title="Hide these filters" variant="ghost" size="icon" onClick={toggleFilters}>
+                <Button
+                    title="Hide these filters"
+                    variant="ghost"
+                    size="icon"
+                    onClick={toggleFilters}
+                >
                     <ChevronDown
                         className={`h-4 w-4 transform transition-transform duration-300 ${isExpanded ? "rotate-0" : "rotate-90"
                             }`}
