@@ -34,7 +34,7 @@ export function SearchPageContent({ initialQuery }:
     const searchEnabled = useSearchQuery((state) => state.enable_search)
     const instantSearch = useInstantSearch((state) => state.enabled)
 
-    const { data, error, isError, refetch } = $api.useQuery(
+    const { data, error, isError, refetch, isFetching } = $api.useQuery(
         "post",
         "/api/search",
         {
@@ -102,7 +102,7 @@ export function SearchPageContent({ initialQuery }:
                         <SearchBar />
                         <InstantSearchLock />
                         <Button title="Refresh search results" onClick={onRefresh} variant="ghost" size="icon">
-                            <RefreshCw className="h-4 w-4" />
+                            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
                         </Button>
                     </div>
                 </div>
