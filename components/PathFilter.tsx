@@ -49,7 +49,7 @@ export function PathPrefixFilter() {
                         Path Prefix Filter
                     </Label>
                     <div className="text-gray-400">
-                        Paths must start with one of these
+                        Paths must start with one of these strings
                     </div>
                 </div>
                 <Switch checked={pathsEnabled} onCheckedChange={(value) => setPathsEnabled(value)} />
@@ -69,6 +69,7 @@ export function PathPrefixFilter() {
                     value: "*",
                     label: "Any Path Allowed"
                 }]}
+                popoverClassName="w-[50vw]"
                 currentValues={paths}
                 onSelectionChange={setPaths}
                 placeholder="Select groups"
