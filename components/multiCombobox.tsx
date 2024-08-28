@@ -79,7 +79,7 @@ export function MultiBoxResponsive({
         return (
             <Popover open={open} onOpenChange={setOpen}>
                 <PopoverTrigger asChild>
-                    <Button variant="outline" className=" justify-start">
+                    <Button variant="outline" className="justify-start">
                         {buttonLabel}
                     </Button>
                 </PopoverTrigger>
@@ -93,7 +93,7 @@ export function MultiBoxResponsive({
     return (
         <Drawer open={open} onOpenChange={setOpen}>
             <DrawerTrigger asChild>
-                <Button variant="outline" className="w-[150px] justify-start">
+                <Button variant="outline" className="justify-start">
                     {buttonLabel}
                 </Button>
             </DrawerTrigger>
