@@ -14,7 +14,7 @@ import { InstantSearchLock } from "@/components/InstantSearchLock"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/use-toast"
 import { SearchBar } from "@/components/searchBar"
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { AdvancedSearchOptions } from "@/components/advancedSearchOptions";
 import { SearchQueryArgs } from "./page";
 import { SearchErrorToast } from "@/components/searchErrorToaster";

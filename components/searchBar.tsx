@@ -4,6 +4,7 @@ import { useSearchQuery } from "@/lib/zust"
 import { useSQLite } from "@/lib/sqliteChecker"
 import { useEffect, useMemo } from "react"
 import { Fts5ToggleButton } from "./FTS5Toggle"
+import { PLACEHOLDERS } from "@/lib/placeholders"
 
 export function SearchBar() {
     const setAnyTextQuery = useSearchQuery((state) => state.setAnyTextQuery)
@@ -45,43 +46,11 @@ export function SearchBar() {
         }
         setAnyTextQuery(match_string)
     }
-    // Define an array of placeholder phrases
-    const placeholderPhrases = [
-        "What do you want to find today?",
-        "What are you searching for?",
-        "Find what you're looking for.",
-        "What will you discover today?",
-        "Search your next adventure.",
-        "Looking for something?",
-        "Explore new ideas.",
-        "What’s on your mind?",
-        "Search your journey.",
-        "Find your inspiration.",
-        "Seek, and you shall find!",
-        "Get your search on!",
-        "Uncover what clicks today.",
-        "Go ahead, make a query.",
-        "Finders, seekers!",
-        "On the hunt? Start here.",
-        "Let’s search and rescue that info.",
-        "Your quest begins here.",
-        "Navigate your way to answers.",
-        "Discover the unknown.",
-        "Search for the truth.",
-        "Find the needle in the haystack.",
-        "Search for the key to success.",
-        "Find the missing piece.",
-        "Search for the golden ticket.",
-        "Seek and you shall find.",
-        "Search for the moon, reach the stars.",
-    ];
 
-    // Get the current minute and use it to select a phrase
     const placeholder = useMemo(() => {
         const currentMinute = new Date().getMinutes();
-        // Select a phrase based on the current minute
-        return placeholderPhrases[currentMinute % placeholderPhrases.length];
-    }, [placeholderPhrases]);
+        return PLACEHOLDERS[currentMinute % PLACEHOLDERS.length];
+    }, [PLACEHOLDERS]);
 
     return (
         <>
