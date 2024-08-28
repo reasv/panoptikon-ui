@@ -43,6 +43,11 @@ export function PathPrefixFilter() {
         ...(data?.folders || []),
         ...(customPaths || []),
     ]));
+    function onRemoveCustomPath(value: string) {
+        setPaths(paths.filter((t) => t !== value))
+        removeCustomPath(value)
+    }
+    const isCustom = (path: string) => (!(data?.folders || []).includes(path)) && path !== "*"
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
             <div className="flex flex-row items-center justify-between">
@@ -68,7 +73,7 @@ export function PathPrefixFilter() {
             </div>
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
                 <MultiBoxResponsive
-                    options={allPaths.map((ns) => ({ value: ns, label: ns === "*" ? "Any Path Allowed" : ns })) || [{
+                    options={allPaths.map((ns) => ({ removable: isCustom(ns), value: ns, label: ns === "*" ? "Any Path Allowed" : ns })) || [{
                         value: "*",
                         label: "Any Path Allowed"
                     }]}
@@ -78,6 +83,7 @@ export function PathPrefixFilter() {
                     placeholder="Select groups"
                     resetValue="*"
                     maxDisplayed={4}
+                    onRemoveOption={onRemoveCustomPath}
                 />
             </div>
         </div>

@@ -150,14 +150,15 @@ function OptionList({
                                     isSelected(option.value) ? "opacity-100" : "opacity-0"
                                 )}
                             />
-                            {option.label}
                             {option.removable && removeOption && (
-                                <Button className="ml-4 h-5 w-5 hover:outline" onClick={(e) => {
+                                <Button className="ml-1 mr-4 h-5 w-5 hover:outline" onClick={(e) => {
                                     e.stopPropagation()
                                     removeOption(option.value)
                                 }} title="Remove custom value" variant="ghost" size="icon">
-                                    <Delete className="h-4 w-4" />
+                                    <Delete className="h-4 w-4 rotate-180" />
                                 </Button>)}
+                            {option.label}
+
                         </CommandItem>
                     ))}
                 </CommandGroup>
