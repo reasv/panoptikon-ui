@@ -11,7 +11,7 @@ interface CollapsibleFiltersProps {
     children: ReactNode;  // The children will be the content inside the collapsible area
 }
 
-export function CollapsibleFilters({ label, description, children }: CollapsibleFiltersProps) {
+export function FilterContainer({ label, description, children }: CollapsibleFiltersProps) {
     const [isExpanded, setIsExpanded] = useState(true);
 
     const toggleFilters = () => {
