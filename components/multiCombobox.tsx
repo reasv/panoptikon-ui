@@ -88,7 +88,7 @@ export function MultiBoxResponsive({
                         <span className="truncate">{buttonLabel}</span>
                     </Button>
                 </PopoverTrigger>
-                <PopoverContent className={cn("w-[200px] p-0", popoverClassName)} align="start">
+                <PopoverContent className={cn("max-w-[300px] p-0", popoverClassName)} align="start">
                     <OptionList removeOption={onRemoveOption} defaultValue={resetValue} selectedValues={currentValues} options={options} toggleValue={onOptionToggle} />
                 </PopoverContent>
             </Popover>
@@ -138,6 +138,7 @@ function OptionList({
                 <CommandGroup>
                     {options.map((option) => (
                         <CommandItem
+                            title={option.label}
                             key={option.value}
                             value={option.value}
                             onSelect={(value) => {
@@ -157,8 +158,7 @@ function OptionList({
                                 }} title="Remove custom value" variant="ghost" size="icon">
                                     <Delete className="h-4 w-4 rotate-180" />
                                 </Button>)}
-                            {option.label}
-
+                            <span className="truncate">{option.label}</span>
                         </CommandItem>
                     ))}
                 </CommandGroup>
