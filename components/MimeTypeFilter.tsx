@@ -56,7 +56,7 @@ export function MimeTypeFilter() {
                 </div>
                 <Switch checked={mimesEnabled} onCheckedChange={(value) => setMimesEnabled(value)} />
             </div>
-            <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-center mb-3">
+            <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-center">
                 <Input
                     onChange={(e) => setInputValue(e.target.value)}
                     value={inputValue}
@@ -66,18 +66,20 @@ export function MimeTypeFilter() {
                     <Plus className="h-4 w-4" />
                 </Button>
             </div>
-            <MultiBoxResponsive
-                options={allMimes.map((ns) => ({ value: ns, label: ns === "*" ? "Any Type Allowed" : ns })) || [{
-                    value: "*",
-                    label: "Any Path Allowed"
-                }]}
-                popoverClassName="w-[50vw]"
-                currentValues={types}
-                onSelectionChange={setTypes}
-                placeholder="Select groups"
-                resetValue="*"
-                maxDisplayed={4}
-            />
+            <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
+                <MultiBoxResponsive
+                    options={allMimes.map((ns) => ({ value: ns, label: ns === "*" ? "Any Type Allowed" : ns })) || [{
+                        value: "*",
+                        label: "Any Path Allowed"
+                    }]}
+                    popoverClassName="w-[50vw]"
+                    currentValues={types}
+                    onSelectionChange={setTypes}
+                    placeholder="Select groups"
+                    resetValue="*"
+                    maxDisplayed={4}
+                />
+            </div>
         </div>
     )
 }
