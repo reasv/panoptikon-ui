@@ -37,6 +37,7 @@ export function MultiBoxResponsive({
     onSelectionChange,
     maxDisplayed,
     placeholder,
+    popoverClassName,
 }: {
     options: Option[],
     resetValue?: string,
@@ -44,6 +45,7 @@ export function MultiBoxResponsive({
     onSelectionChange: (values: string[]) => void
     placeholder: string,
     maxDisplayed: number
+    popoverClassName?: string
 }) {
     const [open, setOpen] = React.useState(false)
     const isDesktop = useMediaQuery("(min-width: 1024px)")
@@ -79,11 +81,11 @@ export function MultiBoxResponsive({
         return (
             <Popover open={open} onOpenChange={setOpen}>
                 <PopoverTrigger asChild>
-                    <Button variant="outline" className="justify-start">
-                        {buttonLabel}
+                    <Button variant="outline" className="justify-start max-w-[250px]">
+                        <span className="truncate">{buttonLabel}</span>
                     </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[200px] p-0" align="start">
+                <PopoverContent className={cn("w-[200px] p-0", popoverClassName)} align="start">
                     <OptionList defaultValue={resetValue} selectedValues={currentValues} options={options} toggleValue={onOptionToggle} />
                 </PopoverContent>
             </Popover>
@@ -93,8 +95,8 @@ export function MultiBoxResponsive({
     return (
         <Drawer open={open} onOpenChange={setOpen}>
             <DrawerTrigger asChild>
-                <Button variant="outline" className="justify-start">
-                    {buttonLabel}
+                <Button variant="outline" className="justify-start max-w-[250px]">
+                    <span className="truncate">{buttonLabel}</span>
                 </Button>
             </DrawerTrigger>
             <DrawerContent>

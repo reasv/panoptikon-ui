@@ -51,8 +51,8 @@ export function ComboBoxResponsive({
         return (
             <Popover open={open} onOpenChange={setOpen}>
                 <PopoverTrigger asChild>
-                    <Button variant="outline" className="justify-start">
-                        {buttonLabel}
+                    <Button variant="outline" className="justify-start max-w-[250px]">
+                        <span className="truncate">{buttonLabel}</span>
                     </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-[200px] p-0" align="start">
@@ -65,8 +65,8 @@ export function ComboBoxResponsive({
     return (
         <Drawer open={open} onOpenChange={setOpen}>
             <DrawerTrigger asChild>
-                <Button variant="outline" className="justify-start">
-                    {buttonLabel}
+                <Button variant="outline" className="justify-start max-w-[250px]">
+                    <span className="truncate">{buttonLabel}</span>
                 </Button>
             </DrawerTrigger>
             <DrawerContent>
