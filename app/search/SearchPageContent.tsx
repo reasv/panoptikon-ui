@@ -75,10 +75,12 @@ export function SearchPageContent({ initialQuery }:
     const advancedIsOpen = useAdvancedOptions((state) => state.isOpen)
     const isMobile = useMediaQuery("(max-width: 768px)")
     const isTablet = useMediaQuery("(max-width: 1024px)")
-    const isSmallDesktop = useMediaQuery("(max-width: 1600px)")
-    let maxPagesButtons = isMobile ? 5 : isTablet ? 10 : isSmallDesktop ? 15 : 25
+    const isSmallDesktop = useMediaQuery("(max-width: 1280px)")
+    const isMediumDesktop = useMediaQuery("(max-width: 1536px)")
+    const isMediumLargeDesktop = useMediaQuery("(max-width: 1920px)")
+    let maxPagesButtons = isMobile ? 5 : isTablet ? 10 : isSmallDesktop ? 15 : isMediumDesktop ? 20 : isMediumLargeDesktop ? 25 : 35
     if (advancedIsOpen) {
-        maxPagesButtons = isMobile ? 5 : isTablet ? 5 : isSmallDesktop ? 7 : 20
+        maxPagesButtons = isMobile ? 5 : isTablet ? 5 : isSmallDesktop ? 7 : isMediumDesktop ? 10 : isMediumLargeDesktop ? 20 : 25
     }
     return (
         <div className="flex w-full h-screen">
