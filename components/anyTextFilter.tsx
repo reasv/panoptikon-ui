@@ -140,7 +140,7 @@ function AnyTextETFilter() {
                 </div>
                 <Switch checked={enableETFilter} onCheckedChange={(value) => setETFilterEnabled(value)} />
             </div>
-            <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
+            <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
                 <MultiBoxResponsive
                     options={textTargets}
                     resetValue="*" // Reset value is the value that will clear the selection
@@ -149,15 +149,8 @@ function AnyTextETFilter() {
                     maxDisplayed={1}
                     placeholder="Targets..."
                 />
-                <MultiBoxResponsive
-                    options={textLanguages}
-                    resetValue="*" // Reset value is the value that will clear the selection
-                    currentValues={languages}
-                    onSelectionChange={setLanguages}
-                    maxDisplayed={1}
-                    placeholder="Languages..."
-                />
             </div>
+
             <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
                 <div className="flex flex-row items-center justify-between">
                     <div className="space-y-0.5">
@@ -178,6 +171,16 @@ function AnyTextETFilter() {
                     min={0}
                     step={0.01}
                     className="mt-4"
+                />
+            </div>
+            <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
+                <MultiBoxResponsive
+                    options={textLanguages}
+                    resetValue="*" // Reset value is the value that will clear the selection
+                    currentValues={languages}
+                    onSelectionChange={setLanguages}
+                    maxDisplayed={1}
+                    placeholder="Languages..."
                 />
             </div>
             <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
