@@ -67,6 +67,33 @@ export const useBookmarkCustomNs = create<BookmarksCustom>((set) => ({
     set((state) => ({ namespaces: [...state.namespaces, ns] })),
 }))
 
+interface StringStore {
+  strings: string[]
+  add: (p: string) => void
+  remove: (p: string) => void
+}
+
+export const useCustomPaths = create<StringStore>((set) => ({
+  strings: [],
+  add: (p: string) => set((state) => ({ strings: [...state.strings, p] })),
+  remove: (p: string) => {
+    set((state) => {
+      const paths = state.strings.filter((path) => path !== p)
+      return { strings: paths }
+    })
+  },
+}))
+export const useCustomMimes = create<StringStore>((set) => ({
+  strings: [],
+  add: (p: string) => set((state) => ({ strings: [...state.strings, p] })),
+  remove: (p: string) => {
+    set((state) => {
+      const paths = state.strings.filter((path) => path !== p)
+      return { strings: paths }
+    })
+  },
+}))
+
 interface AdvancedOptionsState {
   isOpen: boolean
   toggle: () => void
@@ -111,12 +138,20 @@ export interface SearchQueryStateState {
   order_args: components["schemas"]["OrderParams"]
   any_text: AnyTextSettings
   bookmarks: components["schemas"]["BookmarksFilter"]
+  paths: string[]
+  types: string[]
+  e_path: boolean
+  e_types: boolean
 }
 interface SearchQueryState {
   enable_search: boolean
   order_args: components["schemas"]["OrderParams"]
   any_text: AnyTextSettings
   bookmarks: components["schemas"]["BookmarksFilter"]
+  paths: string[]
+  types: string[]
+  e_path: boolean
+  e_types: boolean
   setInitialState: (state: SearchQueryStateState) => void
   setOrderBy: (
     order_by:
@@ -147,6 +182,10 @@ interface SearchQueryState {
   setEnableSearch: (value: boolean) => void
   getIsAnyTextEnabled: () => boolean
   setPageSize: (size: number) => void
+  setPaths: (paths: string[]) => void
+  setTypes: (types: string[]) => void
+  setEnablePaths: (value: boolean) => void
+  setEnableTypes: (value: boolean) => void
   getOrderBy: () =>
     | "last_modified"
     | "path"
@@ -191,6 +230,10 @@ export const initialSearchQueryState: SearchQueryStateState = {
     user: "user",
     include_wildcard: true,
   },
+  paths: [],
+  types: [],
+  e_path: false,
+  e_types: false,
 }
 export const useSearchQuery = create(
   persist<SearchQueryState>(
@@ -198,6 +241,38 @@ export const useSearchQuery = create(
       ...initialSearchQueryState,
       setInitialState: (state: SearchQueryStateState) => {
         set(state)
+      },
+      setEnablePaths: (value: boolean) => {
+        set((state) => {
+          return {
+            ...state,
+            e_path: value,
+          }
+        })
+      },
+      setEnableTypes: (value: boolean) => {
+        set((state) => {
+          return {
+            ...state,
+            e_types: value,
+          }
+        })
+      },
+      setPaths: (paths: string[]) => {
+        set((state) => {
+          return {
+            ...state,
+            paths: paths,
+          }
+        })
+      },
+      setTypes: (types: string[]) => {
+        set((state) => {
+          return {
+            ...state,
+            types: types,
+          }
+        })
       },
       setPageSize: (size: number) => {
         set((state) => {
@@ -415,6 +490,18 @@ export const useSearchQuery = create(
   )
 )
 
+function getIsPathPrefixEnabled(
+  state: SearchQueryState | SearchQueryStateState
+) {
+  return state.paths.length > 0 && state.e_path
+}
+
+function getIsTypePrefixEnabled(
+  state: SearchQueryState | SearchQueryStateState
+) {
+  return state.types.length > 0 && state.e_types
+}
+
 function getIsAnyTextEnabled(state: SearchQueryState | SearchQueryStateState) {
   return (
     (state.any_text.enable_et_filter || state.any_text.enable_path_filter) &&
@@ -468,6 +555,17 @@ export function queryFromState(
   }
   if (state.bookmarks.restrict_to_bookmarks) {
     query.query!.filters!.bookmarks = state.bookmarks
+  }
+  if (getIsPathPrefixEnabled(state)) {
+    query.query!.filters!.files = {
+      include_path_prefixes: state.paths,
+    }
+  }
+  if (getIsTypePrefixEnabled(state)) {
+    query.query!.filters!.files = {
+      ...query.query!.filters!.files,
+      item_types: state.types,
+    }
   }
   query.order_args!.order_by = getOrderBy(state)
   return query

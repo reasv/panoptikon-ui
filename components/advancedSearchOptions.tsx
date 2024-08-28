@@ -16,6 +16,7 @@ import { useAdvancedOptions } from "@/lib/zust"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { Drawer, DrawerContent } from "./ui/drawer"
 import { ScrollArea } from "./ui/scroll-area"
+import { ExclusiveFilters } from "./ExclusiveFilters"
 
 export function SearchOptions() {
     const setOpened = useAdvancedOptions((state) => state.setOpened)
@@ -38,6 +39,7 @@ export function SearchOptions() {
                 <OrderBy />
                 <PageSizeSlider />
                 <AnyTextFilter />
+                <ExclusiveFilters />
             </CardContent>
         </Card>
     )

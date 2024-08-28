@@ -70,7 +70,7 @@ function AnyTextPathFilter() {
             <div className="flex flex-row items-center justify-between">
                 <div className="space-y-0.5">
                     <Label className="text-base">
-                        Path Filter
+                        Path Search Filter
                     </Label>
                     <div className="text-gray-400">
                         Searches in the path and filename of files
