@@ -197,6 +197,9 @@ export function ImageGallery({
         <div className="flex flex-col border rounded p-2">
             <div className="flex justify-between items-center mb-2">
                 <div className="flex items-center">
+                    <BookmarkBtn sha256={items[index].sha256} buttonVariant />
+                    <OpenFile sha256={items[index].sha256} path={items[index].path} buttonVariant />
+                    <OpenFolder sha256={items[index].sha256} path={items[index].path} buttonVariant />
                     <Button onClick={() => prevImage(items.length)} variant="ghost" size="icon" title="Previous Image">
                         <ArrowBigLeft className="h-4 w-4" />
                     </Button>
@@ -211,6 +214,7 @@ export function ImageGallery({
                     </p>
                 </div>
                 <div className="flex items-center">
+
                     <Toggle
                         pressed={thumbnailsOpen}
                         onClick={() => setThumbnailsOpen(!thumbnailsOpen)}

@@ -84,6 +84,7 @@ export const BookmarkBtn = (
                 title={isBookmarked ? "Remove bookmark" : "Add to bookmarks"}
                 onClick={handleBookmarkClick}
                 variant="ghost"
+                size="icon"
             >
                 {isBookmarked ? <BookmarkMinus className="w-4 h-4" /> : <BookmarkPlus className="w-4 h-4" />}
             </Button>
@@ -160,6 +161,7 @@ export const OpenFile = (
                     title="Open file with your system's default application"
                     onClick={() => handleClick()}
                     variant="ghost"
+                    size="icon"
                 >
                     <File
                         className="w-4 h-4"
@@ -226,6 +228,7 @@ export const OpenFolder = (
                 title="Show file in folder"
                 onClick={() => handleClick()}
                 variant="ghost"
+                size="icon"
             >
                 <FolderOpen
                     className="w-4 h-4"
