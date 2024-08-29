@@ -112,15 +112,14 @@ export function SearchPageContent({ initialQuery }:
                         </Button>
                     </div>
                 </div>
-
-                <Card>
-                    <CardHeader>
-                        <CardTitle>
-                            <AnimatedNumber value={nResults} /> {nResults === 1 ? "Result" : "Results"}
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        {galleryOpen && data ? <ImageGallery items={data?.results} /> :
+                {galleryOpen && data ? <ImageGallery items={data?.results} /> :
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>
+                                <AnimatedNumber value={nResults} /> {nResults === 1 ? "Result" : "Results"}
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
                             <ScrollArea className="overflow-y-auto" >
                                 <div className={cn('grid gap-4 max-h-[calc(100vh-250px)]',
                                     advancedIsOpen ? 'grid-cols-1 sm:grid-cols-1 md:grid-cols-1 lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4' :
@@ -160,9 +159,9 @@ export function SearchPageContent({ initialQuery }:
                                         </div>
                                     ))}
                                 </div>
-                            </ScrollArea>}
-                    </CardContent>
-                </Card>
+                            </ScrollArea>
+                        </CardContent>
+                    </Card>}
                 {data && data.count > page_size && (
                     <PageSelect total_pages={total_pages} current_page={page} setPage={setPage} max_pages={maxPagesButtons} />
                 )}
@@ -202,7 +201,7 @@ export function ImageGallery({
     const thumbnailURL = `/api/items/thumbnail/${getFileURL(items[index].sha256)}`
     const fileURL = `/api/items/file/${getFileURL(items[index].sha256)}`
     return (
-        <div key={items[index].path} className="flex flex-col max-h-[calc(100vh-250px)] border rounded p-2">
+        <div key={items[index].path} className="flex flex-col border rounded p-2">
             <div className="flex justify-between items-center mb-2">
                 <div className="flex items-center">
                     <Button onClick={() => prevImage(items.length)} variant="ghost" size="icon" title="Previous Image">
@@ -225,7 +224,7 @@ export function ImageGallery({
                 </Button>
             </div>
             <div
-                className="relative flex-grow h-[calc(100vh-300px)] flex justify-center items-center overflow-hidden cursor-pointer"
+                className="relative flex-grow h-[calc(100vh-220px)] flex justify-center items-center overflow-hidden cursor-pointer"
                 onClick={handleImageClick} // Attach click handler to the entire area
             >
                 <a
