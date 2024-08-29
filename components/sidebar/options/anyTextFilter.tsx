@@ -7,8 +7,9 @@ import { ComboBoxResponsive } from "../../combobox";
 import { Input } from "../../ui/input";
 import { MultiBoxResponsive } from "../../multiCombobox";
 import { Slider } from "../../ui/slider";
-import { useEffect, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { FilterContainer } from "./FilterContainer";
+import { ConfidenceFilter } from "./confidenceFilter";
 
 export function AnyTextFilter() {
     const anyTextQuery = useSearchQuery((state) => state.any_text.query)
@@ -109,21 +110,6 @@ function AnyTextETFilter() {
     ]
 
     const textLanguages = [{ value: "*", label: "All Languages" }, ...(data?.text_stats.languages || []).map(lang => ({ value: lang, label: lang }))]
-    const [confidenceSlider, setConfidenceSlider] = useState([minConfidence])
-    const [languageConfidenceSlider, setLanguageConfidenceSlider] = useState([minLanguageConfidence])
-    const updateConfidence = (value: number[]) => {
-        setMinConfidence(value[0])
-    }
-    const updateLanguageConfidence = (value: number[]) => {
-        console.log(value[0])
-        setMinLanguageConfidence(value[0])
-    }
-    useEffect(() => {
-        setConfidenceSlider([minConfidence])
-    }, [minConfidence])
-    useEffect(() => {
-        setLanguageConfidenceSlider([minLanguageConfidence])
-    }, [minLanguageConfidence])
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
             <div className="flex flex-row items-center justify-between">
@@ -147,29 +133,12 @@ function AnyTextETFilter() {
                     placeholder="Targets..."
                 />
             </div>
-
-            <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
-                <div className="flex flex-row items-center justify-between">
-                    <div className="space-y-0.5">
-                        <Label className="text-base">
-                            Confidence Threshold
-                        </Label>
-                        <div className="text-gray-400">
-                            Minimum confidence for the extracted text
-                        </div>
-                    </div>
-                    <div className="text-lg">{confidenceSlider}</div>
-                </div>
-                <Slider
-                    value={confidenceSlider}
-                    onValueChange={setConfidenceSlider}
-                    onValueCommit={updateConfidence}
-                    max={1}
-                    min={0}
-                    step={0.01}
-                    className="mt-4"
-                />
-            </div>
+            <ConfidenceFilter
+                label={<span>Confidence Threshold</span>}
+                confidence={minConfidence}
+                setConfidence={setMinConfidence}
+                description={<span>Minimum confidence for the extracted text</span>}
+            />
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
                 <MultiBoxResponsive
                     options={textLanguages}
@@ -180,28 +149,12 @@ function AnyTextETFilter() {
                     placeholder="Languages..."
                 />
             </div>
-            <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
-                <div className="flex flex-row items-center justify-between">
-                    <div className="space-y-0.5">
-                        <Label className="text-base">
-                            Language Confidence Threshold
-                        </Label>
-                        <div className="text-gray-400">
-                            Minimum confidence for language detection
-                        </div>
-                    </div>
-                    <div className="text-lg">{languageConfidenceSlider}</div>
-                </div>
-                <Slider
-                    value={languageConfidenceSlider}
-                    onValueChange={setLanguageConfidenceSlider}
-                    onValueCommit={updateLanguageConfidence}
-                    max={1}
-                    min={0}
-                    step={0.01}
-                    className="mt-4"
-                />
-            </div>
+            <ConfidenceFilter
+                label={<span>Language Confidence Threshold</span>}
+                confidence={minLanguageConfidence}
+                setConfidence={setMinLanguageConfidence}
+                description={<span>Minimum confidence for language detection</span>}
+            />
         </div>
     )
 }
