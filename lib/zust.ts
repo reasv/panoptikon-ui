@@ -74,6 +74,10 @@ interface ItemDetailFiltersStateState {
   text_min_confidence: number
   min_language_confidence: number
   text_max_length: number
+  tag_setters: string[]
+  tag_namespaces: string[]
+  tag_min_confidence: number
+  tags_max_per_ns_setter: number
 }
 interface ItemDetailFiltersState extends ItemDetailFiltersStateState {
   setTextSetters: (setters: string[]) => void
@@ -83,6 +87,10 @@ interface ItemDetailFiltersState extends ItemDetailFiltersStateState {
   setMinLanguageConfidence: (confidence: number) => void
   resetFilters: () => void
   setSidebarTab: (tab: number) => void
+  setTagSetters: (setters: string[]) => void
+  setTagNamespaces: (namespaces: string[]) => void
+  setTagMinConfidence: (confidence: number) => void
+  setTagsMaxPerNsSetter: (max: number) => void
 }
 const itemFilterStorageOptions = {
   name: "detailFilters",
@@ -95,12 +103,23 @@ export const initialDetailFilters = {
   min_language_confidence: 0,
   text_max_length: 1000,
   sidebarTab: 0,
+  tag_setters: [],
+  tag_namespaces: [],
+  tag_min_confidence: 0,
+  tags_max_per_ns_setter: 10,
 }
 
 export const useDetailsPane = create(
   persist<ItemDetailFiltersState>(
     (set, get) => ({
       ...initialDetailFilters,
+      setTagSetters: (setters: string[]) => set({ tag_setters: setters }),
+      setTagNamespaces: (namespaces: string[]) =>
+        set({ tag_namespaces: namespaces }),
+      setTagMinConfidence: (confidence: number) =>
+        set({ tag_min_confidence: confidence }),
+      setTagsMaxPerNsSetter: (max: number) =>
+        set({ tags_max_per_ns_setter: max }),
       setSidebarTab: (tab: number) => set({ sidebarTab: tab }),
       resetFilters: () =>
         set({ ...initialDetailFilters, sidebarTab: get().sidebarTab }),

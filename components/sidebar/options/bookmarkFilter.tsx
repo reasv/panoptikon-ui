@@ -1,12 +1,17 @@
 "use client"
 import { $api } from "@/lib/api"
-import { useSearchQuery } from "@/lib/zust"
+import { useDatabase, useSearchQuery } from "@/lib/zust"
 import { Label } from "../../ui/label"
 import { Switch } from "../../ui/switch";
 import { MultiBoxResponsive } from "../../multiCombobox";
 
 export function BookmarksFilter() {
-    const { data } = $api.useQuery("get", "/api/bookmarks/ns")
+    const dbs = useDatabase((state) => state.getDBs())
+    const { data } = $api.useQuery("get", "/api/bookmarks/ns", {
+        params: {
+            query: dbs
+        }
+    })
 
     const setBookmarksFilterEnabled = useSearchQuery((state) => state.setBookmarkFilterEnabled)
     const bookmarksFilterEnabled = useSearchQuery((state) => state.bookmarks.restrict_to_bookmarks)

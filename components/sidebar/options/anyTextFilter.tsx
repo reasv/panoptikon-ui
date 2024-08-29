@@ -1,6 +1,6 @@
 "use client"
 import { $api } from "@/lib/api"
-import { useSearchQuery } from "@/lib/zust"
+import { useDatabase, useSearchQuery } from "@/lib/zust"
 import { Label } from "../../ui/label"
 import { Switch } from "../../ui/switch";
 import { ComboBoxResponsive } from "../../combobox";
@@ -92,7 +92,12 @@ function AnyTextPathFilter() {
 }
 
 function AnyTextETFilter() {
-    const { data } = $api.useQuery("get", "/api/search/stats")
+    const dbs = useDatabase((state) => state.getDBs())
+    const { data } = $api.useQuery("get", "/api/search/stats", {
+        params: {
+            query: dbs
+        }
+    })
     const enableETFilter = useSearchQuery((state) => state.any_text.enable_et_filter)
     const setETFilterEnabled = useSearchQuery((state) => state.setAnyTextETFilterEnabled)
     const targets = useSearchQuery((state) => state.any_text.et_filter.targets || [])

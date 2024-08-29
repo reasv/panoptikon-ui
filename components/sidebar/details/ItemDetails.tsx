@@ -161,10 +161,12 @@ function ExtractedTextList(
         maxLength: number
     }
 ) {
+    const dbs = useDatabase((state) => state.getDBs())
     const { data } = $api.useQuery("get", "/api/items/text/{sha256}", {
         params: {
             path: {
                 sha256: item?.sha256,
+                ...dbs
             },
             query: {
                 setters: selectedSetters,
@@ -210,5 +212,90 @@ function ExtractedTextCard(
                 </div>
             </div>
         </div>
+    )
+}
+
+
+function ItemTags({
+    item,
+}: {
+    item: components["schemas"]["FileSearchResult"] | null
+}) {
+    const dbs = useDatabase((state) => state.getDBs())
+    const { data } = $api.useQuery("get", "/api/search/stats", { params: { query: dbs, } })
+
+    const tagSetters = ["*", ...data?.setters.filter((s) => s[0] === "tags").map((s) => s[1]) || []]
+    const setterOptions = tagSetters.map((setter) => ({ value: setter, label: setter === "*" ? "All Tag Sources" : setter }))
+    const selectedSetters = useDetailsPane((state) => state.tag_setters)
+    const setSelectedSetters = useDetailsPane((state) => state.setTagSetters)
+
+    const tagNamespaces = ["*", ...data?.tags.namespaces || []]
+    const nsOptions = tagNamespaces.map((ns) => ({ value: ns, label: ns === "*" ? "All Namespaces" : ns }))
+    const setSelectedNamespaces = useDetailsPane((state) => state.setTagNamespaces)
+    const setMinConfidence = useDetailsPane((state) => state.setTagMinConfidence)
+    const minConfidence = useDetailsPane((state) => state.tag_min_confidence)
+
+    const selectedTagNs = useDetailsPane((state) => state.tag_namespaces)
+    const maxTagsNsSetters = useDetailsPane((state) => state.tags_max_per_ns_setter)
+    const setMaxTagsNsSetters = useDetailsPane((state) => state.setTagsMaxPerNsSetter)
+    return (
+        <FilterContainer
+            storageKey="tagsDetailOpen"
+            label={<span>Tags</span>}
+            description={
+                <span>Tags added to this item</span>
+            }
+        >
+            <FilterContainer
+                storageKey="tagsDetailFilterOpen"
+                label={<span>Tag Filters</span>}
+                description={
+                    <span>Filter the tags shown</span>
+                }
+                defaultIsCollapsed
+            >
+                <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
+                    <MultiBoxResponsive
+                        options={setterOptions}
+                        currentValues={selectedSetters}
+                        onSelectionChange={setSelectedSetters}
+                        placeholder="Select Sources"
+                        resetValue="*"
+                        maxDisplayed={4}
+                        buttonClassName="max-w-[350px]"
+                    />
+                </div>
+                <ConfidenceFilter
+                    label={<span>Confidence Threshold</span>}
+                    confidence={minConfidence}
+                    setConfidence={setMinConfidence}
+                    description={<span>Minimum confidence for the tags to be displayed</span>}
+                />
+                <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
+                    <MultiBoxResponsive
+                        options={nsOptions}
+                        currentValues={selectedTagNs}
+                        onSelectionChange={setSelectedNamespaces}
+                        placeholder="Select Namespaces"
+                        resetValue="*"
+                        maxDisplayed={4}
+                        buttonClassName="max-w-[350px]"
+                    />
+                </div>
+                <ConfidenceFilter
+                    label={<span>Max Tags Per Namespace</span>}
+                    confidence={maxTagsNsSetters}
+                    setConfidence={setMaxTagsNsSetters}
+                    description={<span>Cut off lower confidence tags beyond this limit</span>}
+                    min={0}
+                    max={100}
+                    step={10}
+                />
+            </FilterContainer>
+            <div className="mt-4">
+                {item && (
+                    <></>)}
+            </div>
+        </FilterContainer>
     )
 }

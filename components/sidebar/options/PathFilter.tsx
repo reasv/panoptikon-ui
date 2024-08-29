@@ -1,6 +1,6 @@
 "use client"
 import { $api } from "@/lib/api"
-import { useCustomPaths, useSearchQuery } from "@/lib/zust"
+import { useCustomPaths, useDatabase, useSearchQuery } from "@/lib/zust"
 import { Label } from "../../ui/label"
 import { Input } from "../../ui/input";
 import { useState } from "react";
@@ -10,7 +10,12 @@ import { MultiBoxResponsive } from "../../multiCombobox";
 import { Switch } from "../../ui/switch";
 
 export function PathPrefixFilter() {
-    const { data } = $api.useQuery("get", "/api/search/stats")
+    const dbs = useDatabase((state) => state.getDBs())
+    const { data } = $api.useQuery("get", "/api/search/stats", {
+        params: {
+            query: dbs
+        }
+    })
     const paths = useSearchQuery((state) => state.paths)
     const setPaths = useSearchQuery((state) => state.setPaths)
     const customPaths = useCustomPaths((state) => state.strings)

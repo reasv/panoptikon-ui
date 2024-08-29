@@ -1,6 +1,6 @@
 "use client"
 import { $api } from "@/lib/api"
-import { useCustomMimes, useSearchQuery } from "@/lib/zust"
+import { useCustomMimes, useDatabase, useSearchQuery } from "@/lib/zust"
 import { Label } from "../../ui/label"
 import { Input } from "../../ui/input";
 import { useState } from "react";
@@ -10,7 +10,12 @@ import { MultiBoxResponsive } from "../../multiCombobox";
 import { Switch } from "../../ui/switch";
 
 export function MimeTypeFilter() {
-    const { data } = $api.useQuery("get", "/api/search/stats")
+    const dbs = useDatabase((state) => state.getDBs())
+    const { data } = $api.useQuery("get", "/api/search/stats", {
+        params: {
+            query: dbs
+        }
+    })
     const types = useSearchQuery((state) => state.types)
     const setTypes = useSearchQuery((state) => state.setTypes)
     const customTypes = useCustomMimes((state) => state.strings)

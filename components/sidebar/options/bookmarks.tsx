@@ -1,6 +1,6 @@
 "use client"
 import { $api } from "@/lib/api"
-import { useBookmarkCustomNs, useBookmarkNs } from "@/lib/zust"
+import { useBookmarkCustomNs, useBookmarkNs, useDatabase } from "@/lib/zust"
 import { Label } from "../../ui/label"
 import { Input } from "../../ui/input";
 import { useState } from "react";
@@ -9,7 +9,12 @@ import { Button } from "../../ui/button";
 import { ComboBoxResponsive } from "../../combobox";
 
 export function SwitchBookmarkNs() {
-    const { data } = $api.useQuery("get", "/api/bookmarks/ns")
+    const dbs = useDatabase((state) => state.getDBs())
+    const { data } = $api.useQuery("get", "/api/bookmarks/ns", {
+        params: {
+            query: dbs
+        }
+    })
     const customNs = useBookmarkCustomNs((state) => state.namespaces)
     const namespace = useBookmarkNs((state) => state.namespace)
     const [inputValue, setInputValue] = useState('');
