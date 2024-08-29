@@ -835,6 +835,8 @@ export interface components {
             text: string;
             /** Confidence */
             confidence: number | null;
+            /** Length */
+            length: number;
         };
         /** ExtractedTextEmbeddingsFilter */
         ExtractedTextEmbeddingsFilter: {
@@ -1669,6 +1671,8 @@ export interface operations {
         parameters: {
             query?: {
                 setters?: string[];
+                /** @description Text will be truncated to this length, if set. The `length` field will contain the original length. */
+                max_length?: number | null;
                 /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
                 /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
