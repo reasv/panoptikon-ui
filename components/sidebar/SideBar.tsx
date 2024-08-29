@@ -1,22 +1,11 @@
 "use client"
-import { $api } from "@/lib/api"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-
 import { SidebarClose } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-
-import { SwitchDB } from "./options/switchDB"
-import { SwitchBookmarkNs } from "./options/bookmarks"
-import { BookmarksFilter } from "./options/bookmarkFilter"
-import { AnyTextFilter } from "./options/anyTextFilter"
-import { OrderBy } from "./options/orderBy"
-import { PageSizeSlider } from "./options/pageSize"
 import { useAdvancedOptions } from "@/lib/zust"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { Drawer, DrawerContent } from "../ui/drawer"
 import { ScrollArea } from "../ui/scroll-area"
-import { ExclusiveFilters } from "./options/ExclusiveFilters"
 import { SearchOptions } from "./AdvancedSearchOptions"
 
 function SideBarContent() {
