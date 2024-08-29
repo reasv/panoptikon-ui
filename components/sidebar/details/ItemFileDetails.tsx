@@ -8,7 +8,7 @@ import { Button } from "../../ui/button";
 import { MultiBoxResponsive } from "../../multiCombobox";
 import { FilterContainer } from "../options/FilterContainer";
 import { components } from "@/lib/panoptikon";
-import { useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/components/ui/use-toast";
 import { FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons";
 
@@ -25,7 +25,10 @@ export function ItemFileDetails({
             },
             query: dbs
         }
-    })
+    },
+        {
+            placeholderData: keepPreviousData
+        })
     const dateString = new Date(item.last_modified).toLocaleString('en-US')
     return (
         <FilterContainer
@@ -33,17 +36,18 @@ export function ItemFileDetails({
             description={<span>Metadata for the selected file</span>}
             storageKey="file-item-details-open"
         >
-            <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
+            <div className="space-x-2 mt-4">
                 <FilePathComponent path={item.path} />
-                <p className="text-xs text-gray-500">
-                    {dateString}
+                <p className="text-xs text-gray-500 mt-2">
+                    Last Modified: {dateString}
                 </p>
             </div>
-            <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-center">
+            <div className="space-x-2 mt-4">
                 <FilterContainer
                     label={<span>Files</span>}
                     description={<span>All duplicate files associated with this unique item</span>}
                     storageKey="file-list-open"
+                    defaultIsCollapsed={true}
                 >
                     {data?.files.map((file, idx) => (
                         <SingleFileItem
@@ -54,7 +58,6 @@ export function ItemFileDetails({
                     ))}
                 </FilterContainer>
             </div>
-
         </FilterContainer>
     )
 }
