@@ -11,6 +11,7 @@ import { ConfidenceFilter } from "../options/confidenceFilter"
 import { Button } from "@/components/ui/button"
 import { Delete } from "lucide-react"
 import { keepPreviousData } from "@tanstack/react-query"
+
 export function ItemDetails() {
     const selected = useItemSelection((state) => state.getSelected())
     return (

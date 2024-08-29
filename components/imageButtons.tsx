@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/components/ui/use-toast"
 import { File, FolderOpen, BookmarkPlus, BookmarkMinus, BookmarkX } from "lucide-react"
 import { Button } from "./ui/button";
+import { Toggle } from "./ui/toggle";
 export const BookmarkBtn = (
     {
         sha256,
@@ -80,18 +81,17 @@ export const BookmarkBtn = (
 
     return (
         buttonVariant ?
-            <Button
+            <Toggle
                 title={
                     isBookmarked ?
                         `Remove from current bookmark group (${namespace})`
                         : `Add to current bookmark group (${namespace})`
                 }
                 onClick={handleBookmarkClick}
-                variant="ghost"
-                size="icon"
+                pressed={isBookmarked}
             >
                 {isBookmarked ? <BookmarkX className="w-4 h-4" /> : <BookmarkPlus className="w-4 h-4" />}
-            </Button>
+            </Toggle>
             :
             <button
                 title={
