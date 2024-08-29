@@ -1,12 +1,12 @@
 "use client"
 import { $api } from "@/lib/api"
 import { useSearchQuery } from "@/lib/zust"
-import { Label } from "./ui/label"
-import { Switch } from "./ui/switch";
-import { ComboBoxResponsive } from "./combobox";
-import { Input } from "./ui/input";
-import { MultiBoxResponsive } from "./multiCombobox";
-import { Slider } from "./ui/slider";
+import { Label } from "../../ui/label"
+import { Switch } from "../../ui/switch";
+import { ComboBoxResponsive } from "../../combobox";
+import { Input } from "../../ui/input";
+import { MultiBoxResponsive } from "../../multiCombobox";
+import { Slider } from "../../ui/slider";
 import { useEffect, useState } from "react";
 import { FilterContainer } from "./FilterContainer";
 

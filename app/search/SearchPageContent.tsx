@@ -1,6 +1,5 @@
 "use client"
 import { $api } from "@/lib/api"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import Image from 'next/image'
 import { PageSelect } from "@/components/pageselect";
 import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons"
@@ -72,14 +71,14 @@ export function SearchPageContent({ initialQuery }:
     }, [page])
 
     const toggleOptions = useAdvancedOptions((state) => state.toggle)
-    const advancedIsOpen = useAdvancedOptions((state) => state.isOpen)
+    const sidebarOpen = useAdvancedOptions((state) => state.isOpen)
     const isMobile = useMediaQuery("(max-width: 768px)")
     const isTablet = useMediaQuery("(max-width: 1024px)")
     const isSmallDesktop = useMediaQuery("(max-width: 1280px)")
     const isMediumDesktop = useMediaQuery("(max-width: 1536px)")
     const isMediumLargeDesktop = useMediaQuery("(max-width: 1920px)")
     let maxPagesButtons = isMobile ? 5 : isTablet ? 10 : isSmallDesktop ? 15 : isMediumDesktop ? 20 : isMediumLargeDesktop ? 25 : 35
-    if (advancedIsOpen) {
+    if (sidebarOpen) {
         maxPagesButtons = isMobile ? 5 : isTablet ? 5 : isSmallDesktop ? 7 : isMediumDesktop ? 10 : isMediumLargeDesktop ? 20 : 25
     }
     const galleryOpen = useGallery((state) => state.isGalleryOpen)
@@ -87,17 +86,17 @@ export function SearchPageContent({ initialQuery }:
         <div className="flex w-full h-screen">
             <SideBar />
             <div className={cn('p-4 transition-all duration-300 mx-auto',
-                advancedIsOpen ? 'md:w-1/2 lg:w-1/2 xl:w-2/3 2xl:w-3/4' : 'w-full'
+                sidebarOpen ? 'md:w-1/2 lg:w-1/2 xl:w-2/3 2xl:w-3/4' : 'w-full'
             )}>
                 <SearchErrorToast isError={isError} error={error} />
                 <div className={cn("mb-4 2xl:mx-auto",
-                    advancedIsOpen ? '2xl:w-2/3' : '2xl:w-1/2'
+                    sidebarOpen ? '2xl:w-2/3' : '2xl:w-1/2'
                 )}>
                     <div className="flex gap-2">
                         <Toggle
-                            pressed={advancedIsOpen}
+                            pressed={sidebarOpen}
                             onClick={toggleOptions}
-                            title={"Advanced Search Options Are " + (advancedIsOpen ? "Open" : "Closed")}
+                            title={"Advanced Search Options Are " + (sidebarOpen ? "Open" : "Closed")}
                             aria-label="Toggle Advanced Search Options"
                         >
                             <Settings className="h-4 w-4" />
@@ -116,7 +115,7 @@ export function SearchPageContent({ initialQuery }:
                         </h2>
                         <ScrollArea className="overflow-y-auto">
                             <div className={cn('grid gap-4 max-h-[calc(100vh-250px)]',
-                                advancedIsOpen ? 'grid-cols-1 sm:grid-cols-1 md:grid-cols-1 lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4' :
+                                sidebarOpen ? 'grid-cols-1 sm:grid-cols-1 md:grid-cols-1 lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4' :
                                     'grid-cols-1 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5')}>
                                 {data && data.results.map((result, index) => (
                                     <SearchResultImage key={result.path} result={result} index={index} dbs={dbs} />

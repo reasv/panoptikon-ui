@@ -2,7 +2,7 @@
 
 import { ReactNode, useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { Button } from "./ui/button";
+import { Button } from "../../ui/button";
 
 interface FilterContainerProps {
     label: ReactNode;

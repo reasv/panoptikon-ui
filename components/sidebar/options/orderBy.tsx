@@ -1,7 +1,7 @@
 "use client"
 import { useSearchQuery } from "@/lib/zust"
-import { Label } from "./ui/label"
-import { ComboBoxResponsive } from "./combobox";
+import { Label } from "../../ui/label"
+import { ComboBoxResponsive } from "../../combobox";
 
 export function OrderBy() {
     const orderBy = useSearchQuery((state) => state.getOrderBy())

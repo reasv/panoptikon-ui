@@ -1,13 +1,13 @@
 "use client"
 import { $api } from "@/lib/api"
 import { useCustomMimes, useSearchQuery } from "@/lib/zust"
-import { Label } from "./ui/label"
-import { Input } from "./ui/input";
+import { Label } from "../../ui/label"
+import { Input } from "../../ui/input";
 import { useState } from "react";
 import { Plus } from "lucide-react";
-import { Button } from "./ui/button";
-import { MultiBoxResponsive } from "./multiCombobox";
-import { Switch } from "./ui/switch";
+import { Button } from "../../ui/button";
+import { MultiBoxResponsive } from "../../multiCombobox";
+import { Switch } from "../../ui/switch";
 
 export function MimeTypeFilter() {
     const { data } = $api.useQuery("get", "/api/search/stats")

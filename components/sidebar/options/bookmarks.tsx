@@ -1,12 +1,12 @@
 "use client"
 import { $api } from "@/lib/api"
 import { useBookmarkCustomNs, useBookmarkNs } from "@/lib/zust"
-import { Label } from "./ui/label"
-import { Input } from "./ui/input";
+import { Label } from "../../ui/label"
+import { Input } from "../../ui/input";
 import { useState } from "react";
 import { Plus } from "lucide-react";
-import { Button } from "./ui/button";
-import { ComboBoxResponsive } from "./combobox";
+import { Button } from "../../ui/button";
+import { ComboBoxResponsive } from "../../combobox";
 
 export function SwitchBookmarkNs() {
     const { data } = $api.useQuery("get", "/api/bookmarks/ns")

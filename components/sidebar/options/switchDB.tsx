@@ -1,8 +1,8 @@
 "use client"
 import { $api } from "@/lib/api"
 import { useDatabase } from "@/lib/zust"
-import { Label } from "./ui/label"
-import { ComboBoxResponsive } from "./combobox";
+import { Label } from "../../ui/label"
+import { ComboBoxResponsive } from "../../combobox";
 
 export function SwitchDB() {
     const { data } = $api.useQuery("get", "/api/db")

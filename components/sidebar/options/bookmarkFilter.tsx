@@ -1,9 +1,9 @@
 "use client"
 import { $api } from "@/lib/api"
 import { useSearchQuery } from "@/lib/zust"
-import { Label } from "./ui/label"
-import { Switch } from "./ui/switch";
-import { MultiBoxResponsive } from "./multiCombobox";
+import { Label } from "../../ui/label"
+import { Switch } from "../../ui/switch";
+import { MultiBoxResponsive } from "../../multiCombobox";
 
 export function BookmarksFilter() {
     const { data } = $api.useQuery("get", "/api/bookmarks/ns")

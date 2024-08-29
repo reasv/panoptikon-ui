@@ -1,9 +1,9 @@
 "use client"
 import { useSearchQuery } from "@/lib/zust"
-import { Label } from "./ui/label"
-import { Slider } from "./ui/slider";
+import { Label } from "../../ui/label"
+import { Slider } from "../../ui/slider";
 import { useEffect, useState } from "react";
-import { Button } from "./ui/button";
+import { Button } from "../../ui/button";
 import { PlusCircle, MinusCircle } from "lucide-react";
 
 export function PageSizeSlider() {
