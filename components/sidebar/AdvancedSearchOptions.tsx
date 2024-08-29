@@ -10,10 +10,7 @@ import { ExclusiveFilters } from "./options/ExclusiveFilters"
 
 export function SearchOptions() {
     return (
-        <div>
-            <div className="flex gap-2">
-                <h2 className="text-lg font-semibold w-full">Advanced Search Options</h2>
-            </div>
+        <div className="mt-4">
             <SwitchDB />
             <SwitchBookmarkNs />
             <BookmarksFilter />

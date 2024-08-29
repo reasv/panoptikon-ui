@@ -7,15 +7,39 @@ import { useMediaQuery } from "@/hooks/use-media-query"
 import { Drawer, DrawerContent } from "../ui/drawer"
 import { ScrollArea } from "../ui/scroll-area"
 import { SearchOptions } from "./AdvancedSearchOptions"
+import { DirectionAwareTabs } from "@/components/ui/direction-aware-tabs"
 
 function SideBarContent() {
     const setOpen = useAdvancedOptions((state) => state.setOpened)
+    const tabs = [
+        {
+            id: 0,
+            label: "Search Options",
+            content: (
+                <SearchOptions />
+            ),
+        },
+        {
+            id: 1,
+            label: "Item Details",
+            content: (
+                <SearchOptions />
+            ),
+        },
+        {
+            id: 2,
+            label: "Similar Items",
+            content: (
+                <SearchOptions />
+            ),
+        },
+    ]
     return (
         <>
             <Button title="Close Advanced Options" onClick={() => setOpen(false)} variant="ghost" size="icon">
                 <SidebarClose className="h-4 w-4" />
             </Button>
-            <SearchOptions />
+            <DirectionAwareTabs tabs={tabs} />
         </>
     )
 }

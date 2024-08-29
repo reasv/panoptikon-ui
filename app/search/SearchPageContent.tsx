@@ -22,7 +22,7 @@ import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { components } from "@/lib/panoptikon";
 import { useGallery } from "@/lib/gallery";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
-import { SideBar } from "@/components/SideBar";
+import { SideBar } from "@/components/sidebar/SideBar";
 
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }
