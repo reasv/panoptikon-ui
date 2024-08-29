@@ -1,6 +1,6 @@
 "use client"
 
-import { ReactNode, useMemo, useState } from "react"
+import { ReactNode, use, useEffect, useMemo, useState } from "react"
 import { AnimatePresence, MotionConfig, motion } from "framer-motion"
 import useMeasure from "react-use-measure"
 
@@ -16,16 +16,18 @@ interface OgImageSectionProps {
     tabs: Tab[]
     className?: string
     rounded?: string
-    onChange?: () => void
+    onChange?: (tabId: number) => void
+    currentTab?: number
 }
 
 function DirectionAwareTabs({
+    currentTab,
     tabs,
     className,
     rounded,
     onChange,
 }: OgImageSectionProps) {
-    const [activeTab, setActiveTab] = useState(0)
+    const [activeTab, setActiveTab] = useState(currentTab === undefined ? 0 : currentTab)
     const [direction, setDirection] = useState(0)
     const [isAnimating, setIsAnimating] = useState(false)
     const [ref, bounds] = useMeasure()
@@ -36,11 +38,18 @@ function DirectionAwareTabs({
     }, [activeTab, tabs])
 
     const handleTabClick = (newTabId: number) => {
+        handleTabChange(newTabId)
+    }
+    useEffect(() => {
+        if (currentTab !== undefined) handleTabChange(currentTab)
+    }, [currentTab])
+
+    const handleTabChange = (newTabId: number) => {
         if (newTabId !== activeTab && !isAnimating) {
             const newDirection = newTabId > activeTab ? 1 : -1
             setDirection(newDirection)
             setActiveTab(newTabId)
-            onChange ? onChange() : null
+            onChange ? onChange(newTabId) : null
         }
     }
 

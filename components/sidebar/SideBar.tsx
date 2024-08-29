@@ -2,7 +2,7 @@
 import { SidebarClose } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { useAdvancedOptions } from "@/lib/zust"
+import { useAdvancedOptions, useDetailsPane } from "@/lib/zust"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { Drawer, DrawerContent } from "../ui/drawer"
 import { ScrollArea } from "../ui/scroll-area"
@@ -12,6 +12,8 @@ import { ItemDetails } from "./details/ItemDetails"
 
 function SideBarContent() {
     const setOpen = useAdvancedOptions((state) => state.setOpened)
+    const currentTab = useDetailsPane((state) => state.sidebarTab)
+    const setCurrentTab = useDetailsPane((state) => state.setSidebarTab)
     const tabs = [
         {
             id: 0,
@@ -40,7 +42,11 @@ function SideBarContent() {
             <Button title="Close Advanced Options" onClick={() => setOpen(false)} variant="ghost" size="icon">
                 <SidebarClose className="h-4 w-4" />
             </Button>
-            <DirectionAwareTabs tabs={tabs} />
+            <DirectionAwareTabs
+                tabs={tabs}
+                currentTab={currentTab}
+                onChange={setCurrentTab}
+            />
         </>
     )
 }
