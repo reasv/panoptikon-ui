@@ -50,7 +50,7 @@ function ExtractedText({
     item: components["schemas"]["FileSearchResult"] | null
 }) {
     const dbs = useDatabase((state) => state.getDBs())
-    const { data } = $api.useQuery("get", "/api/search/stats", { params: { query: dbs } })
+    const { data } = $api.useQuery("get", "/api/search/stats", { params: { query: dbs, } })
 
     const textSetters = ["*", ...data?.setters.filter((s) => s[0] === "text").map((s) => s[1]) || []]
     const setterOptions = textSetters.map((setter) => ({ value: setter, label: setter === "*" ? "All Text Sources" : setter }))
@@ -65,6 +65,8 @@ function ExtractedText({
     const setMinLanguageConfidence = useDetailsPane((state) => state.setMinLanguageConfidence)
     const minLanguageConfidence = useDetailsPane((state) => state.min_language_confidence)
     const selectedLanguages = useDetailsPane((state) => state.text_languages)
+    const maxTextLength = useDetailsPane((state) => state.text_max_length)
+    const setMaxTextLength = useDetailsPane((state) => state.setTextMaxLength)
     return (
         <FilterContainer
             storageKey="extractedTextdetailOpen"
@@ -115,6 +117,15 @@ function ExtractedText({
                     setConfidence={setMinLanguageConfidence}
                     description={<span>Minimum confidence for language detection</span>}
                 />
+                <ConfidenceFilter
+                    label={<span>Cut Off Length</span>}
+                    confidence={maxTextLength}
+                    setConfidence={setMaxTextLength}
+                    description={<span>Cut text off after n characters</span>}
+                    min={0}
+                    max={5000}
+                    step={10}
+                />
             </FilterContainer>
             <div className="mt-4">
                 {item && (
@@ -124,6 +135,7 @@ function ExtractedText({
                         selectedLanguages={selectedLanguages}
                         minConfidence={minConfidence}
                         minLanguageConfidence={minLanguageConfidence}
+                        maxLength={maxTextLength}
                     />)}
             </div>
         </FilterContainer>
@@ -136,25 +148,30 @@ function ExtractedTextList(
         selectedSetters,
         selectedLanguages,
         minConfidence,
-        minLanguageConfidence
+        minLanguageConfidence,
+        maxLength
     }: {
         item: components["schemas"]["FileSearchResult"],
         selectedSetters: string[],
         selectedLanguages: string[],
         minConfidence: number,
         minLanguageConfidence: number,
+        maxLength: number
     }
 ) {
     const { data } = $api.useQuery("get", "/api/items/text/{sha256}", {
         params: {
             path: {
                 sha256: item?.sha256,
+            },
+            query: {
+                setters: selectedSetters,
+                max_length: maxLength,
             }
         }
     })
     const text = (
         data?.text
-            .filter((t) => selectedSetters.length == 0 || selectedSetters.includes(t.setter_name))
             .filter((t) => selectedLanguages.length == 0 || selectedLanguages.includes(t.language))
             .filter((t) => minConfidence > 0 ? (t.confidence || 0) >= minConfidence : true)
             .filter((t) => minLanguageConfidence > 0 ? (t.language_confidence || 0) >= minLanguageConfidence : true)
@@ -162,10 +179,30 @@ function ExtractedTextList(
     return (
         <div className="mt-4">
             {text.map((t, i) => (
-                <div key={`${t.item_sha256}-${i}`} className="border-b border-gray-200 py-2">
-                    {t.setter_name}: {t.text}
-                </div>
+                <ExtractedTextCard key={`${t.setter_name}-${i}`} text={t} />
             ))}
+        </div>
+    )
+}
+
+function ExtractedTextCard(
+    {
+        text,
+    }: {
+        text: components["schemas"]["ExtractedText"]
+    }
+) {
+    const truncatedCharNumber = text.length - text.text.length
+    const omittedDisplay = truncatedCharNumber > 0 ? "... " + (`(${truncatedCharNumber} omitted)`) : ''
+    return (
+        <div className="border rounded-lg p-4 mt-4">
+            <div className="flex flex-row items-center justify-between">
+                <div className="space-y-0.5">
+                    <div className="text-base font-medium">{text.setter_name} <span className="text-gray-400"> {text.language}</span></div>
+                    <div className="text-gray-400 p-1">{text.text}<i>{omittedDisplay}</i></div>
+                    <div className="text-gray-400 font-medium">Confidence: {text.confidence} (Language: {text.language_confidence})</div>
+                </div>
+            </div>
         </div>
     )
 }
