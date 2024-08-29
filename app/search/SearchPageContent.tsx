@@ -203,9 +203,7 @@ export function ImageGallery({
                     <Button onClick={() => prevImage(items.length)} variant="ghost" size="icon" title="Previous Image">
                         <ArrowBigLeft className="h-4 w-4" />
                     </Button>
-                    <Button onClick={() => nextImage(items.length)} variant="ghost" size="icon" title="Next Image">
-                        <ArrowBigRight className="h-4 w-4" />
-                    </Button>
+
                 </div>
                 <div className="max-w-[33%] text-center">
                     <FilePathComponent path={items[index].path} />
@@ -214,7 +212,9 @@ export function ImageGallery({
                     </p>
                 </div>
                 <div className="flex items-center">
-
+                    <Button onClick={() => nextImage(items.length)} variant="ghost" size="icon" title="Next Image">
+                        <ArrowBigRight className="h-4 w-4" />
+                    </Button>
                     <Toggle
                         pressed={thumbnailsOpen}
                         onClick={() => setThumbnailsOpen(!thumbnailsOpen)}
