@@ -11,6 +11,7 @@ import { Delete } from "lucide-react"
 import { keepPreviousData } from "@tanstack/react-query"
 import { Progress } from "@/components/ui/progress"
 import { useToast } from "@/components/ui/use-toast"
+import { FileBookmarks } from "./FileBookmarks"
 
 export function ItemDetails() {
     const selected = useItemSelection((state) => state.getSelected())
@@ -19,6 +20,7 @@ export function ItemDetails() {
             <ExtractedText item={selected} />
             <ItemTagDetails item={selected} />
             <ResetFilters />
+            {selected && <FileBookmarks item={selected} />}
         </div>
     )
 }

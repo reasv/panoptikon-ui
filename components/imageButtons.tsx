@@ -54,6 +54,17 @@ export const BookmarkBtn = (
                     { params },
                 ]
             })
+            const multiQueryKey = ["get", "/api/bookmarks/item/{sha256}", {
+                params: {
+                    path: {
+                        sha256,
+                    },
+                    query
+                }
+            }]
+            queryClient.invalidateQueries({
+                queryKey: multiQueryKey
+            })
             toast({
                 title: `Bookmark ${deleted ? "removed" : "added"}`,
                 description: `File has been ${deleted ? "removed from" : "added to"} the ${namespace} group`,
