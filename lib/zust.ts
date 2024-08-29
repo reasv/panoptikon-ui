@@ -102,7 +102,8 @@ export const useDetailsPane = create(
     (set, get) => ({
       ...initialDetailFilters,
       setSidebarTab: (tab: number) => set({ sidebarTab: tab }),
-      resetFilters: () => set({ ...initialDetailFilters }),
+      resetFilters: () =>
+        set({ ...initialDetailFilters, sidebarTab: get().sidebarTab }),
       setTextSetters: (setters: string[]) => set({ text_setters: setters }),
       setTextLanguages: (languages: string[]) =>
         set({ text_languages: languages }),
@@ -362,6 +363,7 @@ export const useSearchQuery = create(
         })
       },
       setPageSize: (size: number) => {
+        get().setPage(1)
         set((state) => {
           return {
             ...state,
