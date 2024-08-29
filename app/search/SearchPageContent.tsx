@@ -14,15 +14,16 @@ import { InstantSearchLock } from "@/components/InstantSearchLock"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/use-toast"
 import { SearchBar } from "@/components/searchBar"
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { AdvancedSearchOptions } from "@/components/advancedSearchOptions";
 import { SearchQueryArgs } from "./page";
 import { SearchErrorToast } from "@/components/searchErrorToaster";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { components } from "@/lib/panoptikon";
 import { useGallery } from "@/lib/gallery";
+import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }
@@ -170,22 +171,27 @@ export function SearchPageContent({ initialQuery }:
         </div>
     );
 }
+function getFileURL(sha256: string, dbs: { index_db: string | null, user_data_db: string | null }) {
+    return `${sha256}?index_db=${dbs.index_db || ''}&user_data_db=${dbs.user_data_db || ''}`
+}
+function getFullFileURL(sha256: string, dbs: { index_db: string | null, user_data_db: string | null }) {
+    return `/api/items/file/${getFileURL(sha256, dbs)}`
+}
+function getThumbnailURL(sha256: string, dbs: { index_db: string | null, user_data_db: string | null }) {
+    return `/api/items/thumbnail/${getFileURL(sha256, dbs)}`
+}
 export function ImageGallery({
     items
 }: {
     items: components["schemas"]["FileSearchResult"][]
 }) {
     const dbs = useDatabase((state) => state.getDBs())
-    function getFileURL(sha256: string) {
-        // Only use the DB values if they are set
-        return `${sha256}?index_db=${dbs.index_db || ''}&user_data_db=${dbs.user_data_db || ''}`
-    }
+
     const closeGallery = useGallery((state) => state.closeGallery)
     const nextImage = useGallery((state) => state.nextImage)
     const prevImage = useGallery((state) => state.prevImage)
     const index = useGallery((state) => state.selectedImageIndex)
 
-    // Function to handle clicks on the left or right side of the image
     const handleImageClick = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
         const { clientX, currentTarget } = e
         e.stopPropagation()
@@ -198,8 +204,8 @@ export function ImageGallery({
         }
     }
     const dateString = new Date(items[index].last_modified).toLocaleString('en-US')
-    const thumbnailURL = `/api/items/thumbnail/${getFileURL(items[index].sha256)}`
-    const fileURL = `/api/items/file/${getFileURL(items[index].sha256)}`
+    const thumbnailURL = `/api/items/thumbnail/${getFileURL(items[index].sha256, dbs)}`
+    const fileURL = `/api/items/file/${getFileURL(items[index].sha256, dbs)}`
     return (
         <div key={items[index].path} className="flex flex-col border rounded p-2">
             <div className="flex justify-between items-center mb-2">
@@ -224,7 +230,7 @@ export function ImageGallery({
                 </Button>
             </div>
             <div
-                className="relative flex-grow h-[calc(100vh-220px)] flex justify-center items-center overflow-hidden cursor-pointer"
+                className="relative flex-grow h-[calc(100vh-800px)] flex justify-center items-center overflow-hidden cursor-pointer"
                 onClick={handleImageClick} // Attach click handler to the entire area
             >
                 <a
@@ -243,7 +249,62 @@ export function ImageGallery({
                     />
                 </a>
             </div>
-
+            <GalleryHorizontalScroll items={items} index={index} />
         </div>
     );
+}
+
+export function GalleryHorizontalScroll({
+    items,
+    index,
+}: {
+    items: components["schemas"]["FileSearchResult"][]
+    index: number,
+}) {
+    const setIndex = useGallery((state) => state.setIndex)
+    const viewportRef = useRef<HTMLDivElement>(null)
+
+    const onWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+        if (!viewportRef.current || e.deltaY === 0 || e.deltaX !== 0) {
+            return
+        }
+
+        e.preventDefault()
+
+        const delta = e.deltaY
+        const currPos = viewportRef.current.scrollLeft
+        const scrollWidth = viewportRef.current.scrollWidth
+        const clientWidth = viewportRef.current.clientWidth
+
+        const newPos = Math.max(0, Math.min(scrollWidth - clientWidth, currPos + delta))
+
+        viewportRef.current.scrollLeft = newPos
+    }, [])
+
+    return (
+        <ScrollAreaPrimitive.Root onWheel={onWheel} className={cn("relative overflow-hidden w-full whitespace-nowrap rounded-md border")}>
+            <ScrollAreaPrimitive.Viewport ref={viewportRef} className="h-full w-full rounded-[inherit]">
+                <div className="flex w-max space-x-4 p-4">
+                    {items.map((item, i) => (
+                        <figure key={item.path} className="shrink-0">
+                            <div className={cn("overflow-hidden rounded-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none cursor-pointer", {
+                                "ring-2 ring-primary": i === index
+                            })}>
+                                <Image
+                                    onClick={() => setIndex(i)}
+                                    src={getThumbnailURL(item.sha256, { index_db: null, user_data_db: null })}
+                                    alt={item.path}
+                                    className="aspect-[3/4] h-fit w-fit object-cover"
+                                    width={200}
+                                    height={200}
+                                    quality={100} />
+                            </div>
+                        </figure>
+                    ))}
+                </div>
+            </ScrollAreaPrimitive.Viewport>
+            <ScrollBar orientation="horizontal" />
+            <ScrollAreaPrimitive.Corner />
+        </ScrollAreaPrimitive.Root>
+    )
 }

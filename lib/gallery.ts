@@ -7,6 +7,7 @@ interface GalleryState {
   closeGallery: () => void
   nextImage: (maxIndex: number) => void
   prevImage: (maxIndex: number) => void
+  setIndex: (index: number) => void
 }
 
 export const useGallery = create<GalleryState>((set) => ({
@@ -23,4 +24,5 @@ export const useGallery = create<GalleryState>((set) => ({
     set((state) => ({
       selectedImageIndex: (state.selectedImageIndex! - 1 + maxIndex) % maxIndex,
     })),
+  setIndex: (index) => set({ selectedImageIndex: index }),
 }))
