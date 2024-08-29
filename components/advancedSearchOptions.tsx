@@ -24,9 +24,6 @@ export function SearchOptions() {
         <div>
             <div className="flex gap-2">
                 <h2 className="text-lg font-semibold w-full">Advanced Search Options</h2>
-                <Button title="Close Advanced Options" onClick={() => setOpened(false)} variant="ghost" size="icon">
-                    <SidebarClose className="h-4 w-4" />
-                </Button>
             </div>
             <SwitchDB />
             <SwitchBookmarkNs />
@@ -36,33 +33,6 @@ export function SearchOptions() {
             <AnyTextFilter />
             <ExclusiveFilters />
         </div>
-
     )
 }
 
-export function AdvancedSearchOptions() {
-    const isDesktop = useMediaQuery("(min-width: 1024px)")
-    const isOpen = useAdvancedOptions((state) => state.isOpen)
-    const setOpen = useAdvancedOptions((state) => state.setOpened)
-    if (!isOpen) {
-        return null
-    }
-    if (isDesktop) {
-        return (
-            <div className="h-full md:w-1/2 lg:w-1/2 xl:w-1/3 2xl:w-1/4 p-4 shadow-lg z-50 hidden lg:block">
-                <ScrollArea className="h-full">
-                    <SearchOptions />
-                </ScrollArea>
-            </div>
-        )
-    }
-    return (
-        <Drawer open={isOpen} onOpenChange={setOpen}>
-            <DrawerContent>
-                <ScrollArea className="h-svh w-full">
-                    <SearchOptions />
-                </ScrollArea>
-            </DrawerContent>
-        </Drawer>
-    )
-}

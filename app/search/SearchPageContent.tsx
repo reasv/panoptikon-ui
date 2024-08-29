@@ -15,7 +15,6 @@ import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/use-toast"
 import { SearchBar } from "@/components/searchBar"
 import { useCallback, useEffect, useRef } from "react";
-import { AdvancedSearchOptions } from "@/components/advancedSearchOptions";
 import { SearchQueryArgs } from "./page";
 import { SearchErrorToast } from "@/components/searchErrorToaster";
 import { useMediaQuery } from "@/hooks/use-media-query";
@@ -24,6 +23,7 @@ import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { components } from "@/lib/panoptikon";
 import { useGallery } from "@/lib/gallery";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
+import { SideBar } from "@/components/SideBar";
 
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }
@@ -85,7 +85,7 @@ export function SearchPageContent({ initialQuery }:
     const galleryOpen = useGallery((state) => state.isGalleryOpen)
     return (
         <div className="flex w-full h-screen">
-            <AdvancedSearchOptions />
+            <SideBar />
             <div className={cn('p-4 transition-all duration-300 mx-auto',
                 advancedIsOpen ? 'md:w-1/2 lg:w-1/2 xl:w-2/3 2xl:w-3/4' : 'w-full'
             )}>
