@@ -67,6 +67,51 @@ export const useBookmarkCustomNs = create<BookmarksCustom>((set) => ({
     set((state) => ({ namespaces: [...state.namespaces, ns] })),
 }))
 
+interface ItemDetailFiltersStateState {
+  sidebarTab: number
+  text_setters: string[]
+  text_languages: string[]
+  min_confidence: number
+  min_language_confidence: number
+}
+interface ItemDetailFiltersState extends ItemDetailFiltersStateState {
+  setTextSetters: (setters: string[]) => void
+  setTextLanguages: (languages: string[]) => void
+  setMinConfidence: (confidence: number) => void
+  setMinLanguageConfidence: (confidence: number) => void
+  resetFilters: () => void
+  setSidebarTab: (tab: number) => void
+}
+const itemFilterStorageOptions = {
+  name: "detailFilters",
+  storage: createJSONStorage<ItemDetailFiltersState>(() => persistLocalStorage),
+}
+export const initialDetailFilters = {
+  text_setters: [],
+  text_languages: [],
+  min_confidence: 0,
+  min_language_confidence: 0,
+  sidebarTab: 0,
+}
+
+export const useDetailsPane = create(
+  persist<ItemDetailFiltersState>(
+    (set, get) => ({
+      ...initialDetailFilters,
+      setSidebarTab: (tab: number) => set({ sidebarTab: tab }),
+      resetFilters: () => set({ ...initialDetailFilters }),
+      setTextSetters: (setters: string[]) => set({ text_setters: setters }),
+      setTextLanguages: (languages: string[]) =>
+        set({ text_languages: languages }),
+      setMinConfidence: (confidence: number) =>
+        set({ min_confidence: confidence }),
+      setMinLanguageConfidence: (confidence: number) =>
+        set({ min_language_confidence: confidence }),
+    }),
+    itemFilterStorageOptions
+  )
+)
+
 interface SelectionState {
   selected: components["schemas"]["FileSearchResult"] | null
   setItem: (item: components["schemas"]["FileSearchResult"]) => void
