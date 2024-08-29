@@ -1716,8 +1716,14 @@ export interface operations {
     get_tags_by_sha256_api_items_tags__sha256__get: {
         parameters: {
             query?: {
+                /** @description List of models that set the tags to filter by (default: all) */
                 setters?: string[];
+                /** @description List of namespaces to filter by (default: all). A namespace includes all namespaces that start with the namespace string. */
+                namespaces?: string[];
+                /** @description Minimum confidence threshold, between 0 and 1 (default: 0.0) */
                 confidence_threshold?: number;
+                /** @description Maximum number of tags to return for each *setter, namespace pair* (default: all). Higher confidence tags are given priority. */
+                limit_per_namespace?: number | null;
                 /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
                 /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */

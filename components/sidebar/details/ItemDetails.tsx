@@ -17,6 +17,7 @@ export function ItemDetails() {
     return (
         <div className="mt-4">
             <ExtractedText item={selected} />
+            <ItemTagDetails item={selected} />
             <ResetFilters />
         </div>
     )
@@ -216,7 +217,7 @@ function ExtractedTextCard(
 }
 
 
-function ItemTags({
+function ItemTagDetails({
     item,
 }: {
     item: components["schemas"]["FileSearchResult"] | null
@@ -294,8 +295,80 @@ function ItemTags({
             </FilterContainer>
             <div className="mt-4">
                 {item && (
-                    <></>)}
+                    <ItemTags
+                        item={item}
+                        namespaces={selectedTagNs}
+                        setters={selectedSetters}
+                        minConfidence={minConfidence}
+                        maxTagsPerNsSetter={maxTagsNsSetters}
+                    />)}
             </div>
         </FilterContainer>
+    )
+}
+
+function ItemTags(
+    {
+        item,
+        setters,
+        namespaces,
+        minConfidence,
+        maxTagsPerNsSetter
+    }: {
+        item: components["schemas"]["FileSearchResult"],
+        setters: string[],
+        namespaces: string[],
+        minConfidence: number,
+        maxTagsPerNsSetter: number
+    }
+) {
+    const dbs = useDatabase((state) => state.getDBs())
+    const { data } = $api.useQuery("get", "/api/items/tags/{sha256}", {
+        params: {
+            path: {
+                sha256: item?.sha256,
+            },
+            query: {
+                setters,
+                namespaces,
+                confidence_threshold: minConfidence,
+                limit_per_namespace: maxTagsPerNsSetter,
+                ...dbs
+            }
+        }
+    },
+        {
+            placeholderData: keepPreviousData
+        }
+    )
+    const tags = data?.tags || []
+    return (
+        <div className="mt-4">
+            {tags.map((t, i) => (
+                <div key={i}></div>
+            ))}
+        </div>
+    )
+}
+
+function TagDisplay(
+    {
+        text,
+    }: {
+        text: components["schemas"]["ExtractedText"]
+    }
+) {
+    const truncatedCharNumber = text.length - text.text.length
+    const omittedDisplay = truncatedCharNumber > 0 ? "... " + (`(${truncatedCharNumber} omitted)`) : ''
+    return (
+        <div className="border rounded-lg p-4 mt-4">
+            <div className="flex flex-row items-center justify-between">
+                <div className="space-y-0.5">
+                    <div className="text-base font-medium">{text.setter_name} <span className="text-gray-400"> {text.language}</span></div>
+                    <div className="text-gray-400 p-1 select-text ">{text.text}<i>{omittedDisplay}</i></div>
+                    <div className="text-gray-400 font-medium">Confidence: {text.confidence} (Language: {text.language_confidence})</div>
+                </div>
+            </div>
+        </div>
     )
 }
