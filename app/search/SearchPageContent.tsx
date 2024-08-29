@@ -146,7 +146,7 @@ export function SearchPageContent({ initialQuery }:
                                                         alt={`Result ${result.path}`}
                                                         fill
                                                         className="hover:object-contain object-cover object-top hover:object-center"
-                                                        unoptimized={true}
+                                                        unoptimized
                                                     />
                                                 </a>
                                                 <BookmarkBtn sha256={result.sha256} />
@@ -276,13 +276,11 @@ export function GalleryHorizontalScroll({
 }) {
     const setIndex = useGallery((state) => state.setIndex)
     const viewportRef = useRef<HTMLDivElement>(null)
-
+    const dbs = useDatabase((state) => state.getDBs())
     const onWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
         if (!viewportRef.current || e.deltaY === 0 || e.deltaX !== 0) {
             return
         }
-
-        e.preventDefault()
 
         const delta = e.deltaY
         const currPos = viewportRef.current.scrollLeft
@@ -299,19 +297,18 @@ export function GalleryHorizontalScroll({
             <ScrollAreaPrimitive.Viewport ref={viewportRef} className="h-full w-full rounded-[inherit]">
                 <div className="flex w-max space-x-4 p-4">
                     {items.map((item, i) => (
-                        <figure key={item.path} className="shrink-0">
-                            <div className={cn("overflow-hidden rounded-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none cursor-pointer", {
-                                "ring-2 ring-primary": i === index
-                            })}>
-                                <Image
-                                    onClick={() => setIndex(i)}
-                                    src={getThumbnailURL(item.sha256, { index_db: null, user_data_db: null })}
-                                    alt={item.path}
-                                    className="aspect-[3/4] h-fit w-fit object-cover"
-                                    width={200}
-                                    height={200}
-                                    quality={100} />
-                            </div>
+                        <figure
+                            key={item.path}
+                            className={cn("w-60 h-80 relative rounded-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none cursor-pointer",
+                                i === index ? "scale-105 ring-2 ring-blue-500" : "scale-100"
+                            )}>
+                            <Image
+                                src={getThumbnailURL(item.sha256, dbs)}
+                                alt={item.path}
+                                onClick={() => setIndex(i)}
+                                className="w-full h-full object-cover object-top rounded-md cursor-pointer"
+                                fill
+                            />
                         </figure>
                     ))}
                 </div>
