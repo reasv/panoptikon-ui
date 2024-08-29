@@ -168,11 +168,11 @@ function ExtractedTextList(
         params: {
             path: {
                 sha256: item?.sha256,
-                ...dbs
             },
             query: {
                 setters: selectedSetters,
                 truncate_length: maxLength ? maxLength : undefined,
+                ...dbs
             }
         }
     },
