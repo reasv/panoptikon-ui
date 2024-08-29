@@ -71,7 +71,7 @@ interface ItemDetailFiltersStateState {
   sidebarTab: number
   text_setters: string[]
   text_languages: string[]
-  min_confidence: number
+  text_min_confidence: number
   min_language_confidence: number
 }
 interface ItemDetailFiltersState extends ItemDetailFiltersStateState {
@@ -89,7 +89,7 @@ const itemFilterStorageOptions = {
 export const initialDetailFilters = {
   text_setters: [],
   text_languages: [],
-  min_confidence: 0,
+  text_min_confidence: 0,
   min_language_confidence: 0,
   sidebarTab: 0,
 }
@@ -104,7 +104,7 @@ export const useDetailsPane = create(
       setTextLanguages: (languages: string[]) =>
         set({ text_languages: languages }),
       setMinConfidence: (confidence: number) =>
-        set({ min_confidence: confidence }),
+        set({ text_min_confidence: confidence }),
       setMinLanguageConfidence: (confidence: number) =>
         set({ min_language_confidence: confidence }),
     }),
