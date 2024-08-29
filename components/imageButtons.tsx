@@ -3,10 +3,15 @@ import { $api } from "@/lib/api";
 import { useBookmarkNs, useDatabase } from "@/lib/zust";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/components/ui/use-toast"
-
+import { File, FolderOpen, BookmarkPlus, BookmarkMinus } from "lucide-react"
+import { Button } from "./ui/button";
 export const BookmarkBtn = (
-    { sha256, }: {
+    {
+        sha256,
+        buttonVariant
+    }: {
         sha256: string;
+        buttonVariant?: boolean;
     }
 ) => {
     const query = useDatabase((state) => state.getDBs());
@@ -74,42 +79,52 @@ export const BookmarkBtn = (
     };
 
     return (
-        <button
-            title={isBookmarked ? "Remove bookmark" : "Add to bookmarks"}
-            className="hover:scale-105 absolute top-2 right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-            onClick={handleBookmarkClick}
-        >
-            {isBookmarked ? (
-                // Filled bookmark icon (when bookmarked)
-                <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="currentColor"
-                    viewBox="0 0 24 24"
-                    className="w-6 h-6 text-gray-800"
-                >
-                    <path d="M5 3v18l7-5 7 5V3H5z" />
-                </svg>
-            ) : (
-                // Outlined bookmark icon (when not bookmarked)
-                <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    viewBox="0 0 24 24"
-                    className="w-6 h-6 text-gray-800"
-                >
-                    <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />
-                </svg>
-            )}
-        </button>
+        buttonVariant ?
+            <Button
+                title={isBookmarked ? "Remove bookmark" : "Add to bookmarks"}
+                onClick={handleBookmarkClick}
+                variant="ghost"
+            >
+                {isBookmarked ? <BookmarkMinus className="w-4 h-4" /> : <BookmarkPlus className="w-4 h-4" />}
+            </Button>
+            :
+            <button
+                title={isBookmarked ? "Remove bookmark" : "Add to bookmarks"}
+                className="hover:scale-105 absolute top-2 right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                onClick={handleBookmarkClick}
+            >
+                {isBookmarked ? (
+                    // Filled bookmark icon (when bookmarked)
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="currentColor"
+                        viewBox="0 0 24 24"
+                        className="w-6 h-6 text-gray-800"
+                    >
+                        <path d="M5 3v18l7-5 7 5V3H5z" />
+                    </svg>
+                ) : (
+                    // Outlined bookmark icon (when not bookmarked)
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        viewBox="0 0 24 24"
+                        className="w-6 h-6 text-gray-800"
+                    >
+                        <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />
+                    </svg>
+                )}
+            </button>
     );
 };
 
 export const OpenFile = (
-    { sha256, path }: {
+    { sha256, path, buttonVariant }: {
         sha256: string;
         path?: string;
+        buttonVariant?: boolean;
     }
 ) => {
     const query = useDatabase((state) => state.getDBs());
@@ -139,26 +154,44 @@ export const OpenFile = (
     }
 
     return (
-        <button
-            onClick={() => handleClick()}
-            title="Open file with your system's default application"
-            className="hover:scale-105 absolute bottom-3 left-1 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-        >
-            <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="currentColor"
-                viewBox="0 0 24 24"
-                className="w-6 h-6 text-gray-800"
-            >
-                <path d="M14 2H6C4.9 2 4 2.9 4 4v16c0 1.1 0.9 2 2 2h12c1.1 0 2-0.9 2-2V8l-6-6zm1 7V3.5L18.5 9H15z" />
-            </svg>
-        </button>
+        <>
+            {buttonVariant ?
+                <Button
+                    title="Open file with your system's default application"
+                    onClick={() => handleClick()}
+                    variant="ghost"
+                >
+                    <File
+                        className="w-4 h-4"
+                    />
+                </Button>
+                :
+                <button
+                    onClick={() => handleClick()}
+                    title="Open file with your system's default application"
+                    className="hover:scale-105 absolute bottom-3 left-1 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                >
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="currentColor"
+                        viewBox="0 0 24 24"
+                        className="w-6 h-6 text-gray-800"
+                    >
+                        <path d="M14 2H6C4.9 2 4 2.9 4 4v16c0 1.1 0.9 2 2 2h12c1.1 0 2-0.9 2-2V8l-6-6zm1 7V3.5L18.5 9H15z" />
+                    </svg>
+                </button>}
+        </>
     );
 };
 export const OpenFolder = (
-    { sha256, path }: {
+    {
+        sha256,
+        path,
+        buttonVariant
+    }: {
         sha256: string
         path?: string;
+        buttonVariant?: boolean;
     }
 ) => {
     const query = useDatabase((state) => state.getDBs());
@@ -188,20 +221,31 @@ export const OpenFolder = (
         })
     }
     return (
-        <button
-            title="Show file in folder"
-            onClick={() => handleClick()}
-            className="hover:scale-105 absolute bottom-3 left-12 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-        >
-            <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="currentColor"
-                viewBox="0 0 24 24"
-                className="w-6 h-6 text-gray-800"
+        buttonVariant ?
+            <Button
+                title="Show file in folder"
+                onClick={() => handleClick()}
+                variant="ghost"
             >
-                <path d="M10 4H4c-1.1 0-2 0.9-2 2v12c0 1.1 0.9 2 2 2h16c1.1 0 2-0.9 2-2V8c0-1.1-0.9-2-2-2h-8l-2-2z" />
-            </svg>
-        </button>
+                <FolderOpen
+                    className="w-4 h-4"
+                />
+            </Button>
+            :
+            <button
+                title="Show file in folder"
+                onClick={() => handleClick()}
+                className="hover:scale-105 absolute bottom-3 left-12 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+            >
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="currentColor"
+                    viewBox="0 0 24 24"
+                    className="w-6 h-6 text-gray-800"
+                >
+                    <path d="M10 4H4c-1.1 0-2 0.9-2 2v12c0 1.1 0.9 2 2 2h16c1.1 0 2-0.9 2-2V8c0-1.1-0.9-2-2-2h-8l-2-2z" />
+                </svg>
+            </button>
     );
 };
 
