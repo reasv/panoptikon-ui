@@ -3,7 +3,7 @@ import { $api } from "@/lib/api";
 import { useBookmarkNs, useDatabase } from "@/lib/zust";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/components/ui/use-toast"
-import { File, FolderOpen, BookmarkPlus, BookmarkMinus } from "lucide-react"
+import { File, FolderOpen, BookmarkPlus, BookmarkMinus, BookmarkX } from "lucide-react"
 import { Button } from "./ui/button";
 export const BookmarkBtn = (
     {
@@ -81,16 +81,24 @@ export const BookmarkBtn = (
     return (
         buttonVariant ?
             <Button
-                title={isBookmarked ? "Remove bookmark" : "Add to bookmarks"}
+                title={
+                    isBookmarked ?
+                        `Remove from current bookmark group (${namespace})`
+                        : `Add to current bookmark group (${namespace})`
+                }
                 onClick={handleBookmarkClick}
                 variant="ghost"
                 size="icon"
             >
-                {isBookmarked ? <BookmarkMinus className="w-4 h-4" /> : <BookmarkPlus className="w-4 h-4" />}
+                {isBookmarked ? <BookmarkX className="w-4 h-4" /> : <BookmarkPlus className="w-4 h-4" />}
             </Button>
             :
             <button
-                title={isBookmarked ? "Remove bookmark" : "Add to bookmarks"}
+                title={
+                    isBookmarked ?
+                        `Remove from current bookmark group (${namespace})`
+                        : `Add to current bookmark group (${namespace})`
+                }
                 className="hover:scale-105 absolute top-2 right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
                 onClick={handleBookmarkClick}
             >
