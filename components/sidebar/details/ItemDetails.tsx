@@ -10,6 +10,7 @@ import { useState } from "react"
 import { ConfidenceFilter } from "../options/confidenceFilter"
 import { Button } from "@/components/ui/button"
 import { Delete } from "lucide-react"
+import { keepPreviousData } from "@tanstack/react-query"
 export function ItemDetails() {
     const selected = useItemSelection((state) => state.getSelected())
     return (
@@ -169,7 +170,11 @@ function ExtractedTextList(
                 truncate_length: maxLength ? maxLength : undefined,
             }
         }
-    })
+    },
+        {
+            placeholderData: keepPreviousData
+        }
+    )
     const text = (
         data?.text
             .filter((t) => selectedLanguages.length == 0 || selectedLanguages.includes(t.language))
