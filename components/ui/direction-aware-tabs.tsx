@@ -66,7 +66,7 @@ function DirectionAwareTabs({
         <div className=" flex flex-col items-center w-full">
             <div
                 className={cn(
-                    "flex space-x-1 border border-none rounded-full cursor-pointer bg-neutral-600 px-[3px] py-[3.2px] shadow-inner-shadow",
+                    "inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground",
                     className,
                     rounded
                 )}
@@ -76,18 +76,20 @@ function DirectionAwareTabs({
                         key={tab.id}
                         onClick={() => handleTabClick(tab.id)}
                         className={cn(
-                            "relative rounded-full px-3.5 py-1.5 text-xs sm:text-sm font-medium text-neutral-200  transition focus-visible:outline-1 focus-visible:ring-1  focus-visible:outline-none flex gap-2 items-center ",
+                            // "relative rounded-full px-3.5 py-1.5 text-xs sm:text-sm font-medium text-neutral-200  transition focus-visible:outline-1 focus-visible:ring-1  focus-visible:outline-none flex gap-2 items-center ",
+                            "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm",
                             activeTab === tab.id
-                                ? "text-white"
-                                : "hover:text-neutral-300/60  text-neutral-200/80",
+                                ? "text-white bg-background text-foreground shadow-sm"
+                                : "text-neutral-300/60  hover:text-neutral-200/80",
                             rounded
                         )}
                         style={{ WebkitTapHighlightColor: "transparent" }}
                     >
-                        {activeTab === tab.id && (
+                        {activeTab !== tab.id && (
                             <motion.span
                                 layoutId="bubble"
-                                className="absolute  inset-0 z-10 bg-neutral-700 mix-blend-difference shadow-inner-shadow border border-white/10"
+                                // className="absolute  inset-0 z-10 bg-neutral-700 mix-blend-difference shadow-inner-shadow border border-white/10"
+                                className="bg-background text-foreground shadow-sm"
                                 style={rounded ? { borderRadius: 9 } : { borderRadius: 9999 }}
                                 transition={{ type: "spring", bounce: 0.19, duration: 0.4 }}
                             />
