@@ -37,7 +37,9 @@ export function ItemFileDetails({
             storageKey="file-item-details-open"
         >
             <div className="space-x-2 mt-4">
-                <FilePathComponent path={item.path} />
+                <div className="w-full max-w-[270px] overflow-hidden">
+                    <FilePathComponent path={item.path} />
+                </div>
                 <p className="text-xs text-gray-500 mt-2">
                     Last Modified: {dateString}
                 </p>
@@ -45,7 +47,7 @@ export function ItemFileDetails({
             <div className="space-x-2 mt-4">
                 <FilterContainer
                     label={<span>Files</span>}
-                    description={<span>All duplicate files associated with this unique item</span>}
+                    description={<span>All files associated with this unique item</span>}
                     storageKey="file-list-open"
                     defaultIsCollapsed={true}
                 >
@@ -65,17 +67,17 @@ export function ItemFileDetails({
 function SingleFileItem({
     item,
     path,
-
 }: {
     item: components["schemas"]["FileSearchResult"],
     path: string
 }) {
     return (
         <div className="border rounded-lg p-4 mt-4">
-            <div className="flex flex-row items-center justify-between">
-                <div className="space-y-0.5">
+            <div className="flex flex-col space-y-2">
+                <div className="w-full max-w-[250px] overflow-hidden">
                     <FilePathComponent path={path} />
-                    <div className="mt-4" />
+                </div>
+                <div className="flex flex-row space-x-2">
                     <OpenFile sha256={item.sha256} path={path} buttonVariant />
                     <OpenFolder sha256={item.sha256} path={path} buttonVariant />
                 </div>
