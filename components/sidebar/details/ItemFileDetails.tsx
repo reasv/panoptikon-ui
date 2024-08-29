@@ -37,7 +37,7 @@ export function ItemFileDetails({
             storageKey="file-item-details-open"
         >
             <div className="space-x-2 mt-4">
-                <div className="w-full max-w-[270px] overflow-hidden">
+                <div className="w-full max-w-[270px] 2xl:max-w-xs overflow-hidden">
                     <FilePathComponent path={item.path} />
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
@@ -47,7 +47,7 @@ export function ItemFileDetails({
             <div className="space-x-2 mt-4">
                 <FilterContainer
                     label={<span>Files</span>}
-                    description={<span>All files associated with this unique item</span>}
+                    description={<span>All files associated with this item</span>}
                     storageKey="file-list-open"
                     defaultIsCollapsed={true}
                 >
@@ -74,7 +74,7 @@ function SingleFileItem({
     return (
         <div className="border rounded-lg p-4 mt-4">
             <div className="flex flex-col space-y-2">
-                <div className="w-full max-w-[250px] overflow-hidden">
+                <div className="w-full max-w-[250px]  overflow-hidden">
                     <FilePathComponent path={path} />
                 </div>
                 <div className="flex flex-row space-x-2">
