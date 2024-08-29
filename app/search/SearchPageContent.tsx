@@ -145,7 +145,7 @@ export function SearchPageContent({ initialQuery }:
                                                         src={`/api/items/thumbnail/${getFileURL(result.sha256)}`}
                                                         alt={`Result ${result.path}`}
                                                         fill
-                                                        className="hover:object-contain object-cover object-top hover:object-center"
+                                                        className="group-hover:object-contain object-cover object-top group-hover:object-center"
                                                         unoptimized
                                                     />
                                                 </a>
