@@ -137,8 +137,9 @@ export function SearchResultImage({
     const openGallery = useGallery((state) => state.openGallery)
     const fileUrl = getFullFileURL(result.sha256, dbs)
     const thumbnailUrl = getThumbnailURL(result.sha256, dbs)
+    const dateString = new Date(result.last_modified).toLocaleString('en-US')
     return (
-        <div key={result.path} className="border rounded p-2">
+        <div className="border rounded p-2">
             <div className="overflow-hidden relative w-full pb-full mb-2 group">
                 <a
                     href={fileUrl}
@@ -167,7 +168,7 @@ export function SearchResultImage({
             </div>
             <FilePathComponent path={result.path} />
             <p className="text-xs text-gray-500">
-                {new Date(result.last_modified).toLocaleString('en-US')}
+                {dateString}
             </p>
         </div>
     )
