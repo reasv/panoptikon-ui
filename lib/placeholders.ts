@@ -26,4 +26,5 @@ export const PLACEHOLDERS = [
   "Search for the golden ticket.",
   "Seek and you shall find.",
   "Search for the moon, reach the stars.",
+  "Five Nights at Pano’s.",
 ] as const
