@@ -3,7 +3,7 @@ import { $api } from "@/lib/api"
 import Image from 'next/image'
 import { PageSelect } from "@/components/pageselect";
 import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons"
-import { useAdvancedOptions, useDatabase, useInstantSearch, useSearchQuery } from "@/lib/zust"
+import { useAdvancedOptions, useDatabase, useInstantSearch, useItemSelection, useSearchQuery } from "@/lib/zust"
 import { Toggle } from "@/components/ui/toggle"
 
 import { Settings, RefreshCw, X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal } from "lucide-react"
@@ -255,6 +255,10 @@ export function GalleryImageLarge(
             prevImage(items.length)
         }
     }
+    const setSelectedItem = useItemSelection((state) => state.setItem)
+    useEffect(() => {
+        setSelectedItem(items[index])
+    }, [index, items])
     return (
         <div
             className={cn("relative flex-grow flex justify-center items-center overflow-hidden cursor-pointer ",
