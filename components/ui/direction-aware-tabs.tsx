@@ -85,7 +85,7 @@ function DirectionAwareTabs({
                         )}
                         style={{ WebkitTapHighlightColor: "transparent" }}
                     >
-                        {activeTab !== tab.id && (
+                        {/* {activeTab !== tab.id && (
                             <motion.span
                                 layoutId="bubble"
                                 // className="absolute  inset-0 z-10 bg-neutral-700 mix-blend-difference shadow-inner-shadow border border-white/10"
@@ -93,7 +93,7 @@ function DirectionAwareTabs({
                                 style={rounded ? { borderRadius: 9 } : { borderRadius: 9999 }}
                                 transition={{ type: "spring", bounce: 0.19, duration: 0.4 }}
                             />
-                        )}
+                        )} */}
 
                         {tab.label}
                     </button>
