@@ -428,6 +428,6 @@ function TagLabel(
     }
 ) {
     return (
-        <div key={tag} className="text-gray-400 p-1 select-text">{tag} <i>({confidence})</i></div>
+        <div key={tag} className="text-gray-400 p-1 select-text">{tag} <i>({confidence.toFixed(2)})</i></div>
     )
 }
