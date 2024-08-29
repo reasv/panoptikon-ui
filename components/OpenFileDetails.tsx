@@ -1,5 +1,5 @@
 "use client"
-import { BookOpen } from "lucide-react"
+import { BookOpen, Book } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { Button } from './ui/button'
 import { useAdvancedOptions, useDetailsPane, useItemSelection } from "@/lib/zust"
@@ -10,9 +10,11 @@ function itemEquals(a: components["schemas"]["FileSearchResult"], b: components[
     return a.sha256 === b.sha256 && a.path === b.path
 }
 export function OpenDetailsButton({
-    item
+    item,
+    variantButton
 }: {
-    item?: components["schemas"]["FileSearchResult"]
+    item?: components["schemas"]["FileSearchResult"],
+    variantButton?: boolean
 }) {
     const { toast } = useToast()
     const setAdvancedOptions = useAdvancedOptions((state) => state.setOpened)
@@ -23,7 +25,7 @@ export function OpenDetailsButton({
     const detailsPaneOpen = (sidebarTab === 1) && advancedOptionsOpen
     const selectedItem = useItemSelection((state) => state.getSelected())
 
-    const itemDetailsOpen = item && (selectedItem === item) && detailsPaneOpen
+    const itemDetailsOpen = !!item && !!selectedItem && itemEquals(selectedItem, item) && detailsPaneOpen
 
     const openDetailsPane = () => {
         if (item) {
@@ -50,13 +52,26 @@ export function OpenDetailsButton({
         }
     }
     return (
-        <Toggle
-            pressed={itemDetailsOpen}
-            onClick={() => onClick()}
-            title={itemDetailsOpen ? "Open Data View" : "Close Data View"}
-            aria-label={itemDetailsOpen ? "Open Data View" : "Close Data View"}
-        >
-            <BookOpen className="h-4 w-4" />
-        </Toggle>
+        variantButton ? (
+            <Button
+                onClick={() => onClick()}
+                title={!itemDetailsOpen ? "Open in Data View" : "Close Data View"}
+                aria-label={!itemDetailsOpen ? "Open in Data View" : "Close Data View"}
+                className="hover:scale-105 absolute top-2 left-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                size="icon"
+            >
+                {itemDetailsOpen ? <Book className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
+            </Button>
+        ) : (
+            <Toggle
+                pressed={itemDetailsOpen}
+                onClick={() => onClick()}
+                title={!itemDetailsOpen ? "Open Data View" : "Close Data View"}
+                aria-label={!itemDetailsOpen ? "Open Data View" : "Close Data View"}
+            >
+                <BookOpen className="h-4 w-4" />
+            </Toggle>
+        )
+
     )
 }
