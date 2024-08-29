@@ -6,6 +6,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { File, FolderOpen, BookmarkPlus, BookmarkMinus, BookmarkX } from "lucide-react"
 import { Button } from "./ui/button";
 import { Toggle } from "./ui/toggle";
+import { cn } from "@/lib/utils";
 export const BookmarkBtn = (
     {
         sha256,
@@ -89,7 +90,7 @@ export const BookmarkBtn = (
         else
             addBookmark.mutate({ params }, { onSuccess: () => onSuccess(false), onError: onError });
     };
-
+    const alwaysShow = useBookmarkNs((state) => state.alwaysShow)
     return (
         buttonVariant ?
             <Toggle
@@ -110,7 +111,9 @@ export const BookmarkBtn = (
                         `Remove from current bookmark group (${namespace})`
                         : `Add to current bookmark group (${namespace})`
                 }
-                className="hover:scale-105 absolute top-2 right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                className={cn("hover:scale-105 absolute top-2 right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300",
+                    (alwaysShow && isBookmarked) ? 'opacity-100' : 'opacity-0'
+                )}
                 onClick={handleBookmarkClick}
             >
                 {isBookmarked ? (
