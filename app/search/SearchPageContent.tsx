@@ -242,7 +242,7 @@ export function ImageGallery({
             </div>
             <div
                 className={cn("relative flex-grow  flex justify-center items-center overflow-hidden cursor-pointer ",
-                    thumbnailsOpen ? "h-[calc(100vh-600px)]" : "h-[calc(100vh-220px)]" // Set height based on whether thumbnails
+                    thumbnailsOpen ? "h-[calc(100vh-570px)]" : "h-[calc(100vh-220px)]" // Set height based on whether thumbnails
                 )}
                 onClick={handleImageClick} // Attach click handler to the entire area
             >
