@@ -22,6 +22,7 @@ import { components } from "@/lib/panoptikon";
 import { useGallery } from "@/lib/gallery";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { SideBar } from "@/components/sidebar/SideBar";
+import { OpenDetailsButton } from "@/components/OpenFileDetails";
 
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }
@@ -214,6 +215,7 @@ export function ImageGallery({
                     <Button onClick={() => nextImage(items.length)} variant="ghost" size="icon" title="Next Image">
                         <ArrowBigRight className="h-4 w-4" />
                     </Button>
+                    <OpenDetailsButton item={items[index]} />
                     <Toggle
                         pressed={thumbnailsOpen}
                         onClick={() => setThumbnailsOpen(!thumbnailsOpen)}
