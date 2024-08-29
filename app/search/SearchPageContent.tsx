@@ -70,10 +70,7 @@ export function SearchPageContent({ initialQuery }:
             refetch()
         }
     }, [page])
-    function getFileURL(sha256: string) {
-        // Only use the DB values if they are set
-        return `${sha256}?index_db=${dbs.index_db || ''}&user_data_db=${dbs.user_data_db || ''}`
-    }
+
     const toggleOptions = useAdvancedOptions((state) => state.toggle)
     const advancedIsOpen = useAdvancedOptions((state) => state.isOpen)
     const isMobile = useMediaQuery("(max-width: 768px)")
@@ -85,7 +82,6 @@ export function SearchPageContent({ initialQuery }:
     if (advancedIsOpen) {
         maxPagesButtons = isMobile ? 5 : isTablet ? 5 : isSmallDesktop ? 7 : isMediumDesktop ? 10 : isMediumLargeDesktop ? 20 : 25
     }
-    const openGallery = useGallery((state) => state.openGallery)
     const galleryOpen = useGallery((state) => state.isGalleryOpen)
     return (
         <div className="flex w-full h-screen">
@@ -121,43 +117,12 @@ export function SearchPageContent({ initialQuery }:
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <ScrollArea className="overflow-y-auto" >
+                            <ScrollArea className="overflow-y-auto">
                                 <div className={cn('grid gap-4 max-h-[calc(100vh-250px)]',
                                     advancedIsOpen ? 'grid-cols-1 sm:grid-cols-1 md:grid-cols-1 lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4' :
                                         'grid-cols-1 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5')}>
-
                                     {data && data.results.map((result, index) => (
-                                        <div key={result.path} className="border rounded p-2">
-                                            <div className="overflow-hidden relative w-full pb-full mb-2 group">
-                                                <a
-                                                    href={`/api/items/file/${getFileURL(result.sha256)}`}
-                                                    target="_blank"
-                                                    onClick={(e) => {
-                                                        e.preventDefault()
-                                                        openGallery(index)
-                                                    }}
-                                                    rel="noopener noreferrer"
-                                                    className={cn("block relative mb-2 h-80",
-                                                        advancedIsOpen ? 'sm:h-96 md:h-80 lg:h-96 xl:h-80 2xl:h-80' : 'sm:h-96 md:h-80 lg:h-96 xl:h-96 2xl:h-96'
-                                                    )}
-                                                >
-                                                    <Image
-                                                        src={`/api/items/thumbnail/${getFileURL(result.sha256)}`}
-                                                        alt={`Result ${result.path}`}
-                                                        fill
-                                                        className="group-hover:object-contain object-cover object-top group-hover:object-center"
-                                                        unoptimized
-                                                    />
-                                                </a>
-                                                <BookmarkBtn sha256={result.sha256} />
-                                                <OpenFile sha256={result.sha256} path={result.path} />
-                                                <OpenFolder sha256={result.sha256} path={result.path} />
-                                            </div>
-                                            <FilePathComponent path={result.path} />
-                                            <p className="text-xs text-gray-500">
-                                                {new Date(result.last_modified).toLocaleString('en-US')}
-                                            </p>
-                                        </div>
+                                        <SearchResultImage key={result.path} result={result} index={index} dbs={dbs} />
                                     ))}
                                 </div>
                             </ScrollArea>
@@ -170,6 +135,54 @@ export function SearchPageContent({ initialQuery }:
             </div>
         </div>
     );
+}
+
+export function SearchResultImage({
+    result,
+    index,
+    dbs
+}: {
+    result: components["schemas"]["FileSearchResult"],
+    index: number,
+    dbs: { index_db: string | null, user_data_db: string | null }
+}) {
+    const advancedIsOpen = useAdvancedOptions((state) => state.isOpen)
+    const openGallery = useGallery((state) => state.openGallery)
+    const fileUrl = getFullFileURL(result.sha256, dbs)
+    const thumbnailUrl = getThumbnailURL(result.sha256, dbs)
+    return (
+        <div key={result.path} className="border rounded p-2">
+            <div className="overflow-hidden relative w-full pb-full mb-2 group">
+                <a
+                    href={fileUrl}
+                    target="_blank"
+                    onClick={(e) => {
+                        e.preventDefault()
+                        openGallery(index)
+                    }}
+                    rel="noopener noreferrer"
+                    className={cn("block relative mb-2 h-80",
+                        advancedIsOpen ? 'sm:h-96 md:h-80 lg:h-96 xl:h-80 2xl:h-80' : 'sm:h-96 md:h-80 lg:h-96 xl:h-96 2xl:h-96'
+                    )}
+                >
+                    <Image
+                        src={thumbnailUrl}
+                        alt={`Result ${result.path}`}
+                        fill
+                        className="group-hover:object-contain object-cover object-top group-hover:object-center"
+                        unoptimized
+                    />
+                </a>
+                <BookmarkBtn sha256={result.sha256} />
+                <OpenFile sha256={result.sha256} path={result.path} />
+                <OpenFolder sha256={result.sha256} path={result.path} />
+            </div>
+            <FilePathComponent path={result.path} />
+            <p className="text-xs text-gray-500">
+                {new Date(result.last_modified).toLocaleString('en-US')}
+            </p>
+        </div>
+    )
 }
 function getFileURL(sha256: string, dbs: { index_db: string | null, user_data_db: string | null }) {
     return `${sha256}?index_db=${dbs.index_db || ''}&user_data_db=${dbs.user_data_db || ''}`
