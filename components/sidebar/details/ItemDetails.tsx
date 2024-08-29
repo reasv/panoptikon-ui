@@ -290,7 +290,7 @@ function ItemTagDetails({
                     description={<span>Cut off lower confidence tags beyond this limit</span>}
                     min={0}
                     max={100}
-                    step={10}
+                    step={1}
                 />
             </FilterContainer>
             <div className="mt-4">
@@ -342,33 +342,92 @@ function ItemTags(
         }
     )
     const tags = data?.tags || []
+    const mergedTags = mergeTags(tags)
     return (
         <div className="mt-4">
-            {tags.map((t, i) => (
-                <div key={i}></div>
+            {mergedTags.map(([namespace, tags]) => (
+                <TagDisplay key={namespace} namespace={namespace} tags={tags.slice(0, maxTagsPerNsSetter)} />
             ))}
         </div>
     )
 }
+function mergeNs(tags: [string, string, number, string][]) {
+    const namespaces: string[] = []
+    const tagMap: { [key: string]: [string, number, string][] } = {}
+    tags.forEach(([ns, tag, confidence, setter]) => {
+        if (!tagMap[ns]) {
+            tagMap[ns] = []
+            namespaces.push(ns)
+        }
+        tagMap[ns].push([tag, confidence, setter])
+    })
+    const merges: [string, [string, number, string][]][] = []
+    for (let namespace of namespaces) {
+        merges.push([namespace, tagMap[namespace]])
+    }
+    return merges
+}
+
+function mergeSetters(tags: [string, number, string][]) {
+    const tagMap: { [key: string]: number } = {}
+    tags.forEach(([tag, confidence, setter]) => {
+        if (!tagMap[tag]) {
+            tagMap[tag] = confidence
+        } else {
+            tagMap[tag] = Math.max(tagMap[tag], confidence)
+        }
+    })
+    return tagMap
+}
+
+function mergeTags(tags: [string, string, number, string][]) {
+    const namespaces = mergeNs(tags)
+    const merged: [string, [string, number][]][] = []
+    for (let [ns, tags] of namespaces) {
+        const mtags = mergeSetters(tags)
+        const tags_arr: [string, number][] = Object.entries(mtags) as [string, number][];
+        tags_arr.sort(([, value1], [, value2]) => value2 - value1);
+        merged.push([ns, tags_arr])
+    }
+    return merged
+}
 
 function TagDisplay(
     {
-        text,
+        namespace,
+        tags
     }: {
-        text: components["schemas"]["ExtractedText"]
+        namespace: string,
+        tags: [string, number][]
     }
 ) {
-    const truncatedCharNumber = text.length - text.text.length
-    const omittedDisplay = truncatedCharNumber > 0 ? "... " + (`(${truncatedCharNumber} omitted)`) : ''
     return (
         <div className="border rounded-lg p-4 mt-4">
             <div className="flex flex-row items-center justify-between">
                 <div className="space-y-0.5">
-                    <div className="text-base font-medium">{text.setter_name} <span className="text-gray-400"> {text.language}</span></div>
-                    <div className="text-gray-400 p-1 select-text ">{text.text}<i>{omittedDisplay}</i></div>
-                    <div className="text-gray-400 font-medium">Confidence: {text.confidence} (Language: {text.language_confidence})</div>
+                    <div className="text-base font-medium">{namespace}</div>
+                    {
+                        tags.map(([tag, confidence]) => (
+                            <TagLabel key={tag} tag={tag} confidence={confidence} />
+                        ))
+                    }
                 </div>
             </div>
         </div>
+    )
+}
+
+
+function TagLabel(
+    {
+        tag,
+        confidence
+    }: {
+        tag: string,
+        confidence: number
+    }
+) {
+    return (
+        <div key={tag} className="text-gray-400 p-1 select-text">{tag} <i>({confidence})</i></div>
     )
 }
