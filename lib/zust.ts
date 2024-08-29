@@ -67,6 +67,19 @@ export const useBookmarkCustomNs = create<BookmarksCustom>((set) => ({
     set((state) => ({ namespaces: [...state.namespaces, ns] })),
 }))
 
+interface SelectionState {
+  selected: components["schemas"]["FileSearchResult"] | null
+  setItem: (item: components["schemas"]["FileSearchResult"]) => void
+  getSelected: () => components["schemas"]["FileSearchResult"] | null
+}
+
+export const useItemSelection = create<SelectionState>((set, get) => ({
+  selected: null,
+  setItem: (item: components["schemas"]["FileSearchResult"]) =>
+    set({ selected: item }),
+  getSelected: () => get().selected,
+}))
+
 interface StringStore {
   strings: string[]
   add: (p: string) => void
