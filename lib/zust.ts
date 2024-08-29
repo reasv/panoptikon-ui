@@ -73,10 +73,12 @@ interface ItemDetailFiltersStateState {
   text_languages: string[]
   text_min_confidence: number
   min_language_confidence: number
+  text_max_length: number
 }
 interface ItemDetailFiltersState extends ItemDetailFiltersStateState {
   setTextSetters: (setters: string[]) => void
   setTextLanguages: (languages: string[]) => void
+  setTextMaxLength: (length: number) => void
   setMinConfidence: (confidence: number) => void
   setMinLanguageConfidence: (confidence: number) => void
   resetFilters: () => void
@@ -91,6 +93,7 @@ export const initialDetailFilters = {
   text_languages: [],
   text_min_confidence: 0,
   min_language_confidence: 0,
+  text_max_length: 1000,
   sidebarTab: 0,
 }
 
@@ -107,6 +110,7 @@ export const useDetailsPane = create(
         set({ text_min_confidence: confidence }),
       setMinLanguageConfidence: (confidence: number) =>
         set({ min_language_confidence: confidence }),
+      setTextMaxLength: (length: number) => set({ text_max_length: length }),
     }),
     itemFilterStorageOptions
   )
