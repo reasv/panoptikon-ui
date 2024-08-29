@@ -12,11 +12,13 @@ import { keepPreviousData } from "@tanstack/react-query"
 import { Progress } from "@/components/ui/progress"
 import { useToast } from "@/components/ui/use-toast"
 import { FileBookmarks } from "./FileBookmarks"
+import { ItemFileDetails } from "./ItemFileDetails"
 
 export function ItemDetails() {
     const selected = useItemSelection((state) => state.getSelected())
     return (
         <div className="mt-4">
+            {selected && <ItemFileDetails item={selected} />}
             <ExtractedText item={selected} />
             <ItemTagDetails item={selected} />
             <ResetFilters />
