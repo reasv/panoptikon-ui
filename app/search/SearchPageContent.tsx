@@ -7,7 +7,7 @@ import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/componen
 import { useAdvancedOptions, useDatabase, useInstantSearch, useSearchQuery } from "@/lib/zust"
 import { Toggle } from "@/components/ui/toggle"
 
-import { Settings, RefreshCw, X, ArrowBigLeft, ArrowBigRight } from "lucide-react"
+import { Settings, RefreshCw, X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal } from "lucide-react"
 import { AnimatedNumber } from "@/components/ui/animatedNumber"
 import { keepPreviousData } from "@tanstack/react-query"
 import { InstantSearchLock } from "@/components/InstantSearchLock"
@@ -190,7 +190,7 @@ export function ImageGallery({
     const closeGallery = useGallery((state) => state.closeGallery)
     const nextImage = useGallery((state) => state.nextImage)
     const prevImage = useGallery((state) => state.prevImage)
-    const index = useGallery((state) => state.selectedImageIndex)
+    const index = useGallery((state) => state.selectedImageIndex > items.length - 1 ? 0 : state.selectedImageIndex)
 
     const handleImageClick = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
         const { clientX, currentTarget } = e
@@ -203,9 +203,11 @@ export function ImageGallery({
             prevImage(items.length)
         }
     }
+    const thumbnailsOpen = useGallery((state) => state.horizontalThumbnails)
+    const setThumbnailsOpen = useGallery((state) => state.setThumbnailsOpen)
     const dateString = new Date(items[index].last_modified).toLocaleString('en-US')
-    const thumbnailURL = `/api/items/thumbnail/${getFileURL(items[index].sha256, dbs)}`
-    const fileURL = `/api/items/file/${getFileURL(items[index].sha256, dbs)}`
+    const thumbnailURL = getThumbnailURL(items[index].sha256, dbs)
+    const fileURL = getFullFileURL(items[index].sha256, dbs)
     return (
         <div key={items[index].path} className="flex flex-col border rounded p-2">
             <div className="flex justify-between items-center mb-2">
@@ -224,13 +226,24 @@ export function ImageGallery({
                         {dateString}
                     </p>
                 </div>
-
-                <Button onClick={() => closeGallery()} variant="ghost" size="icon" title="Close Gallery">
-                    <X className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center">
+                    <Toggle
+                        pressed={thumbnailsOpen}
+                        onClick={() => setThumbnailsOpen(!thumbnailsOpen)}
+                        title={thumbnailsOpen ? "Close Thumbnails" : "Open Thumbnails"}
+                        aria-label="Toggle auto-update lock"
+                    >
+                        <GalleryHorizontal className="h-4 w-4" />
+                    </Toggle>
+                    <Button onClick={() => closeGallery()} variant="ghost" size="icon" title="Close Gallery">
+                        <X className="h-4 w-4" />
+                    </Button>
+                </div>
             </div>
             <div
-                className="relative flex-grow h-[calc(100vh-800px)] flex justify-center items-center overflow-hidden cursor-pointer"
+                className={cn("relative flex-grow  flex justify-center items-center overflow-hidden cursor-pointer ",
+                    thumbnailsOpen ? "h-[calc(100vh-600px)]" : "h-[calc(100vh-220px)]" // Set height based on whether thumbnails
+                )}
                 onClick={handleImageClick} // Attach click handler to the entire area
             >
                 <a
@@ -249,7 +262,7 @@ export function ImageGallery({
                     />
                 </a>
             </div>
-            <GalleryHorizontalScroll items={items} index={index} />
+            {thumbnailsOpen ? <GalleryHorizontalScroll items={items} index={index} /> : null}
         </div>
     );
 }
