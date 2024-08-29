@@ -185,31 +185,16 @@ export function ImageGallery({
 }: {
     items: components["schemas"]["FileSearchResult"][]
 }) {
-    const dbs = useDatabase((state) => state.getDBs())
-
     const closeGallery = useGallery((state) => state.closeGallery)
     const nextImage = useGallery((state) => state.nextImage)
     const prevImage = useGallery((state) => state.prevImage)
-    const index = useGallery((state) => state.selectedImageIndex > items.length - 1 ? 0 : state.selectedImageIndex)
-
-    const handleImageClick = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
-        const { clientX, currentTarget } = e
-        e.stopPropagation()
-        const { left, right } = currentTarget.getBoundingClientRect()
-        const middle = (left + right) / 2
-        if (clientX > middle) {
-            nextImage(items.length)
-        } else {
-            prevImage(items.length)
-        }
-    }
-    const thumbnailsOpen = useGallery((state) => state.horizontalThumbnails)
+    const index = useGallery((state) => state.getImageIndex(items.length))
     const setThumbnailsOpen = useGallery((state) => state.setThumbnailsOpen)
+    const thumbnailsOpen = useGallery((state) => state.horizontalThumbnails)
     const dateString = new Date(items[index].last_modified).toLocaleString('en-US')
-    const thumbnailURL = getThumbnailURL(items[index].sha256, dbs)
-    const fileURL = getFullFileURL(items[index].sha256, dbs)
+
     return (
-        <div key={items[index].path} className="flex flex-col border rounded p-2">
+        <div className="flex flex-col border rounded p-2">
             <div className="flex justify-between items-center mb-2">
                 <div className="flex items-center">
                     <Button onClick={() => prevImage(items.length)} variant="ghost" size="icon" title="Previous Image">
@@ -219,7 +204,6 @@ export function ImageGallery({
                         <ArrowBigRight className="h-4 w-4" />
                     </Button>
                 </div>
-
                 <div className="max-w-[33%] text-center">
                     <FilePathComponent path={items[index].path} />
                     <p className="text-xs text-gray-500 truncate">
@@ -240,43 +224,67 @@ export function ImageGallery({
                     </Button>
                 </div>
             </div>
-            <div
-                className={cn("relative flex-grow  flex justify-center items-center overflow-hidden cursor-pointer ",
-                    thumbnailsOpen ? "h-[calc(100vh-570px)]" : "h-[calc(100vh-220px)]" // Set height based on whether thumbnails
-                )}
-                onClick={handleImageClick} // Attach click handler to the entire area
-            >
-                <a
-                    href={fileURL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="absolute inset-0"
-                    onClick={(e) => e.preventDefault()}
-                >
-                    <Image
-                        src={thumbnailURL}
-                        alt={`${items[index].path}`}
-                        fill
-                        className="object-contain"
-                        unoptimized={true}
-                    />
-                </a>
-            </div>
-            {thumbnailsOpen ? <GalleryHorizontalScroll items={items} index={index} /> : null}
+            <GalleryImageLarge items={items} />
+            {thumbnailsOpen ? <GalleryHorizontalScroll items={items} /> : null}
         </div>
     );
 }
 
+export function GalleryImageLarge(
+    { items }: { items: components["schemas"]["FileSearchResult"][] }
+) {
+    const index = useGallery((state) => state.getImageIndex(items.length))
+    const nextImage = useGallery((state) => state.nextImage)
+    const prevImage = useGallery((state) => state.prevImage)
+    const dbs = useDatabase((state) => state.getDBs())
+    const thumbnailURL = getThumbnailURL(items[index].sha256, dbs)
+    const fileURL = getFullFileURL(items[index].sha256, dbs)
+    const thumbnailsOpen = useGallery((state) => state.horizontalThumbnails)
+
+    const handleImageClick = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
+        const { clientX, currentTarget } = e
+        e.stopPropagation()
+        const { left, right } = currentTarget.getBoundingClientRect()
+        const middle = (left + right) / 2
+        if (clientX > middle) {
+            nextImage(items.length)
+        } else {
+            prevImage(items.length)
+        }
+    }
+    return (
+        <div
+            className={cn("relative flex-grow flex justify-center items-center overflow-hidden cursor-pointer ",
+                thumbnailsOpen ? "h-[calc(100vh-570px)]" : "h-[calc(100vh-220px)]" // Set height based on whether thumbnails
+            )}
+            onClick={handleImageClick} // Attach click handler to the entire area
+        >
+            <a
+                href={fileURL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="absolute inset-0"
+                onClick={(e) => e.preventDefault()}
+            >
+                <Image
+                    src={thumbnailURL}
+                    alt={`${items[index].path}`}
+                    fill
+                    className="object-contain"
+                    unoptimized={true}
+                />
+            </a>
+        </div>
+    )
+}
+
+
 export function GalleryHorizontalScroll({
     items,
-    index,
 }: {
     items: components["schemas"]["FileSearchResult"][]
-    index: number,
 }) {
-    const setIndex = useGallery((state) => state.setIndex)
     const viewportRef = useRef<HTMLDivElement>(null)
-    const dbs = useDatabase((state) => state.getDBs())
     const onWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
         if (!viewportRef.current || e.deltaY === 0 || e.deltaX !== 0) {
             return
@@ -297,24 +305,45 @@ export function GalleryHorizontalScroll({
             <ScrollAreaPrimitive.Viewport ref={viewportRef} className="h-full w-full rounded-[inherit]">
                 <div className="flex w-max space-x-4 p-4">
                     {items.map((item, i) => (
-                        <figure
-                            key={item.path}
-                            className={cn("w-60 h-80 relative rounded-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none cursor-pointer",
-                                i === index ? "scale-105 ring-2 ring-blue-500" : "scale-100"
-                            )}>
-                            <Image
-                                src={getThumbnailURL(item.sha256, dbs)}
-                                alt={item.path}
-                                onClick={() => setIndex(i)}
-                                className="w-full h-full object-cover object-top rounded-md cursor-pointer"
-                                fill
-                            />
-                        </figure>
+                        <HorizontalScrollElement key={item.path} item={item} ownIndex={i} nItems={items.length} />
                     ))}
                 </div>
             </ScrollAreaPrimitive.Viewport>
             <ScrollBar orientation="horizontal" />
             <ScrollAreaPrimitive.Corner />
         </ScrollAreaPrimitive.Root>
+    )
+}
+
+export function HorizontalScrollElement({
+    item,
+    ownIndex,
+    nItems,
+}: {
+    item: components["schemas"]["FileSearchResult"],
+    ownIndex: number,
+    nItems: number
+}) {
+    const setIndex = useGallery((state) => state.setIndex)
+
+    const dbs = useDatabase((state) => state.getDBs())
+    const index = useGallery((state) => state.getImageIndex(nItems))
+    const selected = ownIndex === index
+    const thumbnailURL = getThumbnailURL(item.sha256, dbs)
+    return (
+        <figure
+            key={item.path}
+            className={cn("w-60 h-80 relative rounded-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none cursor-pointer",
+                selected ? "scale-105 ring-2 ring-blue-500" : "scale-100"
+            )}>
+            <Image
+                src={thumbnailURL}
+                alt={item.path}
+                onClick={() => setIndex(ownIndex)}
+                className="w-full h-full object-cover object-top rounded-md cursor-pointer"
+                fill
+                sizes="200px"
+            />
+        </figure>
     )
 }

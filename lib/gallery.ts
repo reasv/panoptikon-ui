@@ -10,12 +10,14 @@ interface GalleryState {
   prevImage: (maxIndex: number) => void
   setIndex: (index: number) => void
   setThumbnailsOpen: (open: boolean) => void
+  getImageIndex: (maxIndex: number) => number
 }
 
-export const useGallery = create<GalleryState>((set) => ({
+export const useGallery = create<GalleryState>((set, get) => ({
   isGalleryOpen: false,
   selectedImageIndex: 0,
   horizontalThumbnails: true,
+  getImageIndex: (maxIndex) => get().selectedImageIndex! % maxIndex,
   setThumbnailsOpen: (open) => set({ horizontalThumbnails: open }),
   openGallery: (index) =>
     set({ isGalleryOpen: true, selectedImageIndex: index }),
