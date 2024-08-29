@@ -204,7 +204,7 @@ function ExtractedTextCard(
             <div className="flex flex-row items-center justify-between">
                 <div className="space-y-0.5">
                     <div className="text-base font-medium">{text.setter_name} <span className="text-gray-400"> {text.language}</span></div>
-                    <div className="text-gray-400 p-1">{text.text}<i>{omittedDisplay}</i></div>
+                    <div className="text-gray-400 p-1 select-text ">{text.text}<i>{omittedDisplay}</i></div>
                     <div className="text-gray-400 font-medium">Confidence: {text.confidence} (Language: {text.language_confidence})</div>
                 </div>
             </div>
