@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Delete } from "lucide-react"
 import { keepPreviousData } from "@tanstack/react-query"
 import { Progress } from "@/components/ui/progress"
+import { useToast } from "@/components/ui/use-toast"
 
 export function ItemDetails() {
     const selected = useItemSelection((state) => state.getSelected())
@@ -402,6 +403,25 @@ function TagDisplay(
         tags: [string, number][]
     }
 ) {
+    const { toast } = useToast()
+    const handleClick = (tag: string) => {
+        navigator.clipboard.writeText(tag)
+            .then(() => {
+                toast({
+                    title: "Copied to clipboard",
+                    description: `Tag ${tag} copied to clipboard`,
+                    duration: 2000,
+                })
+            })
+            .catch(err => {
+                toast({
+                    title: "Failed",
+                    description: `Failed to copy tag ${tag} to clipboard`,
+                    variant: "destructive",
+                    duration: 2000,
+                })
+            });
+    };
     return (
         <div className="border rounded-lg p-4 mt-4">
             <div className="flex flex-row items-center justify-between">
@@ -409,7 +429,7 @@ function TagDisplay(
                     <div className="text-base font-medium">{namespace}</div>
                     {
                         tags.map(([tag, confidence]) => (
-                            <TagLabel key={tag} tag={tag} confidence={confidence} />
+                            <TagLabel key={tag} tag={tag} onClick={handleClick} confidence={confidence} />
                         ))
                     }
                 </div>
@@ -419,20 +439,27 @@ function TagDisplay(
 }
 
 
-function TagLabel(
-    {
-        tag,
-        confidence
-    }: {
-        tag: string,
-        confidence: number
-    }
-) {
+
+function TagLabel({
+    tag,
+    confidence,
+    onClick
+}: {
+    tag: string,
+    confidence: number
+    onClick: (tag: string) => void
+}) {
     return (
         <div key={tag} className="text-gray-400 p-1 select-text">
-            <span className="p-1 pb-2">{tag} <i>({confidence.toFixed(2)})</i></span>
+            <span
+                className="p-1 pb-2 cursor-pointer"
+                onClick={() => onClick(tag)}
+                title="Click to copy tag"
+            >
+                {tag} <i>({confidence.toFixed(2)})</i>
+            </span>
             <div className="h-1"></div>
             <Progress className="h-1" value={confidence * 100} />
         </div>
-    )
+    );
 }
