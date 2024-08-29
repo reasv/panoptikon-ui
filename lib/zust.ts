@@ -535,7 +535,6 @@ function getIsAnyTextEnabled(state: SearchQueryState | SearchQueryStateState) {
 }
 function getOrderBy(state: SearchQueryState | SearchQueryStateState) {
   const current_order_by = state.order_args.order_by
-  console.log(`Current order by ${current_order_by}`)
   if (current_order_by === null) {
     return "last_modified"
   }
