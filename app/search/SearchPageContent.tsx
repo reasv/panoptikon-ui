@@ -333,7 +333,7 @@ export function HorizontalScrollElement({
     return (
         <figure
             key={item.path}
-            className={cn("w-60 h-80 relative rounded-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none cursor-pointer",
+            className={cn("w-60 h-80 relative rounded-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none cursor-pointer group",
                 selected ? "scale-105 ring-2 ring-blue-500" : "scale-100"
             )}>
             <Image
@@ -344,6 +344,7 @@ export function HorizontalScrollElement({
                 fill
                 sizes="200px"
             />
+            <BookmarkBtn sha256={item.sha256} />
         </figure>
     )
 }
