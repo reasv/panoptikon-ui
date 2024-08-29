@@ -7,21 +7,31 @@ import {
     PaginationNext,
     PaginationPrevious,
 } from "@/components/ui/pagination"
+import { useMediaQuery } from "@/hooks/use-media-query";
+import { useAdvancedOptions } from "@/lib/zust";
 const range = (start: number, end: number) => Array.from({ length: end - start + 1 }, (_, i) => start + i);
 export function PageSelect({
     total_pages,
     current_page,
-    max_pages,
     setPage
 }: {
     total_pages: number;
     current_page: number;
-    max_pages: number;
     setPage: (page: number) => void;
 }) {
+    const sidebarOpen = useAdvancedOptions((state) => state.isOpen)
+    const isMobile = useMediaQuery("(max-width: 768px)")
+    const isTablet = useMediaQuery("(max-width: 1024px)")
+    const isSmallDesktop = useMediaQuery("(max-width: 1280px)")
+    const isMediumDesktop = useMediaQuery("(max-width: 1536px)")
+    const isMediumLargeDesktop = useMediaQuery("(max-width: 1920px)")
+    let maxPagesButtons = isMobile ? 5 : isTablet ? 10 : isSmallDesktop ? 15 : isMediumDesktop ? 20 : isMediumLargeDesktop ? 25 : 35
+    if (sidebarOpen) {
+        maxPagesButtons = isMobile ? 5 : isTablet ? 5 : isSmallDesktop ? 7 : isMediumDesktop ? 10 : isMediumLargeDesktop ? 20 : 25
+    }
     // Reserve 2 slots for the first and last pages
     const min_pages = 2;
-    let visible_pages = Math.max(max_pages - min_pages, 1);
+    let visible_pages = Math.max(maxPagesButtons - min_pages, 1);
 
     let showLeftEllipsis = false;
     let showRightEllipsis = false;

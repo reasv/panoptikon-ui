@@ -16,7 +16,6 @@ import { SearchBar } from "@/components/searchBar"
 import { useCallback, useEffect, useRef } from "react";
 import { SearchQueryArgs } from "./page";
 import { SearchErrorToast } from "@/components/searchErrorToaster";
-import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { components } from "@/lib/panoptikon";
@@ -32,7 +31,7 @@ export function SearchPageContent({ initialQuery }:
     const dbs = isClient ? useDatabase((state) => state.getDBs()) : initialQuery.params.query
     const setPage = useSearchQuery((state) => state.setPage)
     const page = useSearchQuery((state) => state.order_args.page)
-    const page_size = useSearchQuery((state) => state.order_args.page_size)
+    const pageSize = useSearchQuery((state) => state.order_args.page_size)
     const searchEnabled = useSearchQuery((state) => state.enable_search)
     const instantSearch = useInstantSearch((state) => state.enabled)
 
@@ -52,7 +51,7 @@ export function SearchPageContent({ initialQuery }:
             placeholderData: keepPreviousData
         }
     );
-    const total_pages = Math.ceil((data?.count || 1) / (page_size)) || 1
+    const total_pages = Math.ceil((data?.count || 1) / (pageSize)) || 1
     const nResults = data?.count || 0
     const { toast } = useToast()
     const onRefresh = async () => {
@@ -72,15 +71,6 @@ export function SearchPageContent({ initialQuery }:
 
     const toggleOptions = useAdvancedOptions((state) => state.toggle)
     const sidebarOpen = useAdvancedOptions((state) => state.isOpen)
-    const isMobile = useMediaQuery("(max-width: 768px)")
-    const isTablet = useMediaQuery("(max-width: 1024px)")
-    const isSmallDesktop = useMediaQuery("(max-width: 1280px)")
-    const isMediumDesktop = useMediaQuery("(max-width: 1536px)")
-    const isMediumLargeDesktop = useMediaQuery("(max-width: 1920px)")
-    let maxPagesButtons = isMobile ? 5 : isTablet ? 10 : isSmallDesktop ? 15 : isMediumDesktop ? 20 : isMediumLargeDesktop ? 25 : 35
-    if (sidebarOpen) {
-        maxPagesButtons = isMobile ? 5 : isTablet ? 5 : isSmallDesktop ? 7 : isMediumDesktop ? 10 : isMediumLargeDesktop ? 20 : 25
-    }
     const galleryOpen = useGallery((state) => state.isGalleryOpen)
     return (
         <div className="flex w-full h-screen">
@@ -124,8 +114,8 @@ export function SearchPageContent({ initialQuery }:
                         </ScrollArea>
 
                     </div>}
-                {data && data.count > page_size && (
-                    <PageSelect total_pages={total_pages} current_page={page} setPage={setPage} max_pages={maxPagesButtons} />
+                {data && data.count > pageSize && (
+                    <PageSelect total_pages={total_pages} current_page={page} setPage={setPage} />
                 )}
 
             </div>
