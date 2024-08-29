@@ -8,6 +8,7 @@ import { Drawer, DrawerContent } from "../ui/drawer"
 import { ScrollArea } from "../ui/scroll-area"
 import { SearchOptions } from "./AdvancedSearchOptions"
 import { DirectionAwareTabs } from "@/components/ui/direction-aware-tabs"
+import { ItemDetails } from "./details/ItemDetails"
 
 function SideBarContent() {
     const setOpen = useAdvancedOptions((state) => state.setOpened)
@@ -21,9 +22,9 @@ function SideBarContent() {
         },
         {
             id: 1,
-            label: "Item Details",
+            label: "File Details",
             content: (
-                <SearchOptions />
+                <ItemDetails />
             ),
         },
         {
