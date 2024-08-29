@@ -3,6 +3,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { Button } from "../../ui/button";
+import { cn } from "@/lib/utils";
 
 interface FilterContainerProps {
     label: ReactNode;
@@ -10,6 +11,7 @@ interface FilterContainerProps {
     children: ReactNode;
     storageKey: string;
     defaultIsCollapsed?: boolean; // Optional prop to set the default collapsed state
+    contentClassname?: string;
 }
 
 export function FilterContainer({
@@ -17,6 +19,7 @@ export function FilterContainer({
     description,
     children,
     storageKey,
+    contentClassname,
     defaultIsCollapsed = false, // Set default to false if not provided
 }: FilterContainerProps) {
     const [isExpanded, setIsExpanded] = useState<boolean>(() => {
@@ -57,8 +60,8 @@ export function FilterContainer({
                 </Button>
             </div>
             <div
-                className={`overflow-hidden transition-[max-height] duration-300 ease-in-out ${isExpanded ? "max-h-screen" : "max-h-0"
-                    }`}
+                className={cn(`overflow-hidden transition-[max-height] duration-300 ease-in-out ${isExpanded ? "max-h-full" : "max-h-0"
+                    }`, contentClassname ? contentClassname : "")}
             >
                 {children}
             </div>
