@@ -39,6 +39,7 @@ export function MultiBoxResponsive({
     maxDisplayed,
     placeholder,
     popoverClassName,
+    buttonClassName,
     onRemoveOption,
 }: {
     options: Option[],
@@ -48,6 +49,8 @@ export function MultiBoxResponsive({
     placeholder: string,
     maxDisplayed: number
     popoverClassName?: string
+    buttonClassName?: string
+
     onRemoveOption?: (value: string) => void
 }) {
     const [open, setOpen] = React.useState(false)
@@ -84,7 +87,7 @@ export function MultiBoxResponsive({
         return (
             <Popover open={open} onOpenChange={setOpen}>
                 <PopoverTrigger asChild>
-                    <Button variant="outline" className="justify-start max-w-[270px]">
+                    <Button variant="outline" className={cn("justify-start max-w-[270px]", buttonClassName)}>
                         <span className="truncate">{buttonLabel}</span>
                     </Button>
                 </PopoverTrigger>
@@ -98,7 +101,7 @@ export function MultiBoxResponsive({
     return (
         <Drawer open={open} onOpenChange={setOpen}>
             <DrawerTrigger asChild>
-                <Button variant="outline" className="justify-start max-w-[300px]">
+                <Button variant="outline" className={cn("justify-start max-w-[300px]", buttonClassName)}>
                     <span className="truncate">{buttonLabel}</span>
                 </Button>
             </DrawerTrigger>
