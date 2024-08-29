@@ -110,24 +110,21 @@ export function SearchPageContent({ initialQuery }:
                     </div>
                 </div>
                 {galleryOpen && data ? <ImageGallery items={data?.results} /> :
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>
-                                <AnimatedNumber value={nResults} /> {nResults === 1 ? "Result" : "Results"}
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <ScrollArea className="overflow-y-auto">
-                                <div className={cn('grid gap-4 max-h-[calc(100vh-250px)]',
-                                    advancedIsOpen ? 'grid-cols-1 sm:grid-cols-1 md:grid-cols-1 lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4' :
-                                        'grid-cols-1 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5')}>
-                                    {data && data.results.map((result, index) => (
-                                        <SearchResultImage key={result.path} result={result} index={index} dbs={dbs} />
-                                    ))}
-                                </div>
-                            </ScrollArea>
-                        </CardContent>
-                    </Card>}
+                    <div className="border rounded p-2">
+                        <h2 className="text-xl font-bold p-4 flex items-center justify-left">
+                            <span><AnimatedNumber value={nResults} /> {nResults === 1 ? "Result" : "Results"}</span>
+                        </h2>
+                        <ScrollArea className="overflow-y-auto">
+                            <div className={cn('grid gap-4 max-h-[calc(100vh-250px)]',
+                                advancedIsOpen ? 'grid-cols-1 sm:grid-cols-1 md:grid-cols-1 lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4' :
+                                    'grid-cols-1 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5')}>
+                                {data && data.results.map((result, index) => (
+                                    <SearchResultImage key={result.path} result={result} index={index} dbs={dbs} />
+                                ))}
+                            </div>
+                        </ScrollArea>
+
+                    </div>}
                 {data && data.count > page_size && (
                     <PageSelect total_pages={total_pages} current_page={page} setPage={setPage} max_pages={maxPagesButtons} />
                 )}
