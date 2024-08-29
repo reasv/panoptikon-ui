@@ -21,27 +21,22 @@ import { ExclusiveFilters } from "./ExclusiveFilters"
 export function SearchOptions() {
     const setOpened = useAdvancedOptions((state) => state.setOpened)
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle>
-                    <div className="flex gap-2">
-                        <h2 className="text-lg font-semibold w-full mt-3">Advanced Search Options</h2>
-                        <Button title="Close Advanced Options" onClick={() => setOpened(false)} variant="ghost" size="icon">
-                            <SidebarClose className="h-4 w-4" />
-                        </Button>
-                    </div>
-                </CardTitle>
-            </CardHeader>
-            <CardContent>
-                <SwitchDB />
-                <SwitchBookmarkNs />
-                <BookmarksFilter />
-                <OrderBy />
-                <PageSizeSlider />
-                <AnyTextFilter />
-                <ExclusiveFilters />
-            </CardContent>
-        </Card>
+        <div>
+            <div className="flex gap-2">
+                <h2 className="text-lg font-semibold w-full">Advanced Search Options</h2>
+                <Button title="Close Advanced Options" onClick={() => setOpened(false)} variant="ghost" size="icon">
+                    <SidebarClose className="h-4 w-4" />
+                </Button>
+            </div>
+            <SwitchDB />
+            <SwitchBookmarkNs />
+            <BookmarksFilter />
+            <OrderBy />
+            <PageSizeSlider />
+            <AnyTextFilter />
+            <ExclusiveFilters />
+        </div>
+
     )
 }
 
