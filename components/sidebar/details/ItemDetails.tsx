@@ -11,6 +11,7 @@ import { ConfidenceFilter } from "../options/confidenceFilter"
 import { Button } from "@/components/ui/button"
 import { Delete } from "lucide-react"
 import { keepPreviousData } from "@tanstack/react-query"
+import { Progress } from "@/components/ui/progress"
 
 export function ItemDetails() {
     const selected = useItemSelection((state) => state.getSelected())
@@ -428,6 +429,10 @@ function TagLabel(
     }
 ) {
     return (
-        <div key={tag} className="text-gray-400 p-1 select-text">{tag} <i>({confidence.toFixed(2)})</i></div>
+        <div key={tag} className="text-gray-400 p-1 select-text">
+            <span className="p-1 pb-2">{tag} <i>({confidence.toFixed(2)})</i></span>
+            <div className="h-1"></div>
+            <Progress className="h-1" value={confidence * 100} />
+        </div>
     )
 }
