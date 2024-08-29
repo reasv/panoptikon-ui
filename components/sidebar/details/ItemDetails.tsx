@@ -118,7 +118,7 @@ function ExtractedText({
                     description={<span>Minimum confidence for language detection</span>}
                 />
                 <ConfidenceFilter
-                    label={<span>Cut Off Length</span>}
+                    label={<span>Truncation Length</span>}
                     confidence={maxTextLength}
                     setConfidence={setMaxTextLength}
                     description={<span>Cut text off after n characters</span>}
@@ -166,7 +166,7 @@ function ExtractedTextList(
             },
             query: {
                 setters: selectedSetters,
-                max_length: maxLength,
+                truncate_length: maxLength ? maxLength : undefined,
             }
         }
     })

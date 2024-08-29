@@ -1672,7 +1672,7 @@ export interface operations {
             query?: {
                 setters?: string[];
                 /** @description Text will be truncated to this length, if set. The `length` field will contain the original length. */
-                max_length?: number | null;
+                truncate_length?: number | null;
                 /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
                 /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
