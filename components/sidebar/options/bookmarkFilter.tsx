@@ -39,7 +39,8 @@ export function BookmarksFilter() {
                     onSelectionChange={setBookmarksFilterNs}
                     placeholder="Select groups"
                     resetValue="*"
-                    maxDisplayed={4}
+                    maxDisplayed={10}
+                    buttonClassName="max-w-[310px] sm:max-w-[505px] md:max-w-[620px] lg:max-w-[350px] xl:max-w-[270px] 3xl:max-w-[300px] 4xl:max-w-[292px] 5xl:max-w-[370px]"
                 />
             </div>
         </div>
