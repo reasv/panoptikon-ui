@@ -27,7 +27,7 @@ export function ItemFileDetails({
         })
     const dateString = getLocale(new Date(item.last_modified))
     const sizeString = data ? prettyPrintBytes(data.item.size || 0) : 0
-    const resolutionString = data ? `${data.item.width}x${data.item.height}` : null
+    const resolutionString = data && data.item.width && data.item.height ? `${data.item.width}x${data.item.height}` : null
     const timeAddedString = data ? getLocale(new Date(data.item.time_added)) : null
 
     return (
@@ -37,7 +37,7 @@ export function ItemFileDetails({
             storageKey="file-item-details-open"
         >
             <div className="space-x-2 mt-4">
-                <div className="w-full max-w-[270px] 2xl:max-w-xs overflow-hidden">
+                <div className="w-full max-w-[270px] overflow-hidden">
                     <FilePathComponent path={item.path} />
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
