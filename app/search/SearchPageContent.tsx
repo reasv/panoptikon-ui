@@ -105,12 +105,10 @@ export function SearchPageContent({ initialQuery }:
                             <span><AnimatedNumber value={nResults} /> {nResults === 1 ? "Result" : "Results"}</span>
                         </h2>
                         <ScrollArea className="overflow-y-auto">
-                            <div className={cn('grid gap-4 max-h-[calc(100vh-250px)]',
+                            <div className={cn('grid gap-4 max-h-[calc(100vh-250px)] grid-cols-1 md:grid-cols-2',
                                 sidebarOpen ?
-                                    ('grid-cols-1 sm:grid-cols-1 md:grid-cols-1'
-                                        + 'lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4 4xl:grid-cols-5') :
-                                    ('grid-cols-1 sm:grid-cols-1 md:grid-cols-2'
-                                        + 'lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'))}>
+                                    ('lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4 4xl:grid-cols-5') :
+                                    ('lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'))}>
                                 {data && data.results.map((result, index) => (
                                     <SearchResultImage key={result.path} result={result} index={index} dbs={dbs} />
                                 ))}
@@ -136,7 +134,7 @@ export function SearchResultImage({
     index: number,
     dbs: { index_db: string | null, user_data_db: string | null }
 }) {
-    const advancedIsOpen = useAdvancedOptions((state) => state.isOpen)
+    const sidePanelIsOpen = useAdvancedOptions((state) => state.isOpen)
     const openGallery = useGallery((state) => state.openGallery)
     const fileUrl = getFullFileURL(result.sha256, dbs)
     const thumbnailUrl = getThumbnailURL(result.sha256, dbs)
@@ -152,8 +150,8 @@ export function SearchResultImage({
                         openGallery(index)
                     }}
                     rel="noopener noreferrer"
-                    className={cn("block relative mb-2 h-80",
-                        advancedIsOpen ? 'sm:h-96 md:h-80 lg:h-96 xl:h-80 2xl:h-80' : 'sm:h-96 md:h-80 lg:h-96 xl:h-96 2xl:h-96'
+                    className={cn("block relative mb-2 h-96",
+                        sidePanelIsOpen ? 'lg:h-96 xl:h-80 2xl:h-80' : 'lg:h-96 xl:h-96 2xl:h-96'
                     )}
                 >
                     <Image
