@@ -105,7 +105,7 @@ export function SearchPageContent({ initialQuery }:
                             <span><AnimatedNumber value={nResults} /> {nResults === 1 ? "Result" : "Results"}</span>
                         </h2>
                         <ScrollArea className="overflow-y-auto">
-                            <div className={cn('grid gap-4 max-h-[calc(100vh-250px)] grid-cols-1 md:grid-cols-2',
+                            <div className={cn('grid gap-4 max-h-[calc(100vh-225px)] grid-cols-1 md:grid-cols-2',
                                 sidebarOpen ?
                                     ('lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4 4xl:grid-cols-5') :
                                     ('lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'))}>
@@ -134,7 +134,6 @@ export function SearchResultImage({
     index: number,
     dbs: { index_db: string | null, user_data_db: string | null }
 }) {
-    const sidePanelIsOpen = useAdvancedOptions((state) => state.isOpen)
     const openGallery = useGallery((state) => state.openGallery)
     const fileUrl = getFullFileURL(result.sha256, dbs)
     const thumbnailUrl = getThumbnailURL(result.sha256, dbs)
@@ -150,7 +149,7 @@ export function SearchResultImage({
                         openGallery(index)
                     }}
                     rel="noopener noreferrer"
-                    className={"block relative mb-2 h-96 3xl:h-[30rem] 5xl:h-[35rem]"}
+                    className={"block relative mb-2 h-96 4xl:h-[30rem] 5xl:h-[38rem]"}
                 >
                     <Image
                         src={thumbnailUrl}
@@ -257,7 +256,7 @@ export function GalleryImageLarge(
     return (
         <div
             className={cn("relative flex-grow flex justify-center items-center overflow-hidden cursor-pointer ",
-                thumbnailsOpen ? "h-[calc(100vh-570px)]" : "h-[calc(100vh-220px)]" // Set height based on whether thumbnails
+                thumbnailsOpen ? "h-[calc(100vh-570px)]" : "h-[calc(100vh-215px)]" // Set height based on whether thumbnails
             )}
             onClick={handleImageClick} // Attach click handler to the entire area
         >
