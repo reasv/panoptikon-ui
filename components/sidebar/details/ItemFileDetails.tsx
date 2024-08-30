@@ -6,7 +6,7 @@ import { FilterContainer } from "../options/FilterContainer";
 import { components } from "@/lib/panoptikon";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons";
-import { getFullFileURL } from "@/lib/utils";
+import { getFullFileURL, prettyPrintBytes } from "@/lib/utils";
 
 export function ItemFileDetails({
     item,
@@ -26,6 +26,8 @@ export function ItemFileDetails({
             placeholderData: keepPreviousData
         })
     const dateString = new Date(item.last_modified).toLocaleString('en-US')
+    const sizeString = data ? prettyPrintBytes(data.item.size || 0) : 0
+    const resolutionString = data ? `${data.item.width}x${data.item.height}` : null
     return (
         <FilterContainer
             label={<span>File and Item Metadata</span>}
@@ -37,14 +39,19 @@ export function ItemFileDetails({
                     <FilePathComponent path={item.path} />
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
+                    <a href={getFullFileURL(item.sha256, dbs)} target="_blank">Download Original File ({sizeString})</a>
+                </p>
+                <p className="text-xs text-gray-500 mt-2">
                     Last Modified: {dateString}
                 </p>
                 <p className="text-xs text-gray-500 mt-2">
                     Type: {item.type}
                 </p>
-                <p className="text-xs text-gray-500 mt-2">
-                    <a href={getFullFileURL(item.sha256, dbs)} target="_blank">Download Original File</a>
-                </p>
+                {resolutionString && (
+                    <p className="text-xs text-gray-500 mt-2">
+                        Resolution: {resolutionString}
+                    </p>
+                )}
             </div>
             <div className="space-x-2 mt-4">
                 <FilterContainer
