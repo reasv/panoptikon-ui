@@ -426,7 +426,7 @@ function TagDisplay(
     };
     return (
         <div className="border rounded-lg p-4 mt-4">
-            <div className="flex flex-row items-center justify-between">
+            <div className="flex flex-row">
                 <div className="space-y-0.5">
                     <div className="text-base font-medium">{namespace}</div>
                     {
