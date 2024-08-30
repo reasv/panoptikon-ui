@@ -16,7 +16,7 @@ import { SearchBar } from "@/components/searchBar"
 import { useCallback, useEffect, useRef } from "react";
 import { SearchQueryArgs } from "./page";
 import { SearchErrorToast } from "@/components/searchErrorToaster";
-import { cn } from "@/lib/utils";
+import { cn, getFullFileURL, getThumbnailURL } from "@/lib/utils";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { components } from "@/lib/panoptikon";
 import { useGallery } from "@/lib/gallery";
@@ -173,15 +173,7 @@ export function SearchResultImage({
         </div>
     )
 }
-function getFileURL(sha256: string, dbs: { index_db: string | null, user_data_db: string | null }) {
-    return `${sha256}?index_db=${dbs.index_db || ''}&user_data_db=${dbs.user_data_db || ''}`
-}
-function getFullFileURL(sha256: string, dbs: { index_db: string | null, user_data_db: string | null }) {
-    return `/api/items/file/${getFileURL(sha256, dbs)}`
-}
-function getThumbnailURL(sha256: string, dbs: { index_db: string | null, user_data_db: string | null }) {
-    return `/api/items/thumbnail/${getFileURL(sha256, dbs)}`
-}
+
 export function ImageGallery({
     items
 }: {
