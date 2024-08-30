@@ -8,7 +8,7 @@ import { Button } from "../../ui/button";
 import { MultiBoxResponsive } from "../../multiCombobox";
 import { FilterContainer } from "../options/FilterContainer";
 import { components } from "@/lib/panoptikon";
-import { useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/components/ui/use-toast";
 
 export function FileBookmarks({
@@ -30,7 +30,9 @@ export function FileBookmarks({
             query: dbs
         }
     }
-    const fileBookmarks = $api.useQuery("get", "/api/bookmarks/item/{sha256}", bookmarkQuery)
+    const fileBookmarks = $api.useQuery("get", "/api/bookmarks/item/{sha256}", bookmarkQuery, {
+        placeholderData: keepPreviousData
+    })
     const bookmarkPath = "/api/bookmarks/ns/{namespace}/{sha256}"
     const addBookmarkMut = $api.useMutation(
         "put",
@@ -141,6 +143,7 @@ export function FileBookmarks({
         >
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-center">
                 <Input
+                    className="ml-1"
                     onChange={(e) => setInputValue(e.target.value)}
                     value={inputValue}
                     onKeyDown={handleKeyPress}
