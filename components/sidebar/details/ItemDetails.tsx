@@ -220,7 +220,6 @@ function ExtractedTextCard(
     )
 }
 
-
 function ItemTagDetails({
     item,
 }: {
@@ -437,9 +436,6 @@ function TagDisplay(
         </div>
     )
 }
-
-
-
 function TagLabel({
     tag,
     confidence,
