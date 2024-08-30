@@ -37,7 +37,7 @@ export function ItemFileDetails({
             storageKey="file-item-details-open"
         >
             <div className="space-x-2 mt-4">
-                <div className="w-full max-w-[270px] overflow-hidden">
+                <div className="w-full max-w-[350px] sm:max-w-[550px] md:max-w-[670px] lg:max-w-[410px] xl:max-w-[310px] 3xl:max-w-[370px] 4xl:max-w-[340px] 5xl:max-w-[440px] overflow-hidden">
                     <FilePathComponent path={item.path} />
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
@@ -83,7 +83,7 @@ function SingleFileItem({
     return (
         <div className="border rounded-lg p-4 mt-4">
             <div className="flex flex-col space-y-2">
-                <div className="w-full max-w-[250px]  overflow-hidden">
+                <div className="w-full max-w-[310px] sm:max-w-[505px] md:max-w-[620px] lg:max-w-[350px] xl:max-w-[270px] 3xl:max-w-[300px] 4xl:max-w-[292px] 5xl:max-w-[370px]  overflow-hidden">
                     <FilePathComponent path={path} />
                 </div>
                 <div className="flex flex-row space-x-2">
