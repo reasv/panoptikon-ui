@@ -28,18 +28,27 @@ export function SearchResultImage({
     index,
     dbs,
     imageClassName,
-    imageContainerClassName
+    imageContainerClassName,
+    onImageClick
 }: {
     result: components["schemas"]["FileSearchResult"],
     index: number,
     dbs: { index_db: string | null, user_data_db: string | null }
     imageClassName?: string
     imageContainerClassName?: string
+    onImageClick?: () => void
 }) {
     const openGallery = useGallery((state) => state.openGallery)
     const fileUrl = getFullFileURL(result.sha256, dbs)
     const thumbnailUrl = getThumbnailURL(result.sha256, dbs)
     const dateString = getLocale(new Date(result.last_modified))
+    const onClick = useCallback(() => {
+        if (onImageClick) {
+            onImageClick()
+        } else {
+            openGallery(index)
+        }
+    }, [onImageClick, openGallery, index])
     return (
         <div className="border rounded p-2">
             <div className="overflow-hidden relative w-full pb-full mb-2 group">
@@ -48,7 +57,7 @@ export function SearchResultImage({
                     target="_blank"
                     onClick={(e) => {
                         e.preventDefault()
-                        openGallery(index)
+                        onClick()
                     }}
                     rel="noopener noreferrer"
                     className={cn("block relative mb-2 h-96 4xl:h-[30rem] 5xl:h-[38rem]", imageContainerClassName)}
