@@ -120,9 +120,9 @@ export function SimilarItemsView({
     return (
         <div className="mt-4">
             {data && (
-                <div className="grid grid-cols-1 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 4xl:grid-cols-2 5xl:grid-cols-2 gap-4">
                     {data.results.map((result, index) => (
-                        <SearchResultImage key={index} result={result} index={index} dbs={dbs} />
+                        <SearchResultImage key={index} result={result} index={index} dbs={dbs} imageContainerClassName="h-96 xl:h-80 4xl:h-80 5xl:h-80" />
                     ))}
                 </div>
             )}

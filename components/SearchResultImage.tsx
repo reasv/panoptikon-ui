@@ -26,11 +26,15 @@ import { OpenDetailsButton } from "@/components/OpenFileDetails";
 export function SearchResultImage({
     result,
     index,
-    dbs
+    dbs,
+    imageClassName,
+    imageContainerClassName
 }: {
     result: components["schemas"]["FileSearchResult"],
     index: number,
     dbs: { index_db: string | null, user_data_db: string | null }
+    imageClassName?: string
+    imageContainerClassName?: string
 }) {
     const openGallery = useGallery((state) => state.openGallery)
     const fileUrl = getFullFileURL(result.sha256, dbs)
@@ -47,13 +51,13 @@ export function SearchResultImage({
                         openGallery(index)
                     }}
                     rel="noopener noreferrer"
-                    className={"block relative mb-2 h-96 4xl:h-[30rem] 5xl:h-[38rem]"}
+                    className={cn("block relative mb-2 h-96 4xl:h-[30rem] 5xl:h-[38rem]", imageContainerClassName)}
                 >
                     <Image
                         src={thumbnailUrl}
                         alt={`Result ${result.path}`}
                         fill
-                        className="group-hover:object-contain object-cover object-top group-hover:object-center"
+                        className={cn("group-hover:object-contain object-cover object-top group-hover:object-center", imageClassName)}
                         unoptimized
                     />
                 </a>
