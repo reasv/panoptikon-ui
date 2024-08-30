@@ -150,9 +150,7 @@ export function SearchResultImage({
                         openGallery(index)
                     }}
                     rel="noopener noreferrer"
-                    className={cn("block relative mb-2 h-96",
-                        sidePanelIsOpen ? 'lg:h-96 xl:h-80 2xl:h-80' : 'lg:h-96 xl:h-96 2xl:h-96'
-                    )}
+                    className={"block relative mb-2 h-96 3xl:h-[30rem] 5xl:h-[35rem]"}
                 >
                     <Image
                         src={thumbnailUrl}
