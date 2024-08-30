@@ -428,11 +428,13 @@ function TagDisplay(
         <div className="border rounded-lg p-4 mt-4">
             <div className="space-y-0.5">
                 <div className="text-base font-medium">{namespace}</div>
-                {
-                    tags.map(([tag, confidence]) => (
-                        <TagLabel key={tag} tag={tag} onClick={handleClick} confidence={confidence} />
-                    ))
-                }
+                <div className="">
+                    {
+                        tags.map(([tag, confidence]) => (
+                            <TagLabel key={tag} tag={tag} onClick={handleClick} confidence={confidence} />
+                        ))
+                    }
+                </div>
             </div>
         </div>
     )
@@ -450,9 +452,9 @@ function TagLabel({
     onClick: (tag: string) => void
 }) {
     return (
-        <div key={tag} className="text-gray-400 p-1 select-text">
+        <div key={tag} className="text-gray-400 select-text p-1">
             <span
-                className="p-1 pb-2 cursor-pointer"
+                className="cursor-pointer"
                 onClick={() => onClick(tag)}
                 title="Click to copy tag"
             >
