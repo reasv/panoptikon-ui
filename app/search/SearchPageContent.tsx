@@ -77,7 +77,7 @@ export function SearchPageContent({ initialQuery }:
         <div className="flex w-full h-screen">
             <SideBar />
             <div className={cn('p-4 transition-all duration-300 mx-auto',
-                sidebarOpen ? 'md:w-1/2 lg:w-1/2 xl:w-2/3 2xl:w-3/4' : 'w-full'
+                sidebarOpen ? 'w-full lg:w-1/2 xl:w-2/3 2xl:w-3/4 4xl:w-[80%] 5xl:w-[82%]' : 'w-full'
             )}>
                 <SearchErrorToast isError={isError} error={error} />
                 <div className={cn("mb-4 2xl:mx-auto",
@@ -106,8 +106,11 @@ export function SearchPageContent({ initialQuery }:
                         </h2>
                         <ScrollArea className="overflow-y-auto">
                             <div className={cn('grid gap-4 max-h-[calc(100vh-250px)]',
-                                sidebarOpen ? 'grid-cols-1 sm:grid-cols-1 md:grid-cols-1 lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4' :
-                                    'grid-cols-1 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5')}>
+                                sidebarOpen ?
+                                    ('grid-cols-1 sm:grid-cols-1 md:grid-cols-1'
+                                        + 'lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4 4xl:grid-cols-5') :
+                                    ('grid-cols-1 sm:grid-cols-1 md:grid-cols-2'
+                                        + 'lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'))}>
                                 {data && data.results.map((result, index) => (
                                     <SearchResultImage key={result.path} result={result} index={index} dbs={dbs} />
                                 ))}
