@@ -47,10 +47,10 @@ export function ItemFileDetails({
                     Type: {item.type} {resolutionString && `(${resolutionString})`}
                 </p>
                 <p className="text-xs text-gray-500 mt-2">
-                    Last Modified: {dateString}
+                    Modified: {dateString}
                 </p>
                 {timeAddedString && <p className="text-xs text-gray-500 mt-2">
-                    Time Added: {timeAddedString}
+                    Added: {timeAddedString}
                 </p>}
             </div>
             <div className="space-x-2 mt-4">
