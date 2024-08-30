@@ -114,6 +114,8 @@ export function SimilarItemsView({
                 setter_name
             }
         }
+    }, {
+        placeholderData: keepPreviousData
     })
     return (
         <div className="mt-4">
