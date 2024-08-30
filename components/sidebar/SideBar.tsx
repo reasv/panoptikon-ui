@@ -9,6 +9,7 @@ import { ScrollArea } from "../ui/scroll-area"
 import { SearchOptions } from "./AdvancedSearchOptions"
 import { DirectionAwareTabs } from "@/components/ui/direction-aware-tabs"
 import { ItemDetails } from "./details/ItemDetails"
+import { SimilarItemsSideBar } from "./similarity/SimilarItemsSideBar"
 
 function SideBarContent() {
     const setOpen = useAdvancedOptions((state) => state.setOpened)
@@ -33,7 +34,7 @@ function SideBarContent() {
             id: 2,
             label: "Similar Items",
             content: (
-                <SearchOptions />
+                <SimilarItemsSideBar />
             ),
         },
     ]

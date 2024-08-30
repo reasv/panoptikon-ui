@@ -60,6 +60,28 @@ export const useBookmarkNs = create(
   )
 )
 
+interface ImageSimilarityState {
+  clipSetter: string | null
+  clipMaxResults: number
+  setClipSetter: (setter: string | null) => void
+  setClipMaxResults: (max: number) => void
+}
+const imageSimilarityStorage = {
+  name: "imageSimilarityOpts",
+  storage: createJSONStorage<ImageSimilarityState>(() => persistLocalStorage),
+}
+export const useImageSimilarity = create(
+  persist<ImageSimilarityState>(
+    (set) => ({
+      clipSetter: null,
+      clipMaxResults: 10,
+      setClipSetter: (setter: string | null) => set({ clipSetter: setter }),
+      setClipMaxResults: (max: number) => set({ clipMaxResults: max }),
+    }),
+    imageSimilarityStorage
+  )
+)
+
 interface BookmarksCustom {
   namespaces: string[]
   addNs: (ns: string) => void
