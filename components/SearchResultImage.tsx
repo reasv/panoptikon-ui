@@ -1,26 +1,10 @@
 "use client"
-import { $api } from "@/lib/api"
 import Image from 'next/image'
-import { PageSelect } from "@/components/pageselect";
 import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons"
-import { useAdvancedOptions, useDatabase, useInstantSearch, useItemSelection, useSearchQuery } from "@/lib/zust"
-import { Toggle } from "@/components/ui/toggle"
-
-import { Settings, RefreshCw, X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal } from "lucide-react"
-import { AnimatedNumber } from "@/components/ui/animatedNumber"
-import { keepPreviousData } from "@tanstack/react-query"
-import { InstantSearchLock } from "@/components/InstantSearchLock"
-import { Button } from "@/components/ui/button"
-import { useToast } from "@/components/ui/use-toast"
-import { SearchBar } from "@/components/searchBar"
 import { useCallback, useEffect, useRef } from "react";
-import { SearchErrorToast } from "@/components/searchErrorToaster";
 import { cn, getFullFileURL, getLocale, getThumbnailURL } from "@/lib/utils";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { components } from "@/lib/panoptikon";
 import { useGallery } from "@/lib/gallery";
-import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
-import { SideBar } from "@/components/sidebar/SideBar";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
 
 export function SearchResultImage({
