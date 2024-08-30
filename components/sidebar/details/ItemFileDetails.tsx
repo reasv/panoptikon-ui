@@ -6,7 +6,7 @@ import { FilterContainer } from "../options/FilterContainer";
 import { components } from "@/lib/panoptikon";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons";
-import { getFullFileURL, prettyPrintBytes } from "@/lib/utils";
+import { getFullFileURL, getLocale, prettyPrintBytes } from "@/lib/utils";
 
 export function ItemFileDetails({
     item,
@@ -25,9 +25,11 @@ export function ItemFileDetails({
         {
             placeholderData: keepPreviousData
         })
-    const dateString = new Date(item.last_modified).toLocaleString('en-US')
+    const dateString = getLocale(new Date(item.last_modified))
     const sizeString = data ? prettyPrintBytes(data.item.size || 0) : 0
     const resolutionString = data ? `${data.item.width}x${data.item.height}` : null
+    const timeAddedString = data ? getLocale(new Date(data.item.time_added)) : null
+
     return (
         <FilterContainer
             label={<span>File and Item Metadata</span>}
@@ -42,16 +44,14 @@ export function ItemFileDetails({
                     <a href={getFullFileURL(item.sha256, dbs)} target="_blank">Download Original File ({sizeString})</a>
                 </p>
                 <p className="text-xs text-gray-500 mt-2">
-                    Last Modified: {dateString}
+                    Type: {item.type} {resolutionString && `(${resolutionString})`}
                 </p>
                 <p className="text-xs text-gray-500 mt-2">
-                    Type: {item.type}
+                    Last Modified: {dateString}
                 </p>
-                {resolutionString && (
-                    <p className="text-xs text-gray-500 mt-2">
-                        Resolution: {resolutionString}
-                    </p>
-                )}
+                {timeAddedString && <p className="text-xs text-gray-500 mt-2">
+                    Time Added: {timeAddedString}
+                </p>}
             </div>
             <div className="space-x-2 mt-4">
                 <FilterContainer

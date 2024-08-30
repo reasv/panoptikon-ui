@@ -16,7 +16,7 @@ import { SearchBar } from "@/components/searchBar"
 import { useCallback, useEffect, useRef } from "react";
 import { SearchQueryArgs } from "./page";
 import { SearchErrorToast } from "@/components/searchErrorToaster";
-import { cn, getFullFileURL, getThumbnailURL } from "@/lib/utils";
+import { cn, getFullFileURL, getLocale, getThumbnailURL } from "@/lib/utils";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { components } from "@/lib/panoptikon";
 import { useGallery } from "@/lib/gallery";
@@ -137,7 +137,7 @@ export function SearchResultImage({
     const openGallery = useGallery((state) => state.openGallery)
     const fileUrl = getFullFileURL(result.sha256, dbs)
     const thumbnailUrl = getThumbnailURL(result.sha256, dbs)
-    const dateString = new Date(result.last_modified).toLocaleString('en-US')
+    const dateString = getLocale(new Date(result.last_modified))
     return (
         <div className="border rounded p-2">
             <div className="overflow-hidden relative w-full pb-full mb-2 group">
@@ -185,7 +185,7 @@ export function ImageGallery({
     const index = useGallery((state) => state.getImageIndex(items.length))
     const setThumbnailsOpen = useGallery((state) => state.setThumbnailsOpen)
     const thumbnailsOpen = useGallery((state) => state.horizontalThumbnails)
-    const dateString = new Date(items[index].last_modified).toLocaleString('en-US')
+    const dateString = getLocale(new Date(items[index].last_modified))
 
     return (
         <div className="flex flex-col border rounded p-2">
