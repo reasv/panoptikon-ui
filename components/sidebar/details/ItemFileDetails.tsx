@@ -1,16 +1,12 @@
 "use client"
 import { $api } from "@/lib/api"
-import { useBookmarkCustomNs, useBookmarkNs, useDatabase } from "@/lib/zust"
-import { Input } from "../../ui/input";
-import { useState } from "react";
-import { Plus } from "lucide-react";
-import { Button } from "../../ui/button";
-import { MultiBoxResponsive } from "../../multiCombobox";
+import { useDatabase } from "@/lib/zust"
+
 import { FilterContainer } from "../options/FilterContainer";
 import { components } from "@/lib/panoptikon";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
-import { useToast } from "@/components/ui/use-toast";
 import { FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons";
+import { getFullFileURL } from "@/lib/utils";
 
 export function ItemFileDetails({
     item,
@@ -42,6 +38,12 @@ export function ItemFileDetails({
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
                     Last Modified: {dateString}
+                </p>
+                <p className="text-xs text-gray-500 mt-2">
+                    Type: {item.type}
+                </p>
+                <p className="text-xs text-gray-500 mt-2">
+                    <a href={getFullFileURL(item.sha256, dbs)} target="_blank">Download Original File</a>
                 </p>
             </div>
             <div className="space-x-2 mt-4">
