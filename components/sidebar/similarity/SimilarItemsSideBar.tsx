@@ -30,7 +30,7 @@ export function SimilarItemsSideBar() {
                 <CLIPSimilarityFilter setters={clipSetters} />
             </FilterContainer>
             <div className="mt-4">
-                {selected && selectedClipSetter && (
+                {selected && selectedClipSetter && maxClipResults > 0 && (
                     <SimilarItemsView
                         item={selected}
                         setter_name={selectedClipSetter}
