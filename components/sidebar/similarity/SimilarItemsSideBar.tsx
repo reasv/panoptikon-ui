@@ -117,9 +117,11 @@ export function SimilarItemsView({
     }, {
         placeholderData: keepPreviousData
     })
+    const setSelected = useItemSelection((state) => state.setItem)
     const onImageClick = (index: number) => {
         if (!data) return
         const item = data.results[index]
+        setSelected(item)
     }
     return (
         <div className="mt-4">

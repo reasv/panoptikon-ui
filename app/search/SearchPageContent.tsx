@@ -22,7 +22,7 @@ import { components } from "@/lib/panoptikon";
 import { useGallery } from "@/lib/gallery";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { SideBar } from "@/components/sidebar/SideBar";
-import { OpenDetailsButton } from "@/components/OpenFileDetails";
+import { itemEquals, OpenDetailsButton } from "@/components/OpenFileDetails";
 import { SearchResultImage } from "@/components/SearchResultImage";
 
 export function SearchPageContent({ initialQuery }:
@@ -100,7 +100,7 @@ export function SearchPageContent({ initialQuery }:
                         </Button>
                     </div>
                 </div>
-                {galleryOpen && data ? <ImageGallery items={data?.results} /> :
+                {galleryOpen && data && data.results.length > 0 ? <ImageGallery items={data?.results} /> :
                     <div className="border rounded p-2">
                         <h2 className="text-xl font-bold p-4 flex items-center justify-left">
                             <span><AnimatedNumber value={nResults} /> {nResults === 1 ? "Result" : "Results"}</span>
@@ -138,22 +138,29 @@ export function ImageGallery({
     const index = useGallery((state) => state.getImageIndex(items.length))
     const setThumbnailsOpen = useGallery((state) => state.setThumbnailsOpen)
     const thumbnailsOpen = useGallery((state) => state.horizontalThumbnails)
-    const dateString = getLocale(new Date(items[index].last_modified))
+    const setSelectedItem = useItemSelection((state) => state.setItem)
+    const selectedItem = useItemSelection((state) => state.getSelected())
+    useEffect(() => {
+        setSelectedItem(items[index])
+    }, [index, items])
+    // Get the current item, if the selected item is not the same as the current item, set the current item to the selected item
+    const currentItem = selectedItem && !itemEquals(selectedItem, items[index]) ? selectedItem : items[index]
 
+    const dateString = getLocale(new Date(currentItem.last_modified))
     return (
         <div className="flex flex-col border rounded p-2">
             <div className="flex justify-between items-center mb-2">
                 <div className="flex items-center">
-                    <BookmarkBtn sha256={items[index].sha256} buttonVariant />
-                    <OpenFile sha256={items[index].sha256} path={items[index].path} buttonVariant />
-                    <OpenFolder sha256={items[index].sha256} path={items[index].path} buttonVariant />
+                    <BookmarkBtn sha256={currentItem.sha256} buttonVariant />
+                    <OpenFile sha256={currentItem.sha256} path={currentItem.path} buttonVariant />
+                    <OpenFolder sha256={currentItem.sha256} path={currentItem.path} buttonVariant />
                     <Button onClick={() => prevImage(items.length)} variant="ghost" size="icon" title="Previous Image">
                         <ArrowBigLeft className="h-4 w-4" />
                     </Button>
 
                 </div>
                 <div className="max-w-[33%] text-center">
-                    <FilePathComponent path={items[index].path} />
+                    <FilePathComponent path={currentItem.path} />
                     <p className="text-xs text-gray-500 truncate">
                         {dateString}
                     </p>
@@ -162,7 +169,7 @@ export function ImageGallery({
                     <Button onClick={() => nextImage(items.length)} variant="ghost" size="icon" title="Next Image">
                         <ArrowBigRight className="h-4 w-4" />
                     </Button>
-                    <OpenDetailsButton item={items[index]} />
+                    <OpenDetailsButton item={currentItem} />
                     <Toggle
                         pressed={thumbnailsOpen}
                         onClick={() => setThumbnailsOpen(!thumbnailsOpen)}
@@ -176,21 +183,20 @@ export function ImageGallery({
                     </Button>
                 </div>
             </div>
-            <GalleryImageLarge items={items} />
+            <GalleryImageLarge item={currentItem} galleryLength={items.length} />
             {thumbnailsOpen ? <GalleryHorizontalScroll items={items} /> : null}
         </div>
     );
 }
 
 export function GalleryImageLarge(
-    { items }: { items: components["schemas"]["FileSearchResult"][] }
+    { item, galleryLength }: { item: components["schemas"]["FileSearchResult"], galleryLength: number }
 ) {
-    const index = useGallery((state) => state.getImageIndex(items.length))
     const nextImage = useGallery((state) => state.nextImage)
     const prevImage = useGallery((state) => state.prevImage)
     const dbs = useDatabase((state) => state.getDBs())
-    const thumbnailURL = getThumbnailURL(items[index].sha256, dbs)
-    const fileURL = getFullFileURL(items[index].sha256, dbs)
+    const thumbnailURL = getThumbnailURL(item.sha256, dbs)
+    const fileURL = getFullFileURL(item.sha256, dbs)
     const thumbnailsOpen = useGallery((state) => state.horizontalThumbnails)
 
     const handleImageClick = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
@@ -199,15 +205,12 @@ export function GalleryImageLarge(
         const { left, right } = currentTarget.getBoundingClientRect()
         const middle = (left + right) / 2
         if (clientX > middle) {
-            nextImage(items.length)
+            nextImage(galleryLength)
         } else {
-            prevImage(items.length)
+            prevImage(galleryLength)
         }
     }
-    const setSelectedItem = useItemSelection((state) => state.setItem)
-    useEffect(() => {
-        setSelectedItem(items[index])
-    }, [index, items])
+
     return (
         <div
             className={cn("relative flex-grow flex justify-center items-center overflow-hidden cursor-pointer ",
@@ -224,7 +227,7 @@ export function GalleryImageLarge(
             >
                 <Image
                     src={thumbnailURL}
-                    alt={`${items[index].path}`}
+                    alt={`${item.path}`}
                     fill
                     className="object-contain"
                     unoptimized={true}
@@ -284,8 +287,14 @@ export function HorizontalScrollElement({
 
     const dbs = useDatabase((state) => state.getDBs())
     const index = useGallery((state) => state.getImageIndex(nItems))
-    const selected = ownIndex === index
+    const selectedItem = useItemSelection((state) => state.getSelected())
+    const selected = ownIndex === index && (!selectedItem || itemEquals(item, selectedItem))
+    const setSelected = useItemSelection((state) => state.setItem)
     const thumbnailURL = getThumbnailURL(item.sha256, dbs)
+    const onClick = () => {
+        setIndex(ownIndex)
+        setSelected(item)
+    }
     return (
         <figure
             key={item.path}
@@ -295,7 +304,7 @@ export function HorizontalScrollElement({
             <Image
                 src={thumbnailURL}
                 alt={item.path}
-                onClick={() => setIndex(ownIndex)}
+                onClick={() => onClick()}
                 className="w-full h-full object-cover object-top rounded-md cursor-pointer"
                 fill
                 sizes="200px"

@@ -6,7 +6,7 @@ import { useAdvancedOptions, useDetailsPane, useItemSelection } from "@/lib/zust
 import { components } from "@/lib/panoptikon"
 import { Toggle } from "./ui/toggle"
 
-function itemEquals(a: components["schemas"]["FileSearchResult"], b: components["schemas"]["FileSearchResult"]) {
+export function itemEquals(a: components["schemas"]["FileSearchResult"], b: components["schemas"]["FileSearchResult"]) {
     return a.sha256 === b.sha256 && a.path === b.path
 }
 export function OpenDetailsButton({
