@@ -184,7 +184,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/search/similar/{sha256}": {
+    "/api/search/similar/{sha256}/{setter_name}": {
         parameters: {
             query?: never;
             header?: never;
@@ -211,7 +211,7 @@ export interface paths {
          *     Remember that tagging models also produce text by concatenating the tags, and are therefore also returned as "text" models by the stats endpoint.
          *     Restricting similarity to a tagger model or a set of tagger models is recommended for item similarity search based on text embeddings.
          */
-        get: operations["find_similar_api_search_similar__sha256__get"];
+        get: operations["find_similar_api_search_similar__sha256___setter_name__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1444,7 +1444,7 @@ export interface operations {
             };
         };
     };
-    find_similar_api_search_similar__sha256__get: {
+    find_similar_api_search_similar__sha256___setter_name__get: {
         parameters: {
             query?: {
                 /** @description The source model names to restrict the search to. These are the models that produced the text for the items from which the text embeddings were produced. */
