@@ -1,9 +1,10 @@
 
-import { useDatabase, useItemSelection } from "@/lib/zust"
+import { useDatabase } from "@/lib/zust"
 import { components } from "@/lib/panoptikon"
 import { $api } from "@/lib/api"
 import { keepPreviousData } from "@tanstack/react-query"
 import { SearchResultImage } from "@/components/SearchResultImage"
+import { useItemSelection } from "@/lib/itemSelection"
 
 export function SimilarItemsView({
     item,

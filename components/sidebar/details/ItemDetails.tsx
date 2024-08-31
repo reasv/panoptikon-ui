@@ -1,6 +1,6 @@
 "use client"
 
-import { useDatabase, useDetailsPane, useItemSelection } from "@/lib/zust"
+import { useDatabase, useDetailsPane } from "@/lib/zust"
 import { FilterContainer } from "../options/FilterContainer"
 import { components } from "@/lib/panoptikon"
 import { MultiBoxResponsive } from "@/components/multiCombobox"
@@ -13,6 +13,7 @@ import { Progress } from "@/components/ui/progress"
 import { useToast } from "@/components/ui/use-toast"
 import { FileBookmarks } from "./FileBookmarks"
 import { ItemFileDetails } from "./ItemFileDetails"
+import { useItemSelection } from "@/lib/itemSelection"
 
 export function ItemDetails() {
     const selected = useItemSelection((state) => state.getSelected())

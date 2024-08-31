@@ -1,5 +1,5 @@
 
-import { useDatabase, useItemSelection } from "@/lib/zust"
+import { useDatabase } from "@/lib/zust"
 import { FilterContainer } from "../options/FilterContainer"
 import { $api } from "@/lib/api"
 import { ConfidenceFilter } from "../options/confidenceFilter"
@@ -8,6 +8,7 @@ import { SimilarItemsView } from "./SimilarItemsView"
 import { useImageSimilarity } from "@/lib/similarityStore"
 import { components } from "@/lib/panoptikon"
 import { AggregationOptions, SourceTextFilter } from "./CommonFilters"
+import { useItemSelection } from "@/lib/itemSelection"
 
 export function TextEmbeddingsSimilarity() {
     const selected = useItemSelection((state) => state.getSelected())

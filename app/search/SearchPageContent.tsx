@@ -3,7 +3,7 @@ import { $api } from "@/lib/api"
 import Image from 'next/image'
 import { PageSelect } from "@/components/pageselect";
 import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons"
-import { useAdvancedOptions, useDatabase, useInstantSearch, useItemSelection, useSearchQuery } from "@/lib/zust"
+import { useAdvancedOptions, useDatabase, useInstantSearch, useSearchQuery } from "@/lib/zust"
 import { Toggle } from "@/components/ui/toggle"
 
 import { Settings, RefreshCw, X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal } from "lucide-react"
@@ -24,6 +24,7 @@ import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { SideBar } from "@/components/sidebar/SideBar";
 import { itemEquals, OpenDetailsButton } from "@/components/OpenFileDetails";
 import { SearchResultImage } from "@/components/SearchResultImage";
+import { useItemSelection } from "@/lib/itemSelection";
 
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }
