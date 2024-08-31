@@ -65,7 +65,14 @@ export const useImageSimilarity = create(
     (set, get) => ({
       ...initialImageSimilarityState,
       setTextEmbedQuery: (query) => set({ textEmbeddingQuery: query }),
-      setClipQuery: (query) => set({ clipQuery: query }),
+      setClipQuery: (query) => {
+        set({
+          clipQuery: {
+            ...query,
+            src_text: query.src_text || get().clipQuery.src_text,
+          },
+        })
+      },
       getClipQuery: (fallback_setter: string) => {
         const setter_name =
           get().clipQuery.setter_name.length > 0
@@ -76,7 +83,7 @@ export const useImageSimilarity = create(
           setter_name: setter_name,
           src_text: get().clipQuery.clip_xmodal
             ? get().clipQuery.src_text
-            : undefined,
+            : null,
         }
       },
       getTextEmbedQuery: (fallback_setter: string) => {

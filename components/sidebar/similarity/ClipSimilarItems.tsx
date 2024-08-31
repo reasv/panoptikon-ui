@@ -112,7 +112,7 @@ function CrossModalOptions({
                 value={clipEmbeddingQuery.xmodal_i2i}
                 setValue={(value) => setCLIPEmbeddingQuery({ ...clipEmbeddingQuery, xmodal_i2i: value })}
             />
-            {clipEmbeddingQuery.src_text && <SourceTextFilter textFilters={clipEmbeddingQuery.src_text} setTextFilters={(filter) => setCLIPEmbeddingQuery({
+            {clipEmbeddingQuery.src_text && clipEmbeddingQuery.clip_xmodal && <SourceTextFilter textFilters={clipEmbeddingQuery.src_text} setTextFilters={(filter) => setCLIPEmbeddingQuery({
                 ...clipEmbeddingQuery, src_text: filter
             })} />}
         </FilterContainer>
