@@ -1,6 +1,6 @@
 "use client"
 import { $api } from "@/lib/api"
-import { useCustomPaths, useDatabase, useSearchQuery } from "@/lib/zust"
+import { useCustomPaths, useDatabase, useSearchQuery } from "@/lib/state/zust"
 import { Label } from "../../ui/label"
 import { Input } from "../../ui/input";
 import { useState } from "react";

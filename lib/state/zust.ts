@@ -1,5 +1,5 @@
 import { create } from "zustand"
-import { components } from "./panoptikon"
+import { components } from "../panoptikon"
 import { createJSONStorage, persist } from "zustand/middleware"
 import { persistLocalStorage, compactUrlOnlyStorage } from "./store"
 

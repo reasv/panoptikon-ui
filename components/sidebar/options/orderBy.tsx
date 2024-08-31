@@ -1,5 +1,5 @@
 "use client"
-import { useSearchQuery } from "@/lib/zust"
+import { useSearchQuery } from "@/lib/state/zust"
 import { Label } from "../../ui/label"
 import { ComboBoxResponsive } from "../../combobox";
 

@@ -2,10 +2,10 @@
 import { BookOpen, Book } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { Button } from './ui/button'
-import { useAdvancedOptions, useDetailsPane } from "@/lib/zust"
+import { useAdvancedOptions, useDetailsPane } from "@/lib/state/zust"
 import { components } from "@/lib/panoptikon"
 import { Toggle } from "./ui/toggle"
-import { useItemSelection } from "@/lib/itemSelection"
+import { useItemSelection } from "@/lib/state/itemSelection"
 
 export function itemEquals(a: components["schemas"]["FileSearchResult"], b: components["schemas"]["FileSearchResult"]) {
     return a.sha256 === b.sha256 && a.path === b.path

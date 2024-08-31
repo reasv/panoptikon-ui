@@ -1,6 +1,6 @@
 "use client"
 import { $api } from "@/lib/api"
-import { useBookmarkCustomNs, useBookmarkNs, useDatabase } from "@/lib/zust"
+import { useBookmarkCustomNs, useBookmarkNs, useDatabase } from "@/lib/state/zust"
 import { Label } from "../../ui/label"
 import { Input } from "../../ui/input";
 import { useState } from "react";

@@ -1,5 +1,5 @@
 import { createJSONStorage, persist } from "zustand/middleware"
-import { components } from "./panoptikon"
+import { components } from "../panoptikon"
 import { persistLocalStorage } from "./store"
 import { create } from "zustand"
 

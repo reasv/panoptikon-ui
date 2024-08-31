@@ -1,14 +1,14 @@
 
-import { useDatabase } from "@/lib/zust"
+import { useDatabase } from "@/lib/state/zust"
 import { FilterContainer } from "../options/FilterContainer"
 import { $api } from "@/lib/api"
 import { ConfidenceFilter } from "../options/confidenceFilter"
 import { ComboBoxResponsive } from "@/components/combobox"
 import { SimilarItemsView } from "./SimilarItemsView"
-import { useImageSimilarity } from "@/lib/similarityStore"
+import { useImageSimilarity } from "@/lib/state/similarityStore"
 import { components } from "@/lib/panoptikon"
 import { AggregationOptions, SourceTextFilter } from "./CommonFilters"
-import { useItemSelection } from "@/lib/itemSelection"
+import { useItemSelection } from "@/lib/state/itemSelection"
 
 export function TextEmbeddingsSimilarity() {
     const selected = useItemSelection((state) => state.getSelected())

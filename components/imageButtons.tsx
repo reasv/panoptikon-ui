@@ -1,6 +1,6 @@
 "use client"
 import { $api } from "@/lib/api";
-import { useBookmarkNs, useDatabase } from "@/lib/zust";
+import { useBookmarkNs, useDatabase } from "@/lib/state/zust";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/components/ui/use-toast"
 import { File, FolderOpen, BookmarkPlus, BookmarkMinus, BookmarkX } from "lucide-react"

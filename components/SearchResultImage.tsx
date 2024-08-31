@@ -4,7 +4,7 @@ import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/componen
 import { useCallback, useEffect, useRef } from "react";
 import { cn, getFullFileURL, getLocale, getThumbnailURL } from "@/lib/utils";
 import { components } from "@/lib/panoptikon";
-import { useGallery } from "@/lib/gallery";
+import { useGallery } from "@/lib/state/gallery";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
 
 export function SearchResultImage({

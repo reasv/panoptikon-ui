@@ -1,5 +1,5 @@
 
-import { useDatabase } from "@/lib/zust"
+import { useDatabase } from "@/lib/state/zust"
 import { FilterContainer } from "../options/FilterContainer"
 import { $api } from "@/lib/api"
 import { ConfidenceFilter } from "../options/confidenceFilter"

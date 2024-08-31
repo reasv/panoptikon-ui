@@ -1,5 +1,5 @@
 import { create } from "zustand"
-import { components } from "./panoptikon"
+import { components } from "../panoptikon"
 
 interface SelectionState {
   selected: components["schemas"]["FileSearchResult"] | null

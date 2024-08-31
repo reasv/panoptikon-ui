@@ -7,7 +7,7 @@ import {
     QueryClient,
 } from '@tanstack/react-query'
 import { components } from '@/lib/panoptikon';
-import { initialDBOpts, initialSearchQueryState, queryFromState, SearchQueryStateState } from '@/lib/zust';
+import { initialDBOpts, initialSearchQueryState, queryFromState, SearchQueryStateState } from '@/lib/state/zust';
 import { decodeQueryParam } from '@/lib/decodeQuery';
 
 interface queryParams {

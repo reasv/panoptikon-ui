@@ -1,6 +1,6 @@
 "use client"
 import { Input } from "@/components/ui/input"
-import { useSearchQuery } from "@/lib/zust"
+import { useSearchQuery } from "@/lib/state/zust"
 import { useSQLite } from "@/lib/sqliteChecker"
 import { useEffect, useMemo } from "react"
 import { Fts5ToggleButton } from "./FTS5Toggle"

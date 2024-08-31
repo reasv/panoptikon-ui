@@ -2,7 +2,7 @@
 import { Delete } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { Button } from './ui/button'
-import { initialSearchQueryState, useSearchQuery } from "@/lib/zust"
+import { initialSearchQueryState, useSearchQuery } from "@/lib/state/zust"
 
 export function ClearSearch() {
     const { toast } = useToast()

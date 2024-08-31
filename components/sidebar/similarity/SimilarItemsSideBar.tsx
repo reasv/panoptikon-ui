@@ -1,6 +1,6 @@
 "use client"
 
-import { useImageSimilarity } from "@/lib/similarityStore"
+import { useImageSimilarity } from "@/lib/state/similarityStore"
 import { ClipItemSimilarity } from "./ClipSimilarItems"
 import { TextEmbeddingsSimilarity } from "./TextSimilarItems"
 import { Button } from "@/components/ui/button"

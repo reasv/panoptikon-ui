@@ -1,5 +1,5 @@
 "use client"
-import { useInstantSearch } from "@/lib/zust"
+import { useInstantSearch } from "@/lib/state/zust"
 import { Toggle } from "@/components/ui/toggle"
 import { Lock } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"

@@ -1,4 +1,4 @@
-import { useDatabase } from "@/lib/zust"
+import { useDatabase } from "@/lib/state/zust"
 import { FilterContainer } from "../options/FilterContainer"
 import { $api } from "@/lib/api"
 import { ConfidenceFilter } from "../options/confidenceFilter"
@@ -6,8 +6,8 @@ import { ComboBoxResponsive } from "@/components/combobox"
 import { SimilarItemsView } from "./SimilarItemsView"
 import { components } from "@/lib/panoptikon"
 import { AggregationOptions, SourceTextFilter, SwitchOption } from "./CommonFilters"
-import { useImageSimilarity } from "@/lib/similarityStore"
-import { useItemSelection } from "@/lib/itemSelection"
+import { useImageSimilarity } from "@/lib/state/similarityStore"
+import { useItemSelection } from "@/lib/state/itemSelection"
 
 export function ClipItemSimilarity() {
     const selected = useItemSelection((state) => state.getSelected())

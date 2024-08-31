@@ -1,6 +1,6 @@
 "use client"
 import { $api } from "@/lib/api"
-import { useDatabase, useSearchQuery } from "@/lib/zust"
+import { useDatabase, useSearchQuery } from "@/lib/state/zust"
 import { Label } from "../../ui/label"
 import { Switch } from "../../ui/switch";
 import { ComboBoxResponsive } from "../../combobox";

@@ -8,7 +8,7 @@ import {
     PaginationPrevious,
 } from "@/components/ui/pagination"
 import { useMediaQuery } from "@/hooks/use-media-query";
-import { useAdvancedOptions } from "@/lib/zust";
+import { useAdvancedOptions } from "@/lib/state/zust";
 const range = (start: number, end: number) => Array.from({ length: end - start + 1 }, (_, i) => start + i);
 export function PageSelect({
     total_pages,

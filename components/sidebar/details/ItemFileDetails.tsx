@@ -1,6 +1,6 @@
 "use client"
 import { $api } from "@/lib/api"
-import { useDatabase } from "@/lib/zust"
+import { useDatabase } from "@/lib/state/zust"
 
 import { FilterContainer } from "../options/FilterContainer";
 import { components } from "@/lib/panoptikon";
