@@ -17,7 +17,7 @@ export function ClipItemSimilarity() {
         },
     })
     const clipSetters = data?.setters.filter((setter) => setter[0] === "clip").map((setter) => setter[1]) || []
-    const clipQuery = useImageSimilarity((state) => state.getTextEmbedQuery(clipSetters[0] || ""))
+    const clipQuery = useImageSimilarity((state) => state.getClipQuery(clipSetters[0] || ""))
     const setClipQuery = useImageSimilarity((state) => state.setClipQuery)
     return (
         <FilterContainer
@@ -112,9 +112,9 @@ function CrossModalOptions({
                 value={clipEmbeddingQuery.xmodal_i2i}
                 setValue={(value) => setCLIPEmbeddingQuery({ ...clipEmbeddingQuery, xmodal_i2i: value })}
             />
-            <SourceTextFilter textFilters={clipEmbeddingQuery.src_text!} setTextFilters={(filter) => setCLIPEmbeddingQuery({
+            {clipEmbeddingQuery.src_text && <SourceTextFilter textFilters={clipEmbeddingQuery.src_text} setTextFilters={(filter) => setCLIPEmbeddingQuery({
                 ...clipEmbeddingQuery, src_text: filter
-            })} />
+            })} />}
         </FilterContainer>
     )
 }
