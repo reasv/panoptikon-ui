@@ -60,66 +60,102 @@ export const useBookmarkNs = create(
   )
 )
 
-interface ImageSimilarityState {
-  clipSetter: string | null
-  clipMaxResults: number
-  textEmbeddingSetter: string | null
-  textEmbeddingMaxResults: number
-  textSources: string[]
-  textLanguages: string[]
-  textConfidence: number
-  textLanguageConfidence: number
-  crossModalCLIP: boolean
-  crossModalText2Text: boolean
-  crossModalImage2Image: boolean
-  setClipSetter: (setter: string | null) => void
-  setClipMaxResults: (max: number) => void
-  setTextEmbeddingSetter: (setter: string | null) => void
-  setTextEmbeddingMaxResults: (max: number) => void
-  setTextSources: (sources: string[]) => void
-  setTextLanguages: (languages: string[]) => void
-  setTextConfidence: (confidence: number) => void
-  setTextLanguageConfidence: (confidence: number) => void
-  setCrossModalCLIP: (value: boolean) => void
-  setCrossModalText2Text: (value: boolean) => void
-  setCrossModalImage2Image: (value: boolean) => void
+interface ImageSimilarityStateState {
+  clipQuery: components["schemas"]["SimilarItemsRequest"]
+  clipTextFilters: components["schemas"]["TextFilter"]
+  textEmbeddingQuery: components["schemas"]["SimilarItemsRequest"]
+  textEmbedTextFilters: components["schemas"]["TextFilter"]
+}
+interface ImageSimilarityState extends ImageSimilarityStateState {
+  setTextEmbedTextFilters: (filter: components["schemas"]["TextFilter"]) => void
+  setClipTextFilters: (filter: components["schemas"]["TextFilter"]) => void
+  setTextEmbedQuery: (
+    query: components["schemas"]["SimilarItemsRequest"]
+  ) => void
+  setClipQuery: (query: components["schemas"]["SimilarItemsRequest"]) => void
+  getClipQuery: (
+    fallback_setter: string
+  ) => components["schemas"]["SimilarItemsRequest"]
+  getTextEmbedQuery: (
+    fallback_setter: string
+  ) => components["schemas"]["SimilarItemsRequest"]
+  resetAll: () => void
 }
 const imageSimilarityStorage = {
   name: "imageSimilarityOpts",
   storage: createJSONStorage<ImageSimilarityState>(() => persistLocalStorage),
 }
+const initialImageSimilarityState: ImageSimilarityStateState = {
+  clipQuery: {
+    setter_name: "",
+    distance_aggregation: "AVG",
+    src_confidence_weight: 0,
+    src_language_confidence_weight: 0,
+    clip_xmodal: false,
+    xmodal_t2t: true,
+    xmodal_i2i: true,
+    limit: 6,
+  },
+  clipTextFilters: {
+    setter_names: [],
+    languages: [],
+    min_confidence: 0,
+    min_language_confidence: 0,
+    min_length: 10,
+  },
+  textEmbeddingQuery: {
+    setter_name: "",
+    distance_aggregation: "AVG",
+    src_confidence_weight: 0,
+    src_language_confidence_weight: 0,
+    clip_xmodal: false,
+    xmodal_t2t: true,
+    xmodal_i2i: true,
+    limit: 6,
+  },
+  textEmbedTextFilters: {
+    setter_names: [],
+    languages: [],
+    min_confidence: 0,
+    min_language_confidence: 0,
+    min_length: 10,
+  },
+}
 export const useImageSimilarity = create(
   persist<ImageSimilarityState>(
-    (set) => ({
-      clipSetter: null,
-      clipMaxResults: 6,
-      textEmbeddingSetter: null,
-      textEmbeddingMaxResults: 6,
-      textSources: [],
-      textLanguages: [],
-      textConfidence: 0,
-      textLanguageConfidence: 0,
-      crossModalCLIP: false,
-      crossModalText2Text: true,
-      crossModalImage2Image: true,
-      setClipSetter: (setter: string | null) => set({ clipSetter: setter }),
-      setClipMaxResults: (max: number) => set({ clipMaxResults: max }),
-      setTextEmbeddingSetter: (setter: string | null) =>
-        set({ textEmbeddingSetter: setter }),
-      setTextEmbeddingMaxResults: (max: number) =>
-        set({ textEmbeddingMaxResults: max }),
-      setTextSources: (sources: string[]) => set({ textSources: sources }),
-      setTextLanguages: (languages: string[]) =>
-        set({ textLanguages: languages }),
-      setTextConfidence: (confidence: number) =>
-        set({ textConfidence: confidence }),
-      setTextLanguageConfidence: (confidence: number) =>
-        set({ textLanguageConfidence: confidence }),
-      setCrossModalCLIP: (value: boolean) => set({ crossModalCLIP: value }),
-      setCrossModalText2Text: (value: boolean) =>
-        set({ crossModalText2Text: value }),
-      setCrossModalImage2Image: (value: boolean) =>
-        set({ crossModalImage2Image: value }),
+    (set, get) => ({
+      ...initialImageSimilarityState,
+      setTextEmbedTextFilters: (filter) =>
+        set({ textEmbedTextFilters: filter }),
+      setClipTextFilters: (filter) => set({ clipTextFilters: filter }),
+      setTextEmbedQuery: (query) => set({ textEmbeddingQuery: query }),
+      setClipQuery: (query) => set({ clipQuery: query }),
+      getClipQuery: (fallback_setter: string) => {
+        const setter_name =
+          get().clipQuery.setter_name.length > 0
+            ? get().clipQuery.setter_name
+            : fallback_setter
+        return {
+          ...get().clipQuery,
+          setter_name: setter_name,
+          src_text: get().clipQuery.clip_xmodal
+            ? get().clipTextFilters
+            : undefined,
+        }
+      },
+      getTextEmbedQuery: (fallback_setter: string) => {
+        const setter_name =
+          get().textEmbeddingQuery.setter_name.length > 0
+            ? get().textEmbeddingQuery.setter_name
+            : fallback_setter
+        return {
+          ...get().textEmbeddingQuery,
+          setter_name: setter_name,
+          clip_xmodal: false,
+          src_text: get().textEmbedTextFilters,
+        }
+      },
+      resetAll: () => set(initialImageSimilarityState),
     }),
     imageSimilarityStorage
   )
