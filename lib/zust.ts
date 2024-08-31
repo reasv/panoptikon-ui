@@ -63,8 +63,14 @@ export const useBookmarkNs = create(
 interface ImageSimilarityState {
   clipSetter: string | null
   clipMaxResults: number
+  textEmbeddingSetter: string | null
+  textEmbeddingMaxResults: number
+  textSources: string[]
   setClipSetter: (setter: string | null) => void
   setClipMaxResults: (max: number) => void
+  setTextEmbeddingSetter: (setter: string | null) => void
+  setTextEmbeddingMaxResults: (max: number) => void
+  setTextSources: (sources: string[]) => void
 }
 const imageSimilarityStorage = {
   name: "imageSimilarityOpts",
@@ -74,9 +80,17 @@ export const useImageSimilarity = create(
   persist<ImageSimilarityState>(
     (set) => ({
       clipSetter: null,
-      clipMaxResults: 10,
+      clipMaxResults: 6,
+      textEmbeddingSetter: null,
+      textEmbeddingMaxResults: 6,
       setClipSetter: (setter: string | null) => set({ clipSetter: setter }),
       setClipMaxResults: (max: number) => set({ clipMaxResults: max }),
+      setTextEmbeddingSetter: (setter: string | null) =>
+        set({ textEmbeddingSetter: setter }),
+      setTextEmbeddingMaxResults: (max: number) =>
+        set({ textEmbeddingMaxResults: max }),
+      textSources: [],
+      setTextSources: (sources: string[]) => set({ textSources: sources }),
     }),
     imageSimilarityStorage
   )
