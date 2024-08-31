@@ -7,28 +7,22 @@ import { SearchResultImage } from "@/components/SearchResultImage"
 
 export function SimilarItemsView({
     item,
-    setter_name,
-    src_setter_names,
-    limit
+    query,
 }: {
     item: components["schemas"]["FileSearchResult"]
-    setter_name: string
-    limit: number
-    src_setter_names: string[]
+    query: components["schemas"]["SimilarItemsRequest"]
 }) {
     const dbs = useDatabase((state) => state.getDBs())
-    const { data } = $api.useQuery("get", "/api/search/similar/{sha256}/{setter_name}", {
+    const { data } = $api.useQuery("post", "/api/search/similar/{sha256}", {
         params: {
             query: {
-                limit,
-                src_setter_names,
                 ...dbs
             },
             path: {
                 sha256: item.sha256,
-                setter_name
             }
-        }
+        },
+        body: query
     }, {
         placeholderData: keepPreviousData
     })

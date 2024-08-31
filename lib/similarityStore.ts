@@ -5,13 +5,9 @@ import { create } from "zustand"
 
 interface ImageSimilarityStateState {
   clipQuery: components["schemas"]["SimilarItemsRequest"]
-  clipTextFilters: components["schemas"]["TextFilter"]
   textEmbeddingQuery: components["schemas"]["SimilarItemsRequest"]
-  textEmbedTextFilters: components["schemas"]["TextFilter"]
 }
 interface ImageSimilarityState extends ImageSimilarityStateState {
-  setTextEmbedTextFilters: (filter: components["schemas"]["TextFilter"]) => void
-  setClipTextFilters: (filter: components["schemas"]["TextFilter"]) => void
   setTextEmbedQuery: (
     query: components["schemas"]["SimilarItemsRequest"]
   ) => void
@@ -38,13 +34,13 @@ const initialImageSimilarityState: ImageSimilarityStateState = {
     xmodal_t2t: true,
     xmodal_i2i: true,
     limit: 6,
-  },
-  clipTextFilters: {
-    setter_names: [],
-    languages: [],
-    min_confidence: 0,
-    min_language_confidence: 0,
-    min_length: 10,
+    src_text: {
+      setter_names: [],
+      languages: [],
+      min_confidence: 0,
+      min_language_confidence: 0,
+      min_length: 10,
+    },
   },
   textEmbeddingQuery: {
     setter_name: "",
@@ -55,22 +51,19 @@ const initialImageSimilarityState: ImageSimilarityStateState = {
     xmodal_t2t: true,
     xmodal_i2i: true,
     limit: 6,
-  },
-  textEmbedTextFilters: {
-    setter_names: [],
-    languages: [],
-    min_confidence: 0,
-    min_language_confidence: 0,
-    min_length: 10,
+    src_text: {
+      setter_names: [],
+      languages: [],
+      min_confidence: 0,
+      min_language_confidence: 0,
+      min_length: 10,
+    },
   },
 }
 export const useImageSimilarity = create(
   persist<ImageSimilarityState>(
     (set, get) => ({
       ...initialImageSimilarityState,
-      setTextEmbedTextFilters: (filter) =>
-        set({ textEmbedTextFilters: filter }),
-      setClipTextFilters: (filter) => set({ clipTextFilters: filter }),
       setTextEmbedQuery: (query) => set({ textEmbeddingQuery: query }),
       setClipQuery: (query) => set({ clipQuery: query }),
       getClipQuery: (fallback_setter: string) => {
@@ -82,7 +75,7 @@ export const useImageSimilarity = create(
           ...get().clipQuery,
           setter_name: setter_name,
           src_text: get().clipQuery.clip_xmodal
-            ? get().clipTextFilters
+            ? get().clipQuery.src_text
             : undefined,
         }
       },
@@ -93,9 +86,13 @@ export const useImageSimilarity = create(
             : fallback_setter
         return {
           ...get().textEmbeddingQuery,
+          distance_aggregation:
+            get().textEmbeddingQuery.src_confidence_weight > 0 ||
+            get().textEmbeddingQuery.src_language_confidence_weight > 0
+              ? "AVG"
+              : get().textEmbeddingQuery.distance_aggregation,
           setter_name: setter_name,
           clip_xmodal: false,
-          src_text: get().textEmbedTextFilters,
         }
       },
       resetAll: () => set(initialImageSimilarityState),

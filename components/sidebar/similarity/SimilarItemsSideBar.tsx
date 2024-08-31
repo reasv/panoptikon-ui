@@ -9,7 +9,7 @@ import { Delete } from "lucide-react"
 export function SimilarItemsSideBar() {
     return (
         <div className="mt-4">
-            <ClipItemSimilarity />
+            {/* <ClipItemSimilarity />*/}
             <TextEmbeddingsSimilarity />
             <ResetFilters />
         </div>
