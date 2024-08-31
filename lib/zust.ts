@@ -66,11 +66,23 @@ interface ImageSimilarityState {
   textEmbeddingSetter: string | null
   textEmbeddingMaxResults: number
   textSources: string[]
+  textLanguages: string[]
+  textConfidence: number
+  textLanguageConfidence: number
+  crossModalCLIP: boolean
+  crossModalText2Text: boolean
+  crossModalImage2Image: boolean
   setClipSetter: (setter: string | null) => void
   setClipMaxResults: (max: number) => void
   setTextEmbeddingSetter: (setter: string | null) => void
   setTextEmbeddingMaxResults: (max: number) => void
   setTextSources: (sources: string[]) => void
+  setTextLanguages: (languages: string[]) => void
+  setTextConfidence: (confidence: number) => void
+  setTextLanguageConfidence: (confidence: number) => void
+  setCrossModalCLIP: (value: boolean) => void
+  setCrossModalText2Text: (value: boolean) => void
+  setCrossModalImage2Image: (value: boolean) => void
 }
 const imageSimilarityStorage = {
   name: "imageSimilarityOpts",
@@ -83,14 +95,31 @@ export const useImageSimilarity = create(
       clipMaxResults: 6,
       textEmbeddingSetter: null,
       textEmbeddingMaxResults: 6,
+      textSources: [],
+      textLanguages: [],
+      textConfidence: 0,
+      textLanguageConfidence: 0,
+      crossModalCLIP: false,
+      crossModalText2Text: true,
+      crossModalImage2Image: true,
       setClipSetter: (setter: string | null) => set({ clipSetter: setter }),
       setClipMaxResults: (max: number) => set({ clipMaxResults: max }),
       setTextEmbeddingSetter: (setter: string | null) =>
         set({ textEmbeddingSetter: setter }),
       setTextEmbeddingMaxResults: (max: number) =>
         set({ textEmbeddingMaxResults: max }),
-      textSources: [],
       setTextSources: (sources: string[]) => set({ textSources: sources }),
+      setTextLanguages: (languages: string[]) =>
+        set({ textLanguages: languages }),
+      setTextConfidence: (confidence: number) =>
+        set({ textConfidence: confidence }),
+      setTextLanguageConfidence: (confidence: number) =>
+        set({ textLanguageConfidence: confidence }),
+      setCrossModalCLIP: (value: boolean) => set({ crossModalCLIP: value }),
+      setCrossModalText2Text: (value: boolean) =>
+        set({ crossModalText2Text: value }),
+      setCrossModalImage2Image: (value: boolean) =>
+        set({ crossModalImage2Image: value }),
     }),
     imageSimilarityStorage
   )
