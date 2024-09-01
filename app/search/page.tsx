@@ -9,7 +9,6 @@ import {
 import { components } from '@/lib/panoptikon';
 import { initialDBOpts, initialSearchQueryState, queryFromState, SearchQueryStateState } from '@/lib/state/zust';
 import { decodeQueryParam } from '@/lib/decodeQuery';
-import Geschichte from 'geschichte/nextjs-app-router'
 
 interface queryParams {
     index_db: string | null
@@ -64,10 +63,8 @@ export default async function SearchPage({
     })
 
     return (
-        <Geschichte>
-            <HydrationBoundary state={dehydrate(queryClient)}>
-                <SearchPageContent initialQuery={request} />
-            </HydrationBoundary>
-        </Geschichte>
+        <HydrationBoundary state={dehydrate(queryClient)}>
+            <SearchPageContent initialQuery={request} />
+        </HydrationBoundary>
     )
 }

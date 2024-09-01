@@ -27,6 +27,7 @@ import { SearchResultImage } from "@/components/SearchResultImage";
 import { useItemSelection } from "@/lib/state/itemSelection";
 import { useSimilarityQuery } from "@/lib/state/similarityQuery";
 import { useImageSimilarity } from "@/lib/state/similarityStore";
+import Geschichte from 'geschichte/nextjs-app-router'
 
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }) {
@@ -37,7 +38,9 @@ export function SearchPageContent({ initialQuery }:
             <div className={cn('p-4 transition-all duration-300 mx-auto',
                 sidebarOpen ? 'w-full lg:w-1/2 xl:w-2/3 2xl:w-3/4 4xl:w-[80%] 5xl:w-[82%]' : 'w-full'
             )}>
-                <MultiView initialQuery={initialQuery} />
+                <Geschichte>
+                    <MultiView initialQuery={initialQuery} />
+                </Geschichte>
             </div>
         </div>
     )
