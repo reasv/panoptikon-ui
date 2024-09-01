@@ -70,10 +70,29 @@ export function MultiSearchView({ initialQuery }:
     const [name, __] = useGalleryName()
     const [index, setIndex] = useGalleryIndex(name)
     const results = data?.results || []
+    const [sidebarOpen, setSideBarOpen] = useSideBarOpen()
     return (
         <>
             <SearchErrorToast noFtsErrors={mode === Mode.ItemSimilarity} isError={isError} error={error} />
-            <SearchViewBar isFetching={isFetching} onRefresh={onRefresh} />
+            <div className={cn("mb-4 2xl:mx-auto",
+                sidebarOpen ? '2xl:w-2/3' : '2xl:w-1/2'
+            )}>
+                <div className="flex gap-2">
+                    <Toggle
+                        pressed={sidebarOpen}
+                        onClick={() => setSideBarOpen(!sidebarOpen)}
+                        title={"Advanced Search Options Are " + (sidebarOpen ? "Open" : "Closed")}
+                        aria-label="Toggle Advanced Search Options"
+                    >
+                        <Settings className="h-4 w-4" />
+                    </Toggle>
+                    <SearchBar />
+                    <InstantSearchLock />
+                    <Button title="Refresh search results" onClick={onRefresh} variant="ghost" size="icon">
+                        <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+                    </Button>
+                </div>
+            </div>
             {
                 (index !== null && results.length > 0)
                     ?
@@ -94,36 +113,6 @@ export function MultiSearchView({ initialQuery }:
     )
 }
 
-export function SearchViewBar({
-    isFetching,
-    onRefresh
-}: {
-    isFetching: boolean
-    onRefresh: () => void
-}) {
-    const [sidebarOpen, setSideBarOpen] = useSideBarOpen()
-    return (
-        <div className={cn("mb-4 2xl:mx-auto",
-            sidebarOpen ? '2xl:w-2/3' : '2xl:w-1/2'
-        )}>
-            <div className="flex gap-2">
-                <Toggle
-                    pressed={sidebarOpen}
-                    onClick={() => setSideBarOpen(!sidebarOpen)}
-                    title={"Advanced Search Options Are " + (sidebarOpen ? "Open" : "Closed")}
-                    aria-label="Toggle Advanced Search Options"
-                >
-                    <Settings className="h-4 w-4" />
-                </Toggle>
-                <SearchBar />
-                <InstantSearchLock />
-                <Button title="Refresh search results" onClick={onRefresh} variant="ghost" size="icon">
-                    <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-                </Button>
-            </div>
-        </div>
-    )
-}
 export function ResultGrid({
     results,
     totalCount,
