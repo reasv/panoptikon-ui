@@ -2,7 +2,6 @@
 import { SidebarClose } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { useDetailsPane } from "@/lib/state/zust"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { Drawer, DrawerContent } from "../ui/drawer"
 import { ScrollArea } from "../ui/scroll-area"

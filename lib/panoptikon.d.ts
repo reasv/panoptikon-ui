@@ -198,8 +198,9 @@ export interface paths {
          * @description Find similar items in the database based on the provided SHA256 and setter name.
          *     The search is based on the image or text embeddings of the provided item.
          *
-         *     The count value in the response is equal to the number of items returned, rather than the total number of similar items in the database.
+         *     The count value in the response is equal to the number of items returned (+ (page_size - 1) * page for page > 1), rather than the total number of similar items in the database.
          *     This is because there is no way to define what constitutes a "similar" item in a general sense. We just return the top N items that are most similar to the provided item.
+         *     If you still need the total number of "similar" items in the database, set the `full_count` parameter to true.
          *
          *     The setter name refers to the model that produced the embeddings.
          *     You can find a list of available values for this parameter using the /api/search/stats endpoint.
@@ -1117,17 +1118,19 @@ export interface components {
              * Src Confidence Weight
              * @description
              *     The weight to apply to the confidence of the source text
-             *     on the embedding distance aggregation.
+             *     on the embedding distance aggregation for individual items with multiple embeddings.
              *     Default is 0.0, which means that the confidence of the source text
-             *     does not affect the distance calculation.
+             *     does not affect the distance aggregation.
              *     This parameter is only relevant when the source text has a confidence value.
              *     The confidence of the source text is multiplied by the confidence of the other
              *     source text when calculating the distance between two items.
              *     The formula for the distance calculation is as follows:
              *     ```
-             *     distance = distance * POW((COALESCE(main_source_text.confidence, 1) * COALESCE(other_source_text.confidence, 1)), src_confidence_weight)
+             *     weights = POW((COALESCE(main_source_text.confidence, 1) * COALESCE(other_source_text.confidence, 1)), src_confidence_weight)
+             *     distance = SUM(distance * weights) / SUM(weights)
              *     ```
              *     So this weight is the exponent to which the confidence is raised, which means that it can be greater than 1.
+             *     When confidence weights are set, the distance_aggregation setting is ignored.
              *
              * @default 0
              */
@@ -1140,9 +1143,9 @@ export interface components {
              *     Default is 0.0, which means that the confidence of the source text language detection
              *     does not affect the distance calculation.
              *     Totally analogous to `src_confidence_weight`, but for the language confidence.
-             *     When both are present, the results of the POW() functions for both are multiplied together before being multiplied by the distance.
+             *     When both are present, the results of the POW() functions for both are multiplied together before being applied to the distance.
              *     ```
-             *     distance = distance * POW(..., src_confidence_weight) * POW(..., src_language_confidence_weight)
+             *     weights = POW(..., src_confidence_weight) * POW(..., src_language_confidence_weight)
              *     ```
              *
              * @default 0
@@ -1191,6 +1194,12 @@ export interface components {
              * @default 10
              */
             page_size: number;
+            /**
+             * Full Count
+             * @description Whether to return the full count of resulting items in the database
+             * @default false
+             */
+            full_count: boolean;
         };
         /** SingleDBInfo */
         SingleDBInfo: {
