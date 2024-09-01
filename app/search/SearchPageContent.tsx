@@ -54,7 +54,7 @@ export function SearchPageContent({ initialQuery }:
             placeholderData: keepPreviousData
         }
     );
-    const total_pages = Math.ceil((data?.count || 1) / (pageSize)) || 1
+
     const nResults = data?.count || 0
     const { toast } = useToast()
     const onRefresh = async () => {
@@ -101,32 +101,75 @@ export function SearchPageContent({ initialQuery }:
                         </Button>
                     </div>
                 </div>
-                {galleryOpen && data && data.results.length > 0 ? <ImageGallery items={data?.results} /> :
-                    <div className="border rounded p-2">
-                        <h2 className="text-xl font-bold p-4 flex items-center justify-left">
-                            <span><AnimatedNumber value={nResults} /> {nResults === 1 ? "Result" : "Results"}</span>
-                        </h2>
-                        <ScrollArea className="overflow-y-auto">
-                            <div className={cn('grid gap-4 max-h-[calc(100vh-225px)] grid-cols-1 md:grid-cols-2',
-                                sidebarOpen ?
-                                    ('lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4 4xl:grid-cols-5') :
-                                    ('lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'))}>
-                                {data && data.results.map((result, index) => (
-                                    <SearchResultImage key={result.path} result={result} index={index} dbs={dbs} />
-                                ))}
-                            </div>
-                        </ScrollArea>
-
-                    </div>}
-                {data && data.count > pageSize && (
-                    <PageSelect total_pages={total_pages} current_page={page} setPage={setPage} />
-                )}
-
+                {data && (
+                    <ResultsView
+                        results={data?.results || []}
+                        totalCount={nResults}
+                        pageSize={pageSize}
+                        currentPage={page}
+                        setPage={setPage}
+                        galleryOpen={galleryOpen}
+                    />)}
             </div>
         </div>
     );
 }
+export function ResultsView({
+    results,
+    totalCount,
+    pageSize,
+    currentPage,
+    setPage,
+    galleryOpen
+}: {
+    results: components["schemas"]["FileSearchResult"][]
+    totalCount: number
+    pageSize: number
+    currentPage: number
+    setPage: (page: number) => void
+    galleryOpen: boolean
+}) {
+    const totalPages = Math.ceil((totalCount || 1) / (pageSize)) || 1
+    return <>
+        {
+            (galleryOpen && results.length > 0)
+                ?
+                <ImageGallery items={results} />
+                :
+                <ResultGrid
+                    results={results}
+                    totalCount={totalCount}
+                />
+        }
+        {
+            totalCount > pageSize && (
+                <PageSelect totalPages={totalPages} currentPage={currentPage} setPage={setPage} />
+            )
+        }
+    </>
+}
 
+export function ResultGrid({ results, totalCount }: { results: components["schemas"]["FileSearchResult"][], totalCount: number }) {
+    const dbs = useDatabase((state) => state.getDBs())
+    const sidebarOpen = useAdvancedOptions((state) => state.isOpen)
+    return (
+        <div className="border rounded p-2">
+            <h2 className="text-xl font-bold p-4 flex items-center justify-left">
+                <span><AnimatedNumber value={totalCount} /> {totalCount === 1 ? "Result" : "Results"}</span>
+            </h2>
+            <ScrollArea className="overflow-y-auto">
+                <div className={cn('grid gap-4 max-h-[calc(100vh-225px)] grid-cols-1 md:grid-cols-2',
+                    sidebarOpen ?
+                        ('lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4 4xl:grid-cols-5') :
+                        ('lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'))}>
+                    {results.map((result, index) => (
+                        <SearchResultImage key={result.path} result={result} index={index} dbs={dbs} />
+                    ))}
+                </div>
+            </ScrollArea>
+        </div>
+    )
+}
 
 export function ImageGallery({
     items
@@ -145,7 +188,8 @@ export function ImageGallery({
         setSelectedItem(items[index])
     }, [index, items])
     // Get the current item, if the selected item is not the same as the current item, set the current item to the selected item
-    const currentItem = selectedItem && !itemEquals(selectedItem, items[index]) ? selectedItem : items[index]
+    // selectedItem && !itemEquals(selectedItem, items[index]) ? selectedItem : items[index]
+    const currentItem = items[index]
 
     const dateString = getLocale(new Date(currentItem.last_modified))
     return (
@@ -289,7 +333,7 @@ export function HorizontalScrollElement({
     const dbs = useDatabase((state) => state.getDBs())
     const index = useGallery((state) => state.getImageIndex(nItems))
     const selectedItem = useItemSelection((state) => state.getSelected())
-    const selected = ownIndex === index && (!selectedItem || itemEquals(item, selectedItem))
+    const selected = ownIndex === index // && (!selectedItem || itemEquals(item, selectedItem))
     const setSelected = useItemSelection((state) => state.setItem)
     const thumbnailURL = getThumbnailURL(item.sha256, dbs)
     const onClick = () => {

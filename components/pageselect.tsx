@@ -11,12 +11,12 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { useAdvancedOptions } from "@/lib/state/zust";
 const range = (start: number, end: number) => Array.from({ length: end - start + 1 }, (_, i) => start + i);
 export function PageSelect({
-    total_pages,
-    current_page,
+    totalPages,
+    currentPage,
     setPage
 }: {
-    total_pages: number;
-    current_page: number;
+    totalPages: number;
+    currentPage: number;
     setPage: (page: number) => void;
 }) {
     const sidebarOpen = useAdvancedOptions((state) => state.isOpen)
@@ -37,29 +37,29 @@ export function PageSelect({
     let showRightEllipsis = false;
 
     // Determine if we need ellipses and adjust visible_pages
-    if (current_page > Math.ceil(visible_pages / 2) + 1) {
+    if (currentPage > Math.ceil(visible_pages / 2) + 1) {
         showLeftEllipsis = true;
         visible_pages -= 1; // Account for the left ellipsis
     }
-    if (current_page < total_pages - Math.floor(visible_pages / 2) - 1) {
+    if (currentPage < totalPages - Math.floor(visible_pages / 2) - 1) {
         showRightEllipsis = true;
         visible_pages -= 1; // Account for the right ellipsis
     }
 
     // Calculate the middle pages range
     const half_visible_pages = Math.floor(visible_pages / 2);
-    let startPage = Math.max(current_page - half_visible_pages, 2);
-    let endPage = Math.min(current_page + half_visible_pages, total_pages - 1);
+    let startPage = Math.max(currentPage - half_visible_pages, 2);
+    let endPage = Math.min(currentPage + half_visible_pages, totalPages - 1);
 
     // Adjust if near the start
     if (startPage <= 2) {
         startPage = 2;
-        endPage = Math.min(startPage + visible_pages - 1, total_pages - 1);
+        endPage = Math.min(startPage + visible_pages - 1, totalPages - 1);
     }
 
     // Adjust if near the end
-    if (endPage >= total_pages - 1) {
-        endPage = total_pages - 1;
+    if (endPage >= totalPages - 1) {
+        endPage = totalPages - 1;
         startPage = Math.max(endPage - visible_pages + 1, 2);
     }
 
@@ -72,7 +72,7 @@ export function PageSelect({
                         href="#"
                         onClick={(e) => {
                             e.preventDefault();
-                            if (current_page > 1) setPage(current_page - 1);
+                            if (currentPage > 1) setPage(currentPage - 1);
                         }}
                     />
                 </PaginationItem>
@@ -81,7 +81,7 @@ export function PageSelect({
                 <PaginationItem>
                     <PaginationLink
                         href="#"
-                        isActive={1 === current_page}
+                        isActive={1 === currentPage}
                         onClick={(e) => {
                             e.preventDefault();
                             setPage(1);
@@ -103,7 +103,7 @@ export function PageSelect({
                     <PaginationItem key={page}>
                         <PaginationLink
                             href="#"
-                            isActive={page === current_page}
+                            isActive={page === currentPage}
                             onClick={(e) => {
                                 e.preventDefault();
                                 setPage(page);
@@ -125,13 +125,13 @@ export function PageSelect({
                 <PaginationItem>
                     <PaginationLink
                         href="#"
-                        isActive={total_pages === current_page}
+                        isActive={totalPages === currentPage}
                         onClick={(e) => {
                             e.preventDefault();
-                            setPage(total_pages);
+                            setPage(totalPages);
                         }}
                     >
-                        {total_pages}
+                        {totalPages}
                     </PaginationLink>
                 </PaginationItem>
 
@@ -141,7 +141,7 @@ export function PageSelect({
                         href="#"
                         onClick={(e) => {
                             e.preventDefault();
-                            if (current_page < total_pages) setPage(current_page + 1);
+                            if (currentPage < totalPages) setPage(currentPage + 1);
                         }}
                     />
                 </PaginationItem>
