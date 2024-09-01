@@ -27,6 +27,7 @@ import { useSideBarOpen } from "@/lib/state/sideBar";
 import { useSelectedDBs } from "@/lib/state/database";
 import { useItemSimilaritySearch, useSearch } from "@/lib/searchHooks";
 import { ImageGallery } from '@/components/ImageGallery';
+import { ImageSimilarityHeader } from '@/components/ImageSimilarityHeader';
 
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }) {
@@ -86,7 +87,7 @@ export function MultiSearchView({ initialQuery }:
                     >
                         <Settings className="h-4 w-4" />
                     </Toggle>
-                    <SearchBar />
+                    {mode === Mode.Search ? <SearchBar /> : <ImageSimilarityHeader />}
                     <InstantSearchLock />
                     <Button title="Refresh search results" onClick={onRefresh} variant="ghost" size="icon">
                         <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
