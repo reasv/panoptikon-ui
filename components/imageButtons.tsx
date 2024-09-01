@@ -8,6 +8,7 @@ import { Button } from "./ui/button";
 import { Toggle } from "./ui/toggle";
 import { cn } from "@/lib/utils";
 import { useSelectedDBs } from "@/lib/state/database";
+import { useAlwaysShowBookmarkBtn } from "@/lib/state/alwaysShowBookmarks";
 export const BookmarkBtn = (
     {
         sha256,
@@ -91,7 +92,7 @@ export const BookmarkBtn = (
         else
             addBookmark.mutate({ params }, { onSuccess: () => onSuccess(false), onError: onError });
     };
-    const alwaysShow = useBookmarkNs((state) => state.alwaysShow)
+    const alwaysShow = useAlwaysShowBookmarkBtn()[0]
     return (
         buttonVariant ?
             <Toggle
