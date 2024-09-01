@@ -8,7 +8,7 @@ import { components } from "@/lib/panoptikon"
 import { AggregationOptions, SourceTextFilter, SwitchOption } from "./CommonFilters"
 import { useImageSimilarity } from "@/lib/state/similarityStore"
 import { useItemSelection } from "@/lib/state/itemSelection"
-import Geschichte from 'geschichte/nextjs-app-router'
+import { SimilarityQueryType } from "@/lib/state/similarityQuery"
 
 export function ClipItemSimilarity() {
     const sha256 = useItemSelection((state) => state.getSelected()?.sha256)
@@ -30,14 +30,12 @@ export function ClipItemSimilarity() {
         >
             <CLIPSimilarityFilter setters={clipSetters} clipQuery={clipQuery} setClipQuery={setClipQuery} />
             <div className="mt-4">
-                <Geschichte>
-                    {sha256 && clipQuery.setter_name.length > 0 && clipQuery.page_size > 0 && (
-                        <SimilarItemsView
-                            type="clip"
-                            sha256={sha256}
-                            query={clipQuery}
-                        />)}
-                </Geschichte>
+                {sha256 && clipQuery.setter_name.length > 0 && clipQuery.page_size > 0 && (
+                    <SimilarItemsView
+                        type={SimilarityQueryType.clip}
+                        sha256={sha256}
+                        query={clipQuery}
+                    />)}
             </div>
         </FilterContainer>
     )

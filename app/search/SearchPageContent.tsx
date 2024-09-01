@@ -24,9 +24,8 @@ import { SideBar } from "@/components/sidebar/SideBar";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { SearchResultImage } from "@/components/SearchResultImage";
 import { useItemSelection } from "@/lib/state/itemSelection";
-import { useSimilarityQuery } from "@/lib/state/similarityQuery";
+import { Mode, SimilarityQueryType, useSearchMode, useSimilarityQuery } from "@/lib/state/similarityQuery";
 import { useImageSimilarity } from "@/lib/state/similarityStore";
-import Geschichte from 'geschichte/nextjs-app-router'
 import { Gallery, useGalleryIndex, useGalleryName, useGalleryThumbnail } from "@/lib/state/gallery";
 
 export function SearchPageContent({ initialQuery }:
@@ -38,9 +37,7 @@ export function SearchPageContent({ initialQuery }:
             <div className={cn('p-4 transition-all duration-300 mx-auto',
                 sidebarOpen ? 'w-full lg:w-1/2 xl:w-2/3 2xl:w-3/4 4xl:w-[80%] 5xl:w-[82%]' : 'w-full'
             )}>
-                <Geschichte>
-                    <MultiView initialQuery={initialQuery} />
-                </Geschichte>
+                <MultiView initialQuery={initialQuery} />
             </div>
         </div>
     )
@@ -48,31 +45,25 @@ export function SearchPageContent({ initialQuery }:
 
 export function MultiView({ initialQuery }:
     { initialQuery: SearchQueryArgs }) {
-    const { values } = useSimilarityQuery()
+    const [query, __] = useSimilarityQuery()
+    const [mode, _] = useSearchMode()
     return (
-        values.item.length > 0 && values.model.length > 0 ?
-            <SimilarityView sha256={values.item} queryType={values.type} />
+        mode === Mode.ItemSimilarity && query.item && query.item.length > 0 && query.model && query.model.length > 0 ?
+            <SimilarityView sha256={query.item} queryType={query.type} />
             :
             <SearchView initialQuery={initialQuery} />
     )
 }
 
-export function SimilarityView({ sha256, queryType }: { sha256: string, queryType: string }) {
-    const {
-        values,
-        pushState,
-        replaceState,
-        resetPush,
-        resetReplace,
-        createQueryString,
-    } = useSimilarityQuery()
+export function SimilarityView({ sha256, queryType }: { sha256: string, queryType: SimilarityQueryType }) {
+    const [query, setQuery] = useSimilarityQuery()
     const dbs = useDatabase((state) => state.getDBs())
     const similarityQuery = useImageSimilarity(
         (state) =>
             queryType == "clip" ?
-                state.getClipQuery(values.model)
+                state.getClipQuery(query.model!)
                 :
-                state.getTextEmbedQuery(values.model)
+                state.getTextEmbedQuery(query.model!)
     )
     const instantSearch = useInstantSearch((state) => state.enabled)
     const { data, refetch, isFetching, isError, error } = $api.useQuery("post", "/api/search/similar/{sha256}", {
@@ -86,8 +77,8 @@ export function SimilarityView({ sha256, queryType }: { sha256: string, queryTyp
         },
         body: {
             ...similarityQuery,
-            setter_name: values.model,
-            page: values.page,
+            setter_name: query.model!,
+            page: query.page,
             page_size: similarityQuery.page_size
         }
     },
@@ -112,7 +103,7 @@ export function SimilarityView({ sha256, queryType }: { sha256: string, queryTyp
             // Make pagination work if the user has disabled instant search
             refetch()
         }
-    }, [values.page])
+    }, [query.page])
 
     return (
         <>
@@ -122,8 +113,8 @@ export function SimilarityView({ sha256, queryType }: { sha256: string, queryTyp
                     results={data?.results || []}
                     totalCount={nResults}
                     pageSize={similarityQuery.page_size}
-                    currentPage={values.page}
-                    setPage={(page) => pushState((state) => void (state.page = page))}
+                    currentPage={query.page}
+                    setPage={(page) => setQuery({ page })}
                     onRefresh={onRefresh}
                     isFetching={isFetching}
                 />)}

@@ -9,7 +9,7 @@ import { useImageSimilarity } from "@/lib/state/similarityStore"
 import { components } from "@/lib/panoptikon"
 import { AggregationOptions, SourceTextFilter } from "./CommonFilters"
 import { useItemSelection } from "@/lib/state/itemSelection"
-import Geschichte from 'geschichte/nextjs-app-router'
+import { SimilarityQueryType } from "@/lib/state/similarityQuery"
 
 export function TextEmbeddingsSimilarity() {
     const sha256 = useItemSelection((state) => state.getSelected()?.sha256)
@@ -30,14 +30,12 @@ export function TextEmbeddingsSimilarity() {
         >
             <TextEmbeddingsSimilarityFilter setters={setters} setTextEmbeddingQuery={setTextEmbeddingQuery} textEmbeddingQuery={textEmbeddingQuery} />
             <div className="mt-4">
-                <Geschichte>
-                    {sha256 && textEmbeddingQuery.setter_name.length > 0 && textEmbeddingQuery.page_size > 0 && (
-                        <SimilarItemsView
-                            type="text-embedding"
-                            sha256={sha256}
-                            query={textEmbeddingQuery}
-                        />)}
-                </Geschichte>
+                {sha256 && textEmbeddingQuery.setter_name.length > 0 && textEmbeddingQuery.page_size > 0 && (
+                    <SimilarItemsView
+                        type={SimilarityQueryType.textEmbedding}
+                        sha256={sha256}
+                        query={textEmbeddingQuery}
+                    />)}
             </div>
         </FilterContainer>
     )

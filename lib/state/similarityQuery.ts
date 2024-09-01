@@ -1,25 +1,47 @@
-import { pm, factoryParameters, serializers } from "geschichte"
+import { useQueryStates, parseAsFloat } from "nuqs"
 
-const parameterConfig = {
-  item: pm("item", serializers.string),
-  type: pm("type", serializers.string),
-  page: pm("page", serializers.int),
-  model: pm("model", serializers.string),
+import {
+  parseAsBoolean,
+  parseAsInteger,
+  parseAsString,
+  parseAsStringEnum,
+  useQueryState,
+} from "nuqs"
+
+export enum Mode {
+  Search = "s",
+  ItemSimilarity = "is",
 }
 
-const defaultValue = {
-  item: "",
-  type: "clip",
-  model: "",
-  page: 1,
+export const useSearchMode = () =>
+  useQueryState(
+    `mode`,
+    parseAsStringEnum<Mode>(Object.values(Mode))
+      .withDefault(Mode.Search)
+      .withOptions({
+        history: "push",
+        clearOnDefault: true,
+      })
+  )
+
+export enum SimilarityQueryType {
+  clip = "clip",
+  textEmbedding = "text-embedding",
 }
 
-const { useQuery, createQueryString, parseQueryString } = factoryParameters(
-  parameterConfig,
-  defaultValue,
-  "similarity"
-)
-
-export const useSimilarityQuery = useQuery
-export const createSimilarityQueryString = createQueryString
-export const parseSimilarityQueryString = parseQueryString
+export const useSimilarityQuery = () =>
+  useQueryStates(
+    {
+      item: parseAsString,
+      model: parseAsString,
+      type: parseAsStringEnum<SimilarityQueryType>(
+        Object.values(SimilarityQueryType)
+      ).withDefault(SimilarityQueryType.clip),
+      page: parseAsInteger.withDefault(1).withOptions({
+        clearOnDefault: true,
+      }),
+    },
+    {
+      history: "push",
+    }
+  )

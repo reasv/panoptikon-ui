@@ -5,7 +5,7 @@ import { $api } from "@/lib/api"
 import { keepPreviousData } from "@tanstack/react-query"
 import { SearchResultImage } from "@/components/SearchResultImage"
 import { useItemSelection } from "@/lib/state/itemSelection"
-import { useSimilarityQuery } from "@/lib/state/similarityQuery"
+import { Mode, SimilarityQueryType, useSearchMode, useSimilarityQuery } from "@/lib/state/similarityQuery"
 import { Gallery, useGalleryIndex, useGalleryName } from "@/lib/state/gallery"
 
 export function SimilarItemsView({
@@ -15,7 +15,7 @@ export function SimilarItemsView({
 }: {
     sha256: string
     query: components["schemas"]["SimilarItemsRequest"]
-    type: "clip" | "text-embedding"
+    type: SimilarityQueryType
 }) {
     const dbs = useDatabase((state) => state.getDBs())
     const { data } = $api.useQuery("post", "/api/search/similar/{sha256}", {
@@ -31,30 +31,24 @@ export function SimilarItemsView({
     }, {
         placeholderData: keepPreviousData
     })
-    const {
-        values,
-        pushState,
-        replaceState,
-        resetPush,
-        resetReplace,
-        createQueryString,
-    } = useSimilarityQuery()
+    const [_, setQuery] = useSimilarityQuery()
 
     const setSelected = useItemSelection((state) => state.setItem)
     const [name, setName] = useGalleryName()
     const [index, setIndex] = useGalleryIndex(Gallery.similarity)
+    const [searchMode, setSearchmode] = useSearchMode()
     const onImageClick = (index: number) => {
         if (!data) return
-        pushState((state) => {
-            state.item = sha256
-            state.type = type
-            state.model = query.setter_name
-            state.page = 1
+        setQuery({
+            item: sha256,
+            model: query.setter_name,
+            type: type,
+            page: 1
         })
         setName(Gallery.similarity)
+        setSearchmode(Mode.ItemSimilarity)
         setIndex(index)
         setSelected(data.results[index])
-
     }
     return (
         <div className="mt-4">
