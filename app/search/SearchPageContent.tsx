@@ -327,8 +327,8 @@ export function ImageGallery({
     const [name, _] = useGalleryName()
     const [qIndex, setIndex] = useGalleryIndex(name)
     const index = (qIndex || 0) % items.length
-    const nextImage = () => setIndex((index + 1) % items.length)
-    const prevImage = () => setIndex((index - 1) % items.length)
+    const nextImage = () => setIndex((prevIndex) => ((prevIndex || 0) + 1) % items.length)
+    const prevImage = () => setIndex((prevIndex) => ((prevIndex || 0) - 1 + items.length) % items.length)
     const closeGallery = () => setIndex(null)
 
     const [thumbnailsOpen, setThumbnailsOpen] = useGalleryThumbnail(name)
