@@ -332,7 +332,7 @@ export function HorizontalScrollElement({
 
     const dbs = useDatabase((state) => state.getDBs())
     const index = useGallery((state) => state.getImageIndex(nItems))
-    const selectedItem = useItemSelection((state) => state.getSelected())
+    // const selectedItem = useItemSelection((state) => state.getSelected())
     const selected = ownIndex === index // && (!selectedItem || itemEquals(item, selectedItem))
     const setSelected = useItemSelection((state) => state.setItem)
     const thumbnailURL = getThumbnailURL(item.sha256, dbs)
