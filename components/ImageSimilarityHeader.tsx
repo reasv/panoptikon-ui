@@ -33,12 +33,11 @@ export function ImageSimilarityHeader() {
         setQuery({
             is_item: null,
             is_model: null,
-            is_type: SimilarityQueryType.clip,
-            is_page: 1
+            is_type: null,
+            is_page: null
         })
         setName(Gallery.search)
         setSearchmode(Mode.Search)
-        setIndex(0)
     }
     return (
         <div className="relative w-full flex items-center">
