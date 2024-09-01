@@ -7,8 +7,9 @@ import {
     QueryClient,
 } from '@tanstack/react-query'
 import { components } from '@/lib/panoptikon';
-import { initialDBOpts, initialSearchQueryState, queryFromState, SearchQueryStateState } from '@/lib/state/zust';
+import { initialSearchQueryState, queryFromState, SearchQueryStateState } from '@/lib/state/zust';
 import { decodeQueryParam } from '@/lib/decodeQuery';
+import { selectedDBsServer } from '@/lib/state/databaseServer';
 
 interface queryParams {
     index_db: string | null
@@ -43,12 +44,11 @@ export async function fetchSearch(args: SearchQueryArgs) {
 export default async function SearchPage({
     searchParams,
 }: {
-    searchParams?: { [key: string]: string | string[] | undefined };
+    searchParams: { [key: string]: string | string[] | undefined };
 }) {
     const decodedQueryState = decodeQueryParam<SearchQueryStateState>("query", searchParams)
-    const decodedDBs = decodeQueryParam<queryParams>("db", searchParams)
     const query = queryFromState(decodedQueryState || initialSearchQueryState)
-    const dbs = decodedDBs || initialDBOpts
+    const dbs = selectedDBsServer.parse(searchParams)
     const request = {
         params: {
             query: dbs,

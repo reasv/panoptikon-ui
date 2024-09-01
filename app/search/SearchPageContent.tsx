@@ -5,7 +5,6 @@ import { PageSelect } from "@/components/pageselect";
 import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons"
 import { useInstantSearch, useSearchQuery } from "@/lib/state/zust"
 import { Toggle } from "@/components/ui/toggle"
-
 import { Settings, RefreshCw, X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal } from "lucide-react"
 import { AnimatedNumber } from "@/components/ui/animatedNumber"
 import { keepPreviousData } from "@tanstack/react-query"
