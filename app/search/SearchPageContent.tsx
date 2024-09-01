@@ -31,20 +31,26 @@ import { useImageSimilarity } from "@/lib/state/similarityStore";
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }) {
     const sidebarOpen = useAdvancedOptions((state) => state.isOpen)
-    const { values } = useSimilarityQuery()
     return (
         <div className="flex w-full h-screen">
             <SideBar />
             <div className={cn('p-4 transition-all duration-300 mx-auto',
                 sidebarOpen ? 'w-full lg:w-1/2 xl:w-2/3 2xl:w-3/4 4xl:w-[80%] 5xl:w-[82%]' : 'w-full'
             )}>
-                {values.item.length > 0 && values.model.length > 0 ?
-                    <SimilarityView sha256={values.item} queryType={values.type} />
-                    :
-                    <SearchView initialQuery={initialQuery} />
-                }
+                <MultiView initialQuery={initialQuery} />
             </div>
         </div>
+    )
+}
+
+export function MultiView({ initialQuery }:
+    { initialQuery: SearchQueryArgs }) {
+    const { values } = useSimilarityQuery()
+    return (
+        values.item.length > 0 && values.model.length > 0 ?
+            <SimilarityView sha256={values.item} queryType={values.type} />
+            :
+            <SearchView initialQuery={initialQuery} />
     )
 }
 
