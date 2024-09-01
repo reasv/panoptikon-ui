@@ -71,7 +71,6 @@ export const useBookmarkCustomNs = create<BookmarksCustom>((set) => ({
 }))
 
 interface ItemDetailFiltersStateState {
-  sidebarTab: number
   text_setters: string[]
   text_languages: string[]
   text_min_confidence: number
@@ -89,7 +88,6 @@ interface ItemDetailFiltersState extends ItemDetailFiltersStateState {
   setMinConfidence: (confidence: number) => void
   setMinLanguageConfidence: (confidence: number) => void
   resetFilters: () => void
-  setSidebarTab: (tab: number) => void
   setTagSetters: (setters: string[]) => void
   setTagNamespaces: (namespaces: string[]) => void
   setTagMinConfidence: (confidence: number) => void
@@ -105,7 +103,6 @@ export const initialDetailFilters = {
   text_min_confidence: 0,
   min_language_confidence: 0,
   text_max_length: 1000,
-  sidebarTab: 0,
   tag_setters: [],
   tag_namespaces: [],
   tag_min_confidence: 0,
@@ -123,9 +120,7 @@ export const useDetailsPane = create(
         set({ tag_min_confidence: confidence }),
       setTagsMaxPerNsSetter: (max: number) =>
         set({ tags_max_per_ns_setter: max }),
-      setSidebarTab: (tab: number) => set({ sidebarTab: tab }),
-      resetFilters: () =>
-        set({ ...initialDetailFilters, sidebarTab: get().sidebarTab }),
+      resetFilters: () => set({ ...initialDetailFilters }),
       setTextSetters: (setters: string[]) => set({ text_setters: setters }),
       setTextLanguages: (languages: string[]) =>
         set({ text_languages: languages }),

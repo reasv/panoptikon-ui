@@ -10,12 +10,11 @@ import { SearchOptions } from "./AdvancedSearchOptions"
 import { DirectionAwareTabs } from "@/components/ui/direction-aware-tabs"
 import { ItemDetails } from "./details/ItemDetails"
 import { SimilarItemsSideBar } from "./similarity/SimilarItemsSideBar"
-import { useSideBarOpen } from "@/lib/state/sideBar"
+import { useSideBarOpen, useSideBarTab } from "@/lib/state/sideBar"
 
 function SideBarContent() {
-    const [sidebarOpen, setSideBarOpen] = useSideBarOpen()
-    const currentTab = useDetailsPane((state) => state.sidebarTab)
-    const setCurrentTab = useDetailsPane((state) => state.setSidebarTab)
+    const [_, setSideBarOpen] = useSideBarOpen()
+    const [tab, setTab] = useSideBarTab()
     const tabs = [
         {
             id: 0,
@@ -46,8 +45,8 @@ function SideBarContent() {
             </Button>
             <DirectionAwareTabs
                 tabs={tabs}
-                currentTab={currentTab}
-                onChange={setCurrentTab}
+                currentTab={tab}
+                onChange={setTab}
             />
         </>
     )

@@ -2,11 +2,10 @@
 import { BookOpen, Book } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { Button } from './ui/button'
-import { useDetailsPane } from "@/lib/state/zust"
 import { components } from "@/lib/panoptikon"
 import { Toggle } from "./ui/toggle"
 import { useItemSelection } from "@/lib/state/itemSelection"
-import { useSideBarOpen } from "@/lib/state/sideBar"
+import { useSideBarOpen, useSideBarTab } from "@/lib/state/sideBar"
 
 export function itemEquals(a: components["schemas"]["FileSearchResult"], b: components["schemas"]["FileSearchResult"]) {
     return a.sha256 === b.sha256 && a.path === b.path
@@ -20,10 +19,9 @@ export function OpenDetailsButton({
 }) {
     const { toast } = useToast()
     const [sidebarOpen, setSideBarOpen] = useSideBarOpen()
-    const setDetailsPane = useDetailsPane((state) => state.setSidebarTab)
+    const [tab, setTab] = useSideBarTab()
     const setSelected = useItemSelection((state) => state.setItem)
-    const sidebarTab = useDetailsPane((state) => state.sidebarTab)
-    const detailsPaneOpen = (sidebarTab === 1) && sidebarOpen
+    const detailsPaneOpen = (tab === 1) && sidebarOpen
     const selectedItem = useItemSelection((state) => state.getSelected())
 
     const itemDetailsOpen = !!item && !!selectedItem && itemEquals(selectedItem, item) && detailsPaneOpen
@@ -35,7 +33,7 @@ export function OpenDetailsButton({
             }
         }
         setSideBarOpen(true)
-        setDetailsPane(1)
+        setTab(1)
         toast({
             title: "Opening File Details",
             description: "You can find all data associated with the item here",
