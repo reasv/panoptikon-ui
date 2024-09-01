@@ -3,7 +3,7 @@ import { $api } from "@/lib/api"
 import Image from 'next/image'
 import { PageSelect } from "@/components/pageselect";
 import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons"
-import { useAdvancedOptions, useDatabase, useInstantSearch, useSearchQuery } from "@/lib/state/zust"
+import { useDatabase, useInstantSearch, useSearchQuery } from "@/lib/state/zust"
 import { Toggle } from "@/components/ui/toggle"
 
 import { Settings, RefreshCw, X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal } from "lucide-react"
@@ -27,10 +27,11 @@ import { useItemSelection } from "@/lib/state/itemSelection";
 import { Mode, SimilarityQueryType, useSearchMode, useSimilarityQuery } from "@/lib/state/similarityQuery";
 import { useImageSimilarity } from "@/lib/state/similarityStore";
 import { Gallery, useGalleryIndex, useGalleryName, useGalleryThumbnail } from "@/lib/state/gallery";
+import { useSideBarOpen } from "@/lib/state/sideBar";
 
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }) {
-    const sidebarOpen = useAdvancedOptions((state) => state.isOpen)
+    const [sidebarOpen, _] = useSideBarOpen()
     return (
         <div className="flex w-full h-screen">
             <SideBar />
@@ -269,8 +270,7 @@ export function SearchViewBar({
     isFetching: boolean
     onRefresh: () => void
 }) {
-    const sidebarOpen = useAdvancedOptions((state) => state.isOpen)
-    const toggleOptions = useAdvancedOptions((state) => state.toggle)
+    const [sidebarOpen, setSideBarOpen] = useSideBarOpen()
     return (
         <div className={cn("mb-4 2xl:mx-auto",
             sidebarOpen ? '2xl:w-2/3' : '2xl:w-1/2'
@@ -278,7 +278,7 @@ export function SearchViewBar({
             <div className="flex gap-2">
                 <Toggle
                     pressed={sidebarOpen}
-                    onClick={toggleOptions}
+                    onClick={() => setSideBarOpen(!sidebarOpen)}
                     title={"Advanced Search Options Are " + (sidebarOpen ? "Open" : "Closed")}
                     aria-label="Toggle Advanced Search Options"
                 >
@@ -299,7 +299,7 @@ export function ResultGrid({
     onImageClick
 }: { results: components["schemas"]["FileSearchResult"][], totalCount: number, onImageClick?: (index?: number) => void }) {
     const dbs = useDatabase((state) => state.getDBs())
-    const sidebarOpen = useAdvancedOptions((state) => state.isOpen)
+    const [sidebarOpen, _] = useSideBarOpen()
     return (
         <div className="border rounded p-2">
             <h2 className="text-xl font-bold p-4 flex items-center justify-left">

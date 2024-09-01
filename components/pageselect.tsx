@@ -8,7 +8,8 @@ import {
     PaginationPrevious,
 } from "@/components/ui/pagination"
 import { useMediaQuery } from "@/hooks/use-media-query";
-import { useAdvancedOptions } from "@/lib/state/zust";
+import { useSideBarOpen } from "@/lib/state/sideBar";
+
 const range = (start: number, end: number) => Array.from({ length: end - start + 1 }, (_, i) => start + i);
 export function PageSelect({
     totalPages,
@@ -19,7 +20,7 @@ export function PageSelect({
     currentPage: number;
     setPage: (page: number) => void;
 }) {
-    const sidebarOpen = useAdvancedOptions((state) => state.isOpen)
+    const [sidebarOpen, _] = useSideBarOpen()
     const isMobile = useMediaQuery("(max-width: 768px)")
     const isTablet = useMediaQuery("(max-width: 1024px)")
     const isSmallDesktop = useMediaQuery("(max-width: 1280px)")

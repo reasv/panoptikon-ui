@@ -2,10 +2,11 @@
 import { BookOpen, Book } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { Button } from './ui/button'
-import { useAdvancedOptions, useDetailsPane } from "@/lib/state/zust"
+import { useDetailsPane } from "@/lib/state/zust"
 import { components } from "@/lib/panoptikon"
 import { Toggle } from "./ui/toggle"
 import { useItemSelection } from "@/lib/state/itemSelection"
+import { useSideBarOpen } from "@/lib/state/sideBar"
 
 export function itemEquals(a: components["schemas"]["FileSearchResult"], b: components["schemas"]["FileSearchResult"]) {
     return a.sha256 === b.sha256 && a.path === b.path
@@ -18,12 +19,11 @@ export function OpenDetailsButton({
     variantButton?: boolean
 }) {
     const { toast } = useToast()
-    const setAdvancedOptions = useAdvancedOptions((state) => state.setOpened)
+    const [sidebarOpen, setSideBarOpen] = useSideBarOpen()
     const setDetailsPane = useDetailsPane((state) => state.setSidebarTab)
     const setSelected = useItemSelection((state) => state.setItem)
-    const advancedOptionsOpen = useAdvancedOptions((state) => state.isOpen)
     const sidebarTab = useDetailsPane((state) => state.sidebarTab)
-    const detailsPaneOpen = (sidebarTab === 1) && advancedOptionsOpen
+    const detailsPaneOpen = (sidebarTab === 1) && sidebarOpen
     const selectedItem = useItemSelection((state) => state.getSelected())
 
     const itemDetailsOpen = !!item && !!selectedItem && itemEquals(selectedItem, item) && detailsPaneOpen
@@ -34,7 +34,7 @@ export function OpenDetailsButton({
                 setSelected(item)
             }
         }
-        setAdvancedOptions(true)
+        setSideBarOpen(true)
         setDetailsPane(1)
         toast({
             title: "Opening File Details",
@@ -43,7 +43,7 @@ export function OpenDetailsButton({
         })
     }
     const closeDetailsPane = () => {
-        setAdvancedOptions(false)
+        setSideBarOpen(false)
     }
     const onClick = () => {
         if (itemDetailsOpen) {

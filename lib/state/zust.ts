@@ -183,18 +183,6 @@ export const useCustomMimes = create(
   )
 )
 
-interface AdvancedOptionsState {
-  isOpen: boolean
-  toggle: () => void
-  setOpened: (value: boolean) => void
-}
-
-export const useAdvancedOptions = create<AdvancedOptionsState>((set) => ({
-  isOpen: false,
-  toggle: () => set((state) => ({ isOpen: !state.isOpen })),
-  setOpened: (value: boolean) => set({ isOpen: value }),
-}))
-
 const instantSearchStorageOptions = {
   name: "instantSearch",
   storage: createJSONStorage<InstantSearchState>(() => persistLocalStorage),

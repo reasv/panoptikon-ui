@@ -2,7 +2,7 @@
 import { SidebarClose } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { useAdvancedOptions, useDetailsPane } from "@/lib/state/zust"
+import { useDetailsPane } from "@/lib/state/zust"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { Drawer, DrawerContent } from "../ui/drawer"
 import { ScrollArea } from "../ui/scroll-area"
@@ -10,9 +10,10 @@ import { SearchOptions } from "./AdvancedSearchOptions"
 import { DirectionAwareTabs } from "@/components/ui/direction-aware-tabs"
 import { ItemDetails } from "./details/ItemDetails"
 import { SimilarItemsSideBar } from "./similarity/SimilarItemsSideBar"
+import { useSideBarOpen } from "@/lib/state/sideBar"
 
 function SideBarContent() {
-    const setOpen = useAdvancedOptions((state) => state.setOpened)
+    const [sidebarOpen, setSideBarOpen] = useSideBarOpen()
     const currentTab = useDetailsPane((state) => state.sidebarTab)
     const setCurrentTab = useDetailsPane((state) => state.setSidebarTab)
     const tabs = [
@@ -40,7 +41,7 @@ function SideBarContent() {
     ]
     return (
         <>
-            <Button title="Close Advanced Options" onClick={() => setOpen(false)} variant="ghost" size="icon">
+            <Button title="Close Advanced Options" onClick={() => setSideBarOpen(false)} variant="ghost" size="icon">
                 <SidebarClose className="h-4 w-4" />
             </Button>
             <DirectionAwareTabs
@@ -54,9 +55,8 @@ function SideBarContent() {
 
 export function SideBar() {
     const isDesktop = useMediaQuery("(min-width: 1024px)")
-    const isOpen = useAdvancedOptions((state) => state.isOpen)
-    const setOpen = useAdvancedOptions((state) => state.setOpened)
-    if (!isOpen) {
+    const [sidebarOpen, setSideBarOpen] = useSideBarOpen()
+    if (!sidebarOpen) {
         return null
     }
     if (isDesktop) {
@@ -69,7 +69,7 @@ export function SideBar() {
         )
     }
     return (
-        <Drawer open={isOpen} onOpenChange={setOpen}>
+        <Drawer open={sidebarOpen} onOpenChange={setSideBarOpen}>
             <DrawerContent>
                 <ScrollArea className="h-svh w-full">
                     <SideBarContent />
