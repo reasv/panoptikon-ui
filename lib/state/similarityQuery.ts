@@ -39,6 +39,9 @@ export const useSimilarityQuery = () =>
       is_page: parseAsInteger.withDefault(1).withOptions({
         clearOnDefault: true,
       }),
+      is_page_size: parseAsInteger.withDefault(10).withOptions({
+        clearOnDefault: true,
+      }),
     },
     {
       history: "push",

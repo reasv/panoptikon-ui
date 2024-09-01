@@ -5,11 +5,33 @@ import { Slider } from "../../ui/slider";
 import { useEffect, useState } from "react";
 import { Button } from "../../ui/button";
 import { PlusCircle, MinusCircle } from "lucide-react";
+import { useSimilarityQuery } from "@/lib/state/similarityQuery";
 
 export function PageSizeSlider() {
     const pageSize = useSearchQuery((state) => state.order_args.page_size)
-    const [pageSizeSlider, setPageSizeSlider] = useState([pageSize])
     const setPageSize = useSearchQuery((state) => state.setPageSize)
+    return (
+        <PageSizeControl pageSize={pageSize} setPageSize={setPageSize} />
+    )
+}
+export function SimilarityPageSizeSlider() {
+    const [query, setQuery] = useSimilarityQuery()
+    const setPageSize = (value: number) => setQuery({ is_page_size: value })
+    return (
+        <PageSizeControl pageSize={query.is_page_size} setPageSize={setPageSize} />
+    )
+}
+
+export function PageSizeControl(
+    {
+        pageSize,
+        setPageSize
+    }: {
+        pageSize: number,
+        setPageSize: (value: number) => void
+    }
+) {
+    const [pageSizeSlider, setPageSizeSlider] = useState([pageSize])
     function updatePageSize() {
         setPageSize(pageSizeSlider[0])
     }

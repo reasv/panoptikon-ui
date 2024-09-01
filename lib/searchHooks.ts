@@ -42,7 +42,7 @@ export function useItemSimilaritySearch() {
         ...similarityQuery,
         setter_name: query.is_model!,
         page: query.is_page,
-        page_size: similarityQuery.page_size,
+        page_size: query.is_page_size,
         full_count: true,
       },
     },
