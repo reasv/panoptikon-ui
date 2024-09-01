@@ -28,7 +28,7 @@ export function ClipItemSimilarity() {
         >
             <CLIPSimilarityFilter setters={clipSetters} clipQuery={clipQuery} setClipQuery={setClipQuery} />
             <div className="mt-4">
-                {selected && clipQuery.setter_name.length > 0 && clipQuery.limit > 0 && (
+                {selected && clipQuery.setter_name.length > 0 && clipQuery.page_size > 0 && (
                     <SimilarItemsView
                         item={selected}
                         query={clipQuery}
@@ -66,8 +66,8 @@ export function CLIPSimilarityFilter({
             </div>
             <ConfidenceFilter
                 label={<span>Max Results Displayed</span>}
-                confidence={clipQuery.limit}
-                setConfidence={(value) => setClipQuery({ ...clipQuery, limit: value })}
+                confidence={clipQuery.page_size}
+                setConfidence={(value) => setClipQuery({ ...clipQuery, page_size: value })}
                 description={<span>'0' disables this similarity query</span>}
                 min={0}
                 max={50}

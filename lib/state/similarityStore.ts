@@ -33,7 +33,8 @@ const initialImageSimilarityState: ImageSimilarityStateState = {
     clip_xmodal: false,
     xmodal_t2t: true,
     xmodal_i2i: true,
-    limit: 6,
+    page_size: 6,
+    page: 1,
     src_text: {
       setter_names: [],
       languages: [],
@@ -50,7 +51,8 @@ const initialImageSimilarityState: ImageSimilarityStateState = {
     clip_xmodal: false,
     xmodal_t2t: true,
     xmodal_i2i: true,
-    limit: 6,
+    page_size: 6,
+    page: 1,
     src_text: {
       setter_names: [],
       languages: [],

@@ -1180,11 +1180,17 @@ export interface components {
              */
             xmodal_i2i: boolean;
             /**
-             * Limit
+             * Page
+             * @description The page number to return
+             * @default 1
+             */
+            page: number;
+            /**
+             * Page Size
              * @description The number of similar items to return
              * @default 10
              */
-            limit: number;
+            page_size: number;
         };
         /** SingleDBInfo */
         SingleDBInfo: {

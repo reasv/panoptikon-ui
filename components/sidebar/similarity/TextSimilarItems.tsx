@@ -29,7 +29,7 @@ export function TextEmbeddingsSimilarity() {
         >
             <TextEmbeddingsSimilarityFilter setters={setters} setTextEmbeddingQuery={setTextEmbeddingQuery} textEmbeddingQuery={textEmbeddingQuery} />
             <div className="mt-4">
-                {selected && textEmbeddingQuery.setter_name.length > 0 && textEmbeddingQuery.limit > 0 && (
+                {selected && textEmbeddingQuery.setter_name.length > 0 && textEmbeddingQuery.page_size > 0 && (
                     <SimilarItemsView
                         item={selected}
                         query={textEmbeddingQuery}
@@ -67,8 +67,8 @@ export function TextEmbeddingsSimilarityFilter({
             </div>
             <ConfidenceFilter
                 label={<span>Max Results Displayed</span>}
-                confidence={textEmbeddingQuery.limit}
-                setConfidence={(value) => setTextEmbeddingQuery({ ...textEmbeddingQuery, limit: value })}
+                confidence={textEmbeddingQuery.page_size}
+                setConfidence={(value) => setTextEmbeddingQuery({ ...textEmbeddingQuery, page_size: value })}
                 description={<span>'0' disables this similarity query</span>}
                 min={0}
                 max={50}
