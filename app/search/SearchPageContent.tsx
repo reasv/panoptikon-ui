@@ -83,7 +83,7 @@ export function MultiSearchView({ initialQuery }:
                     <ResultGrid
                         results={results}
                         totalCount={nResults}
-                        onImageClick={(index) => setIndex(index || null)}
+                        onImageClick={(index) => setIndex(index !== undefined ? index : null)}
                     />
             }
             {
@@ -372,7 +372,6 @@ export function GalleryImageLarge(
         </div>
     )
 }
-
 
 export function GalleryHorizontalScroll({
     items,
