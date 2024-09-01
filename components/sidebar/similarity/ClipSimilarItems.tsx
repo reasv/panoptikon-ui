@@ -10,7 +10,8 @@ import { useImageSimilarity } from "@/lib/state/similarityStore"
 import { useItemSelection } from "@/lib/state/itemSelection"
 
 export function ClipItemSimilarity() {
-    const selected = useItemSelection((state) => state.getSelected())
+    const sha256 = useItemSelection((state) => state.getSelected()?.sha256)
+
     const dbs = useDatabase((state) => state.getDBs())
     const { data } = $api.useQuery("get", "/api/search/stats", {
         params: {
@@ -28,16 +29,17 @@ export function ClipItemSimilarity() {
         >
             <CLIPSimilarityFilter setters={clipSetters} clipQuery={clipQuery} setClipQuery={setClipQuery} />
             <div className="mt-4">
-                {selected && clipQuery.setter_name.length > 0 && clipQuery.page_size > 0 && (
+                {sha256 && clipQuery.setter_name.length > 0 && clipQuery.page_size > 0 && (
                     <SimilarItemsView
                         type="clip"
-                        item={selected}
+                        sha256={sha256}
                         query={clipQuery}
                     />)}
             </div>
         </FilterContainer>
     )
 }
+
 export function CLIPSimilarityFilter({
     setters,
     clipQuery,

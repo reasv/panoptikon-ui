@@ -11,7 +11,7 @@ import { AggregationOptions, SourceTextFilter } from "./CommonFilters"
 import { useItemSelection } from "@/lib/state/itemSelection"
 
 export function TextEmbeddingsSimilarity() {
-    const selected = useItemSelection((state) => state.getSelected())
+    const sha256 = useItemSelection((state) => state.getSelected()?.sha256)
     const dbs = useDatabase((state) => state.getDBs())
     const { data } = $api.useQuery("get", "/api/search/stats", {
         params: {
@@ -29,10 +29,10 @@ export function TextEmbeddingsSimilarity() {
         >
             <TextEmbeddingsSimilarityFilter setters={setters} setTextEmbeddingQuery={setTextEmbeddingQuery} textEmbeddingQuery={textEmbeddingQuery} />
             <div className="mt-4">
-                {selected && textEmbeddingQuery.setter_name.length > 0 && textEmbeddingQuery.page_size > 0 && (
+                {sha256 && textEmbeddingQuery.setter_name.length > 0 && textEmbeddingQuery.page_size > 0 && (
                     <SimilarItemsView
                         type="text-embedding"
-                        item={selected}
+                        sha256={sha256}
                         query={textEmbeddingQuery}
                     />)}
             </div>

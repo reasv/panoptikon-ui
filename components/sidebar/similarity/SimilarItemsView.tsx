@@ -9,11 +9,11 @@ import { useSimilarityQuery } from "@/lib/state/similarityQuery"
 import { useGallery } from "@/lib/state/gallery"
 
 export function SimilarItemsView({
-    item,
+    sha256,
     query,
     type,
 }: {
-    item: components["schemas"]["FileSearchResult"]
+    sha256: string
     query: components["schemas"]["SimilarItemsRequest"]
     type: "clip" | "text-embedding"
 }) {
@@ -24,7 +24,7 @@ export function SimilarItemsView({
                 ...dbs
             },
             path: {
-                sha256: item.sha256,
+                sha256: sha256,
             }
         },
         body: query
@@ -41,14 +41,16 @@ export function SimilarItemsView({
     } = useSimilarityQuery()
 
     const openGallery = useGallery((state) => state.openGallery)
+    const setSelected = useItemSelection((state) => state.setItem)
     const onImageClick = (index: number) => {
         if (!data) return
         pushState((state) => {
-            state.item = item.sha256
+            state.item = sha256
             state.type = type
             state.model = query.setter_name
             state.page = 1
         })
+        setSelected(data.results[index])
         openGallery(index)
     }
     return (
