@@ -19,15 +19,15 @@ import { SearchErrorToast } from "@/components/searchErrorToaster";
 import { cn, getFullFileURL, getLocale, getThumbnailURL } from "@/lib/utils";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { components } from "@/lib/panoptikon";
-import { useGallery } from "@/lib/state/gallery";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { SideBar } from "@/components/sidebar/SideBar";
-import { itemEquals, OpenDetailsButton } from "@/components/OpenFileDetails";
+import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { SearchResultImage } from "@/components/SearchResultImage";
 import { useItemSelection } from "@/lib/state/itemSelection";
 import { useSimilarityQuery } from "@/lib/state/similarityQuery";
 import { useImageSimilarity } from "@/lib/state/similarityStore";
 import Geschichte from 'geschichte/nextjs-app-router'
+import { Gallery, useGalleryIndex, useGalleryName, useGalleryThumbnail } from "@/lib/state/gallery";
 
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }) {
@@ -148,19 +148,21 @@ export function SimilarityResultsView({
     onRefresh: () => void
     isFetching: boolean
 }) {
-    const galleryOpen = useGallery((state) => state.isGalleryOpen)
     const totalPages = (Math.ceil((totalCount || 1) / (pageSize)) || 1) + (results.length > 0 ? 1 : 0) // Add 1 to account for the next page
     // (For similarity search, we don't know if there are more results, so we always show the next page)
+    const [name, _] = useGalleryName()
+    const [index, setIndex] = useGalleryIndex(name)
     return <>
         <SearchViewBar isFetching={isFetching} onRefresh={onRefresh} />
         {
-            (galleryOpen && results.length > 0)
+            (index !== null && results.length > 0)
                 ?
                 <ImageGallery items={results} />
                 :
                 <ResultGrid
                     results={results}
                     totalCount={totalCount}
+                    onImageClick={(index) => setIndex(index || null)}
                 />
         }
         {totalCount > 0 && <PageSelect totalPages={totalPages} currentPage={currentPage} setPage={setPage} />}
@@ -245,18 +247,20 @@ export function SearchResultsView({
     onRefresh: () => void
     isFetching: boolean
 }) {
-    const galleryOpen = useGallery((state) => state.isGalleryOpen)
     const totalPages = Math.ceil((totalCount || 1) / (pageSize)) || 1
+    const [name, _] = useGalleryName()
+    const [index, setIndex] = useGalleryIndex(name)
     return <>
         <SearchViewBar isFetching={isFetching} onRefresh={onRefresh} />
         {
-            (galleryOpen && results.length > 0)
+            (index !== null && name === Gallery.search && results.length > 0)
                 ?
                 <ImageGallery items={results} />
                 :
                 <ResultGrid
                     results={results}
                     totalCount={totalCount}
+                    onImageClick={(index) => setIndex(index || null)}
                 />
         }
         {
@@ -298,7 +302,11 @@ export function SearchViewBar({
         </div>
     )
 }
-export function ResultGrid({ results, totalCount }: { results: components["schemas"]["FileSearchResult"][], totalCount: number }) {
+export function ResultGrid({
+    results,
+    totalCount,
+    onImageClick
+}: { results: components["schemas"]["FileSearchResult"][], totalCount: number, onImageClick?: (index?: number) => void }) {
     const dbs = useDatabase((state) => state.getDBs())
     const sidebarOpen = useAdvancedOptions((state) => state.isOpen)
     return (
@@ -312,7 +320,7 @@ export function ResultGrid({ results, totalCount }: { results: components["schem
                         ('lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4 4xl:grid-cols-5') :
                         ('lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'))}>
                     {results.map((result, index) => (
-                        <SearchResultImage key={result.path} result={result} index={index} dbs={dbs} />
+                        <SearchResultImage key={result.path} result={result} index={index} dbs={dbs} onImageClick={onImageClick} />
                     ))}
                 </div>
             </ScrollArea>
@@ -321,23 +329,24 @@ export function ResultGrid({ results, totalCount }: { results: components["schem
 }
 
 export function ImageGallery({
-    items
+    items,
 }: {
     items: components["schemas"]["FileSearchResult"][]
 }) {
-    const closeGallery = useGallery((state) => state.closeGallery)
-    const nextImage = useGallery((state) => state.nextImage)
-    const prevImage = useGallery((state) => state.prevImage)
-    const index = useGallery((state) => state.getImageIndex(items.length))
-    const setThumbnailsOpen = useGallery((state) => state.setThumbnailsOpen)
-    const thumbnailsOpen = useGallery((state) => state.horizontalThumbnails)
+    const [name, _] = useGalleryName()
+    const [qIndex, setIndex] = useGalleryIndex(name)
+    const index = (qIndex || 0) % items.length
+    const nextImage = () => setIndex((index + 1) % items.length)
+    const prevImage = () => setIndex((index - 1) % items.length)
+    const closeGallery = () => setIndex(null)
+
+    const [thumbnailsOpen, setThumbnailsOpen] = useGalleryThumbnail(name)
+
     const setSelectedItem = useItemSelection((state) => state.setItem)
-    const selectedItem = useItemSelection((state) => state.getSelected())
     useEffect(() => {
         setSelectedItem(items[index])
     }, [index, items])
-    // Get the current item, if the selected item is not the same as the current item, set the current item to the selected item
-    // selectedItem && !itemEquals(selectedItem, items[index]) ? selectedItem : items[index]
+
     const currentItem = items[index]
 
     const dateString = getLocale(new Date(currentItem.last_modified))
@@ -348,7 +357,7 @@ export function ImageGallery({
                     <BookmarkBtn sha256={currentItem.sha256} buttonVariant />
                     <OpenFile sha256={currentItem.sha256} path={currentItem.path} buttonVariant />
                     <OpenFolder sha256={currentItem.sha256} path={currentItem.path} buttonVariant />
-                    <Button onClick={() => prevImage(items.length)} variant="ghost" size="icon" title="Previous Image">
+                    <Button onClick={() => prevImage()} variant="ghost" size="icon" title="Previous Image">
                         <ArrowBigLeft className="h-4 w-4" />
                     </Button>
 
@@ -360,7 +369,7 @@ export function ImageGallery({
                     </p>
                 </div>
                 <div className="flex items-center">
-                    <Button onClick={() => nextImage(items.length)} variant="ghost" size="icon" title="Next Image">
+                    <Button onClick={() => nextImage()} variant="ghost" size="icon" title="Next Image">
                         <ArrowBigRight className="h-4 w-4" />
                     </Button>
                     <OpenDetailsButton item={currentItem} />
@@ -377,21 +386,33 @@ export function ImageGallery({
                     </Button>
                 </div>
             </div>
-            <GalleryImageLarge item={currentItem} galleryLength={items.length} />
+            <GalleryImageLarge
+                item={currentItem}
+                prevImage={prevImage}
+                nextImage={nextImage}
+                thumbnailsOpen={thumbnailsOpen}
+            />
             {thumbnailsOpen ? <GalleryHorizontalScroll items={items} /> : null}
         </div>
     );
 }
 
 export function GalleryImageLarge(
-    { item, galleryLength }: { item: components["schemas"]["FileSearchResult"], galleryLength: number }
+    {
+        item,
+        thumbnailsOpen,
+        prevImage,
+        nextImage,
+    }: {
+        item: components["schemas"]["FileSearchResult"],
+        prevImage: () => void,
+        nextImage: () => void,
+        thumbnailsOpen: boolean
+    }
 ) {
-    const nextImage = useGallery((state) => state.nextImage)
-    const prevImage = useGallery((state) => state.prevImage)
     const dbs = useDatabase((state) => state.getDBs())
     const thumbnailURL = getThumbnailURL(item.sha256, dbs)
     const fileURL = getFullFileURL(item.sha256, dbs)
-    const thumbnailsOpen = useGallery((state) => state.horizontalThumbnails)
 
     const handleImageClick = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
         const { clientX, currentTarget } = e
@@ -399,9 +420,9 @@ export function GalleryImageLarge(
         const { left, right } = currentTarget.getBoundingClientRect()
         const middle = (left + right) / 2
         if (clientX > middle) {
-            nextImage(galleryLength)
+            nextImage()
         } else {
-            prevImage(galleryLength)
+            prevImage()
         }
     }
 
@@ -458,7 +479,12 @@ export function GalleryHorizontalScroll({
             <ScrollAreaPrimitive.Viewport ref={viewportRef} className="h-full w-full rounded-[inherit]">
                 <div className="flex w-max space-x-4 p-4">
                     {items.map((item, i) => (
-                        <HorizontalScrollElement key={item.path} item={item} ownIndex={i} nItems={items.length} />
+                        <HorizontalScrollElement
+                            key={item.path}
+                            item={item}
+                            ownIndex={i}
+                            nItems={items.length}
+                        />
                     ))}
                 </div>
             </ScrollAreaPrimitive.Viewport>
@@ -475,18 +501,18 @@ export function HorizontalScrollElement({
 }: {
     item: components["schemas"]["FileSearchResult"],
     ownIndex: number,
-    nItems: number
+    nItems: number,
 }) {
-    const setIndex = useGallery((state) => state.setIndex)
+    const [name, _] = useGalleryName()
+    const [qIndex, setIndex] = useGalleryIndex(name)
+    const index = (qIndex || 0) % nItems
 
     const dbs = useDatabase((state) => state.getDBs())
-    const index = useGallery((state) => state.getImageIndex(nItems))
-    // const selectedItem = useItemSelection((state) => state.getSelected())
-    const selected = ownIndex === index // && (!selectedItem || itemEquals(item, selectedItem))
+    const selected = ownIndex === index
     const setSelected = useItemSelection((state) => state.setItem)
     const thumbnailURL = getThumbnailURL(item.sha256, dbs)
     const onClick = () => {
-        setIndex(ownIndex)
+        setIndex(ownIndex % nItems)
         setSelected(item)
     }
     return (

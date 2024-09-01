@@ -4,7 +4,6 @@ import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/componen
 import { useCallback, useEffect, useRef } from "react";
 import { cn, getFullFileURL, getLocale, getThumbnailURL } from "@/lib/utils";
 import { components } from "@/lib/panoptikon";
-import { useGallery } from "@/lib/state/gallery";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
 
 export function SearchResultImage({
@@ -20,19 +19,16 @@ export function SearchResultImage({
     dbs: { index_db: string | null, user_data_db: string | null }
     imageClassName?: string
     imageContainerClassName?: string
-    onImageClick?: () => void
+    onImageClick?: (index?: number) => void
 }) {
-    const openGallery = useGallery((state) => state.openGallery)
     const fileUrl = getFullFileURL(result.sha256, dbs)
     const thumbnailUrl = getThumbnailURL(result.sha256, dbs)
     const dateString = getLocale(new Date(result.last_modified))
     const onClick = useCallback(() => {
         if (onImageClick) {
-            onImageClick()
-        } else {
-            openGallery(index)
+            onImageClick(index)
         }
-    }, [onImageClick, openGallery, index])
+    }, [onImageClick, index])
     return (
         <div className="border rounded p-2">
             <div className="overflow-hidden relative w-full pb-full mb-2 group">

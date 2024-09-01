@@ -6,7 +6,7 @@ import { keepPreviousData } from "@tanstack/react-query"
 import { SearchResultImage } from "@/components/SearchResultImage"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { useSimilarityQuery } from "@/lib/state/similarityQuery"
-import { useGallery } from "@/lib/state/gallery"
+import { Gallery, useGalleryIndex, useGalleryName } from "@/lib/state/gallery"
 
 export function SimilarItemsView({
     sha256,
@@ -40,8 +40,9 @@ export function SimilarItemsView({
         createQueryString,
     } = useSimilarityQuery()
 
-    const openGallery = useGallery((state) => state.openGallery)
     const setSelected = useItemSelection((state) => state.setItem)
+    const [name, setName] = useGalleryName()
+    const [index, setIndex] = useGalleryIndex(Gallery.similarity)
     const onImageClick = (index: number) => {
         if (!data) return
         pushState((state) => {
@@ -50,8 +51,10 @@ export function SimilarItemsView({
             state.model = query.setter_name
             state.page = 1
         })
+        setName(Gallery.similarity)
+        setIndex(index)
         setSelected(data.results[index])
-        openGallery(index)
+
     }
     return (
         <div className="mt-4">

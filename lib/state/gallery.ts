@@ -1,34 +1,40 @@
-import { create } from "zustand"
+import {
+  parseAsBoolean,
+  parseAsInteger,
+  parseAsString,
+  parseAsStringEnum,
+  useQueryState,
+} from "nuqs"
 
-interface GalleryState {
-  isGalleryOpen: boolean
-  selectedImageIndex: number
-  horizontalThumbnails: boolean
-  openGallery: (index: number) => void
-  closeGallery: () => void
-  nextImage: (maxIndex: number) => void
-  prevImage: (maxIndex: number) => void
-  setIndex: (index: number) => void
-  setThumbnailsOpen: (open: boolean) => void
-  getImageIndex: (maxIndex: number) => number
+enum Gallery {
+  search = "sg",
+  similarity = "isg",
 }
 
-export const useGallery = create<GalleryState>((set, get) => ({
-  isGalleryOpen: false,
-  selectedImageIndex: 0,
-  horizontalThumbnails: true,
-  getImageIndex: (maxIndex) => get().selectedImageIndex! % maxIndex,
-  setThumbnailsOpen: (open) => set({ horizontalThumbnails: open }),
-  openGallery: (index) =>
-    set({ isGalleryOpen: true, selectedImageIndex: index }),
-  closeGallery: () => set({ isGalleryOpen: false, selectedImageIndex: 0 }),
-  nextImage: (maxIndex) =>
-    set((state) => ({
-      selectedImageIndex: (state.selectedImageIndex! + 1) % maxIndex,
-    })),
-  prevImage: (maxIndex) =>
-    set((state) => ({
-      selectedImageIndex: (state.selectedImageIndex! - 1 + maxIndex) % maxIndex,
-    })),
-  setIndex: (index) => set({ selectedImageIndex: index }),
-}))
+const useGalleryName = () =>
+  useQueryState(
+    `g`,
+    parseAsStringEnum<Gallery>(Object.values(Gallery))
+      .withDefault(Gallery.search)
+      .withOptions({
+        history: "push",
+      })
+  )
+
+const useGalleryIndex = (name: Gallery) =>
+  useQueryState(
+    `${name}.gi`,
+    parseAsInteger.withOptions({
+      history: "push",
+    })
+  )
+
+const useGalleryThumbnail = (name: Gallery) =>
+  useQueryState(
+    `${name}.gt`,
+    parseAsBoolean.withDefault(true).withOptions({
+      clearOnDefault: true,
+    })
+  )
+
+export { useGalleryIndex, useGalleryThumbnail, useGalleryName, Gallery }
