@@ -29,6 +29,21 @@ import { useItemSelection } from "@/lib/state/itemSelection";
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }
 ) {
+    const sidebarOpen = useAdvancedOptions((state) => state.isOpen)
+    return (
+        <div className="flex w-full h-screen">
+            <SideBar />
+            <div className={cn('p-4 transition-all duration-300 mx-auto',
+                sidebarOpen ? 'w-full lg:w-1/2 xl:w-2/3 2xl:w-3/4 4xl:w-[80%] 5xl:w-[82%]' : 'w-full'
+            )}>
+                <SearchView initialQuery={initialQuery} />
+            </div>
+        </div>
+    );
+}
+
+export function SearchView({ initialQuery }:
+    { initialQuery: SearchQueryArgs }) {
     const isClient = typeof window !== "undefined"
     const searchQuery = isClient ? useSearchQuery((state) => state.getSearchQuery()) : initialQuery.body
     const dbs = isClient ? useDatabase((state) => state.getDBs()) : initialQuery.params.query
@@ -73,27 +88,62 @@ export function SearchPageContent({ initialQuery }:
     }, [page])
 
     const galleryOpen = useGallery((state) => state.isGalleryOpen)
-    const sidebarOpen = useAdvancedOptions((state) => state.isOpen)
     return (
-        <div className="flex w-full h-screen">
-            <SideBar />
-            <div className={cn('p-4 transition-all duration-300 mx-auto',
-                sidebarOpen ? 'w-full lg:w-1/2 xl:w-2/3 2xl:w-3/4 4xl:w-[80%] 5xl:w-[82%]' : 'w-full'
-            )}>
-                <SearchErrorToast isError={isError} error={error} />
-                <SearchViewBar isFetching={isFetching} onRefresh={onRefresh} />
-                {data && (
-                    <ResultsView
-                        results={data?.results || []}
-                        totalCount={nResults}
-                        pageSize={pageSize}
-                        currentPage={page}
-                        setPage={setPage}
-                        galleryOpen={galleryOpen}
-                    />)}
-            </div>
-        </div>
-    );
+        <>
+            <SearchErrorToast isError={isError} error={error} />
+            {data && (
+                <SearchResultsView
+                    results={data?.results || []}
+                    totalCount={nResults}
+                    pageSize={pageSize}
+                    currentPage={page}
+                    setPage={setPage}
+                    galleryOpen={galleryOpen}
+                    onRefresh={onRefresh}
+                    isFetching={isFetching}
+                />)}
+        </>
+    )
+}
+
+export function SearchResultsView({
+    results,
+    totalCount,
+    pageSize,
+    currentPage,
+    setPage,
+    galleryOpen,
+    onRefresh,
+    isFetching
+}: {
+    results: components["schemas"]["FileSearchResult"][]
+    totalCount: number
+    pageSize: number
+    currentPage: number
+    setPage: (page: number) => void
+    galleryOpen: boolean
+    onRefresh: () => void
+    isFetching: boolean
+}) {
+    const totalPages = Math.ceil((totalCount || 1) / (pageSize)) || 1
+    return <>
+        <SearchViewBar isFetching={isFetching} onRefresh={onRefresh} />
+        {
+            (galleryOpen && results.length > 0)
+                ?
+                <ImageGallery items={results} />
+                :
+                <ResultGrid
+                    results={results}
+                    totalCount={totalCount}
+                />
+        }
+        {
+            totalCount > pageSize && (
+                <PageSelect totalPages={totalPages} currentPage={currentPage} setPage={setPage} />
+            )
+        }
+    </>
 }
 
 export function SearchViewBar({
@@ -127,41 +177,6 @@ export function SearchViewBar({
         </div>
     )
 }
-export function ResultsView({
-    results,
-    totalCount,
-    pageSize,
-    currentPage,
-    setPage,
-    galleryOpen
-}: {
-    results: components["schemas"]["FileSearchResult"][]
-    totalCount: number
-    pageSize: number
-    currentPage: number
-    setPage: (page: number) => void
-    galleryOpen: boolean
-}) {
-    const totalPages = Math.ceil((totalCount || 1) / (pageSize)) || 1
-    return <>
-        {
-            (galleryOpen && results.length > 0)
-                ?
-                <ImageGallery items={results} />
-                :
-                <ResultGrid
-                    results={results}
-                    totalCount={totalCount}
-                />
-        }
-        {
-            totalCount > pageSize && (
-                <PageSelect totalPages={totalPages} currentPage={currentPage} setPage={setPage} />
-            )
-        }
-    </>
-}
-
 export function ResultGrid({ results, totalCount }: { results: components["schemas"]["FileSearchResult"][], totalCount: number }) {
     const dbs = useDatabase((state) => state.getDBs())
     const sidebarOpen = useAdvancedOptions((state) => state.isOpen)
