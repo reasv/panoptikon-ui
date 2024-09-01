@@ -73,8 +73,7 @@ export function MultiSearchView({ initialQuery }:
     const results = data?.results || []
     return (
         <>
-            <SearchErrorToast isError={isError} error={error} />
-
+            <SearchErrorToast noFtsErrors={mode === Mode.ItemSimilarity} isError={isError} error={error} />
             <SearchViewBar isFetching={isFetching} onRefresh={onRefresh} />
             {
                 (index !== null && results.length > 0)
