@@ -1,13 +1,13 @@
 "use client"
 import { $api } from "@/lib/api"
-import { useDatabase } from "@/lib/state/zust"
+import { } from "@/lib/state/zust"
 import { Label } from "../../ui/label"
 import { ComboBoxResponsive } from "../../combobox";
+import { useSelectedDBs } from "@/lib/state/database";
 
 export function SwitchDB() {
     const { data } = $api.useQuery("get", "/api/db")
-    const { index_db } = useDatabase((state) => state.getDBs())
-    const setIndexDB = useDatabase((state) => state.setIndexDB)
+    const [{ index_db }, setDBs] = useSelectedDBs()
     return (
         <>
             <div className="flex flex-row items-center justify-between rounded-lg border p-4">
@@ -23,7 +23,9 @@ export function SwitchDB() {
                     <ComboBoxResponsive
                         options={data?.index.all.map((db) => ({ value: db, label: db })) || []}
                         currentValue={index_db ? index_db : data?.index.current || null}
-                        onChangeValue={(v) => setIndexDB(v)}
+                        onChangeValue={(v) => setDBs({
+                            index_db: v,
+                        })}
                         placeholder="Search in..."
                     />
                 </div>

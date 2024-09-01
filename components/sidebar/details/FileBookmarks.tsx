@@ -1,6 +1,6 @@
 "use client"
 import { $api } from "@/lib/api"
-import { useBookmarkCustomNs, useBookmarkNs, useDatabase } from "@/lib/state/zust"
+import { useBookmarkCustomNs, useBookmarkNs, } from "@/lib/state/zust"
 import { Input } from "../../ui/input";
 import { useState } from "react";
 import { Plus } from "lucide-react";
@@ -10,13 +10,14 @@ import { FilterContainer } from "../options/FilterContainer";
 import { components } from "@/lib/panoptikon";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/components/ui/use-toast";
+import { useSelectedDBs } from "@/lib/state/database";
 
 export function FileBookmarks({
     item,
 }: {
     item: components["schemas"]["FileSearchResult"]
 }) {
-    const dbs = useDatabase((state) => state.getDBs())
+    const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/bookmarks/ns", {
         params: {
             query: dbs

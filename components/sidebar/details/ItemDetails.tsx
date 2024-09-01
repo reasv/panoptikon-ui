@@ -1,6 +1,6 @@
 "use client"
 
-import { useDatabase, useDetailsPane } from "@/lib/state/zust"
+import { useDetailsPane } from "@/lib/state/zust"
 import { FilterContainer } from "../options/FilterContainer"
 import { components } from "@/lib/panoptikon"
 import { MultiBoxResponsive } from "@/components/multiCombobox"
@@ -14,6 +14,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { FileBookmarks } from "./FileBookmarks"
 import { ItemFileDetails } from "./ItemFileDetails"
 import { useItemSelection } from "@/lib/state/itemSelection"
+import { useSelectedDBs } from "@/lib/state/database"
 
 export function ItemDetails() {
     const selected = useItemSelection((state) => state.getSelected())
@@ -57,7 +58,7 @@ function ExtractedText({
 }: {
     item: components["schemas"]["FileSearchResult"] | null
 }) {
-    const dbs = useDatabase((state) => state.getDBs())
+    const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/search/stats", { params: { query: dbs, } })
 
     const textSetters = ["*", ...data?.setters.filter((s) => s[0] === "text").map((s) => s[1]) || []]
@@ -167,7 +168,7 @@ function ExtractedTextList(
         maxLength: number
     }
 ) {
-    const dbs = useDatabase((state) => state.getDBs())
+    const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/items/text/{sha256}", {
         params: {
             path: {
@@ -226,7 +227,7 @@ function ItemTagDetails({
 }: {
     item: components["schemas"]["FileSearchResult"] | null
 }) {
-    const dbs = useDatabase((state) => state.getDBs())
+    const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/search/stats", { params: { query: dbs, } })
 
     const tagSetters = ["*", ...data?.setters.filter((s) => s[0] === "tags").map((s) => s[1]) || []]
@@ -326,7 +327,7 @@ function ItemTags(
         maxTagsPerNsSetter: number
     }
 ) {
-    const dbs = useDatabase((state) => state.getDBs())
+    const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/items/tags/{sha256}", {
         params: {
             path: {

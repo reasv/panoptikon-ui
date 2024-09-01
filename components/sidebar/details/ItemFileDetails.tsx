@@ -1,19 +1,20 @@
 "use client"
 import { $api } from "@/lib/api"
-import { useDatabase } from "@/lib/state/zust"
+import { } from "@/lib/state/zust"
 
 import { FilterContainer } from "../options/FilterContainer";
 import { components } from "@/lib/panoptikon";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons";
 import { getFullFileURL, getLocale, prettyPrintBytes, prettyPrintVideoDuration } from "@/lib/utils";
+import { useSelectedDBs } from "@/lib/state/database";
 
 export function ItemFileDetails({
     item,
 }: {
     item: components["schemas"]["FileSearchResult"]
 }) {
-    const dbs = useDatabase((state) => state.getDBs())
+    const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/items/item/{sha256}", {
         params: {
             path: {

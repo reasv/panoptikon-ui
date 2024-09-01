@@ -1,5 +1,5 @@
 
-import { useDatabase } from "@/lib/state/zust"
+import { } from "@/lib/state/zust"
 import { FilterContainer } from "../options/FilterContainer"
 import { $api } from "@/lib/api"
 import { ConfidenceFilter } from "../options/confidenceFilter"
@@ -7,6 +7,7 @@ import { ComboBoxResponsive } from "@/components/combobox"
 import { MultiBoxResponsive } from "@/components/multiCombobox"
 import { Switch } from "@/components/ui/switch"
 import { components } from "@/lib/panoptikon"
+import { useSelectedDBs } from "@/lib/state/database"
 
 export function SwitchOption({
     label,
@@ -88,7 +89,7 @@ export function SourceTextFilter({
     textFilters: components["schemas"]["TextFilter"]
     setTextFilters: (filter: components["schemas"]["TextFilter"]) => void
 }) {
-    const dbs = useDatabase((state) => state.getDBs())
+    const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/search/stats", { params: { query: dbs, } })
     const textSetters = ["*", ...data?.setters.filter((s) => s[0] === "text").map((s) => s[1]) || []]
     const setterOptions = textSetters.map((setter) => ({ value: setter, label: setter === "*" ? "All Text Sources" : setter }))

@@ -1,6 +1,6 @@
 "use client"
 import { $api } from "@/lib/api"
-import { useDatabase, useSearchQuery } from "@/lib/state/zust"
+import { useSearchQuery } from "@/lib/state/zust"
 import { Label } from "../../ui/label"
 import { Switch } from "../../ui/switch";
 import { ComboBoxResponsive } from "../../combobox";
@@ -10,6 +10,7 @@ import { Slider } from "../../ui/slider";
 import { ReactNode, useEffect, useState } from "react";
 import { FilterContainer } from "./FilterContainer";
 import { ConfidenceFilter } from "./confidenceFilter";
+import { useSelectedDBs } from "@/lib/state/database";
 
 export function AnyTextFilter() {
     const anyTextQuery = useSearchQuery((state) => state.any_text.query)
@@ -92,7 +93,7 @@ function AnyTextPathFilter() {
 }
 
 function AnyTextETFilter() {
-    const dbs = useDatabase((state) => state.getDBs())
+    const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/search/stats", {
         params: {
             query: dbs

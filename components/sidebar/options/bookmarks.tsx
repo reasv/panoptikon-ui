@@ -1,6 +1,6 @@
 "use client"
 import { $api } from "@/lib/api"
-import { useBookmarkCustomNs, useBookmarkNs, useDatabase } from "@/lib/state/zust"
+import { useBookmarkCustomNs, useBookmarkNs, } from "@/lib/state/zust"
 import { Label } from "../../ui/label"
 import { Input } from "../../ui/input";
 import { useState } from "react";
@@ -8,9 +8,10 @@ import { Plus, Bookmark } from "lucide-react";
 import { Button } from "../../ui/button";
 import { ComboBoxResponsive } from "../../combobox";
 import { Toggle } from "@/components/ui/toggle";
+import { useSelectedDBs } from "@/lib/state/database";
 
 export function SwitchBookmarkNs() {
-    const dbs = useDatabase((state) => state.getDBs())
+    const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/bookmarks/ns", {
         params: {
             query: dbs

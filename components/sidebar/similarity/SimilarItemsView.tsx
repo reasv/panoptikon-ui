@@ -1,5 +1,5 @@
 
-import { useDatabase } from "@/lib/state/zust"
+import { } from "@/lib/state/zust"
 import { components } from "@/lib/panoptikon"
 import { $api } from "@/lib/api"
 import { keepPreviousData } from "@tanstack/react-query"
@@ -7,6 +7,7 @@ import { SearchResultImage } from "@/components/SearchResultImage"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { Mode, SimilarityQueryType, useSearchMode, useSimilarityQuery } from "@/lib/state/similarityQuery"
 import { Gallery, useGalleryIndex, useGalleryName } from "@/lib/state/gallery"
+import { useSelectedDBs } from "@/lib/state/database"
 
 export function SimilarItemsView({
     sha256,
@@ -17,7 +18,7 @@ export function SimilarItemsView({
     query: components["schemas"]["SimilarItemsRequest"]
     type: SimilarityQueryType
 }) {
-    const dbs = useDatabase((state) => state.getDBs())
+    const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("post", "/api/search/similar/{sha256}", {
         params: {
             query: {

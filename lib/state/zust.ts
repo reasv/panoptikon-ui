@@ -3,40 +3,6 @@ import { components } from "../panoptikon"
 import { createJSONStorage, persist } from "zustand/middleware"
 import { persistLocalStorage, compactUrlOnlyStorage } from "./store"
 
-interface Database {
-  index_db: string | null
-  user_data_db: string | null
-  setIndexDB: (db: string | null) => void
-  setUserDataDB: (db: string | null) => void
-  getDBs: () => { index_db: string | null; user_data_db: string | null }
-}
-
-const dbStorageOptions = {
-  name: "db",
-  storage: createJSONStorage<Database>(() => compactUrlOnlyStorage),
-}
-export const initialDBOpts = {
-  index_db: null,
-  user_data_db: null,
-}
-export const useDatabase = create(
-  persist<Database>(
-    (set, get) => ({
-      index_db: null,
-      user_data_db: null,
-      setIndexDB: (db: string | null) => set({ index_db: db }),
-      setUserDataDB: (db: string | null) => set({ user_data_db: db }),
-      getDBs: () => {
-        return {
-          index_db: get().index_db,
-          user_data_db: get().user_data_db,
-        }
-      },
-    }),
-    dbStorageOptions
-  )
-)
-
 const nsStorageOptions = {
   name: "nsOpts",
   storage: createJSONStorage<BookmarkNs>(() => persistLocalStorage),

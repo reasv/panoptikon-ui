@@ -1,4 +1,4 @@
-import { useDatabase } from "@/lib/state/zust"
+import { } from "@/lib/state/zust"
 import { FilterContainer } from "../options/FilterContainer"
 import { $api } from "@/lib/api"
 import { ConfidenceFilter } from "../options/confidenceFilter"
@@ -9,11 +9,12 @@ import { AggregationOptions, SourceTextFilter, SwitchOption } from "./CommonFilt
 import { useImageSimilarity } from "@/lib/state/similarityStore"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { SimilarityQueryType } from "@/lib/state/similarityQuery"
+import { useSelectedDBs } from "@/lib/state/database"
 
 export function ClipItemSimilarity() {
     const sha256 = useItemSelection((state) => state.getSelected()?.sha256)
 
-    const dbs = useDatabase((state) => state.getDBs())
+    const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/search/stats", {
         params: {
             query: dbs

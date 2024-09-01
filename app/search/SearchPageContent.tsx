@@ -3,7 +3,7 @@ import { $api } from "@/lib/api"
 import Image from 'next/image'
 import { PageSelect } from "@/components/pageselect";
 import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons"
-import { useDatabase, useInstantSearch, useSearchQuery } from "@/lib/state/zust"
+import { useInstantSearch, useSearchQuery } from "@/lib/state/zust"
 import { Toggle } from "@/components/ui/toggle"
 
 import { Settings, RefreshCw, X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal } from "lucide-react"
@@ -28,6 +28,7 @@ import { Mode, SimilarityQueryType, useSearchMode, useSimilarityQuery } from "@/
 import { useImageSimilarity } from "@/lib/state/similarityStore";
 import { Gallery, useGalleryIndex, useGalleryName, useGalleryThumbnail } from "@/lib/state/gallery";
 import { useSideBarOpen } from "@/lib/state/sideBar";
+import { useSelectedDBs } from "@/lib/state/database";
 
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }) {
@@ -58,7 +59,7 @@ export function MultiView({ initialQuery }:
 
 export function SimilarityView({ sha256, queryType }: { sha256: string, queryType: SimilarityQueryType }) {
     const [query, setQuery] = useSimilarityQuery()
-    const dbs = useDatabase((state) => state.getDBs())
+    const [dbs, ___] = useSelectedDBs()
     const similarityQuery = useImageSimilarity(
         (state) =>
             queryType == "clip" ?
@@ -165,7 +166,7 @@ export function SearchView({ initialQuery }:
     { initialQuery: SearchQueryArgs }) {
     const isClient = typeof window !== "undefined"
     const searchQuery = isClient ? useSearchQuery((state) => state.getSearchQuery()) : initialQuery.body
-    const dbs = isClient ? useDatabase((state) => state.getDBs()) : initialQuery.params.query
+    const dbs = isClient ? useSelectedDBs()[0] : initialQuery.params.query
     const setPage = useSearchQuery((state) => state.setPage)
     const page = useSearchQuery((state) => state.order_args.page)
     const pageSize = useSearchQuery((state) => state.order_args.page_size)
@@ -298,7 +299,8 @@ export function ResultGrid({
     totalCount,
     onImageClick
 }: { results: components["schemas"]["FileSearchResult"][], totalCount: number, onImageClick?: (index?: number) => void }) {
-    const dbs = useDatabase((state) => state.getDBs())
+    const [dbs, __] = useSelectedDBs()
+
     const [sidebarOpen, _] = useSideBarOpen()
     return (
         <div className="border rounded p-2">
@@ -401,7 +403,7 @@ export function GalleryImageLarge(
         thumbnailsOpen: boolean
     }
 ) {
-    const dbs = useDatabase((state) => state.getDBs())
+    const [dbs, ___] = useSelectedDBs()
     const thumbnailURL = getThumbnailURL(item.sha256, dbs)
     const fileURL = getFullFileURL(item.sha256, dbs)
 
@@ -498,7 +500,7 @@ export function HorizontalScrollElement({
     const [qIndex, setIndex] = useGalleryIndex(name)
     const index = (qIndex || 0) % nItems
 
-    const dbs = useDatabase((state) => state.getDBs())
+    const [dbs, __] = useSelectedDBs()
     const selected = ownIndex === index
     const setSelected = useItemSelection((state) => state.setItem)
     const thumbnailURL = getThumbnailURL(item.sha256, dbs)

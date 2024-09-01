@@ -1,12 +1,13 @@
 "use client"
 import { $api } from "@/lib/api";
-import { useBookmarkNs, useDatabase } from "@/lib/state/zust";
+import { useBookmarkNs, } from "@/lib/state/zust";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/components/ui/use-toast"
 import { File, FolderOpen, BookmarkPlus, BookmarkMinus, BookmarkX } from "lucide-react"
 import { Button } from "./ui/button";
 import { Toggle } from "./ui/toggle";
 import { cn } from "@/lib/utils";
+import { useSelectedDBs } from "@/lib/state/database";
 export const BookmarkBtn = (
     {
         sha256,
@@ -16,7 +17,7 @@ export const BookmarkBtn = (
         buttonVariant?: boolean;
     }
 ) => {
-    const query = useDatabase((state) => state.getDBs());
+    const query = useSelectedDBs()[0];
     const namespace = useBookmarkNs((state) => state.namespace);
     const params = {
         path: { namespace, sha256 },
@@ -150,7 +151,7 @@ export const OpenFile = (
         buttonVariant?: boolean;
     }
 ) => {
-    const query = useDatabase((state) => state.getDBs());
+    const query = useSelectedDBs()[0];
     const { mutate } = $api.useMutation(
         "post",
         "/api/open/file/{sha256}",
@@ -218,7 +219,7 @@ export const OpenFolder = (
         buttonVariant?: boolean;
     }
 ) => {
-    const query = useDatabase((state) => state.getDBs());
+    const query = useSelectedDBs()[0];
     const { mutate } = $api.useMutation(
         "post",
         "/api/open/folder/{sha256}",
