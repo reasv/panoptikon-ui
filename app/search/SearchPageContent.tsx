@@ -72,9 +72,8 @@ export function SearchPageContent({ initialQuery }:
         }
     }, [page])
 
-    const toggleOptions = useAdvancedOptions((state) => state.toggle)
-    const sidebarOpen = useAdvancedOptions((state) => state.isOpen)
     const galleryOpen = useGallery((state) => state.isGalleryOpen)
+    const sidebarOpen = useAdvancedOptions((state) => state.isOpen)
     return (
         <div className="flex w-full h-screen">
             <SideBar />
@@ -82,25 +81,7 @@ export function SearchPageContent({ initialQuery }:
                 sidebarOpen ? 'w-full lg:w-1/2 xl:w-2/3 2xl:w-3/4 4xl:w-[80%] 5xl:w-[82%]' : 'w-full'
             )}>
                 <SearchErrorToast isError={isError} error={error} />
-                <div className={cn("mb-4 2xl:mx-auto",
-                    sidebarOpen ? '2xl:w-2/3' : '2xl:w-1/2'
-                )}>
-                    <div className="flex gap-2">
-                        <Toggle
-                            pressed={sidebarOpen}
-                            onClick={toggleOptions}
-                            title={"Advanced Search Options Are " + (sidebarOpen ? "Open" : "Closed")}
-                            aria-label="Toggle Advanced Search Options"
-                        >
-                            <Settings className="h-4 w-4" />
-                        </Toggle>
-                        <SearchBar />
-                        <InstantSearchLock />
-                        <Button title="Refresh search results" onClick={onRefresh} variant="ghost" size="icon">
-                            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-                        </Button>
-                    </div>
-                </div>
+                <SearchViewBar isFetching={isFetching} onRefresh={onRefresh} />
                 {data && (
                     <ResultsView
                         results={data?.results || []}
@@ -113,6 +94,38 @@ export function SearchPageContent({ initialQuery }:
             </div>
         </div>
     );
+}
+
+export function SearchViewBar({
+    isFetching,
+    onRefresh
+}: {
+    isFetching: boolean
+    onRefresh: () => void
+}) {
+    const sidebarOpen = useAdvancedOptions((state) => state.isOpen)
+    const toggleOptions = useAdvancedOptions((state) => state.toggle)
+    return (
+        <div className={cn("mb-4 2xl:mx-auto",
+            sidebarOpen ? '2xl:w-2/3' : '2xl:w-1/2'
+        )}>
+            <div className="flex gap-2">
+                <Toggle
+                    pressed={sidebarOpen}
+                    onClick={toggleOptions}
+                    title={"Advanced Search Options Are " + (sidebarOpen ? "Open" : "Closed")}
+                    aria-label="Toggle Advanced Search Options"
+                >
+                    <Settings className="h-4 w-4" />
+                </Toggle>
+                <SearchBar />
+                <InstantSearchLock />
+                <Button title="Refresh search results" onClick={onRefresh} variant="ghost" size="icon">
+                    <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+                </Button>
+            </div>
+        </div>
+    )
 }
 export function ResultsView({
     results,

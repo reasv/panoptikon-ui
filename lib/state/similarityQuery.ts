@@ -1,6 +1,4 @@
 import { pm, factoryParameters, serializers } from "geschichte"
-import { GeschichteWithHistory } from "geschichte/historyjs"
-import { createBrowserHistory } from "history"
 
 const parameterConfig = {
   item: pm("item", serializers.string),
