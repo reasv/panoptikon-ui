@@ -9,6 +9,7 @@ import { Button } from "../../ui/button";
 import { ComboBoxResponsive } from "../../combobox";
 import { Toggle } from "@/components/ui/toggle";
 import { useSelectedDBs } from "@/lib/state/database";
+import { useAlwaysShowBookmarkBtn } from "@/lib/state/alwaysShowBookmarks";
 
 export function SwitchBookmarkNs() {
     const [dbs, ___] = useSelectedDBs()
@@ -22,8 +23,7 @@ export function SwitchBookmarkNs() {
     const [inputValue, setInputValue] = useState('');
     const setBookmarks = useBookmarkNs((state) => state.setBookmarks)
     const addBookmarkCustomNs = useBookmarkCustomNs((state) => state.addNs)
-    const setAlwaysShow = useBookmarkNs((state) => state.setAlwaysShow)
-    const alwaysShow = useBookmarkNs((state) => state.alwaysShow)
+    const [alwaysShow, setAlwaysShow] = useAlwaysShowBookmarkBtn()
     function setBookmarkCustomNs(ns: string) {
         addBookmarkCustomNs(ns)
         setBookmarks(ns)

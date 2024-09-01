@@ -50,8 +50,8 @@ export function MultiView({ initialQuery }:
     const [query, __] = useSimilarityQuery()
     const [mode, _] = useSearchMode()
     return (
-        mode === Mode.ItemSimilarity && query.item && query.item.length > 0 && query.model && query.model.length > 0 ?
-            <SimilarityView sha256={query.item} queryType={query.type} />
+        mode === Mode.ItemSimilarity && query.is_item && query.is_item.length > 0 && query.is_model && query.is_model.length > 0 ?
+            <SimilarityView sha256={query.is_item} queryType={query.is_type} />
             :
             <SearchView initialQuery={initialQuery} />
     )
@@ -63,9 +63,9 @@ export function SimilarityView({ sha256, queryType }: { sha256: string, queryTyp
     const similarityQuery = useImageSimilarity(
         (state) =>
             queryType == "clip" ?
-                state.getClipQuery(query.model!)
+                state.getClipQuery(query.is_model!)
                 :
-                state.getTextEmbedQuery(query.model!)
+                state.getTextEmbedQuery(query.is_model!)
     )
     const instantSearch = useInstantSearch((state) => state.enabled)
     const { data, refetch, isFetching, isError, error } = $api.useQuery("post", "/api/search/similar/{sha256}", {
@@ -79,8 +79,8 @@ export function SimilarityView({ sha256, queryType }: { sha256: string, queryTyp
         },
         body: {
             ...similarityQuery,
-            setter_name: query.model!,
-            page: query.page,
+            setter_name: query.is_model!,
+            page: query.is_page,
             page_size: similarityQuery.page_size
         }
     },
@@ -105,7 +105,7 @@ export function SimilarityView({ sha256, queryType }: { sha256: string, queryTyp
             // Make pagination work if the user has disabled instant search
             refetch()
         }
-    }, [query.page])
+    }, [query.is_page])
 
     return (
         <>
@@ -115,8 +115,8 @@ export function SimilarityView({ sha256, queryType }: { sha256: string, queryTyp
                     results={data?.results || []}
                     totalCount={nResults}
                     pageSize={similarityQuery.page_size}
-                    currentPage={query.page}
-                    setPage={(page) => setQuery({ page })}
+                    currentPage={query.is_page}
+                    setPage={(page) => setQuery({ is_page: page })}
                     onRefresh={onRefresh}
                     isFetching={isFetching}
                 />)}

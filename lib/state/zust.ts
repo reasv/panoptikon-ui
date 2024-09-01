@@ -9,18 +9,14 @@ const nsStorageOptions = {
 }
 interface BookmarkNs {
   namespace: string
-  alwaysShow: boolean
   setBookmarks: (ns: string) => void
-  setAlwaysShow: (value: boolean) => void
 }
 
 export const useBookmarkNs = create(
   persist<BookmarkNs>(
     (set) => ({
       namespace: "default",
-      alwaysShow: false,
       setBookmarks: (ns: string) => set({ namespace: ns }),
-      setAlwaysShow: (value: boolean) => set({ alwaysShow: value }),
     }),
     nsStorageOptions
   )

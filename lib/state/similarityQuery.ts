@@ -1,7 +1,6 @@
 import { useQueryStates, parseAsFloat } from "nuqs"
 
 import {
-  parseAsBoolean,
   parseAsInteger,
   parseAsString,
   parseAsStringEnum,
@@ -15,7 +14,7 @@ export enum Mode {
 
 export const useSearchMode = () =>
   useQueryState(
-    `mode`,
+    "mode",
     parseAsStringEnum<Mode>(Object.values(Mode))
       .withDefault(Mode.Search)
       .withOptions({
@@ -32,12 +31,12 @@ export enum SimilarityQueryType {
 export const useSimilarityQuery = () =>
   useQueryStates(
     {
-      item: parseAsString,
-      model: parseAsString,
-      type: parseAsStringEnum<SimilarityQueryType>(
+      is_item: parseAsString,
+      is_model: parseAsString,
+      is_type: parseAsStringEnum<SimilarityQueryType>(
         Object.values(SimilarityQueryType)
       ).withDefault(SimilarityQueryType.clip),
-      page: parseAsInteger.withDefault(1).withOptions({
+      is_page: parseAsInteger.withDefault(1).withOptions({
         clearOnDefault: true,
       }),
     },

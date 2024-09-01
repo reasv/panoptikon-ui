@@ -41,10 +41,10 @@ export function SimilarItemsView({
     const onImageClick = (index: number) => {
         if (!data) return
         setQuery({
-            item: sha256,
-            model: query.setter_name,
-            type: type,
-            page: 1
+            is_item: sha256,
+            is_model: query.setter_name,
+            is_type: type,
+            is_page: 1
         })
         setName(Gallery.similarity)
         setSearchmode(Mode.ItemSimilarity)

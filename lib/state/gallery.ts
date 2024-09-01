@@ -17,6 +17,7 @@ const useGalleryName = () =>
     parseAsStringEnum<Gallery>(Object.values(Gallery))
       .withDefault(Gallery.search)
       .withOptions({
+        clearOnDefault: true,
         history: "push",
       })
   )
@@ -34,6 +35,7 @@ const useGalleryThumbnail = (name: Gallery) =>
     `${name}.gt`,
     parseAsBoolean.withDefault(true).withOptions({
       clearOnDefault: true,
+      history: "push",
     })
   )
 
