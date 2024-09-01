@@ -8,7 +8,7 @@ const parameterConfig = {
 }
 
 const defaultValue = {
-  item: null,
+  item: "",
   type: "clip",
   model: "",
   page: 1,

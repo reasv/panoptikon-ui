@@ -30,6 +30,7 @@ export function ClipItemSimilarity() {
             <div className="mt-4">
                 {selected && clipQuery.setter_name.length > 0 && clipQuery.page_size > 0 && (
                     <SimilarItemsView
+                        type="clip"
                         item={selected}
                         query={clipQuery}
                     />)}

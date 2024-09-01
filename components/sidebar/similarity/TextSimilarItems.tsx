@@ -31,6 +31,7 @@ export function TextEmbeddingsSimilarity() {
             <div className="mt-4">
                 {selected && textEmbeddingQuery.setter_name.length > 0 && textEmbeddingQuery.page_size > 0 && (
                     <SimilarItemsView
+                        type="text-embedding"
                         item={selected}
                         query={textEmbeddingQuery}
                     />)}
