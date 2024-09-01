@@ -23,9 +23,9 @@ import { SideBar } from "@/components/sidebar/SideBar";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { SearchResultImage } from "@/components/SearchResultImage";
 import { useItemSelection } from "@/lib/state/itemSelection";
-import { Mode, SimilarityQueryType, useSearchMode, useSimilarityQuery } from "@/lib/state/similarityQuery";
+import { Mode, useSearchMode, useSimilarityQuery } from "@/lib/state/similarityQuery";
 import { useImageSimilarity } from "@/lib/state/similarityStore";
-import { Gallery, useGalleryIndex, useGalleryName, useGalleryThumbnail } from "@/lib/state/gallery";
+import { useGalleryIndex, useGalleryName, useGalleryThumbnail } from "@/lib/state/gallery";
 import { useSideBarOpen } from "@/lib/state/sideBar";
 import { useSelectedDBs } from "@/lib/state/database";
 
@@ -38,58 +38,19 @@ export function SearchPageContent({ initialQuery }:
             <div className={cn('p-4 transition-all duration-300 mx-auto',
                 sidebarOpen ? 'w-full lg:w-1/2 xl:w-2/3 2xl:w-3/4 4xl:w-[80%] 5xl:w-[82%]' : 'w-full'
             )}>
-                <MultiView initialQuery={initialQuery} />
+                <MultiSearchView initialQuery={initialQuery} />
             </div>
         </div>
     )
 }
 
-export function MultiView({ initialQuery }:
+export function MultiSearchView({ initialQuery }:
     { initialQuery: SearchQueryArgs }) {
-    const [query, __] = useSimilarityQuery()
     const [mode, _] = useSearchMode()
-    return (
-        mode === Mode.ItemSimilarity && query.is_item && query.is_item.length > 0 && query.is_model && query.is_model.length > 0 ?
-            <SimilarityView sha256={query.is_item} queryType={query.is_type} />
-            :
-            <SearchView initialQuery={initialQuery} />
-    )
-}
-
-export function SimilarityView({ sha256, queryType }: { sha256: string, queryType: SimilarityQueryType }) {
-    const [query, setQuery] = useSimilarityQuery()
-    const [dbs, ___] = useSelectedDBs()
-    const similarityQuery = useImageSimilarity(
-        (state) =>
-            queryType == "clip" ?
-                state.getClipQuery(query.is_model!)
-                :
-                state.getTextEmbedQuery(query.is_model!)
-    )
-    const instantSearch = useInstantSearch((state) => state.enabled)
-    const { data, refetch, isFetching, isError, error } = $api.useQuery("post", "/api/search/similar/{sha256}", {
-        params: {
-            query: {
-                ...dbs
-            },
-            path: {
-                sha256,
-            }
-        },
-        body: {
-            ...similarityQuery,
-            setter_name: query.is_model!,
-            page: query.is_page,
-            page_size: similarityQuery.page_size
-        }
-    },
-        {
-            enabled: instantSearch,
-            placeholderData: keepPreviousData
-        }
-    )
-
-    const nResults = data?.count || 0
+    const search = useSearch({ initialQuery })
+    const similarity = useItemSimilaritySearch()
+    const hook = mode === Mode.ItemSimilarity ? similarity : search
+    const { data, error, isError, refetch, isFetching, nResults, page, pageSize, setPage, searchEnabled } = hook
     const { toast } = useToast()
     const onRefresh = async () => {
         await refetch()
@@ -99,69 +60,98 @@ export function SimilarityView({ sha256, queryType }: { sha256: string, queryTyp
             duration: 2000
         })
     }
+    const instantSearch = useInstantSearch((state) => state.enabled)
     useEffect(() => {
-        if (!instantSearch) {
+        if (!instantSearch && searchEnabled) {
             // Make pagination work if the user has disabled instant search
             refetch()
         }
-    }, [query.is_page])
-
+    }, [page])
+    const totalPages = Math.ceil((nResults || 1) / (pageSize)) || 1
+    const [name, __] = useGalleryName()
+    const [index, setIndex] = useGalleryIndex(name)
+    const results = data?.results || []
     return (
         <>
-            <SearchErrorToast noFtsErrors={true} isError={isError} error={error} />
-            {data && (
-                <SimilarityResultsView
-                    results={data?.results || []}
-                    totalCount={nResults}
-                    pageSize={similarityQuery.page_size}
-                    currentPage={query.is_page}
-                    setPage={(page) => setQuery({ is_page: page })}
-                    onRefresh={onRefresh}
-                    isFetching={isFetching}
-                />)}
+            <SearchErrorToast isError={isError} error={error} />
+
+            <SearchViewBar isFetching={isFetching} onRefresh={onRefresh} />
+            {
+                (index !== null && results.length > 0)
+                    ?
+                    <ImageGallery items={results} />
+                    :
+                    <ResultGrid
+                        results={results}
+                        totalCount={nResults}
+                        onImageClick={(index) => setIndex(index || null)}
+                    />
+            }
+            {
+                nResults > pageSize && (
+                    <PageSelect totalPages={totalPages} currentPage={page} setPage={setPage} />
+                )
+            }
         </>
     )
 }
 
-export function SimilarityResultsView({
-    results,
-    totalCount,
-    pageSize,
-    currentPage,
-    setPage,
-    onRefresh,
-    isFetching
-}: {
-    results: components["schemas"]["FileSearchResult"][]
-    totalCount: number
-    pageSize: number
-    currentPage: number
-    setPage: (page: number) => void
-    onRefresh: () => void
-    isFetching: boolean
-}) {
-    const totalPages = (Math.ceil((totalCount || 1) / (pageSize)) || 1) + (results.length > 0 ? 1 : 0) // Add 1 to account for the next page
-    // (For similarity search, we don't know if there are more results, so we always show the next page)
-    const [name, _] = useGalleryName()
-    const [index, setIndex] = useGalleryIndex(name)
-    return <>
-        <SearchViewBar isFetching={isFetching} onRefresh={onRefresh} />
-        {
-            (index !== null && results.length > 0)
-                ?
-                <ImageGallery items={results} />
+export function useItemSimilaritySearch() {
+    const [query, setQuery] = useSimilarityQuery()
+    const [dbs, ___] = useSelectedDBs()
+    const similarityQuery = useImageSimilarity(
+        (state) =>
+            query.is_type == "clip" ?
+                state.getClipQuery(query.is_model!)
                 :
-                <ResultGrid
-                    results={results}
-                    totalCount={totalCount}
-                    onImageClick={(index) => setIndex(index || null)}
-                />
+                state.getTextEmbedQuery(query.is_model!)
+    )
+    const instantSearch = useInstantSearch((state) => state.enabled)
+    const validQuery = !!(query.is_item && query.is_item.length > 0 && query.is_model && query.is_model.length > 0)
+    const [mode, _] = useSearchMode()
+    const { data, refetch, isFetching, isError, error } = $api.useQuery("post", "/api/search/similar/{sha256}", {
+        params: {
+            query: {
+                ...dbs
+            },
+            path: {
+                sha256: query.is_item || "",
+            }
+        },
+        body: {
+            ...similarityQuery,
+            setter_name: query.is_model!,
+            page: query.is_page,
+            page_size: similarityQuery.page_size,
+            full_count: true
         }
-        {totalCount > 0 && <PageSelect totalPages={totalPages} currentPage={currentPage} setPage={setPage} />}
-    </>
+    },
+        {
+            enabled: instantSearch && validQuery && mode === Mode.ItemSimilarity,
+            placeholderData: keepPreviousData
+        }
+    )
+
+
+    const nResults = data?.count || 0
+    const page = query.is_page
+    const pageSize = similarityQuery.page_size
+    const setPage = (page: number) => setQuery({ is_page: page })
+    return {
+        data,
+        error,
+        isError,
+        refetch,
+        isFetching,
+        nResults,
+        page,
+        pageSize,
+        setPage,
+        searchEnabled: validQuery
+    }
 }
 
-export function SearchView({ initialQuery }:
+export function useSearch({ initialQuery }:
     { initialQuery: SearchQueryArgs }) {
     const isClient = typeof window !== "undefined"
     const searchQuery = isClient ? useSearchQuery((state) => state.getSearchQuery()) : initialQuery.body
@@ -171,7 +161,7 @@ export function SearchView({ initialQuery }:
     const pageSize = useSearchQuery((state) => state.order_args.page_size)
     const searchEnabled = useSearchQuery((state) => state.enable_search)
     const instantSearch = useInstantSearch((state) => state.enabled)
-
+    const [mode, _] = useSearchMode()
     const { data, error, isError, refetch, isFetching } = $api.useQuery(
         "post",
         "/api/search",
@@ -184,83 +174,23 @@ export function SearchView({ initialQuery }:
             }
         },
         {
-            enabled: searchEnabled && instantSearch,
+            enabled: searchEnabled && instantSearch && mode === Mode.Search,
             placeholderData: keepPreviousData
         }
     );
-
     const nResults = data?.count || 0
-    const { toast } = useToast()
-    const onRefresh = async () => {
-        await refetch()
-        toast({
-            title: "Refreshed results",
-            description: "Results have been updated",
-            duration: 2000
-        })
+    return {
+        data,
+        error,
+        isError,
+        refetch,
+        isFetching,
+        nResults,
+        page,
+        pageSize,
+        setPage,
+        searchEnabled
     }
-    useEffect(() => {
-        if (!instantSearch && searchEnabled) {
-            // Make pagination work if the user has disabled instant search
-            refetch()
-        }
-    }, [page])
-    return (
-        <>
-            <SearchErrorToast isError={isError} error={error} />
-            {data && (
-                <SearchResultsView
-                    results={data?.results || []}
-                    totalCount={nResults}
-                    pageSize={pageSize}
-                    currentPage={page}
-                    setPage={setPage}
-                    onRefresh={onRefresh}
-                    isFetching={isFetching}
-                />)}
-        </>
-    )
-}
-
-export function SearchResultsView({
-    results,
-    totalCount,
-    pageSize,
-    currentPage,
-    setPage,
-    onRefresh,
-    isFetching
-}: {
-    results: components["schemas"]["FileSearchResult"][]
-    totalCount: number
-    pageSize: number
-    currentPage: number
-    setPage: (page: number) => void
-    onRefresh: () => void
-    isFetching: boolean
-}) {
-    const totalPages = Math.ceil((totalCount || 1) / (pageSize)) || 1
-    const [name, _] = useGalleryName()
-    const [index, setIndex] = useGalleryIndex(name)
-    return <>
-        <SearchViewBar isFetching={isFetching} onRefresh={onRefresh} />
-        {
-            (index !== null && name === Gallery.search && results.length > 0)
-                ?
-                <ImageGallery items={results} />
-                :
-                <ResultGrid
-                    results={results}
-                    totalCount={totalCount}
-                    onImageClick={(index) => setIndex(index || null)}
-                />
-        }
-        {
-            totalCount > pageSize && (
-                <PageSelect totalPages={totalPages} currentPage={currentPage} setPage={setPage} />
-            )
-        }
-    </>
 }
 
 export function SearchViewBar({
