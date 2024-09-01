@@ -44,11 +44,14 @@ export function ImageSimilarityHeader() {
             <Button onClick={onExitClick} title="Leave Item Similarity Search" variant="ghost" size="icon" className="mr-2">
                 <LogOut className="h-4 w-4" />
             </Button>
-            <div className="flex items-center justify-center rounded-lg border h-10 p-2 mx-auto">
-                <p className="mr-2">
+            <div className="flex items-center justify-center rounded-lg sm:border h-10 p-2 mx-auto">
+                <p className="mr-2 hidden sm:block lg:hidden xl:block">
                     Similarity Search for
                 </p>
-                <div className="w-1/4">
+                <p className="mr-2 sm:hidden lg:block xl:hidden">
+                    Similarity Search
+                </p>
+                <div className="w-1/4 hidden sm:block lg:hidden xl:block">
                     {path ? <FilePathComponent path={path} /> : <FilePathComponent path={query.is_item || "[Missing]"} />}
                 </div>
             </div>
