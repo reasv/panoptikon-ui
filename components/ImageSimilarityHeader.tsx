@@ -46,7 +46,7 @@ export function ImageSimilarityHeader() {
             </Button>
             <div className="flex items-center justify-center rounded-lg border h-10 p-2 mx-auto">
                 <p className="mr-2">
-                    Similar Items Search for
+                    Similarity Search for
                 </p>
                 <div className="w-1/4">
                     {path ? <FilePathComponent path={path} /> : <FilePathComponent path={query.is_item || "[Missing]"} />}
