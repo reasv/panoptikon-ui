@@ -2,10 +2,16 @@ import { pm, factoryParameters, serializers } from "geschichte"
 
 const parameterConfig = {
   item: pm("item", serializers.string),
+  type: pm("type", serializers.string),
+  page: pm("page", serializers.int),
+  model: pm("model", serializers.string),
 }
 
 const defaultValue = {
   item: null,
+  type: "clip",
+  model: "",
+  page: 1,
 }
 
 const { useQuery, createQueryString, parseQueryString } = factoryParameters(

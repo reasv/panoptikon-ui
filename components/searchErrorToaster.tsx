@@ -7,9 +7,11 @@ import { ToastAction } from "@/components/ui/toast"
 export function SearchErrorToast({
     isError,
     error,
+    noFtsErrors
 }: {
     isError: boolean
     error: unknown
+    noFtsErrors?: boolean
 }) {
     const rawFts5Match = useSearchQuery((state) => state.any_text.raw_fts5_match)
     const { toast } = useToast()
@@ -17,7 +19,7 @@ export function SearchErrorToast({
         if (isError) {
             let action = undefined
             let message = (error as Error).message
-            if (!message && rawFts5Match) {
+            if (!message && rawFts5Match && !noFtsErrors) {
                 message = "Make sure your query follows FTS5 MATCH syntax or disable the option"
                 action = <ToastAction onClick={() => window.open("https://www.sqlite.org/fts5.html#full_text_query_syntax", "_blank")} altText="FTS5 Docs">Docs</ToastAction>
             }

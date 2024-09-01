@@ -25,21 +25,139 @@ import { SideBar } from "@/components/sidebar/SideBar";
 import { itemEquals, OpenDetailsButton } from "@/components/OpenFileDetails";
 import { SearchResultImage } from "@/components/SearchResultImage";
 import { useItemSelection } from "@/lib/state/itemSelection";
+import { useSimilarityQuery } from "@/lib/state/similarityQuery";
+import { GeschichteWithHistory } from 'geschichte/historyjs'
+import { createBrowserHistory } from 'history'
+import { useImageSimilarity } from "@/lib/state/similarityStore";
 
 export function SearchPageContent({ initialQuery }:
-    { initialQuery: SearchQueryArgs }
-) {
+    { initialQuery: SearchQueryArgs }) {
     const sidebarOpen = useAdvancedOptions((state) => state.isOpen)
+    const { values } = useSimilarityQuery()
     return (
         <div className="flex w-full h-screen">
             <SideBar />
             <div className={cn('p-4 transition-all duration-300 mx-auto',
                 sidebarOpen ? 'w-full lg:w-1/2 xl:w-2/3 2xl:w-3/4 4xl:w-[80%] 5xl:w-[82%]' : 'w-full'
             )}>
-                <SearchView initialQuery={initialQuery} />
+                {values.item && values.model.length > 0 ?
+                    <SearchView initialQuery={initialQuery} />
+                    :
+                    <SearchView initialQuery={initialQuery} />
+                }
             </div>
         </div>
-    );
+    )
+}
+
+export function SimilarityView({ sha256, queryType }: { sha256: string, queryType: string }) {
+    const {
+        values,
+        pushState,
+        replaceState,
+        resetPush,
+        resetReplace,
+        createQueryString,
+    } = useSimilarityQuery()
+    const dbs = useDatabase((state) => state.getDBs())
+    const similarityQuery = useImageSimilarity(
+        (state) =>
+            queryType == "clip" ?
+                state.getClipQuery(values.model)
+                :
+                state.getTextEmbedQuery(values.model)
+    )
+    const instantSearch = useInstantSearch((state) => state.enabled)
+    const { data, refetch, isFetching, isError, error } = $api.useQuery("post", "/api/search/similar/{sha256}", {
+        params: {
+            query: {
+                ...dbs
+            },
+            path: {
+                sha256,
+            }
+        },
+        body: {
+            ...similarityQuery,
+            setter_name: values.model,
+            page: values.page,
+            page_size: similarityQuery.page_size
+        }
+    },
+        {
+            enabled: instantSearch,
+            placeholderData: keepPreviousData
+        }
+    )
+
+    const nResults = data?.count || 0
+    const { toast } = useToast()
+    const onRefresh = async () => {
+        await refetch()
+        toast({
+            title: "Refreshed results",
+            description: "Results have been updated",
+            duration: 2000
+        })
+    }
+    useEffect(() => {
+        if (!instantSearch) {
+            // Make pagination work if the user has disabled instant search
+            refetch()
+        }
+    }, [values.page])
+
+    return (
+        <>
+            <SearchErrorToast noFtsErrors={true} isError={isError} error={error} />
+            {data && (
+                <SimilarityResultsView
+                    results={data?.results || []}
+                    totalCount={nResults}
+                    pageSize={similarityQuery.page_size}
+                    currentPage={values.page}
+                    setPage={(page) => pushState((state) => void (state.page = page))}
+                    onRefresh={onRefresh}
+                    isFetching={isFetching}
+                />)}
+        </>
+    )
+}
+
+export function SimilarityResultsView({
+    results,
+    totalCount,
+    pageSize,
+    currentPage,
+    setPage,
+    onRefresh,
+    isFetching
+}: {
+    results: components["schemas"]["FileSearchResult"][]
+    totalCount: number
+    pageSize: number
+    currentPage: number
+    setPage: (page: number) => void
+    onRefresh: () => void
+    isFetching: boolean
+}) {
+    const galleryOpen = useGallery((state) => state.isGalleryOpen)
+    const totalPages = (Math.ceil((totalCount || 1) / (pageSize)) || 1) + (results.length > 0 ? 1 : 0) // Add 1 to account for the next page
+    // (For similarity search, we don't know if there are more results, so we always show the next page)
+    return <>
+        <SearchViewBar isFetching={isFetching} onRefresh={onRefresh} />
+        {
+            (galleryOpen && results.length > 0)
+                ?
+                <ImageGallery items={results} />
+                :
+                <ResultGrid
+                    results={results}
+                    totalCount={totalCount}
+                />
+        }
+        {totalCount > 0 && <PageSelect totalPages={totalPages} currentPage={currentPage} setPage={setPage} />}
+    </>
 }
 
 export function SearchView({ initialQuery }:
@@ -86,8 +204,6 @@ export function SearchView({ initialQuery }:
             refetch()
         }
     }, [page])
-
-    const galleryOpen = useGallery((state) => state.isGalleryOpen)
     return (
         <>
             <SearchErrorToast isError={isError} error={error} />
@@ -98,7 +214,6 @@ export function SearchView({ initialQuery }:
                     pageSize={pageSize}
                     currentPage={page}
                     setPage={setPage}
-                    galleryOpen={galleryOpen}
                     onRefresh={onRefresh}
                     isFetching={isFetching}
                 />)}
@@ -112,7 +227,6 @@ export function SearchResultsView({
     pageSize,
     currentPage,
     setPage,
-    galleryOpen,
     onRefresh,
     isFetching
 }: {
@@ -121,10 +235,10 @@ export function SearchResultsView({
     pageSize: number
     currentPage: number
     setPage: (page: number) => void
-    galleryOpen: boolean
     onRefresh: () => void
     isFetching: boolean
 }) {
+    const galleryOpen = useGallery((state) => state.isGalleryOpen)
     const totalPages = Math.ceil((totalCount || 1) / (pageSize)) || 1
     return <>
         <SearchViewBar isFetching={isFetching} onRefresh={onRefresh} />
