@@ -43,7 +43,6 @@ export function SimilarItemsView({
     const openGallery = useGallery((state) => state.openGallery)
     const onImageClick = (index: number) => {
         if (!data) return
-        const item = data.results[index]
         pushState((state) => {
             state.item = item.sha256
             state.type = type
