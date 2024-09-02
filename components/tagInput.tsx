@@ -49,10 +49,12 @@ export function TagCompletionInput({
     onChange,
     placeholder,
     inputClassName,
-    popoverClassName
+    popoverClassName,
+    onSubmit,
 }: {
     value: string,
     onChange: (value: string) => void,
+    onSubmit?: () => void,
     placeholder: string,
     inputClassName?: string
     popoverClassName?: string
@@ -96,8 +98,16 @@ export function TagCompletionInput({
                 setSelectedIndex((prevIndex) => (prevIndex - 1 + data.tags.length) % data.tags.length);
             } else if (e.key === 'Enter' || e.key === 'Tab') {
                 e.preventDefault();
-                addTag(value, data.tags[selectedIndex][1]);
+                const selectedTag = data.tags[selectedIndex][1]
+                addTag(value, selectedTag);
                 setFocus(false);
+            }
+        } else {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (onSubmit) {
+                    onSubmit()
+                }
             }
         }
     };
@@ -132,6 +142,7 @@ export function TagCompletionInput({
                 {
                     data && data.tags.map((tag, index) => (
                         <div
+                            key={`${tag}`}
                             onClick={() =>
                                 addTag(value, tag[1])
                             }

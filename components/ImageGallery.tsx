@@ -1,30 +1,19 @@
 "use client"
 import Image from 'next/image'
-import { PageSelect } from "@/components/pageselect";
 import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons"
-import { useInstantSearch } from "@/lib/state/zust"
 import { Toggle } from "@/components/ui/toggle"
-import { Settings, RefreshCw, X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal } from "lucide-react"
-import { AnimatedNumber } from "@/components/ui/animatedNumber"
-import { InstantSearchLock } from "@/components/InstantSearchLock"
+import { X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal } from "lucide-react"
+
 import { Button } from "@/components/ui/button"
-import { useToast } from "@/components/ui/use-toast"
-import { SearchBar } from "@/components/searchBar"
 import { useCallback, useEffect, useRef } from "react";
-import { SearchErrorToast } from "@/components/searchErrorToaster";
 import { cn, getFullFileURL, getLocale, getThumbnailURL } from "@/lib/utils";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { ScrollBar } from "@/components/ui/scroll-area";
 import { components } from "@/lib/panoptikon";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
-import { SideBar } from "@/components/sidebar/SideBar";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
-import { SearchResultImage } from "@/components/SearchResultImage";
 import { useItemSelection } from "@/lib/state/itemSelection";
-import { Mode, useSearchMode } from "@/lib/state/similarityQuery";
 import { useGalleryIndex, useGalleryName, useGalleryThumbnail } from "@/lib/state/gallery";
-import { useSideBarOpen } from "@/lib/state/sideBar";
 import { useSelectedDBs } from "@/lib/state/database";
-import { useItemSimilaritySearch, useSearch } from "@/lib/searchHooks";
 
 export function ImageGallery({
     items,

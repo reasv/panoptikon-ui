@@ -53,6 +53,14 @@ export function MultiSearchView({ initialQuery }:
     const { data, error, isError, refetch, isFetching, nResults, page, pageSize, setPage, searchEnabled } = hook
     const { toast } = useToast()
     const onRefresh = async () => {
+        if (!searchEnabled) {
+            toast({
+                title: "Error",
+                description: "Invalid user input",
+                duration: 2000
+            })
+            return
+        }
         await refetch()
         toast({
             title: "Refreshed results",
@@ -87,7 +95,7 @@ export function MultiSearchView({ initialQuery }:
                     >
                         <Settings className="h-4 w-4" />
                     </Toggle>
-                    {mode === Mode.Search ? <SearchBar /> : <ImageSimilarityHeader />}
+                    {mode === Mode.Search ? <SearchBar onSubmit={onRefresh} /> : <ImageSimilarityHeader />}
                     <InstantSearchLock />
                     <Button title="Refresh search results" onClick={onRefresh} variant="ghost" size="icon">
                         <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />

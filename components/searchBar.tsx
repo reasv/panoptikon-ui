@@ -13,7 +13,11 @@ import { Toggle } from "./ui/toggle"
 import { Tag } from "lucide-react"
 import { useTagCompletionSettings } from "@/lib/state/tagCompletion"
 
-export function SearchBar() {
+export function SearchBar({
+    onSubmit,
+}: {
+    onSubmit?: () => void
+}) {
     const setAnyTextQuery = useSearchQuery((state) => state.setAnyTextQuery)
     const anyTextQuery = useSearchQuery((state) => state.any_text.query)
     const setEnabled = useSearchQuery((state) => state.setEnableSearch)
@@ -68,6 +72,16 @@ export function SearchBar() {
 
     const [completionEnabled, _] = useTagCompletionEnabled()
 
+    const handleKeyDown = (e:
+        React.KeyboardEvent<HTMLInputElement>
+    ) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (onSubmit) {
+                onSubmit()
+            }
+        }
+    }
     return (
         <>
             <TagCompletionSwitch />
@@ -77,6 +91,7 @@ export function SearchBar() {
                         placeholder={placeholder}
                         value={anyTextQuery}
                         onChange={onTextInputChange}
+                        onSubmit={onSubmit}
                         inputClassName="flex-grow"
                     />
                     :
@@ -85,6 +100,7 @@ export function SearchBar() {
                         placeholder={placeholder}
                         value={anyTextQuery}
                         onChange={(e) => onTextInputChange(e.target.value)}
+                        onKeyDown={handleKeyDown}
                         className="flex-grow"
                     />
                 }
