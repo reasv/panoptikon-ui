@@ -44,7 +44,7 @@ function replaceCurrentTag(inputString: string, newTag: string): string {
     return stringBeforeTag + newTag;
 }
 
-export function SearchBar({
+export function TagCompletionInput({
     value,
     onChange,
     placeholder,
