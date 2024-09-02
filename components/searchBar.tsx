@@ -6,17 +6,12 @@ import { useEffect, useMemo, useState } from "react"
 import { Fts5ToggleButton } from "./FTS5Toggle"
 import { PLACEHOLDERS } from "@/lib/placeholders"
 import { ClearSearch } from "./ClearSearch"
-import { $api } from "@/lib/api"
-import { useSelectedDBs } from "@/lib/state/database"
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
-import { cn } from "@/lib/utils"
 import { useTagCompletionEnabled } from "@/lib/enableTagsHook"
 import { TagCompletionInput } from "./tagInput"
 import { useToast } from "./ui/use-toast"
 import { Toggle } from "./ui/toggle"
 import { Tag } from "lucide-react"
 import { useTagCompletionSettings } from "@/lib/state/tagCompletion"
-
 
 export function SearchBar() {
     const setAnyTextQuery = useSearchQuery((state) => state.setAnyTextQuery)
