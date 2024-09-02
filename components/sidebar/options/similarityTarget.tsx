@@ -46,6 +46,7 @@ export function SimilarityTargetItem({
         if (!selected) return
         setQuery({
             is_item: selected?.sha256,
+            is_page: 1,
         })
     }
     return (
