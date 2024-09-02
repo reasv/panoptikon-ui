@@ -98,7 +98,9 @@ export function TagCompletionInput({
                 setSelectedIndex((prevIndex) => (prevIndex - 1 + data.tags.length) % data.tags.length);
             } else if (e.key === 'Enter' || e.key === 'Tab') {
                 e.preventDefault();
-                const selectedTag = data.tags[selectedIndex][1]
+                // Ensure the selectedIndex is within bounds before accessing the array
+                const validIndex = selectedIndex % data.tags.length;
+                const selectedTag = data.tags[validIndex][1];
                 addTag(value, selectedTag);
                 setSelectedIndex(0);
             }
@@ -118,6 +120,7 @@ export function TagCompletionInput({
         const match_string = e.target.value
         onChange(match_string)
     }
+    const validIndex = data ? selectedIndex % data.tags.length : 0
     return (
         <Popover open={focus} onOpenChange={(open) => setFocus(open)}>
             <PopoverTrigger asChild>
@@ -147,7 +150,7 @@ export function TagCompletionInput({
                                 addTag(value, tag[1])
                             }
                             className={cn("p-2 cursor-pointer hover:bg-accent",
-                                index === selectedIndex && "bg-accent text-white")}>
+                                index === validIndex && "bg-accent text-white")}>
                             <span>{tag[1]}</span>
                         </div>
                     ))
