@@ -137,7 +137,7 @@ export function TagCompletionSwitch() {
             description = "Tag completion will be disabled"
         }
         toast({
-            title: `Tag Completion is ${newValue ? "OFF" : "ON"}`,
+            title: `Tag Completion is ${newValue ? "ON" : "OFF"}`,
             description,
             duration: 2000
         })

@@ -206,7 +206,7 @@ export const TagAutoComplete = ({
         params: {
             query: {
                 ...dbs,
-                limit: 10,
+                limit: 9,
                 name: currentTag || "",
             },
         }
