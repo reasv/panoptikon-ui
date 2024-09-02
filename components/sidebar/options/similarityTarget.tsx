@@ -67,7 +67,7 @@ export function SimilarityTargetItem({
                 </p>}
             </div>
             <div className="space-x-2 mt-4">
-                <Button variant="outline" disabled={!selected} onClick={() => switchTarget()}>
+                <Button variant="outline" title="Set current selection as target" disabled={!selected} onClick={() => switchTarget()}>
                     Switch Target
                 </Button>
             </div>
