@@ -229,17 +229,6 @@ export const TagAutoComplete = ({
             if (!isOpen) {
                 setOpen(true)
             }
-
-            // if (data && data.tags.length > 0) {
-            //     // This is not a default behaviour of the <input /> field
-            //     // if ((event.key === "Enter" || event.key === 'Tab') && input.value !== "") {
-            //     //     // // Ensure the selectedIndex is within bounds before accessing the array
-            //     //     // const validIndex = selectedIndex % data.tags.length;
-            //     //     // const selectedTag = data.tags[validIndex][1];
-            //     //     // addTag(value, selectedTag);
-            //     //     // setSelectedIndex(0);
-            //     // }
-            // } else {
             if (!data || data.tags.length === 0) {
                 if (event.key === "Enter") {
                     event.preventDefault()
