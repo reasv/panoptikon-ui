@@ -7,7 +7,7 @@ import { Fts5ToggleButton } from "./FTS5Toggle"
 import { PLACEHOLDERS } from "@/lib/placeholders"
 import { ClearSearch } from "./ClearSearch"
 import { useTagCompletionEnabled } from "@/lib/enableTagsHook"
-import { TagCompletionInput } from "./tagInput"
+import { TagAutoComplete, TagCompletionInput } from "./tagInput"
 import { useToast } from "./ui/use-toast"
 import { Toggle } from "./ui/toggle"
 import { Tag } from "lucide-react"
@@ -87,7 +87,14 @@ export function SearchBar({
             <TagCompletionSwitch />
             <div className="relative w-full">
                 {completionEnabled ?
-                    <TagCompletionInput
+                    // <TagCompletionInput
+                    //     placeholder={placeholder}
+                    //     value={anyTextQuery}
+                    //     onChange={onTextInputChange}
+                    //     onSubmit={onSubmit}
+                    //     inputClassName="flex-grow"
+                    // />
+                    <TagAutoComplete
                         placeholder={placeholder}
                         value={anyTextQuery}
                         onChange={onTextInputChange}

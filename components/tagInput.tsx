@@ -168,13 +168,9 @@ import {
     CommandItem,
     CommandList,
     CommandInput,
-} from "./ui/command"
+} from "./ui/commandTrim"
 import { Command as CommandPrimitive } from "cmdk"
 import { useRef, useCallback, type KeyboardEvent } from "react"
-
-import { Skeleton } from "./ui/skeleton"
-
-import { Check } from "lucide-react"
 
 export type Option = Record<"value" | "label", string> & Record<string, string>
 
@@ -200,7 +196,6 @@ export const TagAutoComplete = ({
     const inputRef = useRef<HTMLInputElement>(null)
 
     const [isOpen, setOpen] = useState(false)
-    const [selectedIndex, setSelectedIndex] = useState(0)
     const dbs = useSelectedDBs()[0]
 
     const currentTag = useMemo(() => {
@@ -235,16 +230,17 @@ export const TagAutoComplete = ({
                 setOpen(true)
             }
 
-            if (data && data.tags.length > 0) {
-                // This is not a default behaviour of the <input /> field
-                if ((event.key === "Enter" || event.key === 'Tab') && input.value !== "") {
-                    // Ensure the selectedIndex is within bounds before accessing the array
-                    const validIndex = selectedIndex % data.tags.length;
-                    const selectedTag = data.tags[validIndex][1];
-                    addTag(value, selectedTag);
-                    setSelectedIndex(0);
-                }
-            } else {
+            // if (data && data.tags.length > 0) {
+            //     // This is not a default behaviour of the <input /> field
+            //     // if ((event.key === "Enter" || event.key === 'Tab') && input.value !== "") {
+            //     //     // // Ensure the selectedIndex is within bounds before accessing the array
+            //     //     // const validIndex = selectedIndex % data.tags.length;
+            //     //     // const selectedTag = data.tags[validIndex][1];
+            //     //     // addTag(value, selectedTag);
+            //     //     // setSelectedIndex(0);
+            //     // }
+            // } else {
+            if (!data || data.tags.length === 0) {
                 if (event.key === "Enter") {
                     event.preventDefault()
                     if (onSubmit) {
@@ -257,7 +253,7 @@ export const TagAutoComplete = ({
                 input.blur()
             }
         },
-        [isOpen, selectedIndex, onChange, value, data],
+        [isOpen, onChange, value, data],
     )
 
     const handleBlur = useCallback(() => {
@@ -267,7 +263,6 @@ export const TagAutoComplete = ({
     const handleSelectOption = useCallback(
         (selectedTag: string) => {
             addTag(value, selectedTag);
-            setSelectedIndex(0);
 
             // // This is a hack to prevent the input from being focused after the user selects an option
             // // We can call this hack: "The next tick"s
@@ -275,11 +270,11 @@ export const TagAutoComplete = ({
             //     inputRef?.current?.blur()
             // }, 0)
         },
-        [isOpen, selectedIndex, onChange, value, data],
+        [isOpen, onChange, value, data],
     )
     const emptyMessage = (data && data.tags.length === 0) ? "No tags found" : "Start typing a tag..."
     return (
-        <CommandPrimitive shouldFilter={false} onKeyDown={handleKeyDown}>
+        <CommandPrimitive loop shouldFilter={false} onKeyDown={handleKeyDown}>
             <div>
                 <CommandInput
                     ref={inputRef}
@@ -289,29 +284,29 @@ export const TagAutoComplete = ({
                     onFocus={() => setOpen(true)}
                     placeholder={placeholder}
                     disabled={disabled}
-                    className={cn("flex-grow", inputClassName)}
+                    className={cn(
+                        "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50", "flex-grow", inputClassName)}
                 />
             </div>
             <div className="relative mt-1">
                 <div
                     className={cn(
                         "animate-in fade-in-0 zoom-in-95",
-                        "absolute top-0 z-10 w-full rounded-xl outline-none",
+                        "absolute top-0 z-10 w-full outline-none rounded-md border bg-popover p-4 text-popover-foreground shadow-md",
                         isOpen ? "block" : "hidden",
                     )}
                 >
-                    <CommandList className="rounded-lg ring-1 ring-slate-200">
+                    <CommandList className="">
                         {isLoading ? (
                             <CommandPrimitive.Loading>
-                                <div className="p-1">
-                                    <Skeleton className="h-8 w-full" />
+                                <div className="select-none text-center text-sm">
+                                    {"Loading..."}
                                 </div>
                             </CommandPrimitive.Loading>
                         ) : null}
                         {data && !isLoading ? (
                             <CommandGroup>
                                 {data.tags.map((tag, index) => {
-                                    const isSelected = index === selectedIndex
                                     return (
                                         <CommandItem
                                             key={tag[1]}
@@ -323,10 +318,8 @@ export const TagAutoComplete = ({
                                             onSelect={() => handleSelectOption(tag[1])}
                                             className={cn(
                                                 "flex w-full items-center gap-2",
-                                                !isSelected ? "pl-8" : null,
                                             )}
                                         >
-                                            {isSelected ? <Check className="w-4" /> : null}
                                             {tag[1]}
                                         </CommandItem>
                                     )
@@ -334,7 +327,7 @@ export const TagAutoComplete = ({
                             </CommandGroup>
                         ) : null}
                         {!isLoading ? (
-                            <CommandPrimitive.Empty className="select-none rounded-sm px-2 py-3 text-center text-sm">
+                            <CommandPrimitive.Empty className="select-none text-center text-sm">
                                 {emptyMessage}
                             </CommandPrimitive.Empty>
                         ) : null}
