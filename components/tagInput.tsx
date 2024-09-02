@@ -138,10 +138,12 @@ export function TagCompletionInput({
             <PopoverContent
                 onOpenAutoFocus={(e) => e.preventDefault()}
                 className={cn("w-[200px] p-0", popoverClassName)} align="start">
-                <div
-                    className={cn("p-1 text-sm cursor-pointer hover:bg-accent")}>
-                    <span>{currentTag ? `Searching: ${currentTag}...` : "No Tag Detected"}</span>
-                </div>
+                {value.length > 0 &&
+                    <div
+                        className={cn("p-1 text-sm cursor-pointer hover:bg-accent")}>
+                        <span>{currentTag ? `Results for '${currentTag}'` : "Start typing a tag..."}</span>
+                    </div>
+                }
                 {
                     data && data.tags.map((tag, index) => (
                         <div
