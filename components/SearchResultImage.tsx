@@ -12,6 +12,7 @@ export function SearchResultImage({
     dbs,
     imageClassName,
     imageContainerClassName,
+    className,
     onImageClick
 }: {
     result: components["schemas"]["FileSearchResult"],
@@ -19,6 +20,7 @@ export function SearchResultImage({
     dbs: { index_db: string | null, user_data_db: string | null }
     imageClassName?: string
     imageContainerClassName?: string
+    className?: string
     onImageClick?: (index?: number) => void
 }) {
     const fileUrl = getFullFileURL(result.sha256, dbs)
@@ -30,7 +32,7 @@ export function SearchResultImage({
         }
     }, [onImageClick, index])
     return (
-        <div className="border rounded p-2">
+        <div className={cn("border rounded p-2", className)}>
             <div className="overflow-hidden relative w-full pb-full mb-2 group">
                 <a
                     href={fileUrl}

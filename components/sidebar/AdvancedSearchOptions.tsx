@@ -9,6 +9,7 @@ import { PageSizeSlider, SimilarityPageSizeSlider } from "./options/pageSize"
 import { ExclusiveFilters } from "./options/ExclusiveFilters"
 import { Mode, SimilarityQueryType, useSearchMode, useSimilarityQuery } from "@/lib/state/similarityQuery"
 import { SimilarityModeOptionsClip, SimilarityModeOptionsText } from "./similarity/SimilarityModeOptions"
+import { SimilarityTargetItem } from "./options/similarityTarget"
 
 export function SearchOptions() {
     const [mode, setMode] = useSearchMode()
@@ -18,6 +19,7 @@ export function SearchOptions() {
             <SwitchDB />
             <SwitchBookmarkNs />
             {mode === Mode.ItemSimilarity && <SimilarityPageSizeSlider />}
+            {mode === Mode.ItemSimilarity && <SimilarityTargetItem />}
             {mode === Mode.ItemSimilarity && similarityQuery.is_type === SimilarityQueryType.clip && <SimilarityModeOptionsClip />}
             {mode === Mode.ItemSimilarity && similarityQuery.is_type === SimilarityQueryType.textEmbedding && <SimilarityModeOptionsText />}
             {mode === Mode.Search && <>
