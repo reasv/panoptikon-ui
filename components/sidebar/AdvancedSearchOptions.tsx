@@ -8,7 +8,7 @@ import { OrderBy } from "./options/orderBy"
 import { PageSizeSlider, SimilarityPageSizeSlider } from "./options/pageSize"
 import { ExclusiveFilters } from "./options/ExclusiveFilters"
 import { Mode, SimilarityQueryType, useSearchMode, useSimilarityQuery } from "@/lib/state/similarityQuery"
-import { SimilarityModeOptionsClip, SimilarityModeOptionsText } from "./similarity/SimilarityModeOptions"
+import { SimilarityModeOptionsClip, SimilarityModeOptionsText, SimilarityModeSwitch } from "./similarity/SimilarityModeOptions"
 import { SimilarityTargetItem } from "./options/similarityTarget"
 
 export function SearchOptions() {
@@ -18,10 +18,13 @@ export function SearchOptions() {
         <div className="mt-4">
             <SwitchDB />
             <SwitchBookmarkNs />
-            {mode === Mode.ItemSimilarity && <SimilarityPageSizeSlider />}
-            {mode === Mode.ItemSimilarity && <SimilarityTargetItem />}
-            {mode === Mode.ItemSimilarity && similarityQuery.is_type === SimilarityQueryType.clip && <SimilarityModeOptionsClip />}
-            {mode === Mode.ItemSimilarity && similarityQuery.is_type === SimilarityQueryType.textEmbedding && <SimilarityModeOptionsText />}
+            {mode === Mode.ItemSimilarity && <>
+                <SimilarityPageSizeSlider />
+                <SimilarityTargetItem />
+                <SimilarityModeSwitch />
+                {similarityQuery.is_type === SimilarityQueryType.clip && <SimilarityModeOptionsClip />}
+                {similarityQuery.is_type === SimilarityQueryType.textEmbedding && <SimilarityModeOptionsText />}
+            </>}
             {mode === Mode.Search && <>
                 <BookmarksFilter />
                 <OrderBy />
