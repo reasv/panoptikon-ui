@@ -54,7 +54,7 @@ export function useItemSimilaritySearch() {
 
   const nResults = data?.count || 0
   const page = query.is_page
-  const pageSize = similarityQuery.page_size
+  const pageSize = query.is_page_size
   const setPage = (page: number) => setQuery({ is_page: page })
   return {
     data,
