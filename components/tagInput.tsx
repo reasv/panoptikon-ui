@@ -40,8 +40,8 @@ function replaceCurrentTag(inputString: string, newTag: string): string {
     // Extract the part of the string before the current tag
     const stringBeforeTag = inputString.slice(0, lastDelimiterIndex + 1);
 
-    // Return the combined string: before the tag + new tag
-    return stringBeforeTag + newTag;
+    // Return the combined string: before the tag + new tag + space
+    return stringBeforeTag + newTag + " ";
 }
 
 export function TagCompletionInput({
@@ -100,7 +100,7 @@ export function TagCompletionInput({
                 e.preventDefault();
                 const selectedTag = data.tags[selectedIndex][1]
                 addTag(value, selectedTag);
-                setFocus(false);
+                setSelectedIndex(0);
             }
         } else {
             if (e.key === 'Enter') {
@@ -136,7 +136,7 @@ export function TagCompletionInput({
             </PopoverTrigger>
             <PopoverContent className={cn("w-[200px] p-0", popoverClassName)} align="start">
                 <div
-                    className={cn("p-2 cursor-pointer hover:bg-accent")}>
+                    className={cn("p-1 text-sm cursor-pointer hover:bg-accent")}>
                     <span>{currentTag ? `Searching: ${currentTag}...` : "No Tag Detected"}</span>
                 </div>
                 {
