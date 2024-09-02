@@ -35,6 +35,7 @@ const initialImageSimilarityState: ImageSimilarityStateState = {
     xmodal_i2i: true,
     page_size: 6,
     page: 1,
+    full_count: false,
     src_text: {
       setter_names: [],
       languages: [],
@@ -53,6 +54,7 @@ const initialImageSimilarityState: ImageSimilarityStateState = {
     xmodal_i2i: true,
     page_size: 6,
     page: 1,
+    full_count: false,
     src_text: {
       setter_names: [],
       languages: [],
