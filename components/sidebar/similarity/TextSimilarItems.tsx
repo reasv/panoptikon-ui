@@ -45,10 +45,12 @@ export function TextEmbeddingsSimilarityFilter({
     setters,
     textEmbeddingQuery,
     setTextEmbeddingQuery,
+    hideMaxResults
 }: {
     setters: string[]
     textEmbeddingQuery: components["schemas"]["SimilarItemsRequest"]
     setTextEmbeddingQuery: (query: components["schemas"]["SimilarItemsRequest"]) => void
+    hideMaxResults?: boolean
 }) {
     const setterOptions = setters.map((setter) => ({ label: setter, value: setter }))
     return (
@@ -68,7 +70,7 @@ export function TextEmbeddingsSimilarityFilter({
                     placeholder="No Text Embed Model Selected"
                 />
             </div>
-            <ConfidenceFilter
+            {hideMaxResults && <ConfidenceFilter
                 label={<span>Max Results Displayed</span>}
                 confidence={textEmbeddingQuery.page_size}
                 setConfidence={(value) => setTextEmbeddingQuery({ ...textEmbeddingQuery, page_size: value })}
@@ -76,7 +78,7 @@ export function TextEmbeddingsSimilarityFilter({
                 min={0}
                 max={50}
                 step={1}
-            />
+            />}
             <SourceTextFilter textFilters={textEmbeddingQuery.src_text!} setTextFilters={(filter) => setTextEmbeddingQuery({
                 ...textEmbeddingQuery, src_text: filter
             })} />

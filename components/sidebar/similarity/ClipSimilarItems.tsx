@@ -46,10 +46,12 @@ export function CLIPSimilarityFilter({
     setters,
     clipQuery,
     setClipQuery,
+    hideMaxResults
 }: {
     setters: string[]
     clipQuery: components["schemas"]["SimilarItemsRequest"]
     setClipQuery: (query: components["schemas"]["SimilarItemsRequest"]) => void
+    hideMaxResults?: boolean
 }) {
     const setterOptions = setters.map((setter) => ({ label: setter, value: setter }))
     return (
@@ -69,7 +71,7 @@ export function CLIPSimilarityFilter({
                     placeholder="No CLIP Model Selected"
                 />
             </div>
-            <ConfidenceFilter
+            {!hideMaxResults && <ConfidenceFilter
                 label={<span>Max Results Displayed</span>}
                 confidence={clipQuery.page_size}
                 setConfidence={(value) => setClipQuery({ ...clipQuery, page_size: value })}
@@ -77,7 +79,7 @@ export function CLIPSimilarityFilter({
                 min={0}
                 max={50}
                 step={1}
-            />
+            />}
             <AggregationOptions textEmbeddingQuery={clipQuery} setTextEmbeddingQuery={setClipQuery} />
             <CrossModalOptions clipEmbeddingQuery={clipQuery} setCLIPEmbeddingQuery={setClipQuery} />
         </FilterContainer>
