@@ -47,7 +47,7 @@ export function useItemSimilaritySearch() {
       },
     },
     {
-      enabled: instantSearch && validQuery && mode === Mode.ItemSimilarity,
+      enabled: validQuery && mode === Mode.ItemSimilarity,
       placeholderData: keepPreviousData,
     }
   )
