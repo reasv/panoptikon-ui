@@ -46,8 +46,11 @@ export const useSQLite = (enabled: boolean) => {
                   initializedDb,
                   query
                 )
-                setError(errorMsg)
-                return success
+                if (!success) {
+                  setError(errorMsg)
+                } else {
+                  setError(null)
+                }
               }
             })
             .catch((err) => setError(err.message))

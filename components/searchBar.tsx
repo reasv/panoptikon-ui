@@ -37,6 +37,14 @@ export function SearchBar() {
         }
     }
     useEffect(() => {
+        if (syntaxChecker.error) {
+            setEnabled(false)
+        } else {
+            setEnabled(true)
+        }
+    }, [syntaxChecker.error])
+
+    useEffect(() => {
         checkInput(anyTextQuery, rawFts5Match)
     }, [rawFts5Match])
 
