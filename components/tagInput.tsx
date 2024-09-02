@@ -76,8 +76,6 @@ export function TagCompletionInput({
         enabled: !!currentTag
     })
 
-
-
     const [focus, setFocus] = useState(false)
     const [selectedIndex, setSelectedIndex] = useState(0);
 
@@ -137,7 +135,9 @@ export function TagCompletionInput({
                     className={cn("flex-grow", inputClassName)}
                 />
             </PopoverTrigger>
-            <PopoverContent className={cn("w-[200px] p-0", popoverClassName)} align="start">
+            <PopoverContent
+                onOpenAutoFocus={(e) => e.preventDefault()}
+                className={cn("w-[200px] p-0", popoverClassName)} align="start">
                 <div
                     className={cn("p-1 text-sm cursor-pointer hover:bg-accent")}>
                     <span>{currentTag ? `Searching: ${currentTag}...` : "No Tag Detected"}</span>
