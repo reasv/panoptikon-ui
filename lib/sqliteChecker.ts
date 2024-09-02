@@ -1,11 +1,14 @@
-// hooks/useSQLite.ts
 import { useEffect, useState, useCallback } from "react"
 import { initializeSQLite, testFTS5Query } from "@/lib/sqlite"
 import { Database } from "@sqlite.org/sqlite-wasm"
+import { useSQLiteInstanceStore } from "./state/sqlite"
 
 export const useSQLite = (enabled: boolean) => {
-  const [db, setDb] = useState<Database | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [db, setDb] = useSQLiteInstanceStore((state) => [state.db, state.setDb])
+  const [loading, setLoading] = useSQLiteInstanceStore((state) => [
+    state.loading,
+    state.setLoading,
+  ])
   const [error, setError] = useState<string | null>(null)
 
   // Initialize the database if enabled is true
