@@ -1,4 +1,5 @@
 import {
+  createSerializer,
   parseAsBoolean,
   parseAsInteger,
   parseAsString,
@@ -39,4 +40,33 @@ const useGalleryThumbnail = (name: Gallery) =>
     })
   )
 
-export { useGalleryIndex, useGalleryThumbnail, useGalleryName, Gallery }
+const gallerySearchParams = (name: Gallery) => ({
+  [`${name}.gi`]: parseAsInteger,
+  [`${name}.gt`]: parseAsBoolean,
+})
+interface ConcreteGalleryOptions {
+  index?: number
+  thumbnail?: boolean
+}
+
+const mapConcreteGalleryOptions = (
+  name: Gallery,
+  options: ConcreteGalleryOptions
+) => ({
+  [`${name}.gi`]: options.index,
+  [`${name}.gt`]: options.thumbnail,
+})
+
+const getGalleryOptionsSerializer = (name: Gallery) => {
+  const serialize = createSerializer(gallerySearchParams(name))
+  return (base: URLSearchParams, options: ConcreteGalleryOptions) =>
+    serialize(base, mapConcreteGalleryOptions(name, options))
+}
+
+export {
+  useGalleryIndex,
+  useGalleryThumbnail,
+  useGalleryName,
+  Gallery,
+  getGalleryOptionsSerializer,
+}

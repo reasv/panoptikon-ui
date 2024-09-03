@@ -5,15 +5,17 @@ import { Toggle } from "@/components/ui/toggle"
 import { X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { cn, getFullFileURL, getLocale, getThumbnailURL } from "@/lib/utils";
 import { ScrollBar } from "@/components/ui/scroll-area";
 import { components } from "@/lib/panoptikon";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { useItemSelection } from "@/lib/state/itemSelection";
-import { useGalleryIndex, useGalleryName, useGalleryThumbnail } from "@/lib/state/gallery";
+import { useGalleryIndex, useGalleryName, getGalleryOptionsSerializer, useGalleryThumbnail } from "@/lib/state/gallery";
 import { useSelectedDBs } from "@/lib/state/database";
+import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link'
 
 export function ImageGallery({
     items,
@@ -47,7 +49,6 @@ export function ImageGallery({
                     <Button onClick={() => prevImage()} variant="ghost" size="icon" title="Previous Image">
                         <ArrowBigLeft className="h-4 w-4" />
                     </Button>
-
                 </div>
                 <div className="max-w-[33%] text-center">
                     <FilePathComponent path={currentItem.path} />
@@ -196,6 +197,14 @@ export function HorizontalScrollElement({
     const [dbs, __] = useSelectedDBs()
     const setSelected = useItemSelection((state) => state.setItem)
     const thumbnailURL = getThumbnailURL(item.sha256, dbs)
+    const params = useSearchParams()
+
+    const imageLink = useMemo(() => {
+        const queryParams = new URLSearchParams(params)
+        const indexUrl = getGalleryOptionsSerializer(name)(queryParams, { index: ownIndex })
+        return indexUrl
+    }, [ownIndex, name, params])
+
     const onClick = () => {
         setIndex(ownIndex % nItems)
         setSelected(item)
@@ -206,14 +215,16 @@ export function HorizontalScrollElement({
             className={cn("w-60 h-80 relative rounded-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none cursor-pointer group",
                 ownIndex === index ? "scale-105 ring-2 ring-blue-500" : "scale-100"
             )}>
-            <Image
-                src={thumbnailURL}
-                alt={item.path}
-                onClick={() => onClick()}
-                className="w-full h-full object-cover object-top rounded-md cursor-pointer"
-                fill
-                sizes="200px"
-            />
+            <Link href={imageLink} onClick={onClick}>
+                <Image
+                    src={thumbnailURL}
+                    alt={item.path}
+                    // onClick={() => onClick()}
+                    className="w-full h-full object-cover object-top rounded-md cursor-pointer"
+                    fill
+                    sizes="200px"
+                />
+            </Link>
             <BookmarkBtn sha256={item.sha256} />
         </figure>
     )
