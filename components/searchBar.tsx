@@ -12,6 +12,7 @@ import { useToast } from "./ui/use-toast"
 import { Toggle } from "./ui/toggle"
 import { Tag } from "lucide-react"
 import { useTagCompletionSettings } from "@/lib/state/tagCompletion"
+import { cn } from "@/lib/utils"
 
 export function SearchBar({
     onSubmit,
@@ -112,7 +113,9 @@ export function SearchBar({
                     />
                 }
                 {syntaxChecker.error && anyTextQuery && rawFts5Match && (
-                    <div className="absolute left-0 mt-2 bg-red-500 text-white text-sm p-2 rounded-md shadow-md">
+                    <div className={cn("absolute mt-2 bg-red-500",
+                        "text-white text-sm p-2 rounded-md shadow-md z-50",
+                        completionEnabled ? 'left-1/3' : 'left-0')}>
                         {syntaxChecker.error}
                     </div>
                 )}
