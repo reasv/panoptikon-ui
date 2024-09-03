@@ -121,8 +121,7 @@ export function SearchBar({
 }
 
 export function TagCompletionSwitch() {
-    const isEnabled = useTagCompletionSettings((state) => state.enabled)
-    const setEnabled = useTagCompletionSettings((state) => state.setEnabled)
+    const [isEnabled, setEnabled, tagsExist] = useTagCompletionEnabled()
     const { toast } = useToast()
 
     const onClickToggle = () => {
@@ -141,6 +140,7 @@ export function TagCompletionSwitch() {
     }
 
     return (
+        tagsExist &&
         <Toggle
             pressed={isEnabled}
             onClick={onClickToggle}

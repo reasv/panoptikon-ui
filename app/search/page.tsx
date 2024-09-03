@@ -41,6 +41,30 @@ export async function fetchSearch(args: SearchQueryArgs) {
     }
 }
 
+export async function fetchStats(args: {
+    index_db?: string | null;
+    user_data_db?: string | null;
+}) {
+    try {
+        const { data, error } = await serverFetchClient.GET("/api/search/stats", {
+            params: {
+                query: {
+                    index_db: args.index_db,
+                    user_data_db: args.user_data_db
+                }
+            }
+        })
+        if (!data || error) {
+            console.error(error)
+            throw error
+        }
+        return data
+    } catch (error) {
+        console.error(error)
+        throw error
+    }
+}
+
 export default async function SearchPage({
     searchParams,
 }: {
@@ -60,6 +84,18 @@ export default async function SearchPage({
     await queryClient.prefetchQuery({
         queryKey: ["post", "/api/search", request],
         queryFn: () => fetchSearch(request),
+    })
+
+    const statsRequest = {
+        params: {
+            query: {
+                ...dbs,
+            },
+        },
+    }
+    await queryClient.prefetchQuery({
+        queryKey: ["get", "/api/search/stats", statsRequest],
+        queryFn: () => fetchStats(dbs),
     })
 
     return (

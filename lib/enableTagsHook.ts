@@ -14,5 +14,5 @@ export function useTagCompletionEnabled() {
   const tagsExist = tags.length > 0
   const enabled = useTagCompletionSettings((state) => state.enabled)
   const setEnabled = useTagCompletionSettings((state) => state.setEnabled)
-  return [tagsExist && enabled, setEnabled] as const
+  return [tagsExist && enabled, setEnabled, tagsExist] as const
 }
