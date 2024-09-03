@@ -1,4 +1,3 @@
-import { serverFetchClient } from '@/lib/api';
 import { SearchPageContent } from './SearchPageContent'
 
 import {
@@ -6,64 +5,10 @@ import {
     HydrationBoundary,
     QueryClient,
 } from '@tanstack/react-query'
-import { components } from '@/lib/panoptikon';
 import { initialSearchQueryState, queryFromState, SearchQueryStateState } from '@/lib/state/zust';
 import { decodeQueryParam } from '@/lib/decodeQuery';
 import { selectedDBsServer } from '@/lib/state/databaseServer';
-
-interface queryParams {
-    index_db: string | null
-    user_data_db: string | null
-}
-export interface SearchQueryArgs {
-    params: {
-        query: queryParams
-    }
-    body: components["schemas"]["SearchQuery"]
-}
-export async function fetchSearch(args: SearchQueryArgs) {
-    try {
-        const { data, error } = await serverFetchClient.POST("/api/search", {
-            params: args.params,
-            body: args.body
-        })
-        if (!data || error) {
-            console.error(error)
-            console.log("Error fetching search results")
-            throw error
-        }
-        console.log("Fetched search results successfully")
-        return data
-    } catch (error) {
-        console.error(error)
-        console.log("Error fetching search results")
-        throw error
-    }
-}
-
-export async function fetchStats(args: {
-    index_db?: string | null;
-    user_data_db?: string | null;
-}) {
-    try {
-        const { data, error } = await serverFetchClient.GET("/api/search/stats", {
-            params: {
-                query: {
-                    index_db: args.index_db,
-                    user_data_db: args.user_data_db
-                }
-            }
-        })
-        if (!data || error) {
-            console.error(error)
-            throw error
-        }
-        return data
-    } catch (error) {
-        console.error(error)
-        throw error
-    }
-}
+import { fetchDB, fetchNs, fetchSearch, fetchStats } from './queryFns';
 
 export default async function SearchPage({
     searchParams,
@@ -86,7 +31,7 @@ export default async function SearchPage({
         queryFn: () => fetchSearch(request),
     })
 
-    const statsRequest = {
+    const requestDBs = {
         params: {
             query: {
                 ...dbs,
@@ -94,10 +39,19 @@ export default async function SearchPage({
         },
     }
     await queryClient.prefetchQuery({
-        queryKey: ["get", "/api/search/stats", statsRequest],
+        queryKey: ["get", "/api/search/stats", requestDBs],
         queryFn: () => fetchStats(dbs),
     })
 
+    await queryClient.prefetchQuery({
+        queryKey: ["get", "/api/bookmarks/ns", requestDBs],
+        queryFn: () => fetchNs(dbs),
+    })
+
+    await queryClient.prefetchQuery({
+        queryKey: ["get", "/api/db", null],
+        queryFn: () => fetchDB(),
+    })
     return (
         <HydrationBoundary state={dehydrate(queryClient)}>
             <SearchPageContent initialQuery={request} />
