@@ -17,7 +17,8 @@ export function SearchResultImage({
     className,
     onImageClick,
     nItems,
-    galleryLink
+    galleryLink,
+    overrideURL
 }: {
     result: components["schemas"]["FileSearchResult"],
     index: number,
@@ -28,8 +29,9 @@ export function SearchResultImage({
     onImageClick?: (index?: number) => void
     nItems?: number
     galleryLink?: boolean
+    overrideURL?: string
 }) {
-    const fileUrl = getFullFileURL(result.sha256, dbs)
+    const fileUrl = overrideURL ? getFullFileURL(result.sha256, dbs) : overrideURL
     const thumbnailUrl = getThumbnailURL(result.sha256, dbs)
     const dateString = getLocale(new Date(result.last_modified))
     const params = useSearchParams()
