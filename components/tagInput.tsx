@@ -296,24 +296,23 @@ export const TagAutoComplete = ({
                         ) : null}
                         {data && !isLoading ? (
                             <CommandGroup>
-                                {data.tags.map((tag, index) => {
-                                    return (
-                                        <CommandItem
-                                            key={tag[1]}
-                                            value={tag[1]}
-                                            onMouseDown={(event) => {
-                                                event.preventDefault()
-                                                event.stopPropagation()
-                                            }}
-                                            onSelect={() => handleSelectOption(tag[1])}
-                                            className={cn(
-                                                "flex w-full items-center gap-2",
-                                            )}
-                                        >
-                                            {tag[1]} <span className="text-muted-foreground text-sm">({tag[2]})</span>
-                                        </CommandItem>
-                                    )
-                                })}
+                                {data.tags.map((tag) =>
+                                    <CommandItem
+                                        key={tag[1]}
+                                        value={tag[1]}
+                                        onMouseDown={(event) => {
+                                            event.preventDefault()
+                                            event.stopPropagation()
+                                        }}
+                                        onSelect={() => handleSelectOption(tag[1])}
+                                        className={cn(
+                                            "flex w-full items-center gap-2",
+                                        )}
+                                    >
+                                        {tag[1]} <span className="text-muted-foreground text-sm">({tag[2]})</span>
+                                    </CommandItem>
+
+                                )}
                             </CommandGroup>
                         ) : null}
                         {!isLoading ? (
