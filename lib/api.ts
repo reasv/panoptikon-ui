@@ -7,5 +7,7 @@ export const fetchClient = createFetchClient<paths>({
 })
 export const serverFetchClient = createFetchClient<paths>({
   baseUrl: process.env.API_URL,
+  fetch: fetch,
+  cache: "no-cache",
 })
 export const $api = createClient(fetchClient)
