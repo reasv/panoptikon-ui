@@ -310,7 +310,7 @@ export const TagAutoComplete = ({
                                                 "flex w-full items-center gap-2",
                                             )}
                                         >
-                                            {tag[1]}
+                                            {tag[1]} <span className="text-muted-foreground text-sm">({tag[2]})</span>
                                         </CommandItem>
                                     )
                                 })}
