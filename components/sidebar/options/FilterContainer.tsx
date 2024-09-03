@@ -23,14 +23,11 @@ export function FilterContainer({
     contentClassname,
     defaultIsCollapsed = false, // Set default to false if not provided
 }: FilterContainerProps) {
-    const [isExpanded, setIsExpanded] = useFilterContainerOpen(storageKey, !defaultIsCollapsed)
+    const [isExpanded, setIsExpanded] = useFilterContainerOpen(storageKey, !defaultIsCollapsed);
 
-
-    // Toggle the expanded/collapsed state and save it to localStorage
     const toggleFilters = () => {
         setIsExpanded(!isExpanded);
     };
-
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
             <div className="flex flex-row items-center justify-between">
