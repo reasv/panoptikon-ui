@@ -83,6 +83,7 @@ export function SearchBar({
             }
         }
     }
+    const showError = syntaxChecker.error && anyTextQuery && rawFts5Match
     return (
         <>
             <TagCompletionSwitch />
@@ -101,6 +102,7 @@ export function SearchBar({
                         onChange={onTextInputChange}
                         onSubmit={onSubmit}
                         inputClassName="flex-grow"
+                        popoverClassName={showError ? "top-12" : ""}
                     />
                     :
                     <Input
@@ -112,10 +114,9 @@ export function SearchBar({
                         className="flex-grow"
                     />
                 }
-                {syntaxChecker.error && anyTextQuery && rawFts5Match && (
+                {showError && (
                     <div className={cn("absolute mt-2 bg-red-500",
-                        "text-white text-sm p-2 rounded-md shadow-md z-50",
-                        completionEnabled ? 'left-1/3' : 'left-0')}>
+                        "text-white text-sm p-2 rounded-md shadow-md z-50")}>
                         {syntaxChecker.error}
                     </div>
                 )}

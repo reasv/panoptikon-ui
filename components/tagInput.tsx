@@ -281,8 +281,9 @@ export const TagAutoComplete = ({
                 <div
                     className={cn(
                         "animate-in fade-in-0 zoom-in-95",
-                        "absolute top-0 z-10 w-full outline-none rounded-md border bg-popover p-4 text-popover-foreground shadow-md",
+                        "absolute top-1 z-10 max-w-full outline-none rounded-md border bg-popover p-2 text-popover-foreground shadow-md",
                         isOpen ? "block" : "hidden",
+                        popoverClassName
                     )}
                 >
                     <CommandList className="">
@@ -316,7 +317,7 @@ export const TagAutoComplete = ({
                             </CommandGroup>
                         ) : null}
                         {!isLoading ? (
-                            <CommandPrimitive.Empty className="select-none text-center text-sm">
+                            <CommandPrimitive.Empty className="select-none text-center text-sm p-1">
                                 {emptyMessage}
                             </CommandPrimitive.Empty>
                         ) : null}
