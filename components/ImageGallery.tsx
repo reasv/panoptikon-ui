@@ -14,8 +14,16 @@ import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { useItemSelection } from "@/lib/state/itemSelection";
 import { useGalleryIndex, useGalleryName, getGalleryOptionsSerializer, useGalleryThumbnail } from "@/lib/state/gallery";
 import { useSelectedDBs } from "@/lib/state/database";
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link'
+
+function getNextIndex(length: number, index?: number | null,) {
+    return ((index || 0) + 1) % length
+}
+
+function getPrevIndex(length: number, index?: number | null,) {
+    return ((index || 0) - 1 + length) % length
+}
 
 export function ImageGallery({
     items,
@@ -25,8 +33,9 @@ export function ImageGallery({
     const [name, _] = useGalleryName()
     const [qIndex, setIndex] = useGalleryIndex(name)
     const index = (qIndex || 0) % items.length
-    const nextImage = () => setIndex((prevIndex) => ((prevIndex || 0) + 1) % items.length)
-    const prevImage = () => setIndex((prevIndex) => ((prevIndex || 0) - 1 + items.length) % items.length)
+    const nextImage = () => setIndex((prevIndex) => getNextIndex(items.length, prevIndex))
+    const prevImage = () => setIndex((prevIndex) => getPrevIndex(items.length, prevIndex))
+
     const closeGallery = () => setIndex(null)
 
     const [thumbnailsOpen, setThumbnailsOpen] = useGalleryThumbnail(name)
@@ -36,8 +45,25 @@ export function ImageGallery({
         setSelectedItem(items[index])
     }, [index, items])
 
-    const currentItem = items[index]
+    const params = useSearchParams()
+    const [prevImageLink, nextImageLink] = useMemo(() => {
+        const queryParams = new URLSearchParams(params)
+        const nextURL = getGalleryOptionsSerializer(name)(queryParams, { index: getNextIndex(items.length, index) })
+        const prevURL = getGalleryOptionsSerializer(name)(queryParams, { index: getPrevIndex(items.length, index) })
+        return [prevURL, nextURL]
+    }, [index, name, params, items.length])
 
+    function onClickNextImage(e: React.MouseEvent<HTMLAnchorElement, MouseEvent>) {
+        e.preventDefault()
+        nextImage()
+    }
+
+    function onClickPrevImage(e: React.MouseEvent<HTMLAnchorElement, MouseEvent>) {
+        e.preventDefault()
+        prevImage()
+    }
+
+    const currentItem = items[index]
     const dateString = getLocale(new Date(currentItem.last_modified))
     return (
         <div className="flex flex-col border rounded p-2">
@@ -46,9 +72,14 @@ export function ImageGallery({
                     <BookmarkBtn sha256={currentItem.sha256} buttonVariant />
                     <OpenFile sha256={currentItem.sha256} path={currentItem.path} buttonVariant />
                     <OpenFolder sha256={currentItem.sha256} path={currentItem.path} buttonVariant />
-                    <Button onClick={() => prevImage()} variant="ghost" size="icon" title="Previous Image">
-                        <ArrowBigLeft className="h-4 w-4" />
-                    </Button>
+                    <Link
+                        href={prevImageLink}
+                        onClick={onClickPrevImage}
+                    >
+                        <Button variant="ghost" size="icon" title="Previous Image">
+                            <ArrowBigLeft className="h-4 w-4" />
+                        </Button>
+                    </Link>
                 </div>
                 <div className="max-w-[33%] text-center">
                     <FilePathComponent path={currentItem.path} />
@@ -57,9 +88,14 @@ export function ImageGallery({
                     </p>
                 </div>
                 <div className="flex items-center">
-                    <Button onClick={() => nextImage()} variant="ghost" size="icon" title="Next Image">
-                        <ArrowBigRight className="h-4 w-4" />
-                    </Button>
+                    <Link
+                        href={nextImageLink}
+                        onClick={onClickNextImage}
+                    >
+                        <Button variant="ghost" size="icon" title="Next Image">
+                            <ArrowBigRight className="h-4 w-4" />
+                        </Button>
+                    </Link>
                     <OpenDetailsButton item={currentItem} />
                     <Toggle
                         pressed={thumbnailsOpen}
@@ -201,11 +237,14 @@ export function HorizontalScrollElement({
 
     const imageLink = useMemo(() => {
         const queryParams = new URLSearchParams(params)
-        const indexUrl = getGalleryOptionsSerializer(name)(queryParams, { index: ownIndex })
+        const indexUrl = getGalleryOptionsSerializer(name)(queryParams, { index: ownIndex % nItems })
         return indexUrl
-    }, [ownIndex, name, params])
+    }, [ownIndex, name, params, nItems])
 
-    const onClick = () => {
+    const onClick = (
+        e: React.MouseEvent<HTMLAnchorElement, MouseEvent>
+    ) => {
+        e.preventDefault()
         setIndex(ownIndex % nItems)
         setSelected(item)
     }
