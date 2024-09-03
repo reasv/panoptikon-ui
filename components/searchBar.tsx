@@ -89,13 +89,6 @@ export function SearchBar({
             <TagCompletionSwitch />
             <div className="relative w-full">
                 {completionEnabled ?
-                    // <TagCompletionInput
-                    //     placeholder={placeholder}
-                    //     value={anyTextQuery}
-                    //     onChange={onTextInputChange}
-                    //     onSubmit={onSubmit}
-                    //     inputClassName="flex-grow"
-                    // />
                     <TagAutoComplete
                         placeholder={placeholder}
                         value={anyTextQuery}
