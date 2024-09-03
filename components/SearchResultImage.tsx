@@ -18,7 +18,8 @@ export function SearchResultImage({
     onImageClick,
     nItems,
     galleryLink,
-    overrideURL
+    overrideURL,
+    showLoadingSpinner
 }: {
     result: components["schemas"]["FileSearchResult"],
     index: number,
@@ -30,6 +31,7 @@ export function SearchResultImage({
     nItems?: number
     galleryLink?: boolean
     overrideURL?: string
+    showLoadingSpinner?: boolean
 }) {
     const fileUrl = overrideURL ? getFullFileURL(result.sha256, dbs) : overrideURL
     const thumbnailUrl = getThumbnailURL(result.sha256, dbs)
@@ -55,7 +57,9 @@ export function SearchResultImage({
 
     return (
         <div className={cn("border rounded p-2", className)}>
-            <div className="overflow-hidden relative w-full pb-full mb-2 group">
+            <div className={cn("overflow-hidden relative w-full pb-full mb-2",
+                showLoadingSpinner ? "" : "group"
+            )}>
                 <a
                     href={galleryLink ? imageLink : fileUrl}
                     target="_blank"
@@ -70,10 +74,23 @@ export function SearchResultImage({
                         src={thumbnailUrl}
                         alt={`Result ${result.path}`}
                         fill
-                        className={cn("group-hover:object-contain object-cover object-top group-hover:object-center", imageClassName)}
+                        className={cn(
+                            "object-cover object-top",
+                            showLoadingSpinner ? "" : "group-hover:object-contain group-hover:object-center",
+                            imageClassName)}
                         unoptimized
                     />
                 </a>
+                {showLoadingSpinner && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-white bg-opacity-50">
+                        <Image
+                            src="/spinner.svg"
+                            alt="Loading..."
+                            width={110}
+                            height={110}
+                        />
+                    </div>
+                )}
                 <BookmarkBtn sha256={result.sha256} />
                 <OpenFile sha256={result.sha256} path={result.path} />
                 <OpenFolder sha256={result.sha256} path={result.path} />

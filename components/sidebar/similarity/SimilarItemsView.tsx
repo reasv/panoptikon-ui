@@ -19,7 +19,7 @@ export function SimilarItemsView({
     type: SimilarityQueryType
 }) {
     const [dbs, ___] = useSelectedDBs()
-    const { data } = $api.useQuery("post", "/api/search/similar/{sha256}", {
+    const { data, isLoading, isFetching } = $api.useQuery("post", "/api/search/similar/{sha256}", {
         params: {
             query: {
                 ...dbs
@@ -56,7 +56,15 @@ export function SimilarItemsView({
             {data && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 4xl:grid-cols-2 5xl:grid-cols-2 gap-4">
                     {data.results.map((result, index) => (
-                        <SearchResultImage key={index} result={result} index={index} dbs={dbs} imageContainerClassName="h-96 xl:h-80 4xl:h-80 5xl:h-80" onImageClick={() => onImageClick(index)} />
+                        <SearchResultImage
+                            key={index}
+                            result={result}
+                            index={index}
+                            dbs={dbs}
+                            imageContainerClassName="h-96 xl:h-80 4xl:h-80 5xl:h-80"
+                            onImageClick={() => onImageClick(index)}
+                            showLoadingSpinner={isLoading || isFetching}
+                        />
                     ))}
                 </div>
             )}
