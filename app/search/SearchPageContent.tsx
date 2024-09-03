@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/use-toast"
 import { SearchBar } from "@/components/searchBar"
 import { useCallback, useEffect, useRef } from "react";
-import { SearchQueryArgs } from "./page";
+import { SearchQueryArgs } from "./queryFns";
 import { SearchErrorToast } from "@/components/searchErrorToaster";
 import { cn, getFullFileURL, getLocale, getThumbnailURL } from "@/lib/utils";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
@@ -141,7 +141,15 @@ export function ResultGrid({
                         ('lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4 4xl:grid-cols-5') :
                         ('lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'))}>
                     {results.map((result, index) => (
-                        <SearchResultImage key={result.path} result={result} index={index} dbs={dbs} onImageClick={onImageClick} />
+                        <SearchResultImage
+                            key={result.path}
+                            result={result}
+                            index={index}
+                            dbs={dbs}
+                            onImageClick={onImageClick}
+                            galleryLink
+                            nItems={results.length}
+                        />
                     ))}
                 </div>
             </ScrollArea>

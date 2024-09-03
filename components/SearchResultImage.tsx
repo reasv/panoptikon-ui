@@ -1,10 +1,12 @@
 "use client"
 import Image from 'next/image'
 import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons"
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { cn, getFullFileURL, getLocale, getThumbnailURL } from "@/lib/utils";
 import { components } from "@/lib/panoptikon";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
+import { useSearchParams } from 'next/navigation';
+import { getGalleryOptionsSerializer, useGalleryName } from '@/lib/state/gallery';
 
 export function SearchResultImage({
     result,
@@ -13,7 +15,9 @@ export function SearchResultImage({
     imageClassName,
     imageContainerClassName,
     className,
-    onImageClick
+    onImageClick,
+    nItems,
+    galleryLink
 }: {
     result: components["schemas"]["FileSearchResult"],
     index: number,
@@ -22,20 +26,36 @@ export function SearchResultImage({
     imageContainerClassName?: string
     className?: string
     onImageClick?: (index?: number) => void
+    nItems?: number
+    galleryLink?: boolean
 }) {
     const fileUrl = getFullFileURL(result.sha256, dbs)
     const thumbnailUrl = getThumbnailURL(result.sha256, dbs)
     const dateString = getLocale(new Date(result.last_modified))
+    const params = useSearchParams()
+    const [name, _] = useGalleryName()
+
+    const imageLink = useMemo(() => {
+        if (!galleryLink) return fileUrl
+        const queryParams = new URLSearchParams(params)
+        const indexUrl = getGalleryOptionsSerializer(name)(
+            queryParams,
+            { index: index }
+        )
+        return indexUrl
+    }, [index, name, params, nItems, galleryLink, fileUrl])
+
     const onClick = useCallback(() => {
         if (onImageClick) {
             onImageClick(index)
         }
     }, [onImageClick, index])
+
     return (
         <div className={cn("border rounded p-2", className)}>
             <div className="overflow-hidden relative w-full pb-full mb-2 group">
                 <a
-                    href={fileUrl}
+                    href={galleryLink ? imageLink : fileUrl}
                     target="_blank"
                     onClick={(e) => {
                         e.preventDefault()
