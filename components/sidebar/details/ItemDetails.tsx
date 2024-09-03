@@ -91,7 +91,7 @@ function ExtractedText({
                 description={
                     <span>Filter the displayed text</span>
                 }
-                defaultIsCollapsed
+            // defaultIsCollapsed
             >
                 <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
                     <MultiBoxResponsive
@@ -260,7 +260,7 @@ function ItemTagDetails({
                 description={
                     <span>Filter the tags shown</span>
                 }
-                defaultIsCollapsed
+            // defaultIsCollapsed
             >
                 <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
                     <MultiBoxResponsive

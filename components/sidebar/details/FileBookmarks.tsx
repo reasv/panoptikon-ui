@@ -17,6 +17,25 @@ export function FileBookmarks({
 }: {
     item: components["schemas"]["FileSearchResult"]
 }) {
+    return (
+        <FilterContainer
+            label={<span>Set Bookmarks</span>}
+            description={<span>Add or remove this file from bookmark groups</span>}
+            storageKey="file-bookmarks-open"
+            unMountOnCollapse
+        >
+            <FileBookmarksSetter item={item} />
+        </FilterContainer>
+    )
+}
+
+function FileBookmarksSetter(
+    {
+        item,
+    }: {
+        item: components["schemas"]["FileSearchResult"]
+    }
+) {
     const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/bookmarks/ns", {
         params: {
@@ -135,13 +154,8 @@ export function FileBookmarks({
         toAdd.forEach(addBookmark)
         toRemove.forEach(removeBookmark)
     }
-
     return (
-        <FilterContainer
-            label={<span>Set Bookmarks</span>}
-            description={<span>Add or remove this file from bookmark groups</span>}
-            storageKey="file-bookmarks-open"
-        >
+        <>
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-center">
                 <Input
                     className="ml-1"
@@ -163,6 +177,6 @@ export function FileBookmarks({
                     buttonClassName="max-w-[310px] sm:max-w-[505px] md:max-w-[620px] lg:max-w-[350px] xl:max-w-[270px] 3xl:max-w-[300px] 4xl:max-w-[292px] 5xl:max-w-[370px]"
                 />
             </div>
-        </FilterContainer>
+        </>
     )
 }

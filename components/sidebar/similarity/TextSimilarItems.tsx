@@ -28,6 +28,7 @@ export function TextEmbeddingsSimilarity() {
             label={<span>Text Semantic Similarity</span>}
             description={<span>Similar items based on text embeddings</span>}
             storageKey="text-embeddings-similarity"
+            unMountOnCollapse
         >
             <TextEmbeddingsSimilarityFilter setters={setters} setTextEmbeddingQuery={setTextEmbeddingQuery} textEmbeddingQuery={textEmbeddingQuery} />
             <div className="mt-4">
@@ -60,7 +61,7 @@ export function TextEmbeddingsSimilarityFilter({
             description={
                 <span>Options for the text semantic similarity search</span>
             }
-            defaultIsCollapsed
+        // defaultIsCollapsed
         >
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
                 <ComboBoxResponsive

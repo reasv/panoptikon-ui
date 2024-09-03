@@ -47,7 +47,7 @@ export function AggregationOptions({
             description={
                 <span>How to aggregate distances of different embeddings for an item</span>
             }
-            defaultIsCollapsed
+        // defaultIsCollapsed
         >
             <ComboBoxResponsive
                 options={aggregationOptions.map((option) => ({ label: option, value: option }))}
@@ -102,7 +102,7 @@ export function SourceTextFilter({
             description={
                 <span>Filter the source text for text embeddings</span>
             }
-            defaultIsCollapsed
+        // defaultIsCollapsed
         >
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
                 <MultiBoxResponsive

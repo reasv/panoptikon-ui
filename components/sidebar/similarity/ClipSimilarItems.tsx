@@ -28,6 +28,7 @@ export function ClipItemSimilarity() {
             label={<span>CLIP Similarity</span>}
             description={<span>Similar items based on CLIP embeddings</span>}
             storageKey="clip-similarity"
+            unMountOnCollapse
         >
             <CLIPSimilarityFilter setters={clipSetters} clipQuery={clipQuery} setClipQuery={setClipQuery} />
             <div className="mt-4">
@@ -61,7 +62,7 @@ export function CLIPSimilarityFilter({
             description={
                 <span>Options for the CLIP semantic similarity search</span>
             }
-            defaultIsCollapsed
+        // defaultIsCollapsed
         >
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
                 <ComboBoxResponsive
@@ -100,7 +101,7 @@ function CrossModalOptions({
             description={
                 <span>Compare text and image embeddings together</span>
             }
-            defaultIsCollapsed
+        // defaultIsCollapsed
         >
             <SwitchOption
                 label="Enable Cross Modal"

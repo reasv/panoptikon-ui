@@ -14,6 +14,24 @@ export function ItemFileDetails({
 }: {
     item: components["schemas"]["FileSearchResult"]
 }) {
+
+    return (
+        <FilterContainer
+            label={<span>File and Item Metadata</span>}
+            description={<span>Metadata for the selected file</span>}
+            storageKey="file-item-details-open"
+            unMountOnCollapse
+        >
+            <ItemFileDetailsInternal item={item} />
+        </FilterContainer>
+    )
+}
+
+function ItemFileDetailsInternal({
+    item,
+}: {
+    item: components["schemas"]["FileSearchResult"]
+}) {
     const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/items/item/{sha256}", {
         params: {
@@ -31,48 +49,41 @@ export function ItemFileDetails({
     const resolutionString = data && data.item.width && data.item.height ? `${data.item.width}x${data.item.height}` : null
     const timeAddedString = data ? getLocale(new Date(data.item.time_added)) : null
     const durationString = data && data.item.duration ? prettyPrintVideoDuration(data.item.duration) : null
-    return (
-        <FilterContainer
-            label={<span>File and Item Metadata</span>}
-            description={<span>Metadata for the selected file</span>}
-            storageKey="file-item-details-open"
-            unMountOnCollapse
-        >
-            <div className="space-x-2 mt-4">
-                <div className="w-full max-w-[350px] sm:max-w-[550px] md:max-w-[670px] lg:max-w-[410px] xl:max-w-[310px] 3xl:max-w-[370px] 4xl:max-w-[340px] 5xl:max-w-[440px] overflow-hidden">
-                    <FilePathComponent path={item.path} />
-                </div>
-                <p className="text-xs text-gray-500 mt-2">
-                    <a href={getFullFileURL(item.sha256, dbs)} target="_blank">Download Original File ({sizeString})</a>
-                </p>
-                <p className="text-xs text-gray-500 mt-2">
-                    Type: {item.type} {resolutionString && `(${resolutionString})`} {durationString && `(${durationString})`}
-                </p>
-                <p className="text-xs text-gray-500 mt-2">
-                    Modified: {dateString}
-                </p>
-                {timeAddedString && <p className="text-xs text-gray-500 mt-2">
-                    Added: {timeAddedString}
-                </p>}
+    return (<>
+        <div className="space-x-2 mt-4">
+            <div className="w-full max-w-[350px] sm:max-w-[550px] md:max-w-[670px] lg:max-w-[410px] xl:max-w-[310px] 3xl:max-w-[370px] 4xl:max-w-[340px] 5xl:max-w-[440px] overflow-hidden">
+                <FilePathComponent path={item.path} />
             </div>
-            <div className="space-x-2 mt-4">
-                <FilterContainer
-                    label={<span>Files</span>}
-                    description={<span>All files associated with this item</span>}
-                    storageKey="file-list-open"
-                    defaultIsCollapsed={true}
-                >
-                    {data?.files.map((file, idx) => (
-                        <SingleFileItem
-                            key={file.path}
-                            item={item}
-                            path={file.path}
-                        />
-                    ))}
-                </FilterContainer>
-            </div>
-        </FilterContainer>
-    )
+            <p className="text-xs text-gray-500 mt-2">
+                <a href={getFullFileURL(item.sha256, dbs)} target="_blank">Download Original File ({sizeString})</a>
+            </p>
+            <p className="text-xs text-gray-500 mt-2">
+                Type: {item.type} {resolutionString && `(${resolutionString})`} {durationString && `(${durationString})`}
+            </p>
+            <p className="text-xs text-gray-500 mt-2">
+                Modified: {dateString}
+            </p>
+            {timeAddedString && <p className="text-xs text-gray-500 mt-2">
+                Added: {timeAddedString}
+            </p>}
+        </div>
+        <div className="space-x-2 mt-4">
+            <FilterContainer
+                label={<span>Files</span>}
+                description={<span>All files associated with this item</span>}
+                storageKey="file-list-open"
+            // defaultIsCollapsed={true}
+            >
+                {data?.files.map((file, idx) => (
+                    <SingleFileItem
+                        key={file.path}
+                        item={item}
+                        path={file.path}
+                    />
+                ))}
+            </FilterContainer>
+        </div>
+    </>)
 }
 
 function SingleFileItem({

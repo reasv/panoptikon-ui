@@ -11,7 +11,7 @@ interface FilterContainerProps {
     description?: ReactNode;
     children: ReactNode;
     storageKey: string;
-    defaultIsCollapsed?: boolean; // Optional prop to set the default collapsed state
+    defaultIsExpanded?: boolean; // Optional prop to set the default collapsed state
     contentClassname?: string;
     unMountOnCollapse?: boolean;
 }
@@ -22,10 +22,10 @@ export function FilterContainer({
     children,
     storageKey,
     contentClassname,
-    defaultIsCollapsed = false, // Set default to false if not provided
+    defaultIsExpanded = false, // Set default to false if not provided
     unMountOnCollapse = false,
 }: FilterContainerProps) {
-    const [isExpanded, setIsExpanded] = useFilterContainerOpen(storageKey, !defaultIsCollapsed);
+    const [isExpanded, setIsExpanded] = useFilterContainerOpen(storageKey, defaultIsExpanded);
 
     const toggleFilters = () => {
         setIsExpanded(!isExpanded);
