@@ -36,6 +36,7 @@ export function ItemFileDetails({
             label={<span>File and Item Metadata</span>}
             description={<span>Metadata for the selected file</span>}
             storageKey="file-item-details-open"
+            unMountOnCollapse
         >
             <div className="space-x-2 mt-4">
                 <div className="w-full max-w-[350px] sm:max-w-[550px] md:max-w-[670px] lg:max-w-[410px] xl:max-w-[310px] 3xl:max-w-[370px] 4xl:max-w-[340px] 5xl:max-w-[440px] overflow-hidden">

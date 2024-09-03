@@ -83,6 +83,7 @@ function ExtractedText({
             description={
                 <span>Text extracted from this item</span>
             }
+            unMountOnCollapse
         >
             <FilterContainer
                 storageKey="extractedTextdetailFilterOpen"
@@ -251,6 +252,7 @@ function ItemTagDetails({
             description={
                 <span>Tags added to this item</span>
             }
+            unMountOnCollapse
         >
             <FilterContainer
                 storageKey="tagsDetailFilterOpen"

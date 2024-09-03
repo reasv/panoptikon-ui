@@ -13,6 +13,7 @@ interface FilterContainerProps {
     storageKey: string;
     defaultIsCollapsed?: boolean; // Optional prop to set the default collapsed state
     contentClassname?: string;
+    unMountOnCollapse?: boolean;
 }
 
 export function FilterContainer({
@@ -22,6 +23,7 @@ export function FilterContainer({
     storageKey,
     contentClassname,
     defaultIsCollapsed = false, // Set default to false if not provided
+    unMountOnCollapse = false,
 }: FilterContainerProps) {
     const [isExpanded, setIsExpanded] = useFilterContainerOpen(storageKey, !defaultIsCollapsed);
 
@@ -52,7 +54,9 @@ export function FilterContainer({
                 className={cn(`overflow-hidden transition-[max-height] duration-300 ease-in-out ${isExpanded ? "max-h-full" : "max-h-0"
                     }`, contentClassname ? contentClassname : "")}
             >
-                {children}
+                {(isExpanded || !unMountOnCollapse) &&
+                    children
+                }
             </div>
         </div>
     );
