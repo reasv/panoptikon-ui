@@ -4,6 +4,7 @@ import { ReactNode, useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { Button } from "../../ui/button";
 import { cn } from "@/lib/utils";
+import { useFilterContainerOpen } from "@/lib/state/filterContainer";
 
 interface FilterContainerProps {
     label: ReactNode;
@@ -22,22 +23,12 @@ export function FilterContainer({
     contentClassname,
     defaultIsCollapsed = false, // Set default to false if not provided
 }: FilterContainerProps) {
-    const [isExpanded, setIsExpanded] = useState<boolean>(() => {
-        // Check localStorage first, then fallback to defaultIsCollapsed
-        const savedState = localStorage.getItem(storageKey);
-        if (savedState !== null) {
-            return savedState === "true";
-        }
-        return !defaultIsCollapsed; // Default to true if not collapsed
-    });
+    const [isExpanded, setIsExpanded] = useFilterContainerOpen(storageKey, !defaultIsCollapsed)
+
 
     // Toggle the expanded/collapsed state and save it to localStorage
     const toggleFilters = () => {
-        setIsExpanded((prev) => {
-            const newState = !prev;
-            localStorage.setItem(storageKey, newState.toString());
-            return newState;
-        });
+        setIsExpanded(!isExpanded);
     };
 
     return (
@@ -54,7 +45,8 @@ export function FilterContainer({
                     onClick={toggleFilters}
                 >
                     <ChevronDown
-                        className={`h-4 w-4 transform transition-transform duration-300 ${isExpanded ? "rotate-0" : "rotate-90"
+                        className={
+                            `h-4 w-4 transform transition-transform duration-300 ${isExpanded ? "rotate-0" : "rotate-90"
                             }`}
                     />
                 </Button>
