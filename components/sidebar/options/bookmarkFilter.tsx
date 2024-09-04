@@ -1,11 +1,13 @@
 "use client"
 import { $api } from "@/lib/api"
-import { useSearchQuery } from "@/lib/state/zust"
 import { Label } from "../../ui/label"
 import { Switch } from "../../ui/switch";
 import { MultiBoxResponsive } from "../../multiCombobox";
 import { useSelectedDBs } from "@/lib/state/database";
-
+import { useBookmarksFilter } from "@/lib/state/searchQuery/clientHooks";
+import { bookmarksFilterKeyMap } from "@/lib/state/searchQuery/searchQueryKeyMaps";
+import * as def from "nuqs"
+import { useQueryStates } from "nuqs";
 export function BookmarksFilter() {
     const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/bookmarks/ns", {
@@ -14,11 +16,7 @@ export function BookmarksFilter() {
         }
     })
 
-    const setBookmarksFilterEnabled = useSearchQuery((state) => state.setBookmarkFilterEnabled)
-    const bookmarksFilterEnabled = useSearchQuery((state) => state.bookmarks.restrict_to_bookmarks)
-    const bookmarksFilterNs = useSearchQuery((state) => state.bookmarks.namespaces!)
-    const setBookmarksFilterNs = useSearchQuery((state) => state.setBookmarkFilterNs)
-
+    const [bookmarksFilter, setBookmarksFilter] = useBookmarksFilter()
     const namespacesWithAll = ["*", ...(data?.namespaces || [])]
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
@@ -31,13 +29,17 @@ export function BookmarksFilter() {
                         Only show items that are in your bookmarks
                     </div>
                 </div>
-                <Switch checked={bookmarksFilterEnabled} onCheckedChange={(value) => setBookmarksFilterEnabled(value)} />
+                <Switch checked={bookmarksFilter.restrict_to_bookmarks} onCheckedChange={(value) => setBookmarksFilter({
+                    restrict_to_bookmarks: value
+                })} />
             </div>
             <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
                 <MultiBoxResponsive
                     options={namespacesWithAll.map((ns) => ({ value: ns, label: ns === "*" ? "All Groups" : ns }))}
-                    currentValues={bookmarksFilterNs}
-                    onSelectionChange={setBookmarksFilterNs}
+                    currentValues={bookmarksFilter.namespaces}
+                    onSelectionChange={(values) => setBookmarksFilter({
+                        namespaces: values
+                    })}
                     placeholder="Select groups"
                     resetValue="*"
                     maxDisplayed={10}

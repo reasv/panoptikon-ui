@@ -96,8 +96,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
       },
     },
     {
-      // enabled: searchEnabled && instantSearch && mode === Mode.Search,
-      enabled: false,
+      enabled: searchEnabled && instantSearch && mode === Mode.Search,
       placeholderData: keepPreviousData,
     }
   )
