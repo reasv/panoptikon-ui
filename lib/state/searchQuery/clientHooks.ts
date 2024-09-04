@@ -3,7 +3,6 @@ import * as def from "nuqs"
 
 import { useQueryStates } from "nuqs"
 import {
-  OrderArgsType,
   orderParamsKeyMap,
   tagFiltersKeyMap,
   fileFiltersKeyMap,
