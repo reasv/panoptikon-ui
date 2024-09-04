@@ -214,7 +214,7 @@ interface SearchQueryState extends SearchQueryStateState {
 }
 const queryStorageOptions = {
   name: "query",
-  storage: createJSONStorage<SearchQueryState>(() => compactUrlOnlyStorage),
+  storage: createJSONStorage<SearchQueryState>(() => persistLocalStorage),
 }
 
 export const initialSearchQueryState: SearchQueryStateState = {
