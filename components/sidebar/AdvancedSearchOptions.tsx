@@ -10,6 +10,7 @@ import { ExclusiveFilters } from "./options/ExclusiveFilters"
 import { Mode, SimilarityQueryType, useSearchMode, useSimilarityQuery } from "@/lib/state/similarityQuery"
 import { SimilarityModeOptionsClip, SimilarityModeOptionsText, SimilarityModeSwitch } from "./similarity/SimilarityModeOptions"
 import { SimilarityTargetItem } from "./options/similarityTarget"
+import { TagFilter } from "./options/tagFilter"
 
 export function SearchOptions() {
     const [mode, setMode] = useSearchMode()
@@ -31,6 +32,7 @@ export function SearchOptions() {
                 <PageSizeSlider />
                 <AnyTextFilter />
                 <ExclusiveFilters />
+                <TagFilter />
             </>
             }
         </div>

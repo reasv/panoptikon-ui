@@ -169,9 +169,6 @@ export function TagListInput({
     }) {
     const [value, setValue] = useState<string>(joinTags(tags))
     useEffect(() => {
-        setValue(joinTags(tags))
-    }, [tags])
-    useEffect(() => {
         onChange(splitTags(value))
     }, [value])
     return (
@@ -189,7 +186,7 @@ export function TagListInput({
             <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
                 <Input
                     type="text"
-                    placeholder="tag_1 tag_2 tag_3 ..."
+                    placeholder="tag_1 tag_2 tag_3..."
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     className="flex-grow"
