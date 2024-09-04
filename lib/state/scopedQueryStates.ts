@@ -58,16 +58,6 @@ export function useScopedQueryStates<KeyMap extends UseQueryStatesKeysMap>(
     }
   )
 
-  // Call useQueryStates with the scoped keyMap
-  const [scopedState, setScopedState] = useQueryStates(scopedKeyMap, {
-    history,
-    scroll,
-    shallow,
-    throttleMs,
-    clearOnDefault,
-    startTransition,
-  })
-
   const convertScopedToUnscoped = (
     scopedValues: Partial<
       Nullable<Values<ScopedKeyMap<KeyMap, typeof namespace, typeof separator>>>
@@ -111,6 +101,16 @@ export function useScopedQueryStates<KeyMap extends UseQueryStatesKeysMap>(
       >
     )
   }
+
+  // Call useQueryStates with the scoped keyMap
+  const [scopedState, setScopedState] = useQueryStates(scopedKeyMap, {
+    history,
+    scroll,
+    shallow,
+    throttleMs,
+    clearOnDefault,
+    startTransition,
+  })
 
   // Convert the scoped state back to the original key structure
   const unscopedState = convertScopedToUnscoped(scopedState)
