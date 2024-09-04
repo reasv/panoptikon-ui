@@ -100,18 +100,19 @@ export interface SearchQueryOptions {
   at_query: string
   at_fts5: boolean
 }
-
+export type ATExtractedTextFilter = Omit<
+  components["schemas"]["ExtractedTextFilter"],
+  "query" | "raw_fts5_match"
+>
+export type ATPathTextFilter = Omit<
+  components["schemas"]["PathTextFilter"],
+  "query" | "raw_fts5_match"
+>
 export interface AnyTextFilterOptions {
   query: ""
   raw_fts5_match: false
   enable_path_filter: true
   enable_et_filter: true
-  path_filter: Omit<
-    components["schemas"]["PathTextFilter"],
-    "query" | "raw_fts5_match"
-  >
-  et_filter: Omit<
-    components["schemas"]["ExtractedTextFilter"],
-    "query" | "raw_fts5_match"
-  >
+  path_filter: ATExtractedTextFilter
+  et_filter: ATPathTextFilter
 }
