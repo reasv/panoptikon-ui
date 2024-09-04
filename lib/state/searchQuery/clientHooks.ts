@@ -1,4 +1,4 @@
-import def, { Options } from "nuqs"
+import def, { Options, useQueryState } from "nuqs"
 import { components } from "@/lib/panoptikon"
 
 import { useQueryStates } from "nuqs"
@@ -20,6 +20,7 @@ import {
   KeymapComponents,
 } from "./searchQueryKeyMaps"
 import { useScopedQueryStates } from "../nuqsScopedWrappers/scopedQueryStates"
+import { queryFromState } from "./searchQuery"
 
 type Nullable<T> = {
   [K in keyof T]: T[K] | null
@@ -32,9 +33,15 @@ type SetFn<T> = (
   options?: Options
 ) => Promise<URLSearchParams>
 
-export function useOrderArgs(): [OrderArgsType, SetFn<OrderArgsType>] {
+export function useOrderArgs(): [
+  KeymapComponents["OrderParams"],
+  SetFn<KeymapComponents["OrderParams"]>
+] {
   const [state, set] = useQueryStates(orderParamsKeyMap(def as any))
-  return [state, set] as [OrderArgsType, SetFn<OrderArgsType>]
+  return [state, set] as [
+    KeymapComponents["OrderParams"],
+    SetFn<KeymapComponents["OrderParams"]>
+  ]
 }
 
 export function useQueryOptions(): [
@@ -182,4 +189,21 @@ export function useAnyTextFilterOptions(): [
     return setEtFilters({ ...newOptions.et_filter }, options)
   }
   return [currentState, setAnyTextFilterOptions] as const
+}
+
+export const useSearchQuery = () => {
+  const keymapComponents: KeymapComponents = {
+    ExtractedTextFilter: useExtractedTextFilters()[0],
+    PathTextFilter: usePathTextFilters()[0],
+    OrderParams: useOrderArgs()[0],
+    QueryTagFilters: useTagFilter()[0],
+    FileFilters: useFileFilters()[0],
+    BookmarksFilter: useBookmarksFilter()[0],
+    ExtractedTextEmbeddingsFilter: useExtractedTextEmbeddingsFilters()[0],
+    ImageEmbeddingFilter: useImageEmbeddingsFilters()[0],
+    SearchQueryOptions: useQueryOptions()[0],
+    ATExtractedTextFilter: useAnyTextExtractedTextFilters()[0],
+    ATPathTextFilter: useAnyTextPathTextFilters()[0],
+  }
+  return queryFromState(keymapComponents)
 }
