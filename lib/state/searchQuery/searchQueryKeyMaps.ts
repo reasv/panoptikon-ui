@@ -100,13 +100,11 @@ export interface SearchQueryOptions {
   at_query: string
   at_fts5: boolean
 }
-export type ATExtractedTextFilter = Omit<
-  components["schemas"]["ExtractedTextFilter"],
-  "query" | "raw_fts5_match"
+export type ATExtractedTextFilter = Required<
+  Omit<components["schemas"]["ExtractedTextFilter"], "query" | "raw_fts5_match">
 >
-export type ATPathTextFilter = Omit<
-  components["schemas"]["PathTextFilter"],
-  "query" | "raw_fts5_match"
+export type ATPathTextFilter = Required<
+  Omit<components["schemas"]["PathTextFilter"], "query" | "raw_fts5_match">
 >
 export interface AnyTextFilterOptions {
   query: string
