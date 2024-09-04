@@ -76,7 +76,7 @@ export function queryFromState(
   return query
 }
 
-function getOrderBy(state: KeymapComponents) {
+export function getOrderBy(state: KeymapComponents) {
   const current_order_by = state.OrderParams.order_by
   const def = "last_modified"
   if (current_order_by === null) {

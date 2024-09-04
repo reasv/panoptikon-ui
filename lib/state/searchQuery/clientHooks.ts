@@ -20,7 +20,7 @@ import {
   KeymapComponents,
 } from "./searchQueryKeyMaps"
 import { useScopedQueryStates } from "../nuqsScopedWrappers/scopedQueryStates"
-import { queryFromState } from "./searchQuery"
+import { getOrderBy, queryFromState } from "./searchQuery"
 
 type Nullable<T> = {
   [K in keyof T]: T[K] | null
@@ -191,7 +191,7 @@ export function useAnyTextFilterOptions(): [
   return [currentState, setAnyTextFilterOptions] as const
 }
 
-export const useSearchQuery = () => {
+export const useSearchQueryState = () => {
   const keymapComponents: KeymapComponents = {
     ExtractedTextFilter: useExtractedTextFilters()[0],
     PathTextFilter: usePathTextFilters()[0],
@@ -205,5 +205,13 @@ export const useSearchQuery = () => {
     ATExtractedTextFilter: useAnyTextExtractedTextFilters()[0],
     ATPathTextFilter: useAnyTextPathTextFilters()[0],
   }
-  return queryFromState(keymapComponents)
+  return keymapComponents
+}
+
+export const useSearchQuery = () => {
+  return queryFromState(useSearchQueryState())
+}
+
+export const useOrderBy = () => {
+  return getOrderBy(useSearchQueryState())
 }
