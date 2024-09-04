@@ -7,8 +7,10 @@ import {
   useSimilarityQuery,
 } from "./state/similarityQuery"
 import { useImageSimilarity } from "./state/similarityStore"
-import { useInstantSearch, useSearchQuery } from "./state/zust"
-import { SearchQueryArgs } from "@/app/search/page"
+import { useInstantSearch } from "./state/zust"
+import { SearchQueryArgs } from "@/app/search/queryFns"
+import { useSearchPage, useSearchQuery } from "./state/searchQuery/clientHooks"
+import { components } from "./panoptikon"
 
 export function useItemSimilaritySearch() {
   const [query, setQuery] = useSimilarityQuery()
@@ -73,13 +75,13 @@ export function useItemSimilaritySearch() {
 export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const isClient = typeof window !== "undefined"
   const searchQuery = isClient
-    ? useSearchQuery((state) => state.getSearchQuery())
-    : initialQuery.body
+    ? useSearchQuery()
+    : (initialQuery.body as Required<components["schemas"]["SearchQuery"]>)
   const dbs = isClient ? useSelectedDBs()[0] : initialQuery.params.query
-  const setPage = useSearchQuery((state) => state.setPage)
-  const page = useSearchQuery((state) => state.order_args.page)
-  const pageSize = useSearchQuery((state) => state.order_args.page_size)
-  const searchEnabled = useSearchQuery((state) => state.enable_search)
+  const [page, setPage] = useSearchPage()
+  const pageSize = searchQuery.order_args.page_size
+  // const searchEnabled = useSearchQuery((state) => state.enable_search)
+  const searchEnabled = true
   const instantSearch = useInstantSearch((state) => state.enabled)
   const [mode, _] = useSearchMode()
   const { data, error, isError, refetch, isFetching } = $api.useQuery(
@@ -94,7 +96,8 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
       },
     },
     {
-      enabled: searchEnabled && instantSearch && mode === Mode.Search,
+      // enabled: searchEnabled && instantSearch && mode === Mode.Search,
+      enabled: false,
       placeholderData: keepPreviousData,
     }
   )

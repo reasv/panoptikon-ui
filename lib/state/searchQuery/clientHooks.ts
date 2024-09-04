@@ -1,4 +1,4 @@
-import { Options } from "nuqs"
+import { Options, useQueryState } from "nuqs"
 import * as def from "nuqs"
 
 import { useQueryStates } from "nuqs"
@@ -41,6 +41,10 @@ export function useOrderArgs(): [
     KeymapComponents["OrderParams"],
     SetFn<KeymapComponents["OrderParams"]>
   ]
+}
+export function useSearchPage(): [number, SetFn<number>] {
+  const [state, set] = useQueryState("page", orderParamsKeyMap(def as any).page)
+  return [state, set] as const
 }
 
 export function useQueryOptions(): [

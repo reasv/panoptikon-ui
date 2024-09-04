@@ -3,7 +3,7 @@ import { KeymapComponents } from "./searchQueryKeyMaps"
 
 export function queryFromState(
   state: KeymapComponents
-): components["schemas"]["SearchQuery"] {
+): Required<components["schemas"]["SearchQuery"]> {
   const query: Required<components["schemas"]["SearchQuery"]> = {
     order_args: {
       ...state.OrderParams,
