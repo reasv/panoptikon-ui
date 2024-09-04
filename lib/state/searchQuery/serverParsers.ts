@@ -1,5 +1,4 @@
 import def, { createSearchParamsCache } from "nuqs/server"
-import { components } from "@/lib/panoptikon"
 
 import {
   OrderArgsType,

@@ -1,0 +1,47 @@
+import def, { createSerializer } from "nuqs/server"
+import {
+  OrderArgsType,
+  orderParamsKeyMap,
+  tagFiltersKeyMap,
+  fileFiltersKeyMap,
+  pathTextFiltersKeyMap,
+  extractedTextFiltersKeyMap,
+  bookmarksFilterKeyMap,
+  extractedTextEmbeddingsFiltersKeyMap,
+  imageEmbeddingsFiltersKeyMap,
+  queryOptionsKeyMap,
+  SearchQueryOptions,
+  ATExtractedTextFilter,
+  ATPathTextFilter,
+  KeymapComponents,
+} from "./searchQueryKeyMaps"
+import { createScopedSerializer } from "../nuqsScopedWrappers/scopedSerializer"
+
+export const serializers = {
+  orderArgs: createSerializer(orderParamsKeyMap(def)),
+  queryOptions: createSerializer(queryOptionsKeyMap(def)),
+  tagFilters: createScopedSerializer("tag", tagFiltersKeyMap(def)),
+  fileFilters: createScopedSerializer("file", fileFiltersKeyMap(def)),
+  pathTextFilters: createScopedSerializer("path", pathTextFiltersKeyMap(def)),
+  extractedTextFilters: createScopedSerializer(
+    "et",
+    extractedTextFiltersKeyMap(def)
+  ),
+  bookmarksFilter: createScopedSerializer("bm", bookmarksFilterKeyMap(def)),
+  extractedTextEmbeddingsFilters: createScopedSerializer(
+    "te",
+    extractedTextEmbeddingsFiltersKeyMap(def)
+  ),
+  imageEmbeddingsFilters: createScopedSerializer(
+    "ie",
+    imageEmbeddingsFiltersKeyMap(def)
+  ),
+  anyTextPathTextFilters: createScopedSerializer(
+    "at.path",
+    pathTextFiltersKeyMap(def)
+  ),
+  anyTextExtractedTextFilters: createScopedSerializer(
+    "at.et",
+    extractedTextFiltersKeyMap(def)
+  ),
+}
