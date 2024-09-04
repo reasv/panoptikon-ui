@@ -207,13 +207,6 @@ export function TagListInput({
                 </div>
             </div>
             <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
-                {/* <Input
-                    type="text"
-                    placeholder="tag_1 tag_2 tag_3..."
-                    value={value}
-                    onChange={(e) => setValue(e.target.value)}
-                    className="flex-grow"
-                /> */}
                 <TagAutoComplete
                     placeholder="tag_1 tag_2 tag_3..."
                     value={value}
