@@ -182,18 +182,9 @@ export interface SearchQueryStateState {
 interface SearchQueryState extends SearchQueryStateState {
   setInitialState: (state: SearchQueryStateState) => void
   setOrderBy: (
-    order_by:
-      | "last_modified"
-      | "path"
-      | "rank_fts"
-      | "rank_path_fts"
-      | "time_added"
-      | "rank_any_text"
-      | "text_vec_distance"
-      | "image_vec_distance"
-      | null
+    order_by: components["schemas"]["OrderParams"]["order_by"]
   ) => void
-  setOrder: (order: "asc" | "desc" | null | undefined) => void
+  setOrder: (order: components["schemas"]["OrderParams"]["order"]) => void
   setBookmarkFilterEnabled: (value: boolean) => void
   setBookmarkFilterNs: (ns: string[]) => void
   setRawFts5Match: (value: boolean) => void
@@ -216,15 +207,10 @@ interface SearchQueryState extends SearchQueryStateState {
   setEnableTypes: (value: boolean) => void
   setEnableTags: (value: boolean) => void
   setTags(tags: components["schemas"]["QueryTagFilters"]): void
-  getOrderBy: () =>
-    | "last_modified"
-    | "path"
-    | "rank_fts"
-    | "rank_path_fts"
-    | "time_added"
-    | "rank_any_text"
-    | "text_vec_distance"
-    | "image_vec_distance"
+  getOrderBy: () => Exclude<
+    Required<components["schemas"]["OrderParams"]>["order_by"],
+    null
+  >
 }
 const queryStorageOptions = {
   name: "query",
@@ -353,16 +339,7 @@ export const useSearchQuery = create(
       getOrderBy: () => getOrderBy(get()),
       getIsAnyTextEnabled: () => getIsAnyTextEnabled(get()),
       setOrderBy: (
-        order_by:
-          | "last_modified"
-          | "path"
-          | "rank_fts"
-          | "rank_path_fts"
-          | "time_added"
-          | "rank_any_text"
-          | "text_vec_distance"
-          | "image_vec_distance"
-          | null
+        order_by: components["schemas"]["OrderParams"]["order_by"]
       ) => {
         get().setPage(1)
         set((state) => {
@@ -375,7 +352,7 @@ export const useSearchQuery = create(
           }
         })
       },
-      setOrder: (order: "asc" | "desc" | null | undefined) => {
+      setOrder: (order: components["schemas"]["OrderParams"]["order"]) => {
         get().setPage(1)
         set((state) => {
           return {
