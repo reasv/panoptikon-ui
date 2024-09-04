@@ -1,7 +1,7 @@
-import def, { createSearchParamsCache } from "nuqs/server"
+import * as def from "nuqs/server"
 
+import { createSearchParamsCache } from "nuqs/server"
 import {
-  OrderArgsType,
   orderParamsKeyMap,
   tagFiltersKeyMap,
   fileFiltersKeyMap,

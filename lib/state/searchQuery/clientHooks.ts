@@ -1,5 +1,5 @@
-import def, { Options, useQueryState } from "nuqs"
-import { components } from "@/lib/panoptikon"
+import { Options } from "nuqs"
+import * as def from "nuqs"
 
 import { useQueryStates } from "nuqs"
 import {

@@ -1,4 +1,5 @@
-import def, { createSerializer } from "nuqs/server"
+import { createSerializer } from "nuqs/server"
+import * as def from "nuqs/server"
 import {
   OrderArgsType,
   orderParamsKeyMap,
@@ -10,10 +11,6 @@ import {
   extractedTextEmbeddingsFiltersKeyMap,
   imageEmbeddingsFiltersKeyMap,
   queryOptionsKeyMap,
-  SearchQueryOptions,
-  ATExtractedTextFilter,
-  ATPathTextFilter,
-  KeymapComponents,
 } from "./searchQueryKeyMaps"
 import { createScopedSerializer } from "../nuqsScopedWrappers/scopedSerializer"
 
