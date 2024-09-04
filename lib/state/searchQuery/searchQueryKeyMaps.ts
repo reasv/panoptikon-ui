@@ -127,4 +127,7 @@ export type KeymapComponents = {
     components["schemas"]["ExtractedTextEmbeddingsFilter"]
   >
   ImageEmbeddingFilter: Required<components["schemas"]["ImageEmbeddingFilter"]>
+  SearchQueryOptions: Required<SearchQueryOptions>
+  ATExtractedTextFilter: ATExtractedTextFilter
+  ATPathTextFilter: ATPathTextFilter
 }
