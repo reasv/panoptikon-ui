@@ -1,9 +1,9 @@
 import { components } from "@/lib/panoptikon"
 import def from "nuqs/server"
-type OrderArgsType = components["schemas"]["OrderParams"]
 
-type orderByType = Exclude<OrderArgsType["order_by"], null>
-type orderType = Exclude<OrderArgsType["order"], null | undefined>
+export type OrderArgsType = components["schemas"]["OrderParams"]
+export type orderByType = Exclude<OrderArgsType["order_by"], null>
+export type orderType = Exclude<OrderArgsType["order"], null | undefined>
 
 export const orderParamsKeyMap = (p: typeof def) => ({
   order_by: p
@@ -75,7 +75,7 @@ export const imageEmbeddingsFiltersKeyMap = (p: typeof def) => ({
   model: p.parseAsString.withDefault(""),
 })
 
-export const queryOptions = (p: typeof def) => ({
+export const queryOptionsKeyMap = (p: typeof def) => ({
   e_tags: p.parseAsBoolean.withDefault(false),
   e_path: p.parseAsBoolean.withDefault(false),
   e_et: p.parseAsBoolean.withDefault(false),
@@ -87,3 +87,31 @@ export const queryOptions = (p: typeof def) => ({
   at_query: p.parseAsString.withDefault(""),
   at_fts5: p.parseAsBoolean.withDefault(false),
 })
+
+export interface SearchQueryOptions {
+  e_tags: boolean
+  e_path: boolean
+  e_et: boolean
+  e_mime: boolean
+  e_iemb: boolean
+  e_temb: boolean
+  at_e_path: boolean
+  at_e_et: boolean
+  at_query: string
+  at_fts5: boolean
+}
+
+export interface AnyTextFilterOptions {
+  query: ""
+  raw_fts5_match: false
+  enable_path_filter: true
+  enable_et_filter: true
+  path_filter: Omit<
+    components["schemas"]["PathTextFilter"],
+    "query" | "raw_fts5_match"
+  >
+  et_filter: Omit<
+    components["schemas"]["ExtractedTextFilter"],
+    "query" | "raw_fts5_match"
+  >
+}
