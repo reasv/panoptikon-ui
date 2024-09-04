@@ -6,8 +6,6 @@ import { Switch } from "../../ui/switch";
 import { ComboBoxResponsive } from "../../combobox";
 import { Input } from "../../ui/input";
 import { MultiBoxResponsive } from "../../multiCombobox";
-import { Slider } from "../../ui/slider";
-import { ReactNode, useEffect, useState } from "react";
 import { FilterContainer } from "./FilterContainer";
 import { ConfidenceFilter } from "./confidenceFilter";
 import { useSelectedDBs } from "@/lib/state/database";

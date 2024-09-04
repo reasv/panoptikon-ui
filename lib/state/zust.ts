@@ -176,16 +176,10 @@ export interface SearchQueryStateState {
   types: string[]
   e_path: boolean
   e_types: boolean
+  e_tags: boolean
+  tags: components["schemas"]["QueryTagFilters"]
 }
-interface SearchQueryState {
-  enable_search: boolean
-  order_args: components["schemas"]["OrderParams"]
-  any_text: AnyTextSettings
-  bookmarks: components["schemas"]["BookmarksFilter"]
-  paths: string[]
-  types: string[]
-  e_path: boolean
-  e_types: boolean
+interface SearchQueryState extends SearchQueryStateState {
   setInitialState: (state: SearchQueryStateState) => void
   setOrderBy: (
     order_by:
@@ -220,6 +214,8 @@ interface SearchQueryState {
   setTypes: (types: string[]) => void
   setEnablePaths: (value: boolean) => void
   setEnableTypes: (value: boolean) => void
+  setEnableTags: (value: boolean) => void
+  setTags(tags: components["schemas"]["QueryTagFilters"]): void
   getOrderBy: () =>
     | "last_modified"
     | "path"
@@ -264,6 +260,10 @@ export const initialSearchQueryState: SearchQueryStateState = {
     user: "user",
     include_wildcard: true,
   },
+  e_tags: false,
+  tags: {
+    all_setters_required: false,
+  },
   paths: [],
   types: [],
   e_path: false,
@@ -275,6 +275,26 @@ export const useSearchQuery = create(
       ...initialSearchQueryState,
       setInitialState: (state: SearchQueryStateState) => {
         set(state)
+      },
+      setTags: (tags: components["schemas"]["QueryTagFilters"]) => {
+        if (get().e_tags) {
+          get().setPage(1)
+        }
+        set((state) => {
+          return {
+            ...state,
+            tags: tags,
+          }
+        })
+      },
+      setEnableTags: (value: boolean) => {
+        get().setPage(1)
+        set((state) => {
+          return {
+            ...state,
+            e_tags: value,
+          }
+        })
       },
       setEnablePaths: (value: boolean) => {
         get().setPage(1)
@@ -613,6 +633,9 @@ export function queryFromState(
       ...query.query!.filters!.files,
       item_types: state.types,
     }
+  }
+  if (state.e_tags) {
+    query.query!.tags = state.tags
   }
   query.order_args!.order_by = getOrderBy(state)
   return query
