@@ -68,43 +68,69 @@ export function useScopedQueryStates<KeyMap extends UseQueryStatesKeysMap>(
     startTransition,
   })
 
+  const convertScopedToUnscoped = (
+    scopedValues: Partial<
+      Nullable<Values<ScopedKeyMap<KeyMap, typeof namespace, typeof separator>>>
+    >
+  ) => {
+    return Object.keys(scopedValues).reduce(
+      (acc, scopedKey: keyof typeof scopedState) => {
+        const unscopedKey = scopedToUnscopedMap[scopedKey]
+
+        // Safely assign the state values back
+        const defaultValue = keyMap[unscopedKey].defaultValue
+        const parsedValue = scopedValues[scopedKey]
+
+        // Respect the structure of Values<KeyMap>
+        acc[unscopedKey] =
+          defaultValue !== undefined && defaultValue !== null
+            ? parsedValue ?? defaultValue // Use non-null defaultValue if available
+            : parsedValue ?? null // Otherwise, allow null
+
+        return acc
+      },
+      {} as Values<KeyMap> // Now correctly typed
+    )
+  }
+
+  const convertUnscopedToScoped = (
+    unscopedValues: Partial<Nullable<Values<KeyMap>>>
+  ) => {
+    return (Object.keys(unscopedValues) as (keyof KeyMap)[]).reduce(
+      (acc, key) => {
+        const scopedKey = `${namespace}${separator}${String(
+          key
+        )}` as keyof ScopedKeyMap<KeyMap, typeof namespace, typeof separator>
+        acc[scopedKey] = unscopedValues[key]
+        return acc
+      },
+      {} as Partial<
+        Nullable<
+          Values<ScopedKeyMap<KeyMap, typeof namespace, typeof separator>>
+        >
+      >
+    )
+  }
+
   // Convert the scoped state back to the original key structure
-  const unscopedState = Object.keys(scopedState).reduce(
-    (acc, scopedKey: keyof typeof scopedState) => {
-      const unscopedKey = scopedToUnscopedMap[scopedKey]
-
-      // Safely assign the state values back
-      const parser = keyMap[unscopedKey].parse
-      const defaultValue = keyMap[unscopedKey].defaultValue
-
-      const parsedValue = scopedState[scopedKey] as ReturnType<typeof parser>
-
-      // Respect the structure of Values<KeyMap>
-      acc[unscopedKey] =
-        defaultValue !== undefined && defaultValue !== null
-          ? parsedValue ?? defaultValue // Use non-null defaultValue if available
-          : parsedValue ?? null // Otherwise, allow null
-
-      return acc
-    },
-    {} as Values<KeyMap> // Now correctly typed
-  )
+  const unscopedState = convertScopedToUnscoped(scopedState)
 
   // Set function with scoped keys
   const setUnscopedState: SetValues<KeyMap> = (values, options) => {
-    const scopedValues = (
-      Object.keys(values) as (keyof typeof values)[]
-    ).reduce((acc, key) => {
-      const scopedKey = `${namespace}${separator}${key}` as keyof ScopedKeyMap<
-        KeyMap,
-        typeof namespace,
-        typeof separator
-      >
-      acc[scopedKey] = values[key]
-      return acc
-    }, {} as Partial<Nullable<ScopedKeyMap<KeyMap, typeof namespace, typeof separator>>>)
+    // Check if values is an updater function
+    if (typeof values === "function") {
+      // If values is an updater function, we need to convert it to a scoped updater function
+      const unscopedUpdater = values
 
-    return setScopedState(scopedValues as any, options)
+      const scopedUpdater = (oldScopedState: typeof scopedState) =>
+        convertUnscopedToScoped(
+          unscopedUpdater(convertScopedToUnscoped(oldScopedState))
+        )
+
+      return setScopedState(scopedUpdater, options)
+    }
+    // Otherwise, convert unscoped keys to scoped keys
+    return setScopedState(convertUnscopedToScoped(values), options)
   }
 
   return [unscopedState, setUnscopedState]
