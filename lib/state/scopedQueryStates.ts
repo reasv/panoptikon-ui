@@ -32,14 +32,16 @@ export function useScopedQueryStates<KeyMap extends UseQueryStatesKeysMap>(
     startTransition,
   }: Partial<UseNamespacesQueryStateOptions> = {}
 ): UseQueryStatesReturn<KeyMap> {
+  // Maintain a map between scoped and unscoped keys
+  const scopedToUnscopedMap: Record<string, keyof KeyMap> = {}
+
   // Create a namespaced keyMap by prepending the namespace to each key
-  const scopedKeyMap = Object.keys(keyMap).reduce((acc, key) => {
-    const scopedKey = `${namespace}${separator}${key}` as keyof ScopedKeyMap<
-      KeyMap,
-      typeof namespace,
-      typeof separator
-    >
-    ;(acc as any)[scopedKey] = keyMap[key as keyof KeyMap]
+  const scopedKeyMap = Object.keys(keyMap).reduce((acc, key: keyof KeyMap) => {
+    const scopedKey = `${namespace}${separator}${String(
+      key
+    )}` as keyof ScopedKeyMap<KeyMap, typeof namespace, typeof separator>
+    scopedToUnscopedMap[scopedKey] = key
+    ;(acc as any)[scopedKey] = keyMap[key]
     return acc
   }, {} as ScopedKeyMap<KeyMap, typeof namespace, typeof separator>)
 
@@ -55,19 +57,14 @@ export function useScopedQueryStates<KeyMap extends UseQueryStatesKeysMap>(
 
   // Convert the scoped state back to the original key structure
   const unscopedState = Object.keys(scopedState).reduce(
-    (acc, scopedKey) => {
-      const unscopedKey = scopedKey.replace(
-        `${namespace}${separator}`,
-        ""
-      ) as keyof KeyMap
+    (acc, scopedKey: keyof typeof scopedState) => {
+      const unscopedKey = scopedToUnscopedMap[scopedKey]
 
       // Safely assign the state values back
       const parser = keyMap[unscopedKey].parse
       const defaultValue = keyMap[unscopedKey].defaultValue
 
-      const parsedValue = scopedState[
-        scopedKey as keyof typeof scopedState
-      ] as ReturnType<typeof parser>
+      const parsedValue = scopedState[scopedKey] as ReturnType<typeof parser>
 
       // Respect the structure of Values<KeyMap>
       acc[unscopedKey] =
