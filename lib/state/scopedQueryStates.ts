@@ -32,31 +32,38 @@ export function useScopedQueryStates<KeyMap extends UseQueryStatesKeysMap>(
     startTransition,
   }: Partial<UseNamespacesQueryStateOptions> = {}
 ): UseQueryStatesReturn<KeyMap> {
-  const { scopedKeyMap, scopedToUnscopedMap } = Object.keys(keyMap).reduce(
-    (acc, key: keyof KeyMap) => {
-      const scopedKey = `${namespace}${separator}${String(
-        key
-      )}` as keyof ScopedKeyMap<KeyMap, typeof namespace, typeof separator>
+  const { scopedKeyMap, scopedToUnscopedMap, unscopedToScopedMap } =
+    Object.keys(keyMap).reduce(
+      (acc, key: keyof KeyMap) => {
+        const scopedKey = `${namespace}${separator}${String(
+          key
+        )}` as keyof ScopedKeyMap<KeyMap, typeof namespace, typeof separator>
 
-      acc.scopedToUnscopedMap[scopedKey] = key
-      ;(acc.scopedKeyMap as any)[scopedKey] = keyMap[key]
+        acc.scopedToUnscopedMap[scopedKey] = key
+        acc.unscopedToScopedMap[key] = scopedKey
+        const keyValue = keyMap[key]
+        ;(acc.scopedKeyMap as any)[scopedKey] = keyValue
 
-      return acc
-    },
-    {
-      // Maintain a scoped keyMap
-      scopedKeyMap: {} as ScopedKeyMap<
-        KeyMap,
-        typeof namespace,
-        typeof separator
-      >,
-      // Maintain a map between scoped and unscoped keys
-      scopedToUnscopedMap: {} as Record<
-        keyof ScopedKeyMap<KeyMap, typeof namespace, typeof separator>,
-        keyof KeyMap
-      >,
-    }
-  )
+        return acc
+      },
+      {
+        // Maintain a scoped keyMap
+        scopedKeyMap: {} as ScopedKeyMap<
+          KeyMap,
+          typeof namespace,
+          typeof separator
+        >,
+        // Maintain a map between scoped and unscoped keys
+        scopedToUnscopedMap: {} as Record<
+          keyof ScopedKeyMap<KeyMap, typeof namespace, typeof separator>,
+          keyof KeyMap
+        >,
+        unscopedToScopedMap: {} as Record<
+          keyof KeyMap,
+          keyof ScopedKeyMap<KeyMap, typeof namespace, typeof separator>
+        >,
+      }
+    )
 
   const convertScopedToUnscoped = (
     scopedValues: Partial<
@@ -88,9 +95,7 @@ export function useScopedQueryStates<KeyMap extends UseQueryStatesKeysMap>(
   ) => {
     return (Object.keys(unscopedValues) as (keyof KeyMap)[]).reduce(
       (acc, key) => {
-        const scopedKey = `${namespace}${separator}${String(
-          key
-        )}` as keyof ScopedKeyMap<KeyMap, typeof namespace, typeof separator>
+        const scopedKey = unscopedToScopedMap[key]
         acc[scopedKey] = unscopedValues[key]
         return acc
       },
