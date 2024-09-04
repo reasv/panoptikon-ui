@@ -8,12 +8,16 @@ import { MultiBoxResponsive } from "../../multiCombobox";
 import { FilterContainer } from "./FilterContainer";
 import { ConfidenceFilter } from "./confidenceFilter";
 import { useSelectedDBs } from "@/lib/state/database";
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import { components } from "@/lib/panoptikon";
 
 export function TagFilter() {
     const [tagFilter, setTagFilter] = useSearchQuery((state) => [state.tags, state.setTags])
     const [enabled, setEnabled] = useSearchQuery((state) => [state.e_tags, state.setEnableTags])
+    function setTagFilterWrapper(newTagFilter: components["schemas"]["QueryTagFilters"]) {
+        console.log(tagFilter, newTagFilter)
+        setTagFilter(newTagFilter)
+    }
     return (
         <FilterContainer
             storageKey="TagFilter" // Add a storageKey prop to make the localStorage key unique
@@ -30,7 +34,7 @@ export function TagFilter() {
             />
             <TagFilterSettings
                 tagFilter={tagFilter}
-                setTagFilter={setTagFilter}
+                setTagFilter={setTagFilterWrapper}
             />
         </FilterContainer>
     )
@@ -167,10 +171,28 @@ export function TagListInput({
         tags: string[]
         onChange: (tags: string[]) => void
     }) {
-    const [value, setValue] = useState<string>(joinTags(tags))
+    const [value, setValue] = useState<string>(joinTags(tags));
+
+    // Track initial mount
+    const isInitialMount = useRef(true);
+    const hasLoadedTags = useRef(false);
+
+
     useEffect(() => {
-        onChange(splitTags(value))
-    }, [value])
+        if (isInitialMount.current) {
+            isInitialMount.current = false;
+        } else {
+            onChange(splitTags(value));
+        }
+    }, [value]);
+
+    useEffect(() => {
+        if (!hasLoadedTags.current && tags.length > 0) {
+            setValue(joinTags(tags));
+            hasLoadedTags.current = true;
+        }
+    }, [tags]);
+
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
             <div className="flex flex-row items-center justify-between">

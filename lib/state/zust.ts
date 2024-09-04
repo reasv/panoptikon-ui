@@ -283,7 +283,9 @@ export const useSearchQuery = create(
         set((state) => {
           return {
             ...state,
-            tags: tags,
+            tags: {
+              ...tags,
+            },
           }
         })
       },
