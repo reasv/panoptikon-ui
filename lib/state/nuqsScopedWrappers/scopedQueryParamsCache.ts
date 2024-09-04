@@ -1,3 +1,4 @@
+import { UseQueryStatesKeysMap } from "nuqs"
 import {
   createSearchParamsCache,
   ParserBuilder,
@@ -20,6 +21,14 @@ type ExtractParserType<T extends ParserBuilder<any>> = T extends ParserBuilder<
     : never
   : never
 
+type Values<T extends UseQueryStatesKeysMap> = {
+  [K in keyof T]: T[K]["defaultValue"] extends NonNullable<
+    ReturnType<T[K]["parse"]>
+  >
+    ? NonNullable<ReturnType<T[K]["parse"]>>
+    : ReturnType<T[K]["parse"]> | null
+}
+
 interface CreateScopedSearchParamsCacheOptions {
   separator?: string
 }
@@ -37,7 +46,25 @@ export function createScopedSearchParamsCache<
   namespace: string,
   parsers: Parsers,
   { separator = "." }: Partial<CreateScopedSearchParamsCacheOptions> = {}
-) {
+): {
+  parse: (
+    searchParams: SearchParams
+  ) => Readonly<
+    keyof Parsers extends infer T extends keyof Parsers
+      ? { [K in T]: ExtractParserType<Parsers[K]> }
+      : never
+  >
+  get: <Key extends keyof Parsers>(
+    key: Key
+  ) => (keyof Parsers extends infer T_1 extends keyof Parsers
+    ? { [K in T_1]: ExtractParserType<Parsers[K]> }
+    : never)[Key]
+  all: () => Readonly<
+    keyof Parsers extends infer T_2 extends keyof Parsers
+      ? { [K in T_2]: ExtractParserType<Parsers[K]> }
+      : never
+  >
+} {
   // Maps for converting between scoped and unscoped keys
   const scopedToUnscopedMap: Record<string, string> = {}
   const unscopedToScopedMap: Record<string, string> = {}
@@ -79,9 +106,11 @@ export function createScopedSearchParamsCache<
   // Wrap the cache functions to convert the keys back to unscoped format
   return {
     parse: (searchParams: SearchParams) =>
-      convertScopedToUnscoped(cache.parse(searchParams)),
+      convertScopedToUnscoped(cache.parse(searchParams)) as any,
     get: <Key extends keyof Parsers>(key: Key) =>
-      cache.get(unscopedToScopedMap[String(key)] as keyof typeof scopedParsers),
-    all: () => convertScopedToUnscoped(cache.all()),
+      cache.get(
+        unscopedToScopedMap[String(key)] as keyof typeof scopedParsers
+      ) as any,
+    all: () => convertScopedToUnscoped(cache.all()) as any,
   }
 }
