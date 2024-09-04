@@ -182,6 +182,7 @@ type AutoCompleteProps = {
     onSubmit?: () => void
     inputClassName?: string
     popoverClassName?: string
+    className?: string
 }
 
 export const TagAutoComplete = ({
@@ -192,6 +193,7 @@ export const TagAutoComplete = ({
     onSubmit,
     inputClassName,
     popoverClassName,
+    className,
 }: AutoCompleteProps) => {
     const inputRef = useRef<HTMLInputElement>(null)
 
@@ -263,7 +265,12 @@ export const TagAutoComplete = ({
     )
     const emptyMessage = (data && data.tags.length === 0) ? "No tags found" : "Start typing a tag..."
     return (
-        <CommandPrimitive loop shouldFilter={false} onKeyDown={handleKeyDown}>
+        <CommandPrimitive
+            className={className}
+            loop
+            shouldFilter={false}
+            onKeyDown={handleKeyDown}
+        >
             <div>
                 <CommandInput
                     ref={inputRef}

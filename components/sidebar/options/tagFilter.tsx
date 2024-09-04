@@ -10,6 +10,7 @@ import { ConfidenceFilter } from "./confidenceFilter";
 import { useSelectedDBs } from "@/lib/state/database";
 import { ReactNode, useEffect, useRef, useState } from "react";
 import { components } from "@/lib/panoptikon";
+import { TagAutoComplete } from "@/components/tagInput";
 
 export function TagFilter() {
     const [tagFilter, setTagFilter] = useSearchQuery((state) => [state.tags, state.setTags])
@@ -206,11 +207,18 @@ export function TagListInput({
                 </div>
             </div>
             <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
-                <Input
+                {/* <Input
                     type="text"
                     placeholder="tag_1 tag_2 tag_3..."
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
+                    className="flex-grow"
+                /> */}
+                <TagAutoComplete
+                    placeholder="tag_1 tag_2 tag_3..."
+                    value={value}
+                    onChange={setValue}
+                    inputClassName="flex-grow"
                     className="flex-grow"
                 />
             </div>
