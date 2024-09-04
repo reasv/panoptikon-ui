@@ -109,10 +109,10 @@ export type ATPathTextFilter = Omit<
   "query" | "raw_fts5_match"
 >
 export interface AnyTextFilterOptions {
-  query: ""
-  raw_fts5_match: false
-  enable_path_filter: true
-  enable_et_filter: true
-  path_filter: ATExtractedTextFilter
-  et_filter: ATPathTextFilter
+  query: string
+  raw_fts5_match: boolean
+  enable_path_filter: boolean
+  enable_et_filter: boolean
+  path_filter: ATPathTextFilter
+  et_filter: ATExtractedTextFilter
 }
