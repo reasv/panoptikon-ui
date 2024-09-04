@@ -34,22 +34,26 @@ export function useScopedQueryStates<KeyMap extends UseQueryStatesKeysMap>(
 ): UseQueryStatesReturn<KeyMap> {
   const { scopedKeyMap, scopedToUnscopedMap, unscopedToScopedMap } =
     Object.keys(keyMap).reduce(
-      (acc, key: keyof KeyMap) => {
+      (acc, key: keyof typeof keyMap) => {
         const scopedKey = `${namespace}${separator}${String(
           key
-        )}` as keyof ScopedKeyMap<KeyMap, typeof namespace, typeof separator>
+        )}` as keyof ScopedKeyMap<
+          typeof keyMap,
+          typeof namespace,
+          typeof separator
+        >
 
         acc.scopedToUnscopedMap[scopedKey] = key
         acc.unscopedToScopedMap[key] = scopedKey
-        const keyValue = keyMap[key]
-        ;(acc.scopedKeyMap as any)[scopedKey] = keyValue
-
+        acc.scopedKeyMap[scopedKey] = keyMap[
+          key
+        ] as unknown as (typeof scopedKeyMap)[typeof scopedKey]
         return acc
       },
       {
         // Maintain a scoped keyMap
         scopedKeyMap: {} as ScopedKeyMap<
-          KeyMap,
+          typeof keyMap,
           typeof namespace,
           typeof separator
         >,
@@ -70,7 +74,7 @@ export function useScopedQueryStates<KeyMap extends UseQueryStatesKeysMap>(
   ) => {
     return Object.keys(scopedValues).reduce(
       (acc, scopedKey: keyof typeof scopedState) => {
-        const unscopedKey = scopedToUnscopedMap[scopedKey]
+        const unscopedKey: keyof typeof keyMap = scopedToUnscopedMap[scopedKey]
 
         // Safely assign the state values back
         const defaultValue = keyMap[unscopedKey].defaultValue
