@@ -18,6 +18,7 @@ import {
 } from "./searchQueryKeyMaps"
 
 import { createScopedSearchParamsCache } from "../nuqsScopedWrappers/scopedQueryParamsCache"
+import { queryFromState } from "./searchQuery"
 type SearchParams = Record<string, string | string[] | undefined>
 
 const caches = {
@@ -25,7 +26,9 @@ const caches = {
   queryOptions: createSearchParamsCache(queryOptionsKeyMap(def as any)),
 }
 
-export function getOrderArgsCache(params: SearchParams): OrderArgsType {
+export function getOrderArgsCache(
+  params: SearchParams
+): KeymapComponents["OrderParams"] {
   return caches.orderArgs.parse(params)
 }
 export function getQueryOptionsCache(params: SearchParams): SearchQueryOptions {
@@ -123,4 +126,25 @@ export function getAnyTextExtractedTextFiltersCache(
   params: SearchParams
 ): ATExtractedTextFilter {
   return scopedCaches.anyTextExtractedTextFilters.parse(params)
+}
+
+export function getFullQueryCache(params: SearchParams): KeymapComponents {
+  return {
+    ExtractedTextFilter: getExtractedTextFiltersCache(params),
+    PathTextFilter: getPathTextFiltersCache(params),
+    OrderParams: getOrderArgsCache(params),
+    QueryTagFilters: getTagFiltersCache(params),
+    FileFilters: getFileFiltersCache(params),
+    BookmarksFilter: getBookmarksFilterCache(params),
+    ExtractedTextEmbeddingsFilter:
+      getExtractedTextEmbeddingsFiltersCache(params),
+    ImageEmbeddingFilter: getImageEmbeddingsFiltersCache(params),
+    SearchQueryOptions: getQueryOptionsCache(params),
+    ATExtractedTextFilter: getAnyTextExtractedTextFiltersCache(params),
+    ATPathTextFilter: getAnyTextPathTextFiltersCache(params),
+  }
+}
+
+export function getSearchQueryCache(params: SearchParams) {
+  return queryFromState(getFullQueryCache(params))
 }

@@ -5,18 +5,16 @@ import {
     HydrationBoundary,
     QueryClient,
 } from '@tanstack/react-query'
-import { initialSearchQueryState, queryFromState, SearchQueryStateState } from '@/lib/state/zust';
-import { decodeQueryParam } from '@/lib/decodeQuery';
 import { selectedDBsServer } from '@/lib/state/databaseServer';
 import { fetchDB, fetchNs, fetchSearch, fetchStats } from './queryFns';
+import { getSearchQueryCache } from '@/lib/state/searchQuery/serverParsers';
 
 export default async function SearchPage({
     searchParams,
 }: {
     searchParams: { [key: string]: string | string[] | undefined };
 }) {
-    const decodedQueryState = decodeQueryParam<SearchQueryStateState>("query", searchParams)
-    const query = queryFromState(decodedQueryState || initialSearchQueryState)
+    const query = getSearchQueryCache(searchParams)
     const dbs = selectedDBsServer.parse(searchParams)
     const request = {
         params: {
