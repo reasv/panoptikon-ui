@@ -32,18 +32,31 @@ export function useScopedQueryStates<KeyMap extends UseQueryStatesKeysMap>(
     startTransition,
   }: Partial<UseNamespacesQueryStateOptions> = {}
 ): UseQueryStatesReturn<KeyMap> {
-  // Maintain a map between scoped and unscoped keys
-  const scopedToUnscopedMap: Record<string, keyof KeyMap> = {}
+  const { scopedKeyMap, scopedToUnscopedMap } = Object.keys(keyMap).reduce(
+    (acc, key: keyof KeyMap) => {
+      const scopedKey = `${namespace}${separator}${String(
+        key
+      )}` as keyof ScopedKeyMap<KeyMap, typeof namespace, typeof separator>
 
-  // Create a namespaced keyMap by prepending the namespace to each key
-  const scopedKeyMap = Object.keys(keyMap).reduce((acc, key: keyof KeyMap) => {
-    const scopedKey = `${namespace}${separator}${String(
-      key
-    )}` as keyof ScopedKeyMap<KeyMap, typeof namespace, typeof separator>
-    scopedToUnscopedMap[scopedKey] = key
-    ;(acc as any)[scopedKey] = keyMap[key]
-    return acc
-  }, {} as ScopedKeyMap<KeyMap, typeof namespace, typeof separator>)
+      acc.scopedToUnscopedMap[scopedKey] = key
+      ;(acc.scopedKeyMap as any)[scopedKey] = keyMap[key]
+
+      return acc
+    },
+    {
+      // Maintain a scoped keyMap
+      scopedKeyMap: {} as ScopedKeyMap<
+        KeyMap,
+        typeof namespace,
+        typeof separator
+      >,
+      // Maintain a map between scoped and unscoped keys
+      scopedToUnscopedMap: {} as Record<
+        keyof ScopedKeyMap<KeyMap, typeof namespace, typeof separator>,
+        keyof KeyMap
+      >,
+    }
+  )
 
   // Call useQueryStates with the scoped keyMap
   const [scopedState, setScopedState] = useQueryStates(scopedKeyMap, {
