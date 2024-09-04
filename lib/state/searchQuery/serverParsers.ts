@@ -15,6 +15,7 @@ import {
   SearchQueryOptions,
   ATExtractedTextFilter,
   ATPathTextFilter,
+  KeymapComponents,
 } from "./searchQueryKeyMaps"
 
 import { createScopedSearchParamsCache } from "../nuqsScopedWrappers/scopedQueryParamsCache"
@@ -73,43 +74,43 @@ const scopedCaches = {
 
 export function getTagFiltersCache(
   params: SearchParams
-): components["schemas"]["QueryTagFilters"] {
+): KeymapComponents["QueryTagFilters"] {
   return scopedCaches.tagFilters.parse(params)
 }
 
 export function getFileFiltersCache(
   params: SearchParams
-): components["schemas"]["FileFilters"] {
+): KeymapComponents["FileFilters"] {
   return scopedCaches.fileFilters.parse(params)
 }
 
 export function getPathTextFiltersCache(
   params: SearchParams
-): components["schemas"]["PathTextFilter"] {
+): KeymapComponents["PathTextFilter"] {
   return scopedCaches.pathTextFilters.parse(params)
 }
 
 export function getExtractedTextFiltersCache(
   params: SearchParams
-): components["schemas"]["ExtractedTextFilter"] {
+): KeymapComponents["ExtractedTextFilter"] {
   return scopedCaches.extractedTextFilters.parse(params)
 }
 
 export function getBookmarksFilterCache(
   params: SearchParams
-): components["schemas"]["BookmarksFilter"] {
+): KeymapComponents["BookmarksFilter"] {
   return scopedCaches.bookmarksFilter.parse(params)
 }
 
 export function getExtractedTextEmbeddingsFiltersCache(
   params: SearchParams
-): components["schemas"]["ExtractedTextEmbeddingsFilter"] {
+): KeymapComponents["ExtractedTextEmbeddingsFilter"] {
   return scopedCaches.extractedTextEmbeddingsFilters.parse(params)
 }
 
 export function getImageEmbeddingsFiltersCache(
   params: SearchParams
-): components["schemas"]["ImageEmbeddingFilter"] {
+): KeymapComponents["ImageEmbeddingFilter"] {
   return scopedCaches.imageEmbeddingsFilters.parse(params)
 }
 

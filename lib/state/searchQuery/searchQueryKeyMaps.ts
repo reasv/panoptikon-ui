@@ -114,3 +114,17 @@ export interface AnyTextFilterOptions {
   path_filter: ATPathTextFilter
   et_filter: ATExtractedTextFilter
 }
+
+// Wrap the types in Required<>
+export type KeymapComponents = {
+  ExtractedTextFilter: Required<components["schemas"]["ExtractedTextFilter"]>
+  PathTextFilter: Required<components["schemas"]["PathTextFilter"]>
+  OrderParams: Required<components["schemas"]["OrderParams"]>
+  QueryTagFilters: Required<components["schemas"]["QueryTagFilters"]>
+  FileFilters: Required<components["schemas"]["FileFilters"]>
+  BookmarksFilter: Required<components["schemas"]["BookmarksFilter"]>
+  ExtractedTextEmbeddingsFilter: Required<
+    components["schemas"]["ExtractedTextEmbeddingsFilter"]
+  >
+  ImageEmbeddingFilter: Required<components["schemas"]["ImageEmbeddingFilter"]>
+}

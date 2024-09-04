@@ -17,6 +17,7 @@ import {
   ATExtractedTextFilter,
   ATPathTextFilter,
   AnyTextFilterOptions,
+  KeymapComponents,
 } from "./searchQueryKeyMaps"
 import { useScopedQueryStates } from "../nuqsScopedWrappers/scopedQueryStates"
 
@@ -45,16 +46,16 @@ export function useQueryOptions(): [
 }
 
 export function useTagFilter(): [
-  components["schemas"]["QueryTagFilters"],
-  SetFn<components["schemas"]["QueryTagFilters"]>
+  KeymapComponents["QueryTagFilters"],
+  SetFn<KeymapComponents["QueryTagFilters"]>
 ] {
   const [state, set] = useScopedQueryStates("tag", tagFiltersKeyMap(def as any))
   return [state, set] as const
 }
 
 export function useFileFilters(): [
-  components["schemas"]["FileFilters"],
-  SetFn<components["schemas"]["FileFilters"]>
+  KeymapComponents["FileFilters"],
+  SetFn<KeymapComponents["FileFilters"]>
 ] {
   const [state, set] = useScopedQueryStates(
     "file",
@@ -64,8 +65,8 @@ export function useFileFilters(): [
 }
 
 export function usePathTextFilters(): [
-  components["schemas"]["PathTextFilter"],
-  SetFn<components["schemas"]["PathTextFilter"]>
+  KeymapComponents["PathTextFilter"],
+  SetFn<KeymapComponents["PathTextFilter"]>
 ] {
   const [state, set] = useScopedQueryStates(
     "path",
@@ -75,8 +76,8 @@ export function usePathTextFilters(): [
 }
 
 export function useExtractedTextFilters(): [
-  components["schemas"]["ExtractedTextFilter"],
-  SetFn<components["schemas"]["ExtractedTextFilter"]>
+  KeymapComponents["ExtractedTextFilter"],
+  SetFn<KeymapComponents["ExtractedTextFilter"]>
 ] {
   const [state, set] = useScopedQueryStates(
     "et",
@@ -86,8 +87,8 @@ export function useExtractedTextFilters(): [
 }
 
 export function useBookmarksFilter(): [
-  components["schemas"]["BookmarksFilter"],
-  SetFn<components["schemas"]["BookmarksFilter"]>
+  KeymapComponents["BookmarksFilter"],
+  SetFn<KeymapComponents["BookmarksFilter"]>
 ] {
   const [state, set] = useScopedQueryStates(
     "bm",
@@ -97,8 +98,8 @@ export function useBookmarksFilter(): [
 }
 
 export function useExtractedTextEmbeddingsFilters(): [
-  components["schemas"]["ExtractedTextEmbeddingsFilter"],
-  SetFn<components["schemas"]["ExtractedTextEmbeddingsFilter"]>
+  KeymapComponents["ExtractedTextEmbeddingsFilter"],
+  SetFn<KeymapComponents["ExtractedTextEmbeddingsFilter"]>
 ] {
   const [state, set] = useScopedQueryStates(
     "te",
@@ -108,8 +109,8 @@ export function useExtractedTextEmbeddingsFilters(): [
 }
 
 export function useImageEmbeddingsFilters(): [
-  components["schemas"]["ImageEmbeddingFilter"],
-  SetFn<components["schemas"]["ImageEmbeddingFilter"]>
+  KeymapComponents["ImageEmbeddingFilter"],
+  SetFn<KeymapComponents["ImageEmbeddingFilter"]>
 ] {
   const [state, set] = useScopedQueryStates(
     "ie",
