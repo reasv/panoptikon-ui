@@ -79,13 +79,15 @@ export function useScopedQueryStates<KeyMap extends UseQueryStatesKeysMap>(
 
   // Set function with scoped keys
   const setUnscopedState: SetValues<KeyMap> = (values, options) => {
-    const scopedValues = Object.keys(values).reduce((acc, key) => {
+    const scopedValues = (
+      Object.keys(values) as (keyof typeof values)[]
+    ).reduce((acc, key) => {
       const scopedKey = `${namespace}${separator}${key}` as keyof ScopedKeyMap<
         KeyMap,
         typeof namespace,
         typeof separator
       >
-      ;(acc as any)[scopedKey] = values[key as keyof typeof values]
+      acc[scopedKey] = values[key]
       return acc
     }, {} as Partial<Nullable<ScopedKeyMap<KeyMap, typeof namespace, typeof separator>>>)
 
