@@ -66,9 +66,7 @@ export function useScopedQueryStates<KeyMap extends UseQueryStatesKeysMap>(
     )
 
   const convertScopedToUnscoped = (
-    scopedValues: Partial<
-      Nullable<Values<ScopedKeyMap<KeyMap, typeof namespace, typeof separator>>>
-    >
+    scopedValues: Partial<Nullable<Values<typeof scopedKeyMap>>>
   ) => {
     return Object.keys(scopedValues).reduce(
       (acc, scopedKey: keyof typeof scopedState) => {
@@ -91,10 +89,10 @@ export function useScopedQueryStates<KeyMap extends UseQueryStatesKeysMap>(
   }
 
   const convertUnscopedToScoped = (
-    unscopedValues: Partial<Nullable<Values<KeyMap>>>
+    unscopedValues: Partial<Nullable<Values<typeof keyMap>>>
   ) => {
-    return (Object.keys(unscopedValues) as (keyof KeyMap)[]).reduce(
-      (acc, key) => {
+    return Object.keys(unscopedValues).reduce(
+      (acc, key: keyof typeof keyMap) => {
         const scopedKey = unscopedToScopedMap[key]
         acc[scopedKey] = unscopedValues[key]
         return acc
