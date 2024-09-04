@@ -18,7 +18,7 @@ import {
   ATPathTextFilter,
   AnyTextFilterOptions,
 } from "./searchQueryKeyMaps"
-import { useScopedQueryStates } from "../scopedQueryStates"
+import { useScopedQueryStates } from "../nuqsScopedWrappers/scopedQueryStates"
 
 type Nullable<T> = {
   [K in keyof T]: T[K] | null
