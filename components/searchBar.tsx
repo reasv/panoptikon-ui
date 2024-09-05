@@ -19,48 +19,86 @@ export function SearchBar({
     onSubmit?: () => void
 }) {
     const [anyTextQuery, setAnyTextQuery] = useAnyTextFilterOptions()
-    const syntaxChecker = useSQLite(anyTextQuery.raw_fts5_match)
     const [options, setOptions] = useQueryOptions()
+    const setTextQuery = (value: string, valid: boolean) => {
+        setAnyTextQuery({ query: value })
+        setOptions({ s_enable: valid })
+    }
+    return (
+        <TextSearchInput
+            onSubmit={onSubmit}
+            textQuery={anyTextQuery.query}
+            setTextQuery={setTextQuery}
+            fts5Enabled={options.at_fts5}
+            setFts5Enabled={(value) => setOptions({ at_fts5: value })}
+            setIsInputValid={(value) => setOptions({ s_enable: value })}
+        />
+    )
+}
+
+export function TextSearchInput({
+    onSubmit,
+    textQuery,
+    setTextQuery,
+    fts5Enabled,
+    setFts5Enabled,
+    setIsInputValid,
+    noTagCompletion,
+    noClearSearch,
+}: {
+    onSubmit?: () => void,
+    textQuery: string,
+    setTextQuery: (value: string, valid: boolean) => void,
+    fts5Enabled: boolean,
+    setFts5Enabled: (value: boolean) => void
+    setIsInputValid: (value: boolean) => void
+    noTagCompletion?: boolean,
+    noClearSearch?: boolean
+}) {
+    const syntaxChecker = useSQLite(fts5Enabled)
     const checkInput = (query: string, fts5Enabled: boolean) => {
         if (query.length === 0) {
-            setOptions({ s_enable: true })
-            return
+            setIsInputValid(true)
+            return true
         }
         let error = false
         if (fts5Enabled) {
             const valid = syntaxChecker.executeQuery(query)
             if (!valid) {
-                setOptions({ s_enable: false })
+                setIsInputValid(false)
                 error = true
             }
         }
         if (!error) {
-            setOptions({ s_enable: true })
+            setIsInputValid(true)
         }
+        return !error
     }
     useEffect(() => {
         if (syntaxChecker.error) {
-            setOptions({ s_enable: false })
+            setIsInputValid(false)
         } else {
-            setOptions({ s_enable: true })
+            setIsInputValid(true)
         }
     }, [syntaxChecker.error])
 
     useEffect(() => {
-        checkInput(anyTextQuery.query, anyTextQuery.raw_fts5_match)
-    }, [anyTextQuery.raw_fts5_match])
+        checkInput(textQuery, fts5Enabled)
+    }, [fts5Enabled])
 
     const onFTS5Enable = (enabled: boolean) => {
-        checkInput(anyTextQuery.query, enabled)
+        checkInput(textQuery, enabled)
+        setFts5Enabled(enabled)
     }
 
     const onTextInputChange = (match_string: string) => {
-        checkInput(match_string, anyTextQuery.raw_fts5_match)
+        let valid = checkInput(match_string, fts5Enabled)
         // Trigram search requires at least 3 characters
         if (match_string.length > 0 && match_string.length < 3) {
-            setOptions({ s_enable: false })
+            setIsInputValid(false)
+            valid = false
         }
-        setAnyTextQuery({ query: match_string })
+        setTextQuery(match_string, valid)
     }
 
     const placeholder = useMemo(() => {
@@ -80,15 +118,15 @@ export function SearchBar({
             }
         }
     }
-    const showError = syntaxChecker.error && anyTextQuery.query && anyTextQuery.raw_fts5_match
+    const showError = syntaxChecker.error && textQuery.length > 0 && fts5Enabled
     return (
         <>
             <TagCompletionSwitch />
             <div className="relative w-full">
-                {completionEnabled ?
+                {completionEnabled && !noTagCompletion ?
                     <TagAutoComplete
                         placeholder={placeholder}
-                        value={anyTextQuery.query}
+                        value={textQuery}
                         onChange={onTextInputChange}
                         onSubmit={onSubmit}
                         inputClassName="flex-grow"
@@ -98,7 +136,7 @@ export function SearchBar({
                     <Input
                         type="text"
                         placeholder={placeholder}
-                        value={anyTextQuery.query}
+                        value={textQuery}
                         onChange={(e) => onTextInputChange(e.target.value)}
                         onKeyDown={handleKeyDown}
                         className="flex-grow"
@@ -110,9 +148,9 @@ export function SearchBar({
                         {syntaxChecker.error}
                     </div>
                 )}
-            </div >
-            <ClearSearch />
-            <Fts5ToggleButton onFTS5Enable={onFTS5Enable} />
+            </div>
+            {!noClearSearch && <ClearSearch />}
+            <Fts5ToggleButton isFTS5Enabled={fts5Enabled} onFTS5Enable={onFTS5Enable} />
         </>
     )
 }

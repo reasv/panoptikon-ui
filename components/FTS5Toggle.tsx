@@ -5,17 +5,17 @@ import { ToastAction } from "@/components/ui/toast"
 import { useQueryOptions } from '@/lib/state/searchQuery/clientHooks'
 
 export function Fts5ToggleButton({
-    onFTS5Enable
+    onFTS5Enable,
+    isFTS5Enabled
 }: {
     onFTS5Enable: (enabled: boolean) => void
+    isFTS5Enabled: boolean
 }) {
-    const [options, setOptions] = useQueryOptions()
 
     const { toast } = useToast()
     const onClickFTS5Toggle = () => {
-        const newValue = !options.at_fts5
+        const newValue = !isFTS5Enabled
         onFTS5Enable(newValue)
-        setOptions({ at_fts5: newValue })
         let description = "You can now use natural language queries"
         if (newValue) {
             description = "Consult the SQLite FTS5 documentation for the correct syntax"
@@ -34,8 +34,8 @@ export function Fts5ToggleButton({
     return (
         <Toggle
             onClick={() => onClickFTS5Toggle()}
-            pressed={options.at_fts5}
-            title={`FTS5 MATCH syntax in query is ${options.at_fts5 ? "enabled" : "disabled"}`}
+            pressed={isFTS5Enabled}
+            title={`FTS5 MATCH syntax in query is ${isFTS5Enabled ? "enabled" : "disabled"}`}
             aria-label="Toggle FTS5 syntax">
             <MSquare className="h-4 w-4" />
         </Toggle>
