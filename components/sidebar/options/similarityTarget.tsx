@@ -4,21 +4,21 @@ import { FilterContainer } from "../base/FilterContainer";
 import { keepPreviousData } from "@tanstack/react-query";
 import { getFullFileURL, getLocale, prettyPrintBytes, prettyPrintVideoDuration } from "@/lib/utils";
 import { useSelectedDBs } from "@/lib/state/database";
-import { useSimilarityQuery } from "@/lib/state/similarityQuery";
 import { SearchResultImage } from "@/components/SearchResultImage";
 import { Button } from "@/components/ui/button";
 import { useItemSelection } from "@/lib/state/itemSelection";
+import { useItemSimilarityOptions } from "@/lib/state/similarityQuery/clientHooks";
 
 export function SimilarityTargetItem({
 }: {
     }) {
     const selected = useItemSelection((state) => state.getSelected())
     const [dbs, ___] = useSelectedDBs()
-    const [query, setQuery] = useSimilarityQuery()
+    const [options, setOptions] = useItemSimilarityOptions()
     const { data } = $api.useQuery("get", "/api/items/item/{sha256}", {
         params: {
             path: {
-                sha256: query.is_item!,
+                sha256: options.item!,
             },
             query: dbs
         }
@@ -33,16 +33,16 @@ export function SimilarityTargetItem({
     const item = data?.item
     const file = data?.files[0]
     const resultItem = {
-        sha256: query.is_item!,
+        sha256: options.item!,
         last_modified: file?.last_modified || "1970-09-02T14:30:00Z",
         path: file?.path || "",
         type: item?.type || "unknown",
     }
     function switchTarget() {
         if (!selected) return
-        setQuery({
-            is_item: selected?.sha256,
-            is_page: 1,
+        setOptions({
+            item: selected?.sha256,
+            page: 1,
         })
     }
     return (
@@ -54,7 +54,7 @@ export function SimilarityTargetItem({
             {resultItem && <SearchResultImage className="mt-4 grid grid-cols-1" result={resultItem} index={0} dbs={dbs} />}
             <div className="space-x-2 mt-4">
                 <p className="text-xs text-gray-500 mt-2">
-                    <a href={getFullFileURL(query.is_item!, dbs)} target="_blank">Download Original File ({sizeString})</a>
+                    <a href={getFullFileURL(options.item!, dbs)} target="_blank">Download Original File ({sizeString})</a>
                 </p>
                 {item && <p className="text-xs text-gray-500 mt-2">
                     Type: {item.type} {resolutionString && `(${resolutionString})`} {durationString && `(${durationString})`}

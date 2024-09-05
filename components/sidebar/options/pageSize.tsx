@@ -1,6 +1,6 @@
-import { useSimilarityQuery } from "@/lib/state/similarityQuery"
 import { useOrderArgs } from "@/lib/state/searchQuery/clientHooks"
 import { PageSizeControl } from "../base/PageSizeControl"
+import { useItemSimilarityOptions } from "@/lib/state/similarityQuery/clientHooks"
 
 export function PageSizeSlider() {
     const [orderArgs, setOrderArgs] = useOrderArgs()
@@ -11,9 +11,9 @@ export function PageSizeSlider() {
     )
 }
 export function SimilarityPageSizeSlider() {
-    const [query, setQuery] = useSimilarityQuery()
-    const setPageSize = (value: number) => setQuery({ is_page_size: value })
+    const [options, setOptions] = useItemSimilarityOptions()
+    const setPageSize = (value: number) => setOptions({ page_size: value })
     return (
-        <PageSizeControl pageSize={query.is_page_size} setPageSize={setPageSize} />
+        <PageSizeControl pageSize={options.page_size} setPageSize={setPageSize} />
     )
 }

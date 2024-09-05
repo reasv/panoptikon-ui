@@ -16,13 +16,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { components } from "@/lib/panoptikon";
 import { SideBar } from "@/components/sidebar/SideBar";
 import { SearchResultImage } from "@/components/SearchResultImage";
-import { Mode, useSearchMode } from "@/lib/state/similarityQuery";
 import { useGalleryIndex, useGalleryName } from "@/lib/state/gallery";
 import { useSideBarOpen } from "@/lib/state/sideBar";
 import { useSelectedDBs } from "@/lib/state/database";
 import { useItemSimilaritySearch, useSearch } from "@/lib/searchHooks";
 import { ImageGallery } from '@/components/ImageGallery';
 import { ImageSimilarityHeader } from '@/components/ImageSimilarityHeader';
+import { Mode, useSearchMode } from "@/lib/state/searchMode";
 
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }) {
