@@ -51,6 +51,7 @@ export function SimilarItemsView({
                 full_count: true,
             },
             item: sha256,
+            page_size: 10,
             page: 1,
             type: type,
         }, {
