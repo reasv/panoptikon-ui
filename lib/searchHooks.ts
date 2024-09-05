@@ -1,12 +1,7 @@
 import { keepPreviousData } from "@tanstack/react-query"
 import { $api } from "./api"
 import { useSelectedDBs } from "./state/database"
-import {
-  Mode,
-  useSearchMode,
-  useSimilarityQuery,
-} from "./state/similarityQuery"
-import { useImageSimilarity } from "./state/similarityStore"
+import { Mode, useSearchMode } from "./state/searchMode"
 import { useInstantSearch } from "./state/zust"
 import { SearchQueryArgs } from "@/app/search/queryFns"
 import {
@@ -15,21 +10,21 @@ import {
   useSearchQuery,
 } from "./state/searchQuery/clientHooks"
 import { components } from "./panoptikon"
+import {
+  useItemSimilarityOptions,
+  useSimilarityQuery,
+} from "./state/similarityQuery/clientHooks"
 
 export function useItemSimilaritySearch() {
-  const [query, setQuery] = useSimilarityQuery()
+  const query = useSimilarityQuery()
+  const [queryOptions, setQueryOptions] = useItemSimilarityOptions()
   const [dbs, ___] = useSelectedDBs()
-  const similarityQuery = useImageSimilarity((state) =>
-    query.is_type == "clip"
-      ? state.getClipQuery(query.is_model!)
-      : state.getTextEmbedQuery(query.is_model!)
-  )
   const instantSearch = useInstantSearch((state) => state.enabled)
   const validQuery = !!(
-    query.is_item &&
-    query.is_item.length > 0 &&
-    query.is_model &&
-    query.is_model.length > 0
+    queryOptions.item &&
+    queryOptions.item.length > 0 &&
+    queryOptions.setter_name &&
+    queryOptions.setter_name.length > 0
   )
   const [mode, _] = useSearchMode()
   const { data, refetch, isFetching, isError, error } = $api.useQuery(
@@ -41,14 +36,11 @@ export function useItemSimilaritySearch() {
           ...dbs,
         },
         path: {
-          sha256: query.is_item || "",
+          sha256: queryOptions.item || "",
         },
       },
       body: {
-        ...similarityQuery,
-        setter_name: query.is_model!,
-        page: query.is_page,
-        page_size: query.is_page_size,
+        ...query,
         full_count: true,
       },
     },
@@ -59,9 +51,9 @@ export function useItemSimilaritySearch() {
   )
 
   const nResults = data?.count || 0
-  const page = query.is_page
-  const pageSize = query.is_page_size
-  const setPage = (page: number) => setQuery({ is_page: page })
+  const page = query.page
+  const pageSize = query.page_size
+  const setPage = (page: number) => setQueryOptions({ page: page })
   return {
     data,
     error,
