@@ -1,13 +1,14 @@
 
-import { useExtractedTextFilters, useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
+import { useExtractedTextFilters, usePathTextFilters, useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
 import { TextSearchInput } from "@/components/TextSearchInput"
 import { TextFilter } from "../base/TextFilter"
+import { PathFilter } from "../base/PathTextFilter"
 
-export function ExtractedTextFilter() {
-    const [filter, setFilter] = useExtractedTextFilters()
+export function PathTextFilter() {
+    const [filter, setFilter] = usePathTextFilters()
     const [options, setOptions] = useQueryOptions()
     return (
-        <TextFilter
+        <PathFilter
             enable={options.e_et}
             setEnable={(value) => setOptions({ e_et: value })}
             filter={filter}
@@ -20,7 +21,7 @@ export function ExtractedTextFilter() {
 }
 
 export function ExtractedTextQueryInput() {
-    const [filter, setFilter] = useExtractedTextFilters()
+    const [filter, setFilter] = usePathTextFilters()
     const setFts5Enabled = (value: boolean) => {
         setFilter({ raw_fts5_match: value })
         return true
@@ -31,5 +32,6 @@ export function ExtractedTextQueryInput() {
         fts5Enabled={filter.raw_fts5_match}
         setFts5Enabled={setFts5Enabled}
         noClearSearch
+        noTagCompletion
     />
 }
