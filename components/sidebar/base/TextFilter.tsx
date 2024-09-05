@@ -6,7 +6,6 @@ import { useSelectedDBs } from "@/lib/state/database"
 import { SetFn } from "@/lib/state/searchQuery/clientHooks"
 import { KeymapComponents } from "@/lib/state/searchQuery/searchQueryKeyMaps"
 import { ConfidenceFilter } from "../options/confidenceFilter"
-import { TextSearchInput } from "@/components/TextSearchInput"
 
 export function TextFilter({
     enable,

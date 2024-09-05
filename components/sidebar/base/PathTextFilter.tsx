@@ -8,12 +8,14 @@ export function PathFilter({
     enable,
     setEnable,
     filter,
-    setFilter
+    setFilter,
+    children,
 }: {
     enable: boolean,
     setEnable: (value: boolean) => void,
     filter: KeymapComponents["ATPathTextFilter"] | KeymapComponents["PathTextFilter"],
     setFilter: SetFn<KeymapComponents["ATPathTextFilter"] | KeymapComponents["PathTextFilter"]>
+    children?: React.ReactNode
 }) {
     const onOptionSelected = (option: string | null) => {
         if (option === null) {
@@ -38,6 +40,7 @@ export function PathFilter({
                 </div>
                 <Switch checked={enable} onCheckedChange={(value) => setEnable(value)} />
             </div>
+            {children}
             <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
                 <ComboBoxResponsive
                     options={[
