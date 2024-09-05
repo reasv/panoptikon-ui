@@ -1,6 +1,4 @@
-"use client"
 import { $api } from "@/lib/api"
-import { useSearchQuery } from "@/lib/state/zust"
 import { Label } from "../../ui/label"
 import { Switch } from "../../ui/switch";
 import { ComboBoxResponsive } from "../../combobox";
@@ -9,9 +7,10 @@ import { MultiBoxResponsive } from "../../multiCombobox";
 import { FilterContainer } from "./FilterContainer";
 import { ConfidenceFilter } from "./confidenceFilter";
 import { useSelectedDBs } from "@/lib/state/database";
+import { useAnyTextExtractedTextFilters, useAnyTextPathTextFilters, useQueryOptions } from "@/lib/state/searchQuery/clientHooks";
 
 export function AnyTextFilter() {
-    const anyTextQuery = useSearchQuery((state) => state.any_text.query)
+    const [options, _] = useQueryOptions()
     return (
         <FilterContainer
             storageKey="flexibleSearchContainer" // Add a storageKey prop to make the localStorage key unique
@@ -35,7 +34,7 @@ export function AnyTextFilter() {
                     <Input
                         type="text"
                         placeholder="Type your query in the main search bar"
-                        value={anyTextQuery}
+                        value={options.at_query}
                         className="flex-grow"
                         disabled
                     />
@@ -48,18 +47,16 @@ export function AnyTextFilter() {
 }
 
 function AnyTextPathFilter() {
-    const pathRestrictToFilename = useSearchQuery((state) => state.any_text.path_filter.only_match_filename)
-    const enablePathFilter = useSearchQuery((state) => state.any_text.enable_path_filter)
-    const setPathFilterEnabled = useSearchQuery((state) => state.setAnyTextPathFilterEnabled)
-    const setPathFilterFilenameOnly = useSearchQuery((state) => state.setAnyTextPathFilterFilenameOnly)
+    const [filter, setFilter] = useAnyTextPathTextFilters()
+    const [options, setOptions] = useQueryOptions()
     const onOptionSelected = (option: string | null) => {
         if (option === null) {
             return
         }
         if (option === "true") {
-            setPathFilterFilenameOnly(true)
+            setFilter({ only_match_filename: true })
         } else {
-            setPathFilterFilenameOnly(false)
+            setFilter({ only_match_filename: false })
         }
     }
     return (
@@ -73,7 +70,7 @@ function AnyTextPathFilter() {
                         Searches in the path and filename of files
                     </div>
                 </div>
-                <Switch checked={enablePathFilter} onCheckedChange={(value) => setPathFilterEnabled(value)} />
+                <Switch checked={options.at_e_path} onCheckedChange={(value) => setOptions({ at_e_path: value })} />
             </div>
             <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
                 <ComboBoxResponsive
@@ -81,7 +78,7 @@ function AnyTextPathFilter() {
                         { value: "true", label: "Filename Only" },
                         { value: "false", label: "Full Path" },
                     ]}
-                    currentValue={pathRestrictToFilename ? "true" : "false"}
+                    currentValue={filter.only_match_filename ? "true" : "false"}
                     onChangeValue={onOptionSelected}
                     placeholder="Filename or Path..."
                 />
@@ -97,16 +94,8 @@ function AnyTextETFilter() {
             query: dbs
         }
     })
-    const enableETFilter = useSearchQuery((state) => state.any_text.enable_et_filter)
-    const setETFilterEnabled = useSearchQuery((state) => state.setAnyTextETFilterEnabled)
-    const targets = useSearchQuery((state) => state.any_text.et_filter.targets || [])
-    const languages = useSearchQuery((state) => state.any_text.et_filter.languages || [])
-    const setLanguages = useSearchQuery((state) => state.setAnyTextETFilterLanguages)
-    const setTargets = useSearchQuery((state) => state.setAnyTextETFilterTargets)
-    const minConfidence = useSearchQuery((state) => state.any_text.et_filter.min_confidence || 0)
-    const setMinConfidence = useSearchQuery((state) => state.setAnyTextETFilterMinConfidence)
-    const minLanguageConfidence = useSearchQuery((state) => state.any_text.et_filter.language_min_confidence || 0)
-    const setMinLanguageConfidence = useSearchQuery((state) => state.setAnyTextETFilterMinLanguageConfidence)
+    const [options, setOptions] = useQueryOptions()
+    const [filter, setFilter] = useAnyTextExtractedTextFilters()
     const textTargets = [{ value: "*", label: "All Sources" }, ...(
         data?.setters
             .filter((setter) => setter[0] === "text")
@@ -125,38 +114,38 @@ function AnyTextETFilter() {
                         Searches in all text extracted from items, including OCR and tags
                     </div>
                 </div>
-                <Switch checked={enableETFilter} onCheckedChange={(value) => setETFilterEnabled(value)} />
+                <Switch checked={options.at_e_et} onCheckedChange={(value) => setOptions({ at_e_et: value })} />
             </div>
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
                 <MultiBoxResponsive
                     options={textTargets}
                     resetValue="*" // Reset value is the value that will clear the selection
-                    currentValues={targets}
-                    onSelectionChange={setTargets}
-                    maxDisplayed={1}
+                    currentValues={filter.targets}
+                    onSelectionChange={(value) => setFilter({ targets: value })}
+                    maxDisplayed={3}
                     placeholder="Targets..."
                 />
             </div>
             <ConfidenceFilter
                 label={<span>Confidence Threshold</span>}
-                confidence={minConfidence}
-                setConfidence={setMinConfidence}
+                confidence={filter.min_confidence || 0}
+                setConfidence={(value) => setFilter({ min_confidence: value })}
                 description={<span>Minimum confidence for the extracted text</span>}
             />
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
                 <MultiBoxResponsive
                     options={textLanguages}
                     resetValue="*" // Reset value is the value that will clear the selection
-                    currentValues={languages}
-                    onSelectionChange={setLanguages}
-                    maxDisplayed={1}
+                    currentValues={filter.languages}
+                    onSelectionChange={(value) => setFilter({ languages: value })}
+                    maxDisplayed={3}
                     placeholder="Languages..."
                 />
             </div>
             <ConfidenceFilter
                 label={<span>Language Confidence Threshold</span>}
-                confidence={minLanguageConfidence}
-                setConfidence={setMinLanguageConfidence}
+                confidence={filter.language_min_confidence || 0}
+                setConfidence={(value) => setFilter({ language_min_confidence: value })}
                 description={<span>Minimum confidence for language detection</span>}
             />
         </div>

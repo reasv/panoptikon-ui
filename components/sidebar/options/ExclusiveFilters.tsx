@@ -1,5 +1,3 @@
-"use client"
-
 import { MimeTypeFilter } from "./MimeTypeFilter"
 import { PathPrefixFilter } from "./PathFilter"
 import { FilterContainer } from "./FilterContainer"

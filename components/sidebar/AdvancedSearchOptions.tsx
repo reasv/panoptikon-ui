@@ -1,5 +1,3 @@
-"use client"
-
 import { SwitchDB } from "./options/switchDB"
 import { SwitchBookmarkNs } from "./options/bookmarks"
 import { BookmarksFilter } from "./options/bookmarkFilter"

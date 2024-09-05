@@ -1,6 +1,4 @@
-"use client";
-
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { Button } from "../../ui/button";
 import { cn } from "@/lib/utils";

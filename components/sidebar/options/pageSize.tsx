@@ -1,4 +1,3 @@
-"use client"
 import { Label } from "../../ui/label"
 import { Slider } from "../../ui/slider";
 import { useEffect, useState } from "react";

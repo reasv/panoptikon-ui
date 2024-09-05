@@ -1,4 +1,3 @@
-"use client"
 import { $api } from "@/lib/api"
 import { useBookmarkCustomNs, useBookmarkNs, } from "@/lib/state/zust"
 import { Input } from "../../ui/input";

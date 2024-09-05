@@ -1,4 +1,3 @@
-"use client"
 import { Label } from "../../ui/label"
 import { ComboBoxResponsive } from "../../combobox";
 import { components } from "@/lib/panoptikon";

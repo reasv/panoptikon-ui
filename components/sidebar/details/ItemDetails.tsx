@@ -1,5 +1,3 @@
-"use client"
-
 import { useDetailsPane } from "@/lib/state/zust"
 import { FilterContainer } from "../options/FilterContainer"
 import { components } from "@/lib/panoptikon"

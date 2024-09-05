@@ -1,4 +1,3 @@
-"use client"
 import { $api } from "@/lib/api"
 import { useCustomMimes } from "@/lib/state/zust"
 import { Label } from "../../ui/label"

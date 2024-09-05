@@ -3,9 +3,7 @@ import { $api } from "@/lib/api"
 import { } from "@/lib/state/zust"
 
 import { FilterContainer } from "../options/FilterContainer";
-import { components } from "@/lib/panoptikon";
-import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
-import { FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons";
+import { keepPreviousData } from "@tanstack/react-query";
 import { getFullFileURL, getLocale, prettyPrintBytes, prettyPrintVideoDuration } from "@/lib/utils";
 import { useSelectedDBs } from "@/lib/state/database";
 import { useSimilarityQuery } from "@/lib/state/similarityQuery";

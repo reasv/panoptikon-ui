@@ -1,6 +1,4 @@
-"use client"
 import { SidebarClose } from "lucide-react"
-
 import { Button } from "@/components/ui/button"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { Drawer, DrawerContent } from "../ui/drawer"

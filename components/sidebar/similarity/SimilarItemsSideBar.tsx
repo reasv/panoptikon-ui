@@ -1,5 +1,3 @@
-"use client"
-
 import { useImageSimilarity } from "@/lib/state/similarityStore"
 import { ClipItemSimilarity } from "./ClipSimilarItems"
 import { TextEmbeddingsSimilarity } from "./TextSimilarItems"

@@ -1,13 +1,10 @@
-"use client"
 import { $api } from "@/lib/api"
 import { Label } from "../../ui/label"
 import { Switch } from "../../ui/switch";
 import { MultiBoxResponsive } from "../../multiCombobox";
 import { useSelectedDBs } from "@/lib/state/database";
 import { useBookmarksFilter } from "@/lib/state/searchQuery/clientHooks";
-import { bookmarksFilterKeyMap } from "@/lib/state/searchQuery/searchQueryKeyMaps";
-import * as def from "nuqs"
-import { useQueryStates } from "nuqs";
+
 export function BookmarksFilter() {
     const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/bookmarks/ns", {
