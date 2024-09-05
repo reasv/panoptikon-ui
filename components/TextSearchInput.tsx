@@ -1,6 +1,6 @@
 import { Input } from "@/components/ui/input"
 import { useSQLite } from "@/lib/sqliteChecker"
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Fts5ToggleButton } from "./FTS5Toggle"
 import { PLACEHOLDERS } from "@/lib/placeholders"
 import { ClearSearch } from "./ClearSearch"
@@ -9,75 +9,92 @@ import { TagAutoComplete } from "./tagInput"
 import { cn } from "@/lib/utils"
 import { TagCompletionSwitch } from "./TagCompleteSwitch"
 
+const checkIsInputValid = (
+    query: string,
+    checkSyntax: (query: string) => boolean
+) => {
+    if (query.length === 0) {
+        return true
+    }
+    const valid = checkSyntax(query)
+    if (!valid) {
+        return false
+    }
+    return true
+}
+
 export function TextSearchInput({
     onSubmit,
     textQuery,
     setTextQuery,
     fts5Enabled,
     setFts5Enabled,
-    setIsInputValid,
     noTagCompletion,
     noClearSearch,
 }: {
     onSubmit?: () => void,
     textQuery: string,
-    setTextQuery: (value: string, valid: boolean) => void,
+    setTextQuery: (value: string) => void,
     fts5Enabled: boolean,
-    setFts5Enabled: (value: boolean, valid: boolean) => boolean // Returns true if fts5 was enabled
-    setIsInputValid: (value: boolean) => void
+    setFts5Enabled: (value: boolean) => boolean // Returns true if fts5 was enabled
     noTagCompletion?: boolean,
     noClearSearch?: boolean
 }) {
-    const syntaxChecker = useSQLite(fts5Enabled)
-    const checkInput = (query: string, fts5Enabled: boolean) => {
-        if (query.length === 0) {
-            setIsInputValid(true)
-            return true
-        }
-        let error = false
-        if (fts5Enabled) {
-            const valid = syntaxChecker.executeQuery(query)
-            if (!valid) {
-                setIsInputValid(false)
-                error = true
-            }
-        }
-        if (!error) {
-            setIsInputValid(true)
-        }
-        return !error
-    }
+    const [value, setValue] = useState(textQuery)
+    const isTyping = useRef(false) // Track if the user is actively typing
+
     useEffect(() => {
-        if (syntaxChecker.error) {
-            setIsInputValid(false)
+        if (!isTyping.current && value !== textQuery) {
+            setValue(textQuery)
+        }
+    }, [textQuery])
+
+    const [isInputValid, setIsInputValid] = useState(true)
+    const syntaxChecker = useSQLite(fts5Enabled)
+
+    const updateInputValidity = (inputText: string) => {
+        const valid = checkIsInputValid(inputText, syntaxChecker.executeQuery)
+        setIsInputValid(valid)
+        return valid
+    }
+
+    const onFTS5Enable = async (enabled: boolean) => {
+        if (!enabled) { // Disable FTS5
+            setIsInputValid(true) // Reset input validity when disabling FTS5
+            return setFts5Enabled(false)
+        } else { // Enable FTS5
+            await syntaxChecker.forceLoad()
+            if (!updateInputValidity(textQuery)) return false
+            return setFts5Enabled(enabled)
+        }
+    }
+
+    const onTextInputChange = (inputText: string) => {
+        setValue(inputText)
+        isTyping.current = true // Mark that the user is actively typing
+        // Reset the typing flag after some delay (debounce-like effect)
+        setTimeout(() => {
+            isTyping.current = false
+        }, 400) // Adjust delay based on UX needs
+
+        if (fts5Enabled) {
+            if (!updateInputValidity(inputText)) {
+                return
+            }
         } else {
             setIsInputValid(true)
         }
-    }, [syntaxChecker.error])
-
-    useEffect(() => {
-        checkInput(textQuery, fts5Enabled)
-    }, [fts5Enabled])
-
-    const onFTS5Enable = (enabled: boolean) => {
-        const valid = checkInput(textQuery, enabled)
-        return setFts5Enabled(enabled, valid)
-    }
-
-    const onTextInputChange = (match_string: string) => {
-        let valid = checkInput(match_string, fts5Enabled)
         // Trigram search requires at least 3 characters
-        if (match_string.length > 0 && match_string.length < 3) {
-            setIsInputValid(false)
-            valid = false
+        if (inputText.length > 0 && inputText.length < 3) {
+            return
         }
-        setTextQuery(match_string, valid)
+        setTextQuery(inputText)
     }
 
     const placeholder = useMemo(() => {
-        const currentMinute = new Date().getMinutes();
-        return PLACEHOLDERS[currentMinute % PLACEHOLDERS.length];
-    }, [PLACEHOLDERS]);
+        const currentMinute = new Date().getMinutes()
+        return PLACEHOLDERS[currentMinute % PLACEHOLDERS.length]
+    }, [PLACEHOLDERS])
 
     const [completionEnabled, _] = useTagCompletionEnabled()
 
@@ -85,13 +102,14 @@ export function TextSearchInput({
         React.KeyboardEvent<HTMLInputElement>
     ) => {
         if (e.key === 'Enter') {
-            e.preventDefault();
+            e.preventDefault()
             if (onSubmit) {
                 onSubmit()
             }
         }
     }
-    const showError = syntaxChecker.error && textQuery.length > 0 && fts5Enabled
+
+    const showError = syntaxChecker.error && value.length > 0 && !isInputValid
     return (
         <>
             {!noTagCompletion && <TagCompletionSwitch />}
@@ -99,7 +117,7 @@ export function TextSearchInput({
                 {completionEnabled && !noTagCompletion ?
                     <TagAutoComplete
                         placeholder={placeholder}
-                        value={textQuery}
+                        value={value}
                         onChange={onTextInputChange}
                         onSubmit={onSubmit}
                         inputClassName="flex-grow"
@@ -109,7 +127,7 @@ export function TextSearchInput({
                     <Input
                         type="text"
                         placeholder={placeholder}
-                        value={textQuery}
+                        value={value}
                         onChange={(e) => onTextInputChange(e.target.value)}
                         onKeyDown={handleKeyDown}
                         className="flex-grow"
