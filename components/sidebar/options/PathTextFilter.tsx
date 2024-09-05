@@ -8,7 +8,7 @@ export function PathTextFilter() {
     const [options, setOptions] = useQueryOptions()
     return (
         <PathFilter
-            enable={options.e_et}
+            enable={options.e_pt}
             setEnable={(value) => setOptions({ e_pt: value })}
             filter={filter}
             setFilter={setFilter}
