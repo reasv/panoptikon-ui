@@ -1,4 +1,4 @@
-import { useQueryStates, parseAsFloat } from "nuqs"
+import { useQueryStates } from "nuqs"
 
 import {
   parseAsInteger,
@@ -27,7 +27,6 @@ export enum SimilarityQueryType {
   clip = "clip",
   textEmbedding = "text-embedding",
 }
-
 export const useSimilarityQuery = () =>
   useQueryStates(
     {

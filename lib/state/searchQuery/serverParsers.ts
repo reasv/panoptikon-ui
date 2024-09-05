@@ -1,5 +1,4 @@
 import * as def from "nuqs/server"
-
 import { createSearchParamsCache } from "nuqs/server"
 import {
   orderParamsKeyMap,
@@ -19,7 +18,7 @@ import {
 
 import { createScopedSearchParamsCache } from "../nuqsScopedWrappers/scopedQueryParamsCache"
 import { queryFromState } from "./searchQuery"
-type SearchParams = Record<string, string | string[] | undefined>
+export type SearchParams = Record<string, string | string[] | undefined>
 
 const caches = {
   orderArgs: createSearchParamsCache(orderParamsKeyMap(def as any)),

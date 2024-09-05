@@ -28,7 +28,7 @@ export type Nullable<T> = {
 type UpdaterFn<T> = (old: T) => Partial<Nullable<T>>
 
 export type SetFn<T> = (
-  values: Partial<Nullable<T>> | UpdaterFn<T>,
+  values: Partial<Nullable<T>> | UpdaterFn<T> | null,
   options?: Options
 ) => Promise<URLSearchParams>
 
@@ -169,9 +169,14 @@ export function useAnyTextFilterOptions(): [
   const setAnyTextFilterOptions = (
     values:
       | Partial<Nullable<AnyTextFilterOptions>>
-      | UpdaterFn<AnyTextFilterOptions>,
+      | UpdaterFn<AnyTextFilterOptions>
+      | null,
     options?: Options
   ) => {
+    if (values === null) {
+      setPathTextFilters(null)
+      return setOptions(null)
+    }
     const newOptions =
       typeof values === "function" ? values(currentState) : values
     setOptions(
@@ -236,7 +241,6 @@ export const useResetSearchQueryState = () => {
   ]
   return () => {
     for (const setter of setters) {
-      // @ts-ignore
       setter(null)
     }
   }
