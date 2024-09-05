@@ -4,9 +4,11 @@ import { $api } from "@/lib/api"
 import { keepPreviousData } from "@tanstack/react-query"
 import { SearchResultImage } from "@/components/SearchResultImage"
 import { useItemSelection } from "@/lib/state/itemSelection"
-import { Mode, SimilarityQueryType, useSearchMode, useSimilarityQuery } from "@/lib/state/similarityQuery"
 import { Gallery, useGalleryIndex, useGalleryName } from "@/lib/state/gallery"
 import { useSelectedDBs } from "@/lib/state/database"
+import { Mode, useSearchMode } from "@/lib/state/searchMode"
+import { useItemSimilarityOptions, useItemSimilaritySource } from "@/lib/state/similarityQuery/clientHooks"
+import { SimilarityQueryType } from "@/lib/state/similarityQuery/similarityQueryKeyMaps"
 
 export function SimilarItemsView({
     sha256,
@@ -31,7 +33,9 @@ export function SimilarItemsView({
     }, {
         placeholderData: keepPreviousData
     })
-    const [_, setQuery] = useSimilarityQuery()
+
+    const [options, setOptions] = useItemSimilarityOptions()
+    const [source, setSource] = useItemSimilaritySource()
 
     const setSelected = useItemSelection((state) => state.setItem)
     const [name, setName] = useGalleryName()
@@ -39,11 +43,23 @@ export function SimilarItemsView({
     const [searchMode, setSearchmode] = useSearchMode()
     const onImageClick = (index: number) => {
         if (!data) return
-        setQuery({
-            is_item: sha256,
-            is_model: query.setter_name,
-            is_type: type,
-            is_page: 1
+        setOptions({
+            ...{
+                ...query,
+                src_text: undefined,
+                page_size: undefined,
+                full_count: true,
+            },
+            item: sha256,
+            page: 1,
+            type: type,
+        }, {
+            history: "push",
+        })
+        setSource({
+            ...query.src_text,
+        }, {
+            history: "push",
         })
         setName(Gallery.similarity)
         setSearchmode(Mode.ItemSimilarity)
