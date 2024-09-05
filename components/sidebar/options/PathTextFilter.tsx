@@ -1,7 +1,6 @@
 
-import { useExtractedTextFilters, usePathTextFilters, useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
+import { usePathTextFilters, useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
 import { TextSearchInput } from "@/components/TextSearchInput"
-import { TextFilter } from "../base/TextFilter"
 import { PathFilter } from "../base/PathTextFilter"
 
 export function PathTextFilter() {
@@ -10,7 +9,7 @@ export function PathTextFilter() {
     return (
         <PathFilter
             enable={options.e_et}
-            setEnable={(value) => setOptions({ e_et: value })}
+            setEnable={(value) => setOptions({ e_pt: value })}
             filter={filter}
             setFilter={setFilter}
             children={

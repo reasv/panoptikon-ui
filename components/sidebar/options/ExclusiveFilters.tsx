@@ -1,6 +1,8 @@
 import { MimeTypeFilter } from "./MimeTypeFilter"
-import { PathPrefixFilter } from "./PathFilter"
+import { PathPrefixFilter } from "./PathPrefixFilter"
 import { FilterContainer } from "../base/FilterContainer"
+import { PathTextFilter } from "./PathTextFilter";
+import { ExtractedTextFilter } from "./ExtractedTextFilter";
 
 export function ExclusiveFilters() {
     return (
@@ -13,6 +15,8 @@ export function ExclusiveFilters() {
         >
             <PathPrefixFilter />
             <MimeTypeFilter />
+            <PathTextFilter />
+            <ExtractedTextFilter />
         </FilterContainer>
     );
 }
