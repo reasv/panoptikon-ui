@@ -1,14 +1,13 @@
-"use client"
 import { Delete } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { Button } from './ui/button'
-import { initialSearchQueryState, useSearchQuery } from "@/lib/state/zust"
+import { useResetSearchQueryState } from "@/lib/state/searchQuery/clientHooks"
 
 export function ClearSearch() {
     const { toast } = useToast()
-    const setInitialState = useSearchQuery((state) => state.setInitialState)
+    const reset = useResetSearchQueryState()
     const clearSearchQuery = () => {
-        setInitialState(initialSearchQueryState)
+        reset()
         toast({
             title: "Cleared Query",
             description: "All search options have been cleared",

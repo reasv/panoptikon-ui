@@ -218,3 +218,26 @@ export const useSearchQuery = () => {
 export const useOrderBy = () => {
   return getOrderBy(useSearchQueryState())
 }
+
+export const useResetSearchQueryState = () => {
+  const setters = [
+    useExtractedTextFilters()[1],
+    useExtractedTextFilters()[1],
+    usePathTextFilters()[1],
+    useOrderArgs()[1],
+    useTagFilter()[1],
+    useFileFilters()[1],
+    useBookmarksFilter()[1],
+    useExtractedTextEmbeddingsFilters()[1],
+    useImageEmbeddingsFilters()[1],
+    useQueryOptions()[1],
+    useAnyTextExtractedTextFilters()[1],
+    useAnyTextPathTextFilters()[1],
+  ]
+  return () => {
+    for (const setter of setters) {
+      // @ts-ignore
+      setter(null)
+    }
+  }
+}

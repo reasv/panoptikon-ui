@@ -1,24 +1,21 @@
-"use client"
-import { useEffect } from 'react'
-import { useSearchQuery } from "@/lib/state/zust"
 import { Toggle } from "@/components/ui/toggle"
 import { MSquare } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { ToastAction } from "@/components/ui/toast"
+import { useQueryOptions } from '@/lib/state/searchQuery/clientHooks'
 
 export function Fts5ToggleButton({
     onFTS5Enable
 }: {
     onFTS5Enable: (enabled: boolean) => void
 }) {
-    const rawFts5Match = useSearchQuery((state) => state.any_text.raw_fts5_match)
-    const setRawFts5Match = useSearchQuery((state) => state.setRawFts5Match)
+    const [options, setOptions] = useQueryOptions()
 
     const { toast } = useToast()
     const onClickFTS5Toggle = () => {
-        const newValue = !rawFts5Match
+        const newValue = !options.at_fts5
         onFTS5Enable(newValue)
-        setRawFts5Match(newValue)
+        setOptions({ at_fts5: newValue })
         let description = "You can now use natural language queries"
         if (newValue) {
             description = "Consult the SQLite FTS5 documentation for the correct syntax"
@@ -37,8 +34,8 @@ export function Fts5ToggleButton({
     return (
         <Toggle
             onClick={() => onClickFTS5Toggle()}
-            pressed={rawFts5Match}
-            title={`FTS5 MATCH syntax in query is ${rawFts5Match ? "enabled" : "disabled"}`}
+            pressed={options.at_fts5}
+            title={`FTS5 MATCH syntax in query is ${options.at_fts5 ? "enabled" : "disabled"}`}
             aria-label="Toggle FTS5 syntax">
             <MSquare className="h-4 w-4" />
         </Toggle>

@@ -147,6 +147,11 @@ export function useScopedQueryStates<KeyMap extends UseQueryStatesKeysMap>(
 
       return setScopedState(scopedUpdater, options)
     }
+    if (values === null) {
+      // If values is null or undefined, clear the state
+      setScopedState(null)
+      return setScopedState({})
+    }
     // Otherwise, convert unscoped keys to scoped keys
     return setScopedState(convertUnscopedToScoped(values), options)
   }
