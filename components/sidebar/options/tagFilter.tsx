@@ -12,11 +12,13 @@ import { components } from "@/lib/panoptikon";
 import { TagAutoComplete } from "@/components/tagInput";
 import { useQueryOptions, useTagFilter } from "@/lib/state/searchQuery/clientHooks";
 
+type TagFilterUpdate = Partial<components["schemas"]["QueryTagFilters"]>
+type TagFilterType = Required<components["schemas"]["QueryTagFilters"]>
 export function TagFilter() {
     const [tagFilter, setTagFilter] = useTagFilter()
     const [options, setOptions] = useQueryOptions()
 
-    function setTagFilterWrapper(newTagFilter: components["schemas"]["QueryTagFilters"]) {
+    function setTagFilterWrapper(newTagFilter: TagFilterUpdate) {
         console.log(tagFilter, newTagFilter)
         setTagFilter(newTagFilter)
     }
@@ -46,8 +48,8 @@ export function TagFilterSettings({
     tagFilter,
     setTagFilter,
 }: {
-    tagFilter: components["schemas"]["QueryTagFilters"]
-    setTagFilter: (tagFilter: components["schemas"]["QueryTagFilters"]) => void
+    tagFilter: TagFilterType
+    setTagFilter: (tagFilter: TagFilterUpdate) => void
 }) {
     const dbs = useSelectedDBs()[0]
     const { data } = $api.useQuery("get", "/api/search/stats", {
@@ -70,39 +72,39 @@ export function TagFilterSettings({
             <TagListInput
                 label="Positive Tags"
                 description="Results must match all of these tags"
-                tags={tagFilter.pos_match_all || []}
-                onChange={(tags) => setTagFilter({ ...tagFilter, pos_match_all: tags })}
+                tags={tagFilter.pos_match_all}
+                onChange={(tags) => setTagFilter({ pos_match_all: tags })}
             />
             <TagListInput
                 label="Negative Tags"
                 description="Results must *not* match *any* of these tags"
-                tags={tagFilter.neg_match_any || []}
-                onChange={(tags) => setTagFilter({ ...tagFilter, neg_match_any: tags })}
+                tags={tagFilter.neg_match_any}
+                onChange={(tags) => setTagFilter({ neg_match_any: tags })}
             />
             <TagListInput
                 label="Match-Any Tags"
                 description="Results must match at least one of these tags"
-                tags={tagFilter.pos_match_any || []}
-                onChange={(tags) => setTagFilter({ ...tagFilter, pos_match_any: tags })}
+                tags={tagFilter.pos_match_any}
+                onChange={(tags) => setTagFilter({ pos_match_any: tags })}
             />
             <TagListInput
                 label="Negative Match-All Tags"
                 description="Results must *not* match *all* of these tags"
-                tags={tagFilter.neg_match_all || []}
-                onChange={(tags) => setTagFilter({ ...tagFilter, neg_match_all: tags })}
+                tags={tagFilter.neg_match_all}
+                onChange={(tags) => setTagFilter({ neg_match_all: tags })}
             />
             <ConfidenceFilter
                 label="Minimum Confidence"
                 description="Only consider tags with this minimum confidence"
                 confidence={tagFilter.min_confidence || 0}
-                setConfidence={(value) => setTagFilter({ ...tagFilter, min_confidence: value || null })}
+                setConfidence={(value) => setTagFilter({ min_confidence: value || null })}
             />
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
                 <MultiBoxResponsive
                     options={tagTargets}
                     resetValue="*" // Reset value is the value that will clear the selection
-                    currentValues={(tagFilter.setters || [])}
-                    onSelectionChange={(values) => setTagFilter({ ...tagFilter, setters: values })}
+                    currentValues={(tagFilter.setters)}
+                    onSelectionChange={(values) => setTagFilter({ setters: values })}
                     maxDisplayed={2}
                     placeholder="Models..."
                 />
@@ -111,14 +113,14 @@ export function TagFilterSettings({
                 label="Require All Models"
                 description="Only consider tags set by *all* chosen models"
                 value={tagFilter.all_setters_required || false}
-                onChange={(value) => setTagFilter({ ...tagFilter, all_setters_required: value })}
+                onChange={(value) => setTagFilter({ all_setters_required: value })}
             />
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
                 <MultiBoxResponsive
                     options={namespaces}
                     resetValue="*" // Reset value is the value that will clear the selection
-                    currentValues={(tagFilter.namespaces || [])}
-                    onSelectionChange={(values) => setTagFilter({ ...tagFilter, namespaces: values })}
+                    currentValues={(tagFilter.namespaces)}
+                    onSelectionChange={(values) => setTagFilter({ namespaces: values })}
                     maxDisplayed={2}
                     placeholder="Namespaces..."
                 />
