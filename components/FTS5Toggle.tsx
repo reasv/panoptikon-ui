@@ -8,28 +8,36 @@ export function Fts5ToggleButton({
     onFTS5Enable,
     isFTS5Enabled
 }: {
-    onFTS5Enable: (enabled: boolean) => void
+    onFTS5Enable: (enabled: boolean) => boolean // Returns true if fts5 was enabled
     isFTS5Enabled: boolean
 }) {
 
     const { toast } = useToast()
     const onClickFTS5Toggle = () => {
         const newValue = !isFTS5Enabled
-        onFTS5Enable(newValue)
-        let description = "You can now use natural language queries"
-        if (newValue) {
-            description = "Consult the SQLite FTS5 documentation for the correct syntax"
+        if (onFTS5Enable(newValue)) {
+            let description = "You can now use natural language queries"
+            if (newValue) {
+                description = "Consult the SQLite FTS5 documentation for the correct syntax"
+            }
+            let action = undefined
+            if (newValue) {
+                action = <ToastAction onClick={() => window.open("https://www.sqlite.org/fts5.html#full_text_query_syntax", "_blank")} altText="FTS5 Docs">Docs</ToastAction>
+            }
+            toast({
+                title: `${newValue ? "Enabled" : "Disabled"} FTS5 MATCH syntax`,
+                description,
+                action,
+                duration: 3000
+            })
+        } else {
+            toast({
+                title: "Failed to enable FTS5 MATCH syntax",
+                description: "Check your query syntax",
+                variant: "destructive",
+                duration: 3000
+            })
         }
-        let action = undefined
-        if (newValue) {
-            action = <ToastAction onClick={() => window.open("https://www.sqlite.org/fts5.html#full_text_query_syntax", "_blank")} altText="FTS5 Docs">Docs</ToastAction>
-        }
-        toast({
-            title: `${newValue ? "Enabled" : "Disabled"} FTS5 MATCH syntax`,
-            description,
-            action,
-            duration: 3000
-        })
     }
     return (
         <Toggle

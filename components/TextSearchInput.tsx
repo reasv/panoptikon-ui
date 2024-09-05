@@ -23,7 +23,7 @@ export function TextSearchInput({
     textQuery: string,
     setTextQuery: (value: string, valid: boolean) => void,
     fts5Enabled: boolean,
-    setFts5Enabled: (value: boolean) => void
+    setFts5Enabled: (value: boolean, valid: boolean) => boolean // Returns true if fts5 was enabled
     setIsInputValid: (value: boolean) => void
     noTagCompletion?: boolean,
     noClearSearch?: boolean
@@ -60,8 +60,8 @@ export function TextSearchInput({
     }, [fts5Enabled])
 
     const onFTS5Enable = (enabled: boolean) => {
-        checkInput(textQuery, enabled)
-        setFts5Enabled(enabled)
+        const valid = checkInput(textQuery, enabled)
+        return setFts5Enabled(enabled, valid)
     }
 
     const onTextInputChange = (match_string: string) => {

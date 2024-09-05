@@ -12,13 +12,18 @@ export function SearchBar({
         setAnyTextQuery({ query: value })
         setOptions({ s_enable: valid })
     }
+    const onEnableSyntax = (value: boolean, valid: boolean) => {
+        setAnyTextQuery({ raw_fts5_match: value })
+        setOptions({ s_enable: valid })
+        return true
+    }
     return (
         <TextSearchInput
             onSubmit={onSubmit}
             textQuery={anyTextQuery.query}
             setTextQuery={setTextQuery}
             fts5Enabled={options.at_fts5}
-            setFts5Enabled={(value) => setOptions({ at_fts5: value })}
+            setFts5Enabled={onEnableSyntax}
             setIsInputValid={(value) => setOptions({ s_enable: value })}
         />
     )
