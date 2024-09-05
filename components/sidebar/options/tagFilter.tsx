@@ -10,10 +10,12 @@ import { useSelectedDBs } from "@/lib/state/database";
 import { ReactNode, useEffect, useRef, useState } from "react";
 import { components } from "@/lib/panoptikon";
 import { TagAutoComplete } from "@/components/tagInput";
+import { useQueryOptions, useTagFilter } from "@/lib/state/searchQuery/clientHooks";
 
 export function TagFilter() {
-    const [tagFilter, setTagFilter] = useSearchQuery((state) => [state.tags, state.setTags])
-    const [enabled, setEnabled] = useSearchQuery((state) => [state.e_tags, state.setEnableTags])
+    const [tagFilter, setTagFilter] = useTagFilter()
+    const [options, setOptions] = useQueryOptions()
+
     function setTagFilterWrapper(newTagFilter: components["schemas"]["QueryTagFilters"]) {
         console.log(tagFilter, newTagFilter)
         setTagFilter(newTagFilter)
@@ -29,8 +31,8 @@ export function TagFilter() {
             <SwitchFilter
                 label="Enable tag filter"
                 description="Enable or disable the tag filter"
-                value={enabled}
-                onChange={setEnabled}
+                value={options.e_tags}
+                onChange={(value) => setOptions({ e_tags: value })}
             />
             <TagFilterSettings
                 tagFilter={tagFilter}
