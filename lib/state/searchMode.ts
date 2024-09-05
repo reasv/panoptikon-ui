@@ -1,5 +1,5 @@
 import { createSerializer, parseAsStringEnum, useQueryState } from "nuqs"
-import { createSearchParamsCache } from "nuqs/parsers"
+import { createSearchParamsCache } from "nuqs/server"
 
 export enum Mode {
   Search = "s",
