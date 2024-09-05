@@ -13,7 +13,9 @@ export function ExtractedTextFilter() {
             filter={filter}
             setFilter={setFilter}
             children={
-                <ExtractedTextQueryInput />
+                <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-center">
+                    <ExtractedTextQueryInput />
+                </div>
             }
         />
     )
