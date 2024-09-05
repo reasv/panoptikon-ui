@@ -5,11 +5,6 @@ import {
     HydrationBoundary,
     QueryClient,
 } from '@tanstack/react-query'
-import { selectedDBsServer } from '@/lib/state/databaseServer';
-import { fetchDB, fetchNs, fetchSearch, fetchSimilarity, fetchStats } from './queryFns';
-import { getSearchQueryCache } from '@/lib/state/searchQuery/serverParsers';
-import { getSimilarityOptionsCache, getSimilarityQueryCache } from '@/lib/state/similarityQuery/serverParser';
-import { getSearchMode, Mode } from '@/lib/state/searchMode';
 import { prefetchSearchPage } from './prefetch';
 
 export default async function SearchPage({
