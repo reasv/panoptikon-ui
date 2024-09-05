@@ -1,7 +1,7 @@
 import { $api } from "@/lib/api"
 import { } from "@/lib/state/zust"
 
-import { FilterContainer } from "../options/FilterContainer";
+import { FilterContainer } from "../base/FilterContainer";
 import { components } from "@/lib/panoptikon";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons";

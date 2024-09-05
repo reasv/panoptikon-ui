@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "../../ui/button";
 import { MultiBoxResponsive } from "../../multiCombobox";
-import { FilterContainer } from "../options/FilterContainer";
+import { FilterContainer } from "../base/FilterContainer";
 import { components } from "@/lib/panoptikon";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/components/ui/use-toast";

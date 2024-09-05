@@ -1,4 +1,4 @@
-import { FilterContainer } from "../options/FilterContainer"
+import { FilterContainer } from "../base/FilterContainer"
 import { $api } from "@/lib/api"
 import { ConfidenceFilter } from "../options/confidenceFilter"
 import { ComboBoxResponsive } from "@/components/combobox"

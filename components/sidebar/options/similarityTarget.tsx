@@ -1,8 +1,6 @@
 "use client"
 import { $api } from "@/lib/api"
-import { } from "@/lib/state/zust"
-
-import { FilterContainer } from "../options/FilterContainer";
+import { FilterContainer } from "../base/FilterContainer";
 import { keepPreviousData } from "@tanstack/react-query";
 import { getFullFileURL, getLocale, prettyPrintBytes, prettyPrintVideoDuration } from "@/lib/utils";
 import { useSelectedDBs } from "@/lib/state/database";

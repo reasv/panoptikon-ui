@@ -1,6 +1,6 @@
 import { MimeTypeFilter } from "./MimeTypeFilter"
 import { PathPrefixFilter } from "./PathFilter"
-import { FilterContainer } from "./FilterContainer"
+import { FilterContainer } from "../base/FilterContainer"
 
 export function ExclusiveFilters() {
     return (

@@ -1,18 +1,15 @@
-"use client"
 import { $api } from "@/lib/api"
 import { Label } from "../../ui/label"
-import { Switch } from "../../ui/switch";
 import { MultiBoxResponsive } from "../../multiCombobox";
-import { FilterContainer } from "./FilterContainer";
+import { FilterContainer } from "../base/FilterContainer";
 import { ConfidenceFilter } from "./confidenceFilter";
 import { useSelectedDBs } from "@/lib/state/database";
 import { ReactNode, useEffect, useRef, useState } from "react";
 import { components } from "@/lib/panoptikon";
 import { TagAutoComplete } from "@/components/tagInput";
-import { useQueryOptions, useTagFilter } from "@/lib/state/searchQuery/clientHooks";
-type Nullable<T> = {
-    [P in keyof T]: T[P] | null;
-};
+import { Nullable, useQueryOptions, useTagFilter } from "@/lib/state/searchQuery/clientHooks";
+import { SwitchFilter } from "../base/SwitchFilter";
+
 type TagFilterUpdate = Nullable<Partial<components["schemas"]["QueryTagFilters"]>>
 type TagFilterType = Required<components["schemas"]["QueryTagFilters"]>
 export function TagFilter() {
@@ -45,7 +42,8 @@ export function TagFilter() {
     )
 }
 
-const tagSetStateValue = (tags: string[]) => tags.length > 0 ? tags : null
+// const tagSetStateValue = (tags: string[]) => tags.length > 0 ? tags : null
+const tagSetStateValue = (tags: string[]) => tags
 
 export function TagFilterSettings({
     tagFilter,
@@ -132,31 +130,6 @@ export function TagFilterSettings({
     )
 }
 
-export function SwitchFilter({
-    label,
-    description,
-    value,
-    onChange,
-}: {
-    label: ReactNode
-    description?: ReactNode
-    value: boolean
-    onChange: (value: boolean) => void
-}) {
-    return <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
-        <div className="flex flex-row items-center justify-between">
-            <div className="space-y-0.5">
-                <Label className="text-base">
-                    {label}
-                </Label>
-                <div className="text-gray-400">
-                    {description}
-                </div>
-            </div>
-            <Switch checked={value} onCheckedChange={onChange} />
-        </div>
-    </div>
-}
 
 function splitTags(tags: string): string[] {
     return tags.split(" ").filter((tag) => tag !== "")

@@ -1,5 +1,5 @@
 import { useDetailsPane } from "@/lib/state/zust"
-import { FilterContainer } from "../options/FilterContainer"
+import { FilterContainer } from "../base/FilterContainer"
 import { components } from "@/lib/panoptikon"
 import { MultiBoxResponsive } from "@/components/multiCombobox"
 import { $api } from "@/lib/api"
