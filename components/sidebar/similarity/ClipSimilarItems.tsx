@@ -4,11 +4,13 @@ import { ConfidenceFilter } from "../options/confidenceFilter"
 import { ComboBoxResponsive } from "@/components/combobox"
 import { SimilarItemsView } from "./SimilarItemsView"
 import { components } from "@/lib/panoptikon"
-import { AggregationOptions, SourceTextFilter, SwitchOption } from "./CommonFilters"
 import { useImageSimilarity } from "@/lib/state/similarityStore"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { SimilarityQueryType } from "@/lib/state/similarityQuery"
 import { useSelectedDBs } from "@/lib/state/database"
+import { SwitchFilter } from "../base/SwitchFilter"
+import { AggregationOptions } from "../base/AggregationOptions"
+import { SourceTextFilter } from "../base/SourceTextFilter"
 
 export function ClipItemSimilarity() {
     const sha256 = useItemSelection((state) => state.getSelected()?.sha256)
@@ -102,23 +104,23 @@ function CrossModalOptions({
             }
         // defaultIsCollapsed
         >
-            <SwitchOption
+            <SwitchFilter
                 label="Enable Cross Modal"
                 description="Enables cross modal similarity search"
                 value={clipEmbeddingQuery.clip_xmodal}
-                setValue={(value) => setCLIPEmbeddingQuery({ ...clipEmbeddingQuery, clip_xmodal: value })}
+                onChange={(value) => setCLIPEmbeddingQuery({ ...clipEmbeddingQuery, clip_xmodal: value })}
             />
-            <SwitchOption
+            <SwitchFilter
                 label="Text to Text"
                 description="Compare text embeddings to text embeddings"
                 value={clipEmbeddingQuery.xmodal_t2t}
-                setValue={(value) => setCLIPEmbeddingQuery({ ...clipEmbeddingQuery, xmodal_t2t: value })}
+                onChange={(value) => setCLIPEmbeddingQuery({ ...clipEmbeddingQuery, xmodal_t2t: value })}
             />
-            <SwitchOption
+            <SwitchFilter
                 label="Image to Image"
                 description="Compare image embeddings to image embeddings"
                 value={clipEmbeddingQuery.xmodal_i2i}
-                setValue={(value) => setCLIPEmbeddingQuery({ ...clipEmbeddingQuery, xmodal_i2i: value })}
+                onChange={(value) => setCLIPEmbeddingQuery({ ...clipEmbeddingQuery, xmodal_i2i: value })}
             />
             {clipEmbeddingQuery.src_text && clipEmbeddingQuery.clip_xmodal && <SourceTextFilter textFilters={clipEmbeddingQuery.src_text} setTextFilters={(filter) => setCLIPEmbeddingQuery({
                 ...clipEmbeddingQuery, src_text: filter

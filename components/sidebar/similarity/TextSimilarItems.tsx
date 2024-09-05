@@ -6,10 +6,11 @@ import { ComboBoxResponsive } from "@/components/combobox"
 import { SimilarItemsView } from "./SimilarItemsView"
 import { useImageSimilarity } from "@/lib/state/similarityStore"
 import { components } from "@/lib/panoptikon"
-import { AggregationOptions, SourceTextFilter } from "./CommonFilters"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { SimilarityQueryType } from "@/lib/state/similarityQuery"
 import { useSelectedDBs } from "@/lib/state/database"
+import { SourceTextFilter } from "../base/SourceTextFilter"
+import { AggregationOptions } from "../base/AggregationOptions"
 
 export function TextEmbeddingsSimilarity() {
     const sha256 = useItemSelection((state) => state.getSelected()?.sha256)
