@@ -31,6 +31,23 @@ export const useSQLite = (enabled: boolean) => {
     }
   }, [enabled, db, loading])
 
+  // Async function to load the database
+  const forceLoad = useCallback(async () => {
+    if (!db && !loading) {
+      setLoading(true)
+      try {
+        const initializedDb = await initializeSQLite()
+        if (initializedDb) {
+          setDb(initializedDb)
+        }
+      } catch (err: any) {
+        setError(err.message)
+      } finally {
+        setLoading(false)
+      }
+    }
+  }, [db, loading])
+
   // Test FTS5 query function
   const executeQuery = useCallback(
     (query: string) => {
@@ -70,5 +87,6 @@ export const useSQLite = (enabled: boolean) => {
     executeQuery,
     loading,
     error,
+    forceLoad,
   }
 }

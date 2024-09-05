@@ -2,20 +2,18 @@ import { Toggle } from "@/components/ui/toggle"
 import { MSquare } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { ToastAction } from "@/components/ui/toast"
-import { useQueryOptions } from '@/lib/state/searchQuery/clientHooks'
 
 export function Fts5ToggleButton({
     onFTS5Enable,
     isFTS5Enabled
 }: {
-    onFTS5Enable: (enabled: boolean) => boolean // Returns true if fts5 was enabled
+    onFTS5Enable: (enabled: boolean) => Promise<boolean> // Returns true if fts5 was enabled
     isFTS5Enabled: boolean
 }) {
-
     const { toast } = useToast()
-    const onClickFTS5Toggle = () => {
+    const onClickFTS5Toggle = async () => {
         const newValue = !isFTS5Enabled
-        if (onFTS5Enable(newValue)) {
+        if (await onFTS5Enable(newValue)) {
             let description = "You can now use natural language queries"
             if (newValue) {
                 description = "Consult the SQLite FTS5 documentation for the correct syntax"
