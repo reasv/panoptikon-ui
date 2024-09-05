@@ -6,12 +6,14 @@ import { useEffect, useState } from "react";
 import { Button } from "../../ui/button";
 import { PlusCircle, MinusCircle } from "lucide-react";
 import { useSimilarityQuery } from "@/lib/state/similarityQuery";
+import { useOrderArgs } from "@/lib/state/searchQuery/clientHooks";
 
 export function PageSizeSlider() {
-    const pageSize = useSearchQuery((state) => state.order_args.page_size)
-    const setPageSize = useSearchQuery((state) => state.setPageSize)
+    const [orderArgs, setOrderArgs] = useOrderArgs()
     return (
-        <PageSizeControl pageSize={pageSize} setPageSize={setPageSize} />
+        <PageSizeControl pageSize={orderArgs.page_size} setPageSize={(page_size) => setOrderArgs({
+            page_size
+        })} />
     )
 }
 export function SimilarityPageSizeSlider() {
