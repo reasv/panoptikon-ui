@@ -32,7 +32,6 @@
     "history": "^5.3.0",
     "immer": "^10.1.1",
     "lucide-react": "^0.435.0",
-    "lz4js": "^0.2.0",
     "msgpack-lite": "^0.1.26",
     "next": "15.0.0-rc.0",
     "nuqs": "^1.19.0",
@@ -47,7 +46,6 @@
     "zustand": "^4.5.5"
   },
   "devDependencies": {
-    "@types/lz4js": "^0.2.1",
     "@types/msgpack-lite": "^0.1.11",
     "@types/node": "^20",
     "@types/react": "^18",

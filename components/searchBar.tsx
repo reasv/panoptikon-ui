@@ -12,7 +12,7 @@ import { Toggle } from "./ui/toggle"
 import { Tag } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAnyTextFilterOptions } from "@/lib/state/searchQuery/clientHooks"
-import { useSearchQuery } from "@/lib/state/zust"
+import { useSearchEnabled } from "@/lib/state/zust"
 
 export function SearchBar({
     onSubmit,
@@ -21,7 +21,7 @@ export function SearchBar({
 }) {
     const [anyTextQuery, setAnyTextQuery] = useAnyTextFilterOptions()
     const syntaxChecker = useSQLite(anyTextQuery.raw_fts5_match)
-    const [enabled, setEnabled] = useSearchQuery((state) => [state.enable_search, state.setEnableSearch])
+    const [enabled, setEnabled] = useSearchEnabled((state) => [state.enable_search, state.setEnableSearch])
     const checkInput = (query: string, fts5Enabled: boolean) => {
         if (query.length === 0) {
             setEnabled(true)

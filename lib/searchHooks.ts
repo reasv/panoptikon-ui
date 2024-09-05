@@ -7,7 +7,7 @@ import {
   useSimilarityQuery,
 } from "./state/similarityQuery"
 import { useImageSimilarity } from "./state/similarityStore"
-import { useInstantSearch } from "./state/zust"
+import { useInstantSearch, useSearchEnabled } from "./state/zust"
 import { SearchQueryArgs } from "@/app/search/queryFns"
 import { useSearchPage, useSearchQuery } from "./state/searchQuery/clientHooks"
 import { components } from "./panoptikon"
@@ -80,8 +80,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const dbs = isClient ? useSelectedDBs()[0] : initialQuery.params.query
   const [page, setPage] = useSearchPage()
   const pageSize = searchQuery.order_args.page_size
-  // const searchEnabled = useSearchQuery((state) => state.enable_search)
-  const searchEnabled = true
+  const searchEnabled = useSearchEnabled((state) => state.enable_search)
   const instantSearch = useInstantSearch((state) => state.enabled)
   const [mode, _] = useSearchMode()
   const { data, error, isError, refetch, isFetching } = $api.useQuery(
