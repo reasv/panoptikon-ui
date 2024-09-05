@@ -1,6 +1,6 @@
 import { useSimilarityQuery } from "@/lib/state/similarityQuery"
 import { useOrderArgs } from "@/lib/state/searchQuery/clientHooks"
-import { PageSizeControl } from "../base/PageSizeContro"
+import { PageSizeControl } from "../base/PageSizeControl"
 
 export function PageSizeSlider() {
     const [orderArgs, setOrderArgs] = useOrderArgs()
