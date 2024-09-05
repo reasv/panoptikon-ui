@@ -60,8 +60,12 @@ export function TextSearchInput({
 
     const onFTS5Enable = async (enabled: boolean) => {
         if (!enabled) { // Disable FTS5
-            setIsInputValid(true) // Reset input validity when disabling FTS5
-            return setFts5Enabled(false)
+            if (setFts5Enabled(false)) {
+                setIsInputValid(true) // Reset input validity when disabling FTS5
+                setTextQuery(value) // Set the query to the current value
+                return true
+            }
+            return false
         } else { // Enable FTS5
             await syntaxChecker.forceLoad()
             if (!updateInputValidity(textQuery)) return false
