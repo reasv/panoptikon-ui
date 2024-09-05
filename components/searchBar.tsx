@@ -11,8 +11,7 @@ import { useToast } from "./ui/use-toast"
 import { Toggle } from "./ui/toggle"
 import { Tag } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useAnyTextFilterOptions } from "@/lib/state/searchQuery/clientHooks"
-import { useSearchEnabled } from "@/lib/state/zust"
+import { useAnyTextFilterOptions, useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
 
 export function SearchBar({
     onSubmit,
@@ -21,29 +20,29 @@ export function SearchBar({
 }) {
     const [anyTextQuery, setAnyTextQuery] = useAnyTextFilterOptions()
     const syntaxChecker = useSQLite(anyTextQuery.raw_fts5_match)
-    const [enabled, setEnabled] = useSearchEnabled((state) => [state.enable_search, state.setEnableSearch])
+    const [options, setOptions] = useQueryOptions()
     const checkInput = (query: string, fts5Enabled: boolean) => {
         if (query.length === 0) {
-            setEnabled(true)
+            setOptions({ s_enable: true })
             return
         }
         let error = false
         if (fts5Enabled) {
             const valid = syntaxChecker.executeQuery(query)
             if (!valid) {
-                setEnabled(false)
+                setOptions({ s_enable: false })
                 error = true
             }
         }
         if (!error) {
-            setEnabled(true)
+            setOptions({ s_enable: true })
         }
     }
     useEffect(() => {
         if (syntaxChecker.error) {
-            setEnabled(false)
+            setOptions({ s_enable: false })
         } else {
-            setEnabled(true)
+            setOptions({ s_enable: true })
         }
     }, [syntaxChecker.error])
 
@@ -59,7 +58,7 @@ export function SearchBar({
         checkInput(match_string, anyTextQuery.raw_fts5_match)
         // Trigram search requires at least 3 characters
         if (match_string.length > 0 && match_string.length < 3) {
-            setEnabled(false)
+            setOptions({ s_enable: false })
         }
         setAnyTextQuery({ query: match_string })
     }

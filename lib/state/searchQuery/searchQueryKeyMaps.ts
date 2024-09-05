@@ -87,6 +87,7 @@ export const queryOptionsKeyMap = (p: typeof def) => ({
   at_e_et: p.parseAsBoolean.withDefault(true),
   at_query: p.parseAsString.withDefault(""),
   at_fts5: p.parseAsBoolean.withDefault(false),
+  s_enable: p.parseAsBoolean.withDefault(true),
 })
 
 export interface SearchQueryOptions {
@@ -101,6 +102,7 @@ export interface SearchQueryOptions {
   at_e_et: boolean
   at_query: string
   at_fts5: boolean
+  s_enable: boolean
 }
 export type ATExtractedTextFilter = Required<
   Omit<components["schemas"]["ExtractedTextFilter"], "query" | "raw_fts5_match">

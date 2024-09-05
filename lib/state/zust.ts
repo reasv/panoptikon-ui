@@ -158,12 +158,3 @@ export const useInstantSearch = create(
     instantSearchStorageOptions
   )
 )
-
-interface SearchQueryState {
-  enable_search: boolean
-  setEnableSearch: (value: boolean) => void
-}
-export const useSearchEnabled = create<SearchQueryState>((set, get) => ({
-  enable_search: true,
-  setEnableSearch: (enable_search: boolean) => set({ enable_search }),
-}))
