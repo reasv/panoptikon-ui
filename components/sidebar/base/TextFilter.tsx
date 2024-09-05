@@ -6,17 +6,20 @@ import { useSelectedDBs } from "@/lib/state/database"
 import { SetFn } from "@/lib/state/searchQuery/clientHooks"
 import { KeymapComponents } from "@/lib/state/searchQuery/searchQueryKeyMaps"
 import { ConfidenceFilter } from "../options/confidenceFilter"
+import { TextSearchInput } from "@/components/TextSearchInput"
 
 export function TextFilter({
     enable,
     setEnable,
     filter,
-    setFilter
+    setFilter,
+    children,
 }: {
     enable: boolean,
     setEnable: (value: boolean) => void,
     filter: KeymapComponents["ATExtractedTextFilter"] | KeymapComponents["ExtractedTextFilter"],
     setFilter: SetFn<KeymapComponents["ATExtractedTextFilter"] | KeymapComponents["ExtractedTextFilter"]>
+    children?: React.ReactNode
 }) {
     const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/search/stats", {
@@ -45,6 +48,7 @@ export function TextFilter({
                 </div>
                 <Switch checked={enable} onCheckedChange={(value) => setEnable(value)} />
             </div>
+            {children}
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
                 <MultiBoxResponsive
                     options={textTargets}

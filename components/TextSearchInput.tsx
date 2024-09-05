@@ -94,7 +94,7 @@ export function TextSearchInput({
     const showError = syntaxChecker.error && textQuery.length > 0 && fts5Enabled
     return (
         <>
-            <TagCompletionSwitch />
+            {!noTagCompletion && <TagCompletionSwitch />}
             <div className="relative w-full">
                 {completionEnabled && !noTagCompletion ?
                     <TagAutoComplete
