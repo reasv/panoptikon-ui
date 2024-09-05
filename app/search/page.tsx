@@ -6,21 +6,23 @@ import {
     QueryClient,
 } from '@tanstack/react-query'
 import { selectedDBsServer } from '@/lib/state/databaseServer';
-import { fetchDB, fetchNs, fetchSearch, fetchStats } from './queryFns';
+import { fetchDB, fetchNs, fetchSearch, fetchSimilarity, fetchStats } from './queryFns';
 import { getSearchQueryCache } from '@/lib/state/searchQuery/serverParsers';
+import { getSimilarityOptionsCache, getSimilarityQueryCache } from '@/lib/state/similarityQuery/serverParser';
+import { getSearchMode, Mode } from '@/lib/state/searchMode';
 
 export default async function SearchPage({
     searchParams,
 }: {
     searchParams: { [key: string]: string | string[] | undefined };
 }) {
-    const query = getSearchQueryCache(searchParams)
+    const searchQuery = getSearchQueryCache(searchParams)
     const dbs = selectedDBsServer.parse(searchParams)
     const request = {
         params: {
             query: dbs,
         },
-        body: query
+        body: searchQuery
     }
 
     const queryClient = new QueryClient()
@@ -28,6 +30,28 @@ export default async function SearchPage({
         queryKey: ["post", "/api/search", request],
         queryFn: () => fetchSearch(request),
     })
+
+    const similarityQuery = getSimilarityQueryCache(searchParams)
+    const similarityOptions = getSimilarityOptionsCache(searchParams)
+    const similarityRequest = {
+        params: {
+            query: dbs,
+            path: {
+                sha256: similarityOptions.item || "",
+            },
+        },
+        body: {
+            ...similarityQuery,
+            full_count: true,
+        },
+    }
+    const searchMode = getSearchMode(searchParams).mode
+    if (searchMode === Mode.ItemSimilarity) {
+        await queryClient.prefetchQuery({
+            queryKey: ["post", "/api/search/similar/{sha256}", similarityRequest],
+            queryFn: () => fetchSimilarity(similarityRequest),
+        })
+    }
 
     const requestDBs = {
         params: {

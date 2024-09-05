@@ -24,3 +24,6 @@ export function getSimilarityQueryCache(params: SearchParams) {
     similaritySource: similarityCaches.similaritySource.parse(params),
   })
 }
+export function getSimilarityOptionsCache(params: SearchParams) {
+  return similarityCaches.similarityOptions.parse(params)
+}

@@ -12,6 +12,17 @@ export interface SearchQueryArgs {
   }
   body: components["schemas"]["SearchQuery"]
 }
+
+export interface SimilarityQueryArgs {
+  params: {
+    query: queryParams
+    path: {
+      sha256: string
+    }
+  }
+  body: components["schemas"]["SimilarItemsRequest"]
+}
+
 export async function fetchSearch(args: SearchQueryArgs) {
   try {
     const { data, error } = await serverFetchClient.POST("/api/search", {
@@ -28,6 +39,29 @@ export async function fetchSearch(args: SearchQueryArgs) {
   } catch (error) {
     console.error(error)
     console.log("Error fetching search results")
+    throw error
+  }
+}
+
+export async function fetchSimilarity(args: SimilarityQueryArgs) {
+  try {
+    const { data, error } = await serverFetchClient.POST(
+      "/api/search/similar/{sha256}",
+      {
+        params: args.params,
+        body: args.body,
+      }
+    )
+    if (!data || error) {
+      console.error(error)
+      console.log("Error fetching similarity results")
+      throw error
+    }
+    console.log("Fetched similarity results successfully")
+    return data
+  } catch (error) {
+    console.error(error)
+    console.log("Error similarity search results")
     throw error
   }
 }
