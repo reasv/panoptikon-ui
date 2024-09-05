@@ -79,6 +79,7 @@ export const queryOptionsKeyMap = (p: typeof def) => ({
   e_tags: p.parseAsBoolean.withDefault(false),
   e_path: p.parseAsBoolean.withDefault(false),
   e_et: p.parseAsBoolean.withDefault(false),
+  e_pt: p.parseAsBoolean.withDefault(false),
   e_mime: p.parseAsBoolean.withDefault(false),
   e_iemb: p.parseAsBoolean.withDefault(false),
   e_temb: p.parseAsBoolean.withDefault(false),
@@ -91,6 +92,7 @@ export const queryOptionsKeyMap = (p: typeof def) => ({
 export interface SearchQueryOptions {
   e_tags: boolean
   e_path: boolean
+  e_pt: boolean
   e_et: boolean
   e_mime: boolean
   e_iemb: boolean

@@ -1,5 +1,4 @@
 "use client"
-import { useSearchQuery } from "@/lib/state/zust"
 import { Label } from "../../ui/label"
 import { Slider } from "../../ui/slider";
 import { useEffect, useState } from "react";

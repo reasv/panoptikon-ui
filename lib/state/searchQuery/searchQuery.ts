@@ -62,7 +62,7 @@ export function queryFromState(
       ...state.ImageEmbeddingFilter,
     }
   }
-  if (state.SearchQueryOptions.e_path && state.PathTextFilter.query) {
+  if (state.SearchQueryOptions.e_pt && state.PathTextFilter.query) {
     query.query!.filters!.path = {
       ...state.PathTextFilter,
     }

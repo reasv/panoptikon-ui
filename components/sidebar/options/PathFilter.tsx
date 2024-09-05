@@ -1,6 +1,6 @@
 "use client"
 import { $api } from "@/lib/api"
-import { useCustomPaths, useSearchQuery } from "@/lib/state/zust"
+import { useCustomPaths } from "@/lib/state/zust"
 import { Label } from "../../ui/label"
 import { Input } from "../../ui/input";
 import { useState } from "react";
@@ -9,6 +9,7 @@ import { Button } from "../../ui/button";
 import { MultiBoxResponsive } from "../../multiCombobox";
 import { Switch } from "../../ui/switch";
 import { useSelectedDBs } from "@/lib/state/database";
+import { useFileFilters, useQueryOptions } from "@/lib/state/searchQuery/clientHooks";
 
 export function PathPrefixFilter() {
     const [dbs, ___] = useSelectedDBs()
@@ -17,22 +18,21 @@ export function PathPrefixFilter() {
             query: dbs
         }
     })
-    const paths = useSearchQuery((state) => state.paths)
-    const setPaths = useSearchQuery((state) => state.setPaths)
+    const [fileFilters, setFileFilters] = useFileFilters()
+    const [options, setOptions] = useQueryOptions()
     const customPaths = useCustomPaths((state) => state.strings)
     const addCustomPath = useCustomPaths((state) => state.add)
     const removeCustomPath = useCustomPaths((state) => state.remove)
-    const pathsEnabled = useSearchQuery((state) => state.e_path)
-    const setPathsEnabled = useSearchQuery((state) => state.setEnablePaths)
+
     const [inputValue, setInputValue] = useState('');
 
     function addNewCustomPath() {
         if (inputValue === '') return
-        if (!paths.includes(inputValue)) {
+        if (!fileFilters.include_path_prefixes.includes(inputValue)) {
             if (!customPaths.includes(inputValue)) {
                 addCustomPath(inputValue)
             }
-            setPaths([...paths, inputValue])
+            setFileFilters({ include_path_prefixes: [...fileFilters.include_path_prefixes, inputValue] })
         }
         setInputValue('')
     }
@@ -50,7 +50,7 @@ export function PathPrefixFilter() {
         ...(customPaths || []),
     ]));
     function onRemoveCustomPath(value: string) {
-        setPaths(paths.filter((t) => t !== value))
+        setFileFilters({ include_path_prefixes: fileFilters.include_path_prefixes.filter((t) => t !== value) })
         removeCustomPath(value)
     }
     const isCustom = (path: string) => (!(data?.folders || []).includes(path)) && path !== "*"
@@ -65,7 +65,7 @@ export function PathPrefixFilter() {
                         Paths must start with one of these strings
                     </div>
                 </div>
-                <Switch checked={pathsEnabled} onCheckedChange={(value) => setPathsEnabled(value)} />
+                <Switch checked={options.e_path} onCheckedChange={(value) => setOptions({ e_path: value })} />
             </div>
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-center">
                 <Input
@@ -83,8 +83,10 @@ export function PathPrefixFilter() {
                         value: "*",
                         label: "Any Path Allowed"
                     }]}
-                    currentValues={paths}
-                    onSelectionChange={setPaths}
+                    currentValues={fileFilters.include_path_prefixes}
+                    onSelectionChange={(values) => setFileFilters({
+                        include_path_prefixes: values
+                    })}
                     placeholder="Select groups"
                     resetValue="*"
                     maxDisplayed={4}

@@ -1,6 +1,6 @@
 "use client"
 import { $api } from "@/lib/api"
-import { useCustomMimes, useSearchQuery } from "@/lib/state/zust"
+import { useCustomMimes } from "@/lib/state/zust"
 import { Label } from "../../ui/label"
 import { Input } from "../../ui/input";
 import { useState } from "react";
@@ -9,6 +9,7 @@ import { Button } from "../../ui/button";
 import { MultiBoxResponsive } from "../../multiCombobox";
 import { Switch } from "../../ui/switch";
 import { useSelectedDBs } from "@/lib/state/database";
+import { useFileFilters, useQueryOptions } from "@/lib/state/searchQuery/clientHooks";
 
 export function MimeTypeFilter() {
     const [dbs, ___] = useSelectedDBs()
@@ -17,22 +18,20 @@ export function MimeTypeFilter() {
             query: dbs
         }
     })
-    const types = useSearchQuery((state) => state.types)
-    const setTypes = useSearchQuery((state) => state.setTypes)
+    const [fileFilters, setFileFilters] = useFileFilters()
+    const [options, setOptions] = useQueryOptions()
     const customTypes = useCustomMimes((state) => state.strings)
     const addCustomMime = useCustomMimes((state) => state.add)
     const removeCustomMime = useCustomMimes((state) => state.remove)
-    const mimesEnabled = useSearchQuery((state) => state.e_types)
-    const setMimesEnabled = useSearchQuery((state) => state.setEnableTypes)
     const [inputValue, setInputValue] = useState('');
 
     function addNewCustomMime() {
         if (inputValue === '') return
-        if (!types.includes(inputValue)) {
+        if (!fileFilters.item_types.includes(inputValue)) {
             if (!customTypes.includes(inputValue)) {
                 addCustomMime(inputValue)
             }
-            setTypes([...types, inputValue])
+            setFileFilters({ item_types: [...fileFilters.item_types, inputValue] })
         }
         setInputValue('')
     }
@@ -45,7 +44,7 @@ export function MimeTypeFilter() {
         addNewCustomMime()
     }
     function onRemoveCustomMime(value: string) {
-        setTypes(types.filter((t) => t !== value))
+        setFileFilters({ item_types: fileFilters.item_types.filter((t) => t !== value) })
         removeCustomMime(value)
     }
     const allMimes = Array.from(new Set([
@@ -65,7 +64,7 @@ export function MimeTypeFilter() {
                         Mime Type must start with one of these strings
                     </div>
                 </div>
-                <Switch checked={mimesEnabled} onCheckedChange={(value) => setMimesEnabled(value)} />
+                <Switch checked={options.e_mime} onCheckedChange={(value) => setOptions({ e_mime: value })} />
             </div>
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-center">
                 <Input
@@ -83,8 +82,8 @@ export function MimeTypeFilter() {
                         value: "*",
                         label: "Any Path Allowed"
                     }]}
-                    currentValues={types}
-                    onSelectionChange={setTypes}
+                    currentValues={fileFilters.item_types}
+                    onSelectionChange={(values) => setFileFilters({ item_types: values })}
                     placeholder="Select groups"
                     resetValue="*"
                     maxDisplayed={4}
