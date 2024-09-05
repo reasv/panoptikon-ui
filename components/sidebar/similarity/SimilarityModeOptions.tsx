@@ -3,10 +3,11 @@ import { CLIPSimilarityFilter } from "./ClipSimilarItems";
 import { $api } from "@/lib/api";
 import { useImageSimilarity } from "@/lib/state/similarityStore";
 import { components } from "@/lib/panoptikon";
-import { SimilarityQueryType, useSimilarityQuery } from "@/lib/state/similarityQuery";
 import { TextEmbeddingsSimilarityFilter } from "./TextSimilarItems";
 import { Label } from "@/components/ui/label";
 import { ComboBoxResponsive } from "@/components/combobox";
+import { useItemSimilarityOptions, useItemSimilaritySource, useSimilarityQuery } from "@/lib/state/similarityQuery/clientHooks";
+import { SimilarityQueryType } from "@/lib/state/similarityQuery/similarityQueryKeyMaps";
 
 export function SimilarityModeOptionsClip() {
     const [dbs, ___] = useSelectedDBs()
@@ -15,31 +16,28 @@ export function SimilarityModeOptionsClip() {
             query: dbs
         },
     })
-    const clipSetters = data?.setters.filter((setter) => setter[0] === "clip").map((setter) => setter[1]) || []
-    // The query in localstorage
-    const clipQuery = useImageSimilarity((state) => state.getClipQuery(clipSetters[0] || ""))
-    const setClipQuery = useImageSimilarity((state) => state.setClipQuery)
+    const setters = data?.setters.filter((setter) => setter[0] === "clip").map((setter) => setter[1]) || []
     // The query in the query parameters
-    const [query, setQuery] = useSimilarityQuery()
-    function onSetClipQuery(newQuery: components["schemas"]["SimilarItemsRequest"]) {
-        setClipQuery({
-            ...newQuery,
-            setter_name: clipQuery.setter_name
+    const query = useSimilarityQuery()
+    const setQueryOptions = useItemSimilarityOptions()[1]
+    const setSource = useItemSimilaritySource()[1]
+    function onSetQuery(newQuery: components["schemas"]["SimilarItemsRequest"]) {
+        setQueryOptions({
+            ...{
+                ...newQuery,
+                src_text: undefined
+            },
         })
-        setQuery({
-            is_model: newQuery.setter_name
-        })
-    }
-    const modeQuery: components["schemas"]["SimilarItemsRequest"] = {
-        ...clipQuery,
-        setter_name: query.is_model!
+        if (newQuery.src_text) {
+            setSource(newQuery.src_text)
+        }
     }
     return (
         <CLIPSimilarityFilter
             hideMaxResults={true}
-            setters={clipSetters}
-            clipQuery={clipQuery}
-            setClipQuery={onSetClipQuery}
+            setters={setters}
+            clipQuery={query}
+            setClipQuery={onSetQuery}
         />
     )
 }
@@ -52,29 +50,28 @@ export function SimilarityModeOptionsText() {
         },
     })
     const setters = data?.setters.filter((setter) => setter[0] === "text-embedding").map((setter) => setter[1]) || []
-    const textEmbeddingQuery = useImageSimilarity((state) => state.getTextEmbedQuery(setters[0] || ""))
-    const setTextEmbeddingQuery = useImageSimilarity((state) => state.setTextEmbedQuery)
-    const [query, setQuery] = useSimilarityQuery()
-    function onSetTextEmbeddingQuery(newQuery: components["schemas"]["SimilarItemsRequest"]) {
-        setTextEmbeddingQuery({
-            ...newQuery,
-            setter_name: textEmbeddingQuery.setter_name
+    // The query in the query parameters
+    const query = useSimilarityQuery()
+    const setQueryOptions = useItemSimilarityOptions()[1]
+    const setSource = useItemSimilaritySource()[1]
+    function onSetQuery(newQuery: components["schemas"]["SimilarItemsRequest"]) {
+        setQueryOptions({
+            ...{
+                ...newQuery,
+                src_text: undefined
+            },
         })
-        setQuery({
-            is_model: newQuery.setter_name
-        })
-    }
-    const modeQuery: components["schemas"]["SimilarItemsRequest"] = {
-        ...textEmbeddingQuery,
-        setter_name: query.is_model!
+        if (newQuery.src_text) {
+            setSource(newQuery.src_text)
+        }
     }
     return (
         <TextEmbeddingsSimilarityFilter
+            hideMaxResults={true}
             setters={setters}
-            setTextEmbeddingQuery={onSetTextEmbeddingQuery}
-            textEmbeddingQuery={modeQuery}
+            setTextEmbeddingQuery={onSetQuery}
+            textEmbeddingQuery={query}
         />
-
     )
 }
 
@@ -86,29 +83,28 @@ export function SimilarityModeSwitch() {
         },
     })
     const textSetters = data?.setters.filter((setter) => setter[0] === "text-embedding").map((setter) => setter[1]) || []
-    const textEmbeddingQuery = useImageSimilarity((state) => state.getTextEmbedQuery(textSetters[0] || ""))
     const clipSetters = data?.setters.filter((setter) => setter[0] === "clip").map((setter) => setter[1]) || []
-    const clipQuery = useImageSimilarity((state) => state.getClipQuery(clipSetters[0] || ""))
-    const [query, setQuery] = useSimilarityQuery()
-
+    const [options, setQueryOptions] = useItemSimilarityOptions()
     function switchMode() {
-        if (query.is_type === SimilarityQueryType.clip) {
-            setQuery({
-                is_type: SimilarityQueryType.textEmbedding,
-                is_page: 1,
-                is_model: textEmbeddingQuery.setter_name
+        if (options.type === SimilarityQueryType.clip) {
+            setQueryOptions({
+                type: SimilarityQueryType.textEmbedding,
+                page: 1,
+                setter_name: textSetters[0],
+                clip_xmodal: null,
             })
         } else {
-            setQuery({
-                is_type: SimilarityQueryType.clip,
-                is_page: 1,
-                is_model: clipQuery.setter_name
+            setQueryOptions({
+                type: SimilarityQueryType.clip,
+                page: 1,
+                setter_name: clipSetters[0],
+                clip_xmodal: null,
             })
         }
     }
     function onSelectMode(mode: string | null) {
         // check if the mode is already selected
-        if (mode === query.is_type) {
+        if (mode === options.type) {
             return
         }
         switchMode()
@@ -134,7 +130,7 @@ export function SimilarityModeSwitch() {
                         value: SimilarityQueryType.textEmbedding,
                         label: "Text Embeddings"
                     }]}
-                    currentValue={query.is_type}
+                    currentValue={options.type}
                     onChangeValue={onSelectMode}
                     placeholder="Select order by"
                 />

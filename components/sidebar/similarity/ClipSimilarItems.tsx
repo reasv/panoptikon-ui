@@ -6,11 +6,11 @@ import { SimilarItemsView } from "./SimilarItemsView"
 import { components } from "@/lib/panoptikon"
 import { useImageSimilarity } from "@/lib/state/similarityStore"
 import { useItemSelection } from "@/lib/state/itemSelection"
-import { SimilarityQueryType } from "@/lib/state/similarityQuery"
 import { useSelectedDBs } from "@/lib/state/database"
 import { SwitchFilter } from "../base/SwitchFilter"
 import { AggregationOptions } from "../base/AggregationOptions"
 import { SourceTextFilter } from "../base/SourceTextFilter"
+import { SimilarityQueryType } from "@/lib/state/similarityQuery/similarityQueryKeyMaps"
 
 export function ClipItemSimilarity() {
     const sha256 = useItemSelection((state) => state.getSelected()?.sha256)
