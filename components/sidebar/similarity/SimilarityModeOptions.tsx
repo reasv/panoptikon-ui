@@ -19,15 +19,17 @@ export function SimilarityModeOptionsClip() {
     const setters = data?.setters.filter((setter) => setter[0] === "clip").map((setter) => setter[1]) || []
     // The query in the query parameters
     const query = useSimilarityQuery()
-    const setQueryOptions = useItemSimilarityOptions()[1]
+    const [options, setQueryOptions] = useItemSimilarityOptions()
     const setSource = useItemSimilaritySource()[1]
     function onSetQuery(newQuery: components["schemas"]["SimilarItemsRequest"]) {
-        setQueryOptions({
+        const update = {
             ...{
                 ...newQuery,
-                src_text: undefined
             },
-        })
+            item: options.item,
+            type: SimilarityQueryType.clip,
+        }
+        setQueryOptions(update)
         if (newQuery.src_text) {
             setSource(newQuery.src_text)
         }
