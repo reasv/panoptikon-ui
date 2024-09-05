@@ -1,24 +1,15 @@
 "use client"
-import { useSearchQuery } from "@/lib/state/zust"
 import { Label } from "../../ui/label"
 import { ComboBoxResponsive } from "../../combobox";
+import { components } from "@/lib/panoptikon";
+import { useOrderArgs, useSearchQuery } from "@/lib/state/searchQuery/clientHooks";
 
 export function OrderBy() {
-    const orderBy = useSearchQuery((state) => state.getOrderBy())
-    const setOrderBy = useSearchQuery((state) => state.setOrderBy)
-    const order = useSearchQuery((state) => state.order_args.order || "default")
-    const setOrder = useSearchQuery((state) => state.setOrder)
-    const isAnyTextEnabled = useSearchQuery((state) => state.getIsAnyTextEnabled())
-    const restrictToBookmarks = useSearchQuery((state) => state.bookmarks.restrict_to_bookmarks)
+    const query = useSearchQuery()
+    const [_, setOrderArgs] = useOrderArgs()
+
     let orderOptions: {
-        value: | "last_modified"
-        | "path"
-        | "rank_fts"
-        | "rank_path_fts"
-        | "time_added"
-        | "rank_any_text"
-        | "text_vec_distance"
-        | "image_vec_distance"
+        value: NonNullable<components["schemas"]["OrderParams"]["order_by"]>
         label: string
     }[] = [
             { value: "path", label: "Filename" },
@@ -27,23 +18,23 @@ export function OrderBy() {
             { value: "rank_any_text", label: "Flexible Search Match" },
         ]
 
-    if (!isAnyTextEnabled) {
+    if (!query.query.filters!.any_text?.path || !query.query.filters!.any_text?.extracted_text) {
         orderOptions = orderOptions.filter((opt) => opt.value !== "rank_any_text")
     }
-    if (!restrictToBookmarks) {
+    if (!query.query.filters!.bookmarks?.restrict_to_bookmarks) {
         orderOptions = orderOptions.filter((opt) => opt.value !== "time_added")
     }
 
     function onOrderByChange(value: string | null) {
         if (value) {
             // @ts-ignore
-            setOrderBy(value)
+            setOrderArgs({ order_by: value })
         }
     }
 
     function onOrderChange(value: string | null) {
         // @ts-ignore
-        setOrder(value)
+        setOrderArgs({ order: value })
     }
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
@@ -60,7 +51,7 @@ export function OrderBy() {
             <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
                 <ComboBoxResponsive
                     options={orderOptions}
-                    currentValue={orderBy}
+                    currentValue={query.order_args.order_by}
                     onChangeValue={onOrderByChange}
                     placeholder="Select order by"
                 />
@@ -71,7 +62,7 @@ export function OrderBy() {
                         { value: "default", label: "Default" },
                     ]}
                     resetValue="default"
-                    currentValue={order}
+                    currentValue={query.order_args.order!}
                     onChangeValue={onOrderChange}
                     placeholder="Select order"
                 />
