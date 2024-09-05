@@ -7,7 +7,8 @@ import { MultiBoxResponsive } from "../../multiCombobox";
 import { FilterContainer } from "./FilterContainer";
 import { ConfidenceFilter } from "./confidenceFilter";
 import { useSelectedDBs } from "@/lib/state/database";
-import { useAnyTextExtractedTextFilters, useAnyTextPathTextFilters, useQueryOptions } from "@/lib/state/searchQuery/clientHooks";
+import { SetFn, useAnyTextExtractedTextFilters, useAnyTextPathTextFilters, useQueryOptions } from "@/lib/state/searchQuery/clientHooks";
+import { KeymapComponents } from "@/lib/state/searchQuery/searchQueryKeyMaps";
 
 export function AnyTextFilter() {
     const [options, _] = useQueryOptions()
@@ -49,6 +50,28 @@ export function AnyTextFilter() {
 function AnyTextPathFilter() {
     const [filter, setFilter] = useAnyTextPathTextFilters()
     const [options, setOptions] = useQueryOptions()
+
+    return (
+        <PathFilter
+            enable={options.at_e_path}
+            setEnable={(value) => setOptions({ at_e_path: value })}
+            filter={filter}
+            setFilter={setFilter}
+        />
+    )
+}
+
+function PathFilter({
+    enable,
+    setEnable,
+    filter,
+    setFilter
+}: {
+    enable: boolean,
+    setEnable: (value: boolean) => void,
+    filter: KeymapComponents["ATPathTextFilter"] | KeymapComponents["PathTextFilter"],
+    setFilter: SetFn<KeymapComponents["ATPathTextFilter"] | KeymapComponents["PathTextFilter"]>
+}) {
     const onOptionSelected = (option: string | null) => {
         if (option === null) {
             return
@@ -70,7 +93,7 @@ function AnyTextPathFilter() {
                         Searches in the path and filename of files
                     </div>
                 </div>
-                <Switch checked={options.at_e_path} onCheckedChange={(value) => setOptions({ at_e_path: value })} />
+                <Switch checked={enable} onCheckedChange={(value) => setEnable(value)} />
             </div>
             <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
                 <ComboBoxResponsive
@@ -88,14 +111,35 @@ function AnyTextPathFilter() {
 }
 
 function AnyTextETFilter() {
+    const [options, setOptions] = useQueryOptions()
+    const [filter, setFilter] = useAnyTextExtractedTextFilters()
+
+    return <TextFilter
+        enable={options.at_e_et}
+        setEnable={(value) => setOptions({ at_e_et: value })}
+        filter={filter}
+        setFilter={setFilter}
+    />
+}
+
+function TextFilter({
+    enable,
+    setEnable,
+    filter,
+    setFilter
+}: {
+    enable: boolean,
+    setEnable: (value: boolean) => void,
+    filter: KeymapComponents["ATExtractedTextFilter"] | KeymapComponents["ExtractedTextFilter"],
+    setFilter: SetFn<KeymapComponents["ATExtractedTextFilter"] | KeymapComponents["ExtractedTextFilter"]>
+}) {
     const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/search/stats", {
         params: {
             query: dbs
         }
     })
-    const [options, setOptions] = useQueryOptions()
-    const [filter, setFilter] = useAnyTextExtractedTextFilters()
+
     const textTargets = [{ value: "*", label: "All Sources" }, ...(
         data?.setters
             .filter((setter) => setter[0] === "text")
@@ -114,7 +158,7 @@ function AnyTextETFilter() {
                         Searches in all text extracted from items, including OCR and tags
                     </div>
                 </div>
-                <Switch checked={options.at_e_et} onCheckedChange={(value) => setOptions({ at_e_et: value })} />
+                <Switch checked={enable} onCheckedChange={(value) => setEnable(value)} />
             </div>
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
                 <MultiBoxResponsive

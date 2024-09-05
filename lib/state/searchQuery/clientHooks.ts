@@ -21,13 +21,13 @@ import {
 import { useScopedQueryStates } from "../nuqsScopedWrappers/scopedQueryStates"
 import { getOrderBy, queryFromState } from "./searchQuery"
 
-type Nullable<T> = {
+export type Nullable<T> = {
   [K in keyof T]: T[K] | null
 }
 
 type UpdaterFn<T> = (old: T) => Partial<Nullable<T>>
 
-type SetFn<T> = (
+export type SetFn<T> = (
   values: Partial<Nullable<T>> | UpdaterFn<T>,
   options?: Options
 ) => Promise<URLSearchParams>
