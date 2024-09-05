@@ -10,8 +10,10 @@ import { ReactNode, useEffect, useRef, useState } from "react";
 import { components } from "@/lib/panoptikon";
 import { TagAutoComplete } from "@/components/tagInput";
 import { useQueryOptions, useTagFilter } from "@/lib/state/searchQuery/clientHooks";
-
-type TagFilterUpdate = Partial<components["schemas"]["QueryTagFilters"]>
+type Nullable<T> = {
+    [P in keyof T]: T[P] | null;
+};
+type TagFilterUpdate = Nullable<Partial<components["schemas"]["QueryTagFilters"]>>
 type TagFilterType = Required<components["schemas"]["QueryTagFilters"]>
 export function TagFilter() {
     const [tagFilter, setTagFilter] = useTagFilter()
@@ -43,6 +45,8 @@ export function TagFilter() {
     )
 }
 
+const tagSetStateValue = (tags: string[]) => tags.length > 0 ? tags : null
+
 export function TagFilterSettings({
     tagFilter,
     setTagFilter,
@@ -72,25 +76,25 @@ export function TagFilterSettings({
                 label="Positive Tags"
                 description="Results must match all of these tags"
                 tags={tagFilter.pos_match_all}
-                onChange={(tags) => setTagFilter({ pos_match_all: tags })}
+                onChange={(tags) => setTagFilter({ pos_match_all: tagSetStateValue(tags) })}
             />
             <TagListInput
                 label="Negative Tags"
                 description="Results must *not* match *any* of these tags"
                 tags={tagFilter.neg_match_any}
-                onChange={(tags) => setTagFilter({ neg_match_any: tags })}
+                onChange={(tags) => setTagFilter({ neg_match_any: tagSetStateValue(tags) })}
             />
             <TagListInput
                 label="Match-Any Tags"
                 description="Results must match at least one of these tags"
                 tags={tagFilter.pos_match_any}
-                onChange={(tags) => setTagFilter({ pos_match_any: tags })}
+                onChange={(tags) => setTagFilter({ pos_match_any: tagSetStateValue(tags) })}
             />
             <TagListInput
                 label="Negative Match-All Tags"
                 description="Results must *not* match *all* of these tags"
                 tags={tagFilter.neg_match_all}
-                onChange={(tags) => setTagFilter({ neg_match_all: tags })}
+                onChange={(tags) => setTagFilter({ neg_match_all: tagSetStateValue(tags) })}
             />
             <ConfidenceFilter
                 label="Minimum Confidence"
