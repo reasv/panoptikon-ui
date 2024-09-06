@@ -5,7 +5,7 @@ import { AnyTextFilter } from "./options/anyTextFilter"
 import { OrderBy } from "./options/orderBy"
 import { PageSizeSlider, SimilarityPageSizeSlider } from "./options/pageSize"
 import { ExclusiveFilters } from "./options/ExclusiveFilters"
-import { SimilarityModeOptionsClip, SimilarityModeOptionsText, SimilarityModeSwitch } from "./similarity/SimilarityModeOptions"
+import { ResetSimilarityFilters, SimilarityModeOptionsClip, SimilarityModeOptionsText, SimilarityModeSwitch } from "./similarity/SimilarityModeOptions"
 import { SimilarityTargetItem } from "./options/similarityTarget"
 import { TagFilter } from "./options/tagFilter"
 import { Mode, useSearchMode } from "@/lib/state/searchMode"
@@ -25,6 +25,7 @@ export function SearchOptions() {
                 <SimilarityModeSwitch />
                 {similarityQuery.type === SimilarityQueryType.clip && <SimilarityModeOptionsClip />}
                 {similarityQuery.type === SimilarityQueryType.textEmbedding && <SimilarityModeOptionsText />}
+                <ResetSimilarityFilters />
             </>}
             {mode === Mode.Search && <>
                 <BookmarksFilter />

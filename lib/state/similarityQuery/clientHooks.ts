@@ -40,9 +40,11 @@ export const useResetItemSimilarityFilter = () => {
     type: options.type,
     setter_name: options.setter_name,
   }
-  setSource(null)
-  setOptions(null)
-  setOptions(old)
+  return () => {
+    setOptions(null)
+    setSource(null)
+    setOptions(old)
+  }
 }
 
 export const useSimilarityQuery = () => {
