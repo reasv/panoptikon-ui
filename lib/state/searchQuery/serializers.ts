@@ -49,7 +49,7 @@ export const getSearchPageURL = (
   newPage: number
 ) => {
   const queryParams = new URLSearchParams(base)
-  serializers.orderArgs(queryParams, {
+  return serializers.orderArgs(queryParams, {
     page: newPage,
   })
 }

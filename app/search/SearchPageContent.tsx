@@ -45,7 +45,7 @@ export function MultiSearchView({ initialQuery }:
     const search = useSearch({ initialQuery })
     const similarity = useItemSimilaritySearch()
     const hook = mode === Mode.ItemSimilarity ? similarity : search
-    const { data, error, isError, refetch, isFetching, nResults, page, pageSize, setPage, searchEnabled } = hook
+    const { data, error, isError, refetch, isFetching, nResults, page, pageSize, setPage, searchEnabled, getPageURL } = hook
     const { toast } = useToast()
     const onRefresh = async () => {
         if (!searchEnabled) {

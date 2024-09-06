@@ -14,6 +14,8 @@ import {
   useItemSimilarityOptions,
   useSimilarityQuery,
 } from "./state/similarityQuery/clientHooks"
+import { getSimilarityPageURL } from "./state/similarityQuery/serializers"
+import { getSearchPageURL } from "./state/searchQuery/serializers"
 
 export function useItemSimilaritySearch() {
   const query = useSimilarityQuery()
@@ -64,6 +66,7 @@ export function useItemSimilaritySearch() {
     page,
     pageSize,
     setPage,
+    getPageURL: getSimilarityPageURL,
     searchEnabled: validQuery,
   }
 }
@@ -106,6 +109,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     page,
     pageSize,
     setPage,
+    getPageURL: getSearchPageURL,
     searchEnabled,
   }
 }

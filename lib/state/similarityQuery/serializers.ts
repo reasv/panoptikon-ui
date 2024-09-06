@@ -22,5 +22,5 @@ export const getSimilarityPageURL = (
   newPage: number
 ) => {
   const queryParams = new URLSearchParams(base)
-  similaritySerializers.similarityOptions(queryParams, { page: newPage })
+  return similaritySerializers.similarityOptions(queryParams, { page: newPage })
 }
