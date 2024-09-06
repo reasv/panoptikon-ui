@@ -1,10 +1,4 @@
-import {
-  parseAsBoolean,
-  parseAsInteger,
-  parseAsString,
-  parseAsStringEnum,
-  useQueryState,
-} from "nuqs"
+import { parseAsBoolean, useQueryState } from "nuqs"
 
 export const useAlwaysShowBookmarkBtn = () =>
   useQueryState(
