@@ -8,15 +8,29 @@ import { Gallery, galleryNameSerializer, getGalleryOptionsSerializer, useGallery
 import { useSelectedDBs } from "@/lib/state/database"
 import { Mode, searchModeSerializer, useSearchMode } from "@/lib/state/searchMode"
 import { useItemSimilarityOptions, useItemSimilaritySource } from "@/lib/state/similarityQuery/clientHooks"
-import { SimilarityQueryType } from "@/lib/state/similarityQuery/similarityQueryKeyMaps"
+import { similarityQuerySourceKeymap, SimilarityQueryType } from "@/lib/state/similarityQuery/similarityQueryKeyMaps"
 import { similaritySerializers } from "@/lib/state/similarityQuery/serializers"
 import { useSearchParams } from "next/navigation"
 import { useMemo } from "react"
+import * as def from "nuqs/server"
 
-function removeNullProperties<T extends object>(obj: T): NonNullable<Partial<T>> {
-    return Object.fromEntries(
-        Object.entries(obj).filter(([_, value]) => value !== null)
-    ) as NonNullable<Partial<T>>;
+type ObjectWithDefaults<T> = {
+    [K in keyof T]: { defaultValue: T[K] };
+};
+
+function setAllPropertiesToDefault<T extends object>(obj: ObjectWithDefaults<T>): T {
+    return Object.keys(obj).reduce((acc, key) => {
+        const prop = obj[key as keyof T];
+        acc[key as keyof T] = prop.defaultValue;
+        return acc;
+    }, {} as T);
+}
+
+function setAllPropertiesToNull<T extends object>(obj: T): { [K in keyof T]: null } {
+    return Object.keys(obj).reduce((acc, key) => {
+        acc[key as keyof T] = null;
+        return acc;
+    }, {} as { [K in keyof T]: null });
 }
 
 export function SimilarItemsView({
@@ -81,7 +95,7 @@ export function SimilarItemsView({
 
     const getSimilarityModeLink = (currentParams: URLSearchParams, simQuery: components["schemas"]["SimilarItemsRequest"]) => {
         const queryParameters = new URLSearchParams(currentParams.toString())
-        const optionsURL = similaritySerializers.similarityOptions(queryParameters, {
+        let fullURL = similaritySerializers.similarityOptions(queryParameters, {
             ...{
                 ...simQuery,
                 src_text: undefined,
@@ -91,8 +105,13 @@ export function SimilarItemsView({
             page: 1,
             type: type,
         })
-        const newQuery = new URLSearchParams(optionsURL)
-        let fullURL = similaritySerializers.similaritySource(newQuery, removeNullProperties({ ...simQuery.src_text }) as any)
+        let src_update
+        if (simQuery.src_text === undefined || simQuery.src_text === null) {
+            src_update = setAllPropertiesToDefault(similarityQuerySourceKeymap(def))
+        } else {
+            src_update = { ...simQuery.src_text } as any
+        }
+        fullURL = similaritySerializers.similaritySource(fullURL, src_update)
         fullURL = galleryNameSerializer(fullURL, { g: Gallery.similarity })
         return searchModeSerializer(fullURL, { mode: Mode.ItemSimilarity })
     }
