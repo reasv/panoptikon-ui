@@ -11,17 +11,17 @@ enum Gallery {
   search = "sg",
   similarity = "isg",
 }
+const galleryNameDef = parseAsStringEnum<Gallery>(Object.values(Gallery))
+  .withDefault(Gallery.search)
+  .withOptions({
+    clearOnDefault: true,
+    history: "push",
+  })
+const useGalleryName = () => useQueryState(`g`, galleryNameDef)
 
-const useGalleryName = () =>
-  useQueryState(
-    `g`,
-    parseAsStringEnum<Gallery>(Object.values(Gallery))
-      .withDefault(Gallery.search)
-      .withOptions({
-        clearOnDefault: true,
-        history: "push",
-      })
-  )
+const galleryNameSerializer = createSerializer({
+  g: galleryNameDef,
+})
 
 const useGalleryIndex = (name: Gallery) =>
   useQueryState(
@@ -59,8 +59,10 @@ const mapConcreteGalleryOptions = (
 
 const getGalleryOptionsSerializer = (name: Gallery) => {
   const serialize = createSerializer(gallerySearchParams(name))
-  return (base: URLSearchParams, options: ConcreteGalleryOptions) =>
-    serialize(base, mapConcreteGalleryOptions(name, options))
+  return (
+    base: string | URLSearchParams | URL,
+    options: ConcreteGalleryOptions
+  ) => serialize(base, mapConcreteGalleryOptions(name, options))
 }
 
 export {
@@ -69,4 +71,5 @@ export {
   useGalleryName,
   Gallery,
   getGalleryOptionsSerializer,
+  galleryNameSerializer,
 }
