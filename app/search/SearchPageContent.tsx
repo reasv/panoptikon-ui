@@ -8,7 +8,7 @@ import { InstantSearchLock } from "@/components/InstantSearchLock"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/use-toast"
 import { SearchBar } from "@/components/searchBar"
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { SearchQueryArgs } from "./queryFns";
 import { SearchErrorToast } from "@/components/searchErrorToaster";
 import { cn, } from "@/lib/utils";
@@ -76,6 +76,19 @@ export function MultiSearchView({ initialQuery }:
     const [index, setIndex] = useGalleryIndex(name)
     const results = data?.results || []
     const [sidebarOpen, setSideBarOpen] = useSideBarOpen()
+
+    const [delayedFetching, setDelayedFetching] = useState(false)
+
+    useEffect(() => {
+        let timer: NodeJS.Timeout;
+        if (isFetching) {
+            timer = setTimeout(() => setDelayedFetching(true), 1000);
+        } else {
+            setDelayedFetching(false);
+        }
+        return () => clearTimeout(timer);
+    }, [isFetching])
+
     return (
         <>
             <SearchErrorToast noFtsErrors={mode === Mode.ItemSimilarity} isError={isError} error={error} />
@@ -107,6 +120,7 @@ export function MultiSearchView({ initialQuery }:
                         results={results}
                         totalCount={nResults}
                         onImageClick={(index) => setIndex(index !== undefined ? index : null)}
+                        isLoading={delayedFetching}
                     />
             }
             {
@@ -126,12 +140,15 @@ export function MultiSearchView({ initialQuery }:
 export function ResultGrid({
     results,
     totalCount,
-    onImageClick
-}: { results: components["schemas"]["FileSearchResult"][], totalCount: number, onImageClick?: (index?: number) => void }) {
-    const name = useGalleryName()[0]
-
+    onImageClick,
+    isLoading,
+}: {
+    results: components["schemas"]["FileSearchResult"][],
+    totalCount: number,
+    onImageClick?: (index?: number) => void,
+    isLoading?: boolean,
+}) {
     const [dbs, __] = useSelectedDBs()
-
     const [sidebarOpen, _] = useSideBarOpen()
 
     return (
@@ -153,6 +170,7 @@ export function ResultGrid({
                             onImageClick={onImageClick}
                             galleryLink
                             nItems={results.length}
+                            showLoadingSpinner={isLoading}
                         />
                     ))}
                 </div>
