@@ -1,7 +1,6 @@
 import { useSelectedDBs } from "@/lib/state/database";
 import { CLIPSimilarityFilter } from "./ClipSimilarItems";
 import { $api } from "@/lib/api";
-import { useImageSimilarity } from "@/lib/state/similarityStore";
 import { components } from "@/lib/panoptikon";
 import { TextEmbeddingsSimilarityFilter } from "./TextSimilarItems";
 import { Label } from "@/components/ui/label";
