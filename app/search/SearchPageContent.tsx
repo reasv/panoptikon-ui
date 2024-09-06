@@ -110,7 +110,12 @@ export function MultiSearchView({ initialQuery }:
             }
             {
                 nResults > pageSize && (
-                    <PageSelect totalPages={totalPages} currentPage={page} setPage={setPage} />
+                    <PageSelect
+                        totalPages={totalPages}
+                        currentPage={page}
+                        setPage={setPage}
+                        getPageURL={getPageURL}
+                    />
                 )
             }
         </>

@@ -9,16 +9,19 @@ import {
 } from "@/components/ui/pagination"
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useSideBarOpen } from "@/lib/state/sideBar";
+import { ReadonlyURLSearchParams, useSearchParams } from "next/navigation";
 
 const range = (start: number, end: number) => Array.from({ length: end - start + 1 }, (_, i) => start + i);
 export function PageSelect({
     totalPages,
     currentPage,
-    setPage
+    setPage,
+    getPageURL
 }: {
     totalPages: number;
     currentPage: number;
     setPage: (page: number) => void;
+    getPageURL: (base: ReadonlyURLSearchParams | URLSearchParams, newPage: number) => string
 }) {
     const [sidebarOpen, _] = useSideBarOpen()
     const isMobile = useMediaQuery("(max-width: 768px)")
@@ -64,13 +67,15 @@ export function PageSelect({
         startPage = Math.max(endPage - visible_pages + 1, 2);
     }
 
+    const params = useSearchParams()
+
     return (
         <Pagination className="mt-4">
             <PaginationContent>
                 {/* Previous Button */}
                 <PaginationItem>
                     <PaginationPrevious
-                        href="#"
+                        href={getPageURL(params, Math.max(1, currentPage - 1))}
                         onClick={(e) => {
                             e.preventDefault();
                             if (currentPage > 1) setPage(currentPage - 1);
@@ -81,7 +86,7 @@ export function PageSelect({
                 {/* First Page */}
                 <PaginationItem>
                     <PaginationLink
-                        href="#"
+                        href={getPageURL(params, 1)}
                         isActive={1 === currentPage}
                         onClick={(e) => {
                             e.preventDefault();
@@ -103,7 +108,7 @@ export function PageSelect({
                 {range(startPage, endPage).map((page) => (
                     <PaginationItem key={page}>
                         <PaginationLink
-                            href="#"
+                            href={getPageURL(params, page)}
                             isActive={page === currentPage}
                             onClick={(e) => {
                                 e.preventDefault();
@@ -125,7 +130,7 @@ export function PageSelect({
                 {/* Last Page */}
                 <PaginationItem>
                     <PaginationLink
-                        href="#"
+                        href={getPageURL(params, totalPages)}
                         isActive={totalPages === currentPage}
                         onClick={(e) => {
                             e.preventDefault();
@@ -139,7 +144,7 @@ export function PageSelect({
                 {/* Next Button */}
                 <PaginationItem>
                     <PaginationNext
-                        href="#"
+                        href={getPageURL(params, Math.min(totalPages, currentPage + 1))}
                         onClick={(e) => {
                             e.preventDefault();
                             if (currentPage < totalPages) setPage(currentPage + 1);
