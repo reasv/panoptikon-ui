@@ -23,6 +23,7 @@ import { useItemSimilaritySearch, useSearch } from "@/lib/searchHooks";
 import { ImageGallery } from '@/components/ImageGallery';
 import { ImageSimilarityHeader } from '@/components/ImageSimilarityHeader';
 import { Mode, useSearchMode } from "@/lib/state/searchMode";
+import { useItemSelection } from "@/lib/state/itemSelection";
 
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }) {
@@ -127,9 +128,20 @@ export function ResultGrid({
     totalCount,
     onImageClick
 }: { results: components["schemas"]["FileSearchResult"][], totalCount: number, onImageClick?: (index?: number) => void }) {
+    const name = useGalleryName()[0]
+
+    // Set the selected item to the current gallery index (consistent with the gallery, this is really only called on the first render)
+    const [qIndex, setIndex] = useGalleryIndex(name)
+    const index = (qIndex || 0) % results.length
+    const setSelectedItem = useItemSelection((state) => state.setItem)
+    useEffect(() => {
+        setSelectedItem(results[index])
+    }, [index, results])
+
     const [dbs, __] = useSelectedDBs()
 
     const [sidebarOpen, _] = useSideBarOpen()
+
     return (
         <div className="border rounded p-2">
             <h2 className="text-xl font-bold p-4 flex items-center justify-left">
