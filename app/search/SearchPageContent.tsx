@@ -130,14 +130,6 @@ export function ResultGrid({
 }: { results: components["schemas"]["FileSearchResult"][], totalCount: number, onImageClick?: (index?: number) => void }) {
     const name = useGalleryName()[0]
 
-    // Set the selected item to the current gallery index (consistent with the gallery, this is really only called on the first render)
-    const [qIndex, setIndex] = useGalleryIndex(name)
-    const index = (qIndex || 0) % results.length
-    const setSelectedItem = useItemSelection((state) => state.setItem)
-    useEffect(() => {
-        setSelectedItem(results[index])
-    }, [index, results])
-
     const [dbs, __] = useSelectedDBs()
 
     const [sidebarOpen, _] = useSideBarOpen()
