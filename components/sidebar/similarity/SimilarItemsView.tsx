@@ -52,7 +52,10 @@ export function SimilarItemsView({
                 sha256: sha256,
             }
         },
-        body: query
+        body: {
+            ...query,
+            full_count: true,
+        }
     }, {
         placeholderData: keepPreviousData
     })

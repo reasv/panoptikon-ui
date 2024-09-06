@@ -17,6 +17,6 @@ export function similarityQueryFromState(
       state.similarityOptions.type === SimilarityQueryType.textEmbedding ||
       state.similarityOptions.clip_xmodal
         ? state.similaritySource
-        : undefined,
+        : null,
   }
 }
