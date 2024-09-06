@@ -228,8 +228,7 @@ export function HorizontalScrollElement({
 }) {
     const [name, _] = useGalleryName()
     const [qIndex, setIndex] = useGalleryIndex(name)
-    const index = (qIndex || 0) % nItems
-
+    const isSelected = useMemo(() => ownIndex === ((qIndex || 0) % nItems), [qIndex, nItems, ownIndex, name])
     const [dbs, __] = useSelectedDBs()
     const setSelected = useItemSelection((state) => state.setItem)
     const thumbnailURL = getThumbnailURL(item.sha256, dbs)
@@ -252,7 +251,7 @@ export function HorizontalScrollElement({
         <figure
             key={item.path}
             className={cn("w-60 h-80 relative rounded-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none cursor-pointer group",
-                ownIndex === index ? "scale-105 ring-2 ring-blue-500" : "scale-100"
+                isSelected ? "scale-105 ring-2 ring-blue-500" : "scale-100"
             )}>
             <Link href={imageLink} onClick={onClick}>
                 <Image
