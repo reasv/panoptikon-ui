@@ -151,14 +151,11 @@ export function useAnyTextExtractedTextFilters(): [
   return [state, set] as const
 }
 
-export function useAnyTextFilterOptions(): [
-  AnyTextFilterOptions,
-  SetFn<AnyTextFilterOptions>
-] {
+export function useAnyTextFilterOptions(): AnyTextFilterOptions {
   const [options, setOptions] = useQueryOptions()
   const [pathTextFilters, setPathTextFilters] = useAnyTextPathTextFilters()
   const [etFilters, setEtFilters] = useAnyTextExtractedTextFilters()
-  const currentState = {
+  return {
     query: options.at_query,
     raw_fts5_match: options.at_fts5,
     enable_path_filter: options.at_e_path,
@@ -166,37 +163,6 @@ export function useAnyTextFilterOptions(): [
     path_filter: pathTextFilters,
     et_filter: etFilters,
   }
-  const setAnyTextFilterOptions = (
-    values:
-      | Partial<Nullable<AnyTextFilterOptions>>
-      | UpdaterFn<AnyTextFilterOptions>
-      | null,
-    options?: Options
-  ) => {
-    if (values === null) {
-      setPathTextFilters(null)
-      return setOptions(null)
-    }
-    const newOptions =
-      typeof values === "function" ? values(currentState) : values
-    setOptions(
-      {
-        at_query: newOptions.query,
-        at_fts5: newOptions.raw_fts5_match,
-        at_e_path: newOptions.enable_path_filter,
-        at_e_et: newOptions.enable_et_filter,
-      },
-      options
-    )
-    setPathTextFilters(
-      {
-        ...newOptions.path_filter,
-      },
-      options
-    )
-    return setEtFilters({ ...newOptions.et_filter }, options)
-  }
-  return [currentState, setAnyTextFilterOptions] as const
 }
 
 export const useSearchQueryState = () => {
