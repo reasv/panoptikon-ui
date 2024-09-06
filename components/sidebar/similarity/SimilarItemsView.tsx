@@ -4,11 +4,20 @@ import { $api } from "@/lib/api"
 import { keepPreviousData } from "@tanstack/react-query"
 import { SearchResultImage } from "@/components/SearchResultImage"
 import { useItemSelection } from "@/lib/state/itemSelection"
-import { Gallery, useGalleryIndex, useGalleryName } from "@/lib/state/gallery"
+import { Gallery, galleryNameSerializer, getGalleryOptionsSerializer, useGalleryIndex, useGalleryName } from "@/lib/state/gallery"
 import { useSelectedDBs } from "@/lib/state/database"
-import { Mode, useSearchMode } from "@/lib/state/searchMode"
+import { Mode, searchModeSerializer, useSearchMode } from "@/lib/state/searchMode"
 import { useItemSimilarityOptions, useItemSimilaritySource } from "@/lib/state/similarityQuery/clientHooks"
 import { SimilarityQueryType } from "@/lib/state/similarityQuery/similarityQueryKeyMaps"
+import { similaritySerializers } from "@/lib/state/similarityQuery/serializers"
+import { useSearchParams } from "next/navigation"
+import { useMemo } from "react"
+
+function removeNullProperties<T extends object>(obj: T): NonNullable<Partial<T>> {
+    return Object.fromEntries(
+        Object.entries(obj).filter(([_, value]) => value !== null)
+    ) as NonNullable<Partial<T>>;
+}
 
 export function SimilarItemsView({
     sha256,
@@ -41,6 +50,8 @@ export function SimilarItemsView({
     const [name, setName] = useGalleryName()
     const [index, setIndex] = useGalleryIndex(Gallery.similarity)
     const [searchMode, setSearchmode] = useSearchMode()
+
+
     const onImageClick = (index: number) => {
         if (!data) return
         setOptions({
@@ -65,6 +76,33 @@ export function SimilarItemsView({
         setIndex(index)
         setSelected(data.results[index])
     }
+    // Generate the link for the similarity mode
+    const params = useSearchParams()
+
+    const getSimilarityModeLink = (currentParams: URLSearchParams, simQuery: components["schemas"]["SimilarItemsRequest"]) => {
+        const queryParameters = new URLSearchParams(currentParams.toString())
+        const optionsURL = similaritySerializers.similarityOptions(queryParameters, {
+            ...{
+                ...simQuery,
+                src_text: undefined,
+                full_count: true,
+            },
+            item: sha256,
+            page: 1,
+            type: type,
+        })
+        const newQuery = new URLSearchParams(optionsURL)
+        let fullURL = similaritySerializers.similaritySource(newQuery, removeNullProperties({ ...simQuery.src_text }) as any)
+        fullURL = galleryNameSerializer(fullURL, { g: Gallery.similarity })
+        return searchModeSerializer(fullURL, { mode: Mode.ItemSimilarity })
+    }
+    const getSimilarityModeImageLink = (base: string, index: number) => getGalleryOptionsSerializer(Gallery.similarity)(base, { index })
+
+    const indexToLinkMapping = useMemo(() => {
+        const baseLink = getSimilarityModeLink(params, query)
+        return data?.results.map((_, index) => getSimilarityModeImageLink(baseLink, index))
+    }, [data, params, query])
+
     return (
         <div className="mt-4">
             {data && (
@@ -78,6 +116,7 @@ export function SimilarItemsView({
                             imageContainerClassName="h-96 xl:h-80 4xl:h-80 5xl:h-80"
                             onImageClick={() => onImageClick(index)}
                             showLoadingSpinner={isLoading || isFetching}
+                            overrideURL={indexToLinkMapping ? indexToLinkMapping[index] : undefined}
                         />
                     ))}
                 </div>

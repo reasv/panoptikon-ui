@@ -33,7 +33,7 @@ export function SearchResultImage({
     overrideURL?: string
     showLoadingSpinner?: boolean
 }) {
-    const fileUrl = overrideURL ? getFullFileURL(result.sha256, dbs) : overrideURL
+    const fileUrl = overrideURL ? overrideURL : getFullFileURL(result.sha256, dbs)
     const thumbnailUrl = getThumbnailURL(result.sha256, dbs)
     const dateString = getLocale(new Date(result.last_modified))
     const params = useSearchParams()
