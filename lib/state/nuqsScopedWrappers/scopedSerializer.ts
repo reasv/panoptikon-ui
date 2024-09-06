@@ -10,13 +10,12 @@ type UseQueryStatesKeysMap<Map = any> = {
   [Key in keyof Map]: KeyMapValue<Map[Key]>
 }
 
-type Values<T extends UseQueryStatesKeysMap> = {
-  [K in keyof T]: T[K]["defaultValue"] extends NonNullable<
-    ReturnType<T[K]["parse"]>
-  >
-    ? NonNullable<ReturnType<T[K]["parse"]>>
-    : ReturnType<T[K]["parse"]> | null
-}
+type ExtractParserType<Parser> = Parser extends ParserBuilder<any>
+  ? ReturnType<Parser["parseServerSide"]>
+  : never
+type Values<Parsers extends Record<string, ParserBuilder<any>>> = Partial<{
+  [K in keyof Parsers]?: ExtractParserType<Parsers[K]>
+}>
 
 export function createScopedSerializer<
   Parsers extends Record<string, ParserBuilder<any>>
@@ -64,7 +63,9 @@ export function createScopedSerializer<
   const serialize = createSerializer(scopeParsers(parsers))
 
   // Wrapper function that handles scoping of keys before calling the original serializer
-  return (...args: [Base | Values<Parsers>, Values<Parsers>?]): string => {
+  return (
+    ...args: [Base | Partial<Values<Parsers>>, Partial<Values<Parsers>>?]
+  ): string => {
     // Check if the first argument is the base or values
     if (args.length === 1) {
       const [values] = args

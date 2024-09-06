@@ -13,6 +13,7 @@ import {
   queryOptionsKeyMap,
 } from "./searchQueryKeyMaps"
 import { createScopedSerializer } from "../nuqsScopedWrappers/scopedSerializer"
+import { ReadonlyURLSearchParams } from "next/navigation"
 
 export const serializers = {
   orderArgs: createSerializer(orderParamsKeyMap(def)),
@@ -41,4 +42,14 @@ export const serializers = {
     "at.et",
     extractedTextFiltersKeyMap(def)
   ),
+}
+
+export const getSearchPageURL = (
+  base: ReadonlyURLSearchParams | URLSearchParams,
+  newPage: number
+) => {
+  const queryParams = new URLSearchParams(base)
+  serializers.orderArgs(queryParams, {
+    page: newPage,
+  })
 }

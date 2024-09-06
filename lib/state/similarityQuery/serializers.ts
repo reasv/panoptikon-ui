@@ -4,6 +4,7 @@ import {
   similarityQuerySourceKeymap,
 } from "./similarityQueryKeyMaps"
 import { createScopedSerializer } from "../nuqsScopedWrappers/scopedSerializer"
+import { ReadonlyURLSearchParams } from "next/navigation"
 
 export const similaritySerializers = {
   similarityOptions: createScopedSerializer(
@@ -14,4 +15,12 @@ export const similaritySerializers = {
     "is.src",
     similarityQuerySourceKeymap(def)
   ),
+}
+
+export const getSimilarityPageURL = (
+  base: ReadonlyURLSearchParams | URLSearchParams,
+  newPage: number
+) => {
+  const queryParams = new URLSearchParams(base)
+  similaritySerializers.similarityOptions(queryParams, { page: newPage })
 }
