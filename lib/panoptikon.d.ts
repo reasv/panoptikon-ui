@@ -108,6 +108,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/search/pql": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search for files and items in the database
+         * @description Search for files in the database based on the provided query parameters.
+         *     This endpoint is meant to be used with the Panoptikon Query Language.
+         */
+        post: operations["pql_api_search_pql_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/search/stats": {
         parameters: {
             query?: never;
@@ -247,6 +268,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/items/from-id/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get item metadata from its item_id
+         * @description Returns metadata for a given item by its item_id.
+         *     This includes the item metadata and a list of all files associated with the item.
+         *     Files that do not exist on disk will not be included in the response.
+         *     This means the file list may be empty.
+         *
+         *     An `item` is a unique file. `item`s can have multiple `file`s associated with them, but unlike `file`s, `item`s have a unique sha256 hash.
+         *     Files are unique by `path`. If all files associated with an `item` are deleted, the item is deleted.
+         */
+        get: operations["get_item_by_id_api_items_from_id__item_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/items/from-file-id/{file_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get item metadata from a file_id
+         * @description Returns metadata for a given item by the file_id of one of its files.
+         *     This includes the item metadata and a list of all files associated with the item.
+         *     Files that do not exist on disk will not be included in the response.
+         *     This means the file list may be empty.
+         *
+         *     An `item` is a unique file. `item`s can have multiple `file`s associated with them, but unlike `file`s, `item`s have a unique sha256 hash.
+         *     Files are unique by `path`. If all files associated with an `item` are deleted, the item is deleted.
+         */
+        get: operations["get_item_by_file_id_api_items_from_file_id__file_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/items/from-path/{path}": {
         parameters: {
             query?: never;
@@ -329,6 +402,26 @@ export interface paths {
          * @description Returns the text extracted from a given item by its sha256 hash.
          */
         get: operations["get_text_by_sha256_api_items_text__sha256__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/items/text": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get text from text_ids
+         * @description Returns texts given a list of text IDs.
+         */
+        get: operations["get_texts_by_text_ids_api_items_text_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -712,10 +805,129 @@ export interface components {
             folders: string[];
             text_stats: components["schemas"]["ExtractedTextStats"];
         };
+        /** AndOperator */
+        AndOperator: {
+            /** And  */
+            and_: (components["schemas"]["InPaths"] | components["schemas"]["InBookmarks"] | components["schemas"]["TypeIn"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasDataFrom"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["Equals"] | components["schemas"]["NotEquals"] | components["schemas"]["In"] | components["schemas"]["NotIn"] | components["schemas"]["GtThan"] | components["schemas"]["GtThanOrEq"] | components["schemas"]["LessThan"] | components["schemas"]["LessThanOrEq"] | components["schemas"]["StartsWith"] | components["schemas"]["EndsWith"] | components["schemas"]["Contains"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"])[];
+        };
         /** AnyTextFilter */
         AnyTextFilter: {
             path?: components["schemas"]["PathTextFilter"] | null;
             extracted_text?: components["schemas"]["ExtractedTextFilter"] | null;
+        };
+        /** ArgValues */
+        ArgValues: {
+            /** File Id */
+            file_id?: number | number[] | null;
+            /** Item Id */
+            item_id?: number | number[] | null;
+            /** Path */
+            path?: string | string[] | null;
+            /** Filename */
+            filename?: string | string[] | null;
+            /** Sha256 */
+            sha256?: string | string[] | null;
+            /** Last Modified */
+            last_modified?: string | string[] | null;
+            /** Type */
+            type?: string | string[] | null;
+            /** Size */
+            size?: number | number[] | null;
+            /** Width */
+            width?: number | number[] | null;
+            /** Height */
+            height?: number | number[] | null;
+            /** Duration */
+            duration?: number | number[] | null;
+            /** Time Added */
+            time_added?: string | string[] | null;
+            /** Md5 */
+            md5?: string | string[] | null;
+            /** Audio Tracks */
+            audio_tracks?: number | number[] | null;
+            /** Video Tracks */
+            video_tracks?: number | number[] | null;
+            /** Subtitle Tracks */
+            subtitle_tracks?: number | number[] | null;
+            /** Data Id */
+            data_id?: number | number[] | null;
+            /** Language */
+            language?: string | string[] | null;
+            /** Language Confidence */
+            language_confidence?: number | number[] | null;
+            /** Text */
+            text?: string | string[] | null;
+            /** Confidence */
+            confidence?: number | number[] | null;
+            /** Text Length */
+            text_length?: number | number[] | null;
+            /** Job Id */
+            job_id?: number | number[] | null;
+            /** Setter Id */
+            setter_id?: number | number[] | null;
+            /** Setter Name */
+            setter_name?: string | string[] | null;
+            /** Data Index */
+            data_index?: number | number[] | null;
+            /** Source Id */
+            source_id?: number | number[] | null;
+        };
+        /** ArgValuesScalar */
+        ArgValuesScalar: {
+            /** File Id */
+            file_id?: number | null;
+            /** Item Id */
+            item_id?: number | null;
+            /** Path */
+            path?: string | null;
+            /** Filename */
+            filename?: string | null;
+            /** Sha256 */
+            sha256?: string | null;
+            /** Last Modified */
+            last_modified?: string | null;
+            /** Type */
+            type?: string | null;
+            /** Size */
+            size?: number | null;
+            /** Width */
+            width?: number | null;
+            /** Height */
+            height?: number | null;
+            /** Duration */
+            duration?: number | null;
+            /** Time Added */
+            time_added?: string | null;
+            /** Md5 */
+            md5?: string | null;
+            /** Audio Tracks */
+            audio_tracks?: number | null;
+            /** Video Tracks */
+            video_tracks?: number | null;
+            /** Subtitle Tracks */
+            subtitle_tracks?: number | null;
+            /** Data Id */
+            data_id?: number | null;
+            /** Language */
+            language?: string | null;
+            /** Language Confidence */
+            language_confidence?: number | null;
+            /** Text */
+            text?: string | null;
+            /** Confidence */
+            confidence?: number | null;
+            /** Text Length */
+            text_length?: number | null;
+            /** Job Id */
+            job_id?: number | null;
+            /** Setter Id */
+            setter_id?: number | null;
+            /** Setter Name */
+            setter_name?: string | null;
+            /** Data Index */
+            data_index?: number | null;
+            /** Source Id */
+            source_id?: number | null;
         };
         /** Body_predict_api_inference_predict__group___inference_id__post */
         Body_predict_api_inference_predict__group___inference_id__post: {
@@ -810,10 +1022,50 @@ export interface components {
                 [key: string]: string[];
             };
         };
+        /** Contains */
+        Contains: {
+            contains: components["schemas"]["ArgValues"];
+        };
         /** DBInfo */
         DBInfo: {
             index: components["schemas"]["SingleDBInfo"];
             user_data: components["schemas"]["SingleDBInfo"];
+        };
+        /** DerivedDataArgs */
+        DerivedDataArgs: {
+            /** Name of the setter that would produce the derived data */
+            setter_name: string;
+            /** Data types that the associated data must have */
+            data_types: string[];
+        };
+        /** EmbedArgs */
+        EmbedArgs: {
+            /**
+             * Cache Key
+             * @description The cache key to use for the inference *model*
+             * @default search
+             */
+            cache_key: string;
+            /**
+             * LRU Cache Size
+             * @description The size of the LRU cache to use for the inference *model*
+             * @default 1
+             */
+            lru_size: number;
+            /**
+             * TTL Seconds
+             * @description The time-to-live in seconds for the inference *model* to be kept in memory
+             * @default 60
+             */
+            ttl_seconds: number;
+        };
+        /** EndsWith */
+        EndsWith: {
+            endswith: components["schemas"]["ArgValues"];
+        };
+        /** Equals */
+        Equals: {
+            eq: components["schemas"]["ArgValuesScalar"];
         };
         /** ExistingBookmarkMetadata */
         ExistingBookmarkMetadata: {
@@ -824,6 +1076,8 @@ export interface components {
         };
         /** ExtractedText */
         ExtractedText: {
+            /** Id */
+            id: number;
             /** Item Sha256 */
             item_sha256: string;
             /** Setter Name */
@@ -893,12 +1147,26 @@ export interface components {
         };
         /** FileRecord */
         FileRecord: {
+            /** Id */
+            id: number;
             /** Sha256 */
             sha256: string;
             /** Path */
             path: string;
             /** Last Modified */
             last_modified: string;
+            /**
+             * Filename
+             * @default
+             */
+            filename: string;
+        };
+        /** FileSearchResponse */
+        FileSearchResponse: {
+            /** Count */
+            count: number;
+            /** Results */
+            results: components["schemas"]["SearchResult"][];
         };
         /** FileSearchResult */
         FileSearchResult: {
@@ -927,10 +1195,28 @@ export interface components {
             /** Mime Types */
             mime_types: string[];
         };
+        /** GtThan */
+        GtThan: {
+            gt: components["schemas"]["ArgValuesScalar"];
+        };
+        /** GtThanOrEq */
+        GtThanOrEq: {
+            gte: components["schemas"]["ArgValuesScalar"];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HasDataFrom */
+        HasDataFrom: {
+            /** Item must have item_data produced by the given setter name */
+            has_data_from: string;
+        };
+        /** HasUnprocessedData */
+        HasUnprocessedData: {
+            /** Item must have item_data of given types that has not been processed by the given setter name */
+            has_data_unprocessed: components["schemas"]["DerivedDataArgs"];
         };
         /** ImageEmbeddingFilter */
         ImageEmbeddingFilter: {
@@ -941,6 +1227,171 @@ export interface components {
             query: string;
             /** Model */
             model: string;
+        };
+        /** In */
+        In: {
+            in_: components["schemas"]["ArgValues"];
+        };
+        /** InBookmarks */
+        InBookmarks: {
+            /**
+             * Order by this filter's rank output
+             * @description This filter generates a value that can be used for ordering.
+             * @default false
+             */
+            order_by: boolean;
+            /**
+             * Order Direction
+             * @description
+             *     The order direction for this filter.
+             *     If not set, the default order direction for this field is used.
+             *
+             * @default desc
+             * @enum {string}
+             */
+            direction: "asc" | "desc";
+            /**
+             * Order By Priority
+             * @description
+             *     The priority of this filter in the order by clause.
+             *     If there are multiple filters with order_by set to True,
+             *     the priority is used to determine the order.
+             *     If two filter order bys have the same priority,
+             *     their values are coalesced into a single column to order by,
+             *     and the order direction is determined by the first filter that we find from this set.
+             *
+             *     It's assumed that if the filters have the same priority, and should be coalesced,
+             *     they will have the same order direction.
+             *
+             * @default 0
+             */
+            priority: number;
+            /**
+             * Use Row Number for rank column
+             * @description
+             *     Only applied if either order_by is True, or select_as is set.
+             *
+             *     If True, internally sorts the filter's output by its rank_order
+             *     column and assigns a row number to each row.
+             *
+             *     The row number is used to order the final query.
+             *
+             *     This is useful for combining multiple filters with different
+             *     rank_order types that may not be directly comparable,
+             *     such as text search and embeddings search.
+             *
+             *     See `RRF` for a way to combine heterogeneous rank_order filters when using row_n = True.
+             *
+             * @default false
+             */
+            row_n: boolean;
+            /**
+             * Order Direction For Row Number
+             * @description
+             *     The order direction (asc or desc) for the internal row number calculation.
+             *     Only used if `order_by_row_n` is True.
+             *     When `order_by_row_n` is True, the filter's output is sorted by its rank_order column
+             *     following this direction, and a row number is assigned to each row.
+             *     This row number is used to order the final query.
+             *     You should generally leave this as the default value.
+             *
+             * @default desc
+             * @enum {string}
+             */
+            row_n_direction: "asc" | "desc";
+            /**
+             * Order By Greater Than
+             * @description
+             *     If set, only include items with an order_rank greater than this value.
+             *     Can be used for cursor-based pagination.
+             *     The type depends on the filter.
+             *     Will be ignored in the count query, which is
+             *     used to determine the total number of results when count = True.
+             *     With cursor-based pagination, you should probably not rely on count = True anyhow.
+             *
+             */
+            gt?: number | string | null;
+            /**
+             * Order By Less Than
+             * @description
+             *     If set, only include items with an order_rank less than this value.
+             *     Can be used for cursor-based pagination.
+             *     The type depends on the filter.
+             *     Will be ignored in the count query, which is
+             *     used to determine the total number of results when count = True.
+             *
+             */
+            lt?: number | string | null;
+            /**
+             * Order By Select As
+             * @description
+             *     If set, the order_rank column will be returned with the results as this alias under the "extra" object.
+             *
+             */
+            select_as?: string | null;
+            /**
+             * Reciprocal Ranked Fusion Parameters
+             * @description
+             *     Parameters for the Reciprocal Ranked Fusion.
+             *     If set, when coalescing multiple filters with the same priority,
+             *     the RRF function will be applied to the rank_order columns.
+             *
+             *     If only one filter has RRF set, but multiple filters have the same priority,
+             *     RRF will be ignored.
+             *
+             *     If using RRF, you should set row_n to True for all the filters involved.
+             *     Moreover, the correct direction for RRF is "desc" (higher is better).
+             *
+             */
+            rrf?: components["schemas"]["RRF"] | null;
+            /**
+             * Restrict search to Bookmarks
+             * @description Only include items that are bookmarked.
+             */
+            in_bookmarks: components["schemas"]["InBookmarksArgs"];
+        };
+        /** InBookmarksArgs */
+        InBookmarksArgs: {
+            /**
+             * Enable the filter
+             * @description
+             *     Must be set to True, this option only exists to make sure the filter is not empty,
+             *     given that that all fields are optional.
+             *
+             * @default true
+             */
+            enable: boolean;
+            /**
+             * Bookmark Namespaces
+             * @description
+             *     List of bookmark namespaces to filter by. If sub_ns is set to True, the filter will also
+             *     include all sub-namespaces of the given namespaces (ie, namespace.*).
+             *     If empty, all bookmarks will be included.
+             *
+             */
+            namespaces?: string[];
+            /**
+             * Include Sub-namespaces
+             * @description Include all sub-namespaces of the given namespaces (namespace.*).
+             * @default false
+             */
+            sub_ns: boolean;
+            /**
+             * User
+             * @default user
+             */
+            user: string;
+            /**
+             * Include Wildcard User
+             * @description Include bookmarks set to the wildcard user ('*').
+             * @default true
+             */
+            include_wildcard: boolean;
+        };
+        /** InPaths */
+        InPaths: {
+            /** Path must begin with one of the given strings */
+            in_paths: string[];
         };
         /** ItemBookmarks */
         ItemBookmarks: {
@@ -992,10 +1443,509 @@ export interface components {
             /** Metadata */
             metadata?: Record<string, never> | null;
         };
+        /** LessThan */
+        LessThan: {
+            lt: components["schemas"]["ArgValuesScalar"];
+        };
+        /** LessThanOrEq */
+        LessThanOrEq: {
+            lte: components["schemas"]["ArgValuesScalar"];
+        };
+        /** MatchPath */
+        MatchPath: {
+            /**
+             * Order by this filter's rank output
+             * @description This filter generates a value that can be used for ordering.
+             * @default false
+             */
+            order_by: boolean;
+            /**
+             * Order Direction
+             * @description
+             *     The order direction for this filter.
+             *     If not set, the default order direction for this field is used.
+             *
+             * @default asc
+             * @enum {string}
+             */
+            direction: "asc" | "desc";
+            /**
+             * Order By Priority
+             * @description
+             *     The priority of this filter in the order by clause.
+             *     If there are multiple filters with order_by set to True,
+             *     the priority is used to determine the order.
+             *     If two filter order bys have the same priority,
+             *     their values are coalesced into a single column to order by,
+             *     and the order direction is determined by the first filter that we find from this set.
+             *
+             *     It's assumed that if the filters have the same priority, and should be coalesced,
+             *     they will have the same order direction.
+             *
+             * @default 0
+             */
+            priority: number;
+            /**
+             * Use Row Number for rank column
+             * @description
+             *     Only applied if either order_by is True, or select_as is set.
+             *
+             *     If True, internally sorts the filter's output by its rank_order
+             *     column and assigns a row number to each row.
+             *
+             *     The row number is used to order the final query.
+             *
+             *     This is useful for combining multiple filters with different
+             *     rank_order types that may not be directly comparable,
+             *     such as text search and embeddings search.
+             *
+             *     See `RRF` for a way to combine heterogeneous rank_order filters when using row_n = True.
+             *
+             * @default false
+             */
+            row_n: boolean;
+            /**
+             * Order Direction For Row Number
+             * @description
+             *     The order direction (asc or desc) for the internal row number calculation.
+             *     Only used if `order_by_row_n` is True.
+             *     When `order_by_row_n` is True, the filter's output is sorted by its rank_order column
+             *     following this direction, and a row number is assigned to each row.
+             *     This row number is used to order the final query.
+             *     You should generally leave this as the default value.
+             *
+             * @default asc
+             * @enum {string}
+             */
+            row_n_direction: "asc" | "desc";
+            /**
+             * Order By Greater Than
+             * @description
+             *     If set, only include items with an order_rank greater than this value.
+             *     Can be used for cursor-based pagination.
+             *     The type depends on the filter.
+             *     Will be ignored in the count query, which is
+             *     used to determine the total number of results when count = True.
+             *     With cursor-based pagination, you should probably not rely on count = True anyhow.
+             *
+             */
+            gt?: number | string | null;
+            /**
+             * Order By Less Than
+             * @description
+             *     If set, only include items with an order_rank less than this value.
+             *     Can be used for cursor-based pagination.
+             *     The type depends on the filter.
+             *     Will be ignored in the count query, which is
+             *     used to determine the total number of results when count = True.
+             *
+             */
+            lt?: number | string | null;
+            /**
+             * Order By Select As
+             * @description
+             *     If set, the order_rank column will be returned with the results as this alias under the "extra" object.
+             *
+             */
+            select_as?: string | null;
+            /**
+             * Reciprocal Ranked Fusion Parameters
+             * @description
+             *     Parameters for the Reciprocal Ranked Fusion.
+             *     If set, when coalescing multiple filters with the same priority,
+             *     the RRF function will be applied to the rank_order columns.
+             *
+             *     If only one filter has RRF set, but multiple filters have the same priority,
+             *     RRF will be ignored.
+             *
+             *     If using RRF, you should set row_n to True for all the filters involved.
+             *     Moreover, the correct direction for RRF is "desc" (higher is better).
+             *
+             */
+            rrf?: components["schemas"]["RRF"] | null;
+            /**
+             * Match Path
+             * @description Match a query against file paths
+             */
+            match_path: components["schemas"]["MatchPathArgs"];
+        };
+        /** MatchPathArgs */
+        MatchPathArgs: {
+            /**
+             * Match
+             * @description The query to match against file paths
+             */
+            match: string;
+            /**
+             * Match on filenames Only
+             * @default false
+             */
+            filename_only: boolean;
+            /**
+             * Allow raw FTS5 MATCH Syntax
+             * @description If set to False, the query will be escaped before being passed to the FTS5 MATCH function
+             * @default true
+             */
+            raw_fts5_match: boolean;
+        };
+        /** MatchTags */
+        MatchTags: {
+            /**
+             * Order by this filter's rank output
+             * @description This filter generates a value that can be used for ordering.
+             * @default false
+             */
+            order_by: boolean;
+            /**
+             * Order Direction
+             * @description
+             *     The order direction for this filter.
+             *     If not set, the default order direction for this field is used.
+             *
+             * @default desc
+             * @enum {string}
+             */
+            direction: "asc" | "desc";
+            /**
+             * Order By Priority
+             * @description
+             *     The priority of this filter in the order by clause.
+             *     If there are multiple filters with order_by set to True,
+             *     the priority is used to determine the order.
+             *     If two filter order bys have the same priority,
+             *     their values are coalesced into a single column to order by,
+             *     and the order direction is determined by the first filter that we find from this set.
+             *
+             *     It's assumed that if the filters have the same priority, and should be coalesced,
+             *     they will have the same order direction.
+             *
+             * @default 0
+             */
+            priority: number;
+            /**
+             * Use Row Number for rank column
+             * @description
+             *     Only applied if either order_by is True, or select_as is set.
+             *
+             *     If True, internally sorts the filter's output by its rank_order
+             *     column and assigns a row number to each row.
+             *
+             *     The row number is used to order the final query.
+             *
+             *     This is useful for combining multiple filters with different
+             *     rank_order types that may not be directly comparable,
+             *     such as text search and embeddings search.
+             *
+             *     See `RRF` for a way to combine heterogeneous rank_order filters when using row_n = True.
+             *
+             * @default false
+             */
+            row_n: boolean;
+            /**
+             * Order Direction For Row Number
+             * @description
+             *     The order direction (asc or desc) for the internal row number calculation.
+             *     Only used if `order_by_row_n` is True.
+             *     When `order_by_row_n` is True, the filter's output is sorted by its rank_order column
+             *     following this direction, and a row number is assigned to each row.
+             *     This row number is used to order the final query.
+             *     You should generally leave this as the default value.
+             *
+             * @default desc
+             * @enum {string}
+             */
+            row_n_direction: "asc" | "desc";
+            /**
+             * Order By Greater Than
+             * @description
+             *     If set, only include items with an order_rank greater than this value.
+             *     Can be used for cursor-based pagination.
+             *     The type depends on the filter.
+             *     Will be ignored in the count query, which is
+             *     used to determine the total number of results when count = True.
+             *     With cursor-based pagination, you should probably not rely on count = True anyhow.
+             *
+             */
+            gt?: number | string | null;
+            /**
+             * Order By Less Than
+             * @description
+             *     If set, only include items with an order_rank less than this value.
+             *     Can be used for cursor-based pagination.
+             *     The type depends on the filter.
+             *     Will be ignored in the count query, which is
+             *     used to determine the total number of results when count = True.
+             *
+             */
+            lt?: number | string | null;
+            /**
+             * Order By Select As
+             * @description
+             *     If set, the order_rank column will be returned with the results as this alias under the "extra" object.
+             *
+             */
+            select_as?: string | null;
+            /**
+             * Reciprocal Ranked Fusion Parameters
+             * @description
+             *     Parameters for the Reciprocal Ranked Fusion.
+             *     If set, when coalescing multiple filters with the same priority,
+             *     the RRF function will be applied to the rank_order columns.
+             *
+             *     If only one filter has RRF set, but multiple filters have the same priority,
+             *     RRF will be ignored.
+             *
+             *     If using RRF, you should set row_n to True for all the filters involved.
+             *     Moreover, the correct direction for RRF is "desc" (higher is better).
+             *
+             */
+            rrf?: components["schemas"]["RRF"] | null;
+            match_tags: components["schemas"]["TagsArgs"];
+        };
+        /** MatchText */
+        MatchText: {
+            /**
+             * Order by this filter's rank output
+             * @description This filter generates a value that can be used for ordering.
+             * @default false
+             */
+            order_by: boolean;
+            /**
+             * Order Direction
+             * @description
+             *     The order direction for this filter.
+             *     If not set, the default order direction for this field is used.
+             *
+             * @default asc
+             * @enum {string}
+             */
+            direction: "asc" | "desc";
+            /**
+             * Order By Priority
+             * @description
+             *     The priority of this filter in the order by clause.
+             *     If there are multiple filters with order_by set to True,
+             *     the priority is used to determine the order.
+             *     If two filter order bys have the same priority,
+             *     their values are coalesced into a single column to order by,
+             *     and the order direction is determined by the first filter that we find from this set.
+             *
+             *     It's assumed that if the filters have the same priority, and should be coalesced,
+             *     they will have the same order direction.
+             *
+             * @default 0
+             */
+            priority: number;
+            /**
+             * Use Row Number for rank column
+             * @description
+             *     Only applied if either order_by is True, or select_as is set.
+             *
+             *     If True, internally sorts the filter's output by its rank_order
+             *     column and assigns a row number to each row.
+             *
+             *     The row number is used to order the final query.
+             *
+             *     This is useful for combining multiple filters with different
+             *     rank_order types that may not be directly comparable,
+             *     such as text search and embeddings search.
+             *
+             *     See `RRF` for a way to combine heterogeneous rank_order filters when using row_n = True.
+             *
+             * @default false
+             */
+            row_n: boolean;
+            /**
+             * Order Direction For Row Number
+             * @description
+             *     The order direction (asc or desc) for the internal row number calculation.
+             *     Only used if `order_by_row_n` is True.
+             *     When `order_by_row_n` is True, the filter's output is sorted by its rank_order column
+             *     following this direction, and a row number is assigned to each row.
+             *     This row number is used to order the final query.
+             *     You should generally leave this as the default value.
+             *
+             * @default asc
+             * @enum {string}
+             */
+            row_n_direction: "asc" | "desc";
+            /**
+             * Order By Greater Than
+             * @description
+             *     If set, only include items with an order_rank greater than this value.
+             *     Can be used for cursor-based pagination.
+             *     The type depends on the filter.
+             *     Will be ignored in the count query, which is
+             *     used to determine the total number of results when count = True.
+             *     With cursor-based pagination, you should probably not rely on count = True anyhow.
+             *
+             */
+            gt?: number | string | null;
+            /**
+             * Order By Less Than
+             * @description
+             *     If set, only include items with an order_rank less than this value.
+             *     Can be used for cursor-based pagination.
+             *     The type depends on the filter.
+             *     Will be ignored in the count query, which is
+             *     used to determine the total number of results when count = True.
+             *
+             */
+            lt?: number | string | null;
+            /**
+             * Order By Select As
+             * @description
+             *     If set, the order_rank column will be returned with the results as this alias under the "extra" object.
+             *
+             */
+            select_as?: string | null;
+            /**
+             * Reciprocal Ranked Fusion Parameters
+             * @description
+             *     Parameters for the Reciprocal Ranked Fusion.
+             *     If set, when coalescing multiple filters with the same priority,
+             *     the RRF function will be applied to the rank_order columns.
+             *
+             *     If only one filter has RRF set, but multiple filters have the same priority,
+             *     RRF will be ignored.
+             *
+             *     If using RRF, you should set row_n to True for all the filters involved.
+             *     Moreover, the correct direction for RRF is "desc" (higher is better).
+             *
+             */
+            rrf?: components["schemas"]["RRF"] | null;
+            /**
+             * Match Extracted Text
+             * @description
+             *     Match a query against text extracted from files or associated with them,
+             *     including tags and OCR text
+             *
+             */
+            match_text: components["schemas"]["MatchTextArgs"];
+        };
+        /** MatchTextArgs */
+        MatchTextArgs: {
+            /**
+             * Match
+             * @description The query to match against text
+             */
+            match: string;
+            /**
+             * Filter Only
+             * @description
+             *     Only filter out text based on the other criteria,
+             *     without actually matching the query.
+             *
+             *     If set to True, the match field will be ignored.
+             *     Order by, select_as, and row_n will also be ignored.
+             *
+             *     If set to False (default), and the match field is empty,
+             *     this filter will be skipped entirely.
+             *
+             * @default false
+             */
+            filter_only: boolean;
+            /**
+             * Include text from these setters
+             * @description
+             *     Filter out text that is was not set by these setters.
+             *     The setters are usually the names of the models that extracted or generated the text.
+             *     For example, the OCR model, the Whisper STT model, the captioning model or the tagger model.
+             *
+             */
+            setters?: string[];
+            /**
+             * Included languages
+             * @description Filter out text that is not in these languages
+             */
+            languages?: string[];
+            /**
+             * Minimum Confidence for Language Detection
+             * @description
+             *     Filter out text that has a language confidence score below this threshold.
+             *     Must be a value between 0 and 1.
+             *     Language confidence scores are usually set by the model that extracted the text.
+             *     For tagging models, it's always 1.
+             *
+             */
+            language_min_confidence?: number | null;
+            /**
+             * Minimum Confidence for the text
+             * @description
+             *     Filter out text that has a confidence score below this threshold.
+             *     Must be a value between 0 and 1.
+             *     Confidence scores are usually set by the model that extracted the text.
+             *
+             */
+            min_confidence?: number | null;
+            /**
+             * Allow raw FTS5 MATCH Syntax
+             * @description If set to False, the query will be escaped before being passed to the FTS5 MATCH function
+             * @default true
+             */
+            raw_fts5_match: boolean;
+            /**
+             * Minimum Length
+             * @description Filter out text that is shorter than this. Inclusive.
+             */
+            min_length?: number | null;
+            /**
+             * Maximum Length
+             * @description Filter out text that is longer than this. Inclusive.
+             */
+            max_length?: number | null;
+            /**
+             * Return matching text snippet
+             * @description
+             *     If set, the best matching text *snippet* will be included in the `extra` dict of each result under this key.
+             *     Works with any type of query, but it's best used with text-* queries.
+             *
+             *     Otherwise, it's somewhat slow because of the contortions needed to get the best snippet per file.
+             *
+             */
+            select_snippet_as?: string | null;
+            /**
+             * Maximum Snippet Length
+             * @description The maximum length (in tokens) of the snippet returned by select_snippet_as
+             * @default 30
+             */
+            s_max_len: number;
+            /**
+             * Snippet Ellipsis
+             * @description The ellipsis to use when truncating the snippet
+             * @default ...
+             */
+            s_ellipsis: string;
+            /**
+             * Snippet Start Tag
+             * @description The tag to use at the beginning of the snippet
+             * @default <b>
+             */
+            s_start_tag: string;
+            /**
+             * Snippet End Tag
+             * @description The tag to use at the end of the snippet
+             * @default </b>
+             */
+            s_end_tag: string;
+        };
         /** MessageResult */
         MessageResult: {
             /** Message */
             message: string;
+        };
+        /** NotEquals */
+        NotEquals: {
+            neq: components["schemas"]["ArgValuesScalar"];
+        };
+        /** NotIn */
+        NotIn: {
+            nin: components["schemas"]["ArgValues"];
+        };
+        /** NotOperator */
+        NotOperator: {
+            /** Not  */
+            not_: components["schemas"]["InPaths"] | components["schemas"]["InBookmarks"] | components["schemas"]["TypeIn"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasDataFrom"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["Equals"] | components["schemas"]["NotEquals"] | components["schemas"]["In"] | components["schemas"]["NotIn"] | components["schemas"]["GtThan"] | components["schemas"]["GtThanOrEq"] | components["schemas"]["LessThan"] | components["schemas"]["LessThanOrEq"] | components["schemas"]["StartsWith"] | components["schemas"]["EndsWith"] | components["schemas"]["Contains"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"];
         };
         /** OpenResponse */
         OpenResponse: {
@@ -1003,6 +1953,31 @@ export interface components {
             path: string;
             /** Message */
             message: string;
+        };
+        /** OrOperator */
+        OrOperator: {
+            /** Or  */
+            or_: (components["schemas"]["InPaths"] | components["schemas"]["InBookmarks"] | components["schemas"]["TypeIn"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasDataFrom"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["Equals"] | components["schemas"]["NotEquals"] | components["schemas"]["In"] | components["schemas"]["NotIn"] | components["schemas"]["GtThan"] | components["schemas"]["GtThanOrEq"] | components["schemas"]["LessThan"] | components["schemas"]["LessThanOrEq"] | components["schemas"]["StartsWith"] | components["schemas"]["EndsWith"] | components["schemas"]["Contains"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"])[];
+        };
+        /** OrderArgs */
+        OrderArgs: {
+            /**
+             * Order By
+             * @default last_modified
+             */
+            order_by: ("file_id" | "sha256" | "path" | "filename" | "last_modified") | ("item_id" | "sha256" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks") | ("data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id");
+            /** Order */
+            order?: ("asc" | "desc") | null;
+            /**
+             * Order Priority
+             * @description
+             *     The priority of this order by field. If multiple fields are ordered by,
+             *     the priority is used to determine the order they are applied in.
+             *     The order in the list is used if the priority is the same.
+             *
+             * @default 0
+             */
+            priority: number;
         };
         /** OrderParams */
         OrderParams: {
@@ -1023,6 +1998,106 @@ export interface components {
              * @default 10
              */
             page_size: number;
+        };
+        /** PQLQuery */
+        PQLQuery: {
+            /** Query */
+            query?: components["schemas"]["InPaths"] | components["schemas"]["InBookmarks"] | components["schemas"]["TypeIn"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasDataFrom"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["Equals"] | components["schemas"]["NotEquals"] | components["schemas"]["In"] | components["schemas"]["NotIn"] | components["schemas"]["GtThan"] | components["schemas"]["GtThanOrEq"] | components["schemas"]["LessThan"] | components["schemas"]["LessThanOrEq"] | components["schemas"]["StartsWith"] | components["schemas"]["EndsWith"] | components["schemas"]["Contains"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"] | null;
+            /**
+             * Values to order results by
+             * @description
+             *     The order_args field is a list of { order_by: [field name], order: ["asc" or "desc"] }
+             *     objects that define how the results should be ordered.
+             *     Results can be ordered by multiple fields by adding multiple objects.
+             *
+             */
+            order_by?: components["schemas"]["OrderArgs"][];
+            /**
+             * Data to return
+             * @description
+             *     The columns to return in the query.
+             *     The default columns are sha256, path, last_modified, and type.
+             *     Columns belonging to text can only be selected if the entity is "text".
+             *
+             */
+            select?: (("file_id" | "sha256" | "path" | "filename" | "last_modified") | ("item_id" | "sha256" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks") | ("data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id"))[];
+            /**
+             * Target Entity
+             * @description
+             *     The entity to query on.
+             *     You can perform the search on either files or text.
+             *     This means that intermediate results will be one per file, or one per text-file pair.
+             *     There are generally more text-file pairs than files, so this incurs overhead.
+             *
+             *     However, "text" queries allow you to include text-specific columns in the select list.
+             *     The final results will also be one for each text-file pair.
+             *
+             *     Most of the same filters can be used on both.
+             *     "text" queries will include "data_id" in each result. "file_id" and "item_id" are always included.
+             *
+             * @default file
+             * @enum {string}
+             */
+            entity: "file" | "text";
+            /**
+             * Partition results By
+             * @description
+             *     Group results by the values of the specified column(s) and return the first result
+             *     for each group according to all of the order settings of the query.
+             *
+             *     For example, if you partition by "item_id", you'll get one result per unique item.
+             *     If you partition by "file_id", you'll get one result per unique file.
+             *     Multiple columns yield one result for each unique combination of values for those columns.
+             *
+             *     You cannot partition by text columns if the entity is "file".
+             *
+             */
+            partition_by?: (("file_id" | "sha256" | "path" | "filename" | "last_modified") | ("item_id" | "sha256" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks") | ("data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id"))[] | null;
+            /**
+             * Page
+             * @default 1
+             */
+            page: number;
+            /**
+             * Page Size
+             * @default 10
+             */
+            page_size: number;
+            /**
+             * Count Results
+             * @description
+             *     If true, the query will return the total number of results that match the query.
+             *     This is useful for pagination, but it requires an additional query to be executed.
+             *
+             * @default true
+             */
+            count: boolean;
+            /**
+             * Return Results
+             * @description
+             *     If true, the query will return the results that match the query.
+             *     If false, only the total count will be returned, if requested.
+             *
+             * @default true
+             */
+            results: boolean;
+            /**
+             * Check Paths Exist
+             * @description
+             *     If true, the query will check if the path exists on disk before returning it.
+             *
+             *     For `file` queries with no partition by,
+             *     the result will be omitted if the path does not exist.
+             *     This is because if another file exists, it will be included later in the results.
+             *
+             *     In other cases, the system will try to find another file for the item and substitute it.
+             *     If no other working path is found, the result will be omitted.
+             *
+             *     This is not reflected in the total count of results.
+             *
+             * @default false
+             */
+            check_path: boolean;
         };
         /** PathTextFilter */
         PathTextFilter: {
@@ -1076,6 +2151,31 @@ export interface components {
             /** Min Confidence */
             min_confidence?: number | null;
         };
+        /** RRF */
+        RRF: {
+            /**
+             * Smoothing Constant
+             * @description
+             *     The smoothing constant for the RRF function.
+             *     The formula is: 1 / (rank + k).
+             *
+             *     Can be 0 for no smoothing.
+             *
+             *     Smoothing reduces the impact of "high" ranks (close to 1) on the final rank value.
+             *
+             * @default 1
+             */
+            k: number;
+            /**
+             * Weight
+             * @description
+             *     The weight to apply to this filter's rank value in the RRF function.
+             *     The formula is: weight * 1 / (rank + k).
+             *
+             * @default 1
+             */
+            weight: number;
+        };
         /** Results */
         Results: {
             /** Count */
@@ -1097,6 +2197,458 @@ export interface components {
              * @default false
              */
             check_path: boolean;
+        };
+        /** SearchResult */
+        SearchResult: {
+            /** File Id */
+            file_id: number;
+            /** Item Id */
+            item_id: number;
+            /** Path */
+            path?: string | null;
+            /** Filename */
+            filename?: string | null;
+            /** Sha256 */
+            sha256?: string | null;
+            /** Last Modified */
+            last_modified?: string | null;
+            /** Type */
+            type?: string | null;
+            /** Size */
+            size?: number | null;
+            /** Width */
+            width?: number | null;
+            /** Height */
+            height?: number | null;
+            /** Duration */
+            duration?: number | null;
+            /** Time Added */
+            time_added?: string | null;
+            /** Md5 */
+            md5?: string | null;
+            /** Audio Tracks */
+            audio_tracks?: number | null;
+            /** Video Tracks */
+            video_tracks?: number | null;
+            /** Subtitle Tracks */
+            subtitle_tracks?: number | null;
+            /** Data Id */
+            data_id?: number | null;
+            /** Language */
+            language?: string | null;
+            /** Language Confidence */
+            language_confidence?: number | null;
+            /** Text */
+            text?: string | null;
+            /** Confidence */
+            confidence?: number | null;
+            /** Text Length */
+            text_length?: number | null;
+            /** Job Id */
+            job_id?: number | null;
+            /** Setter Id */
+            setter_id?: number | null;
+            /** Setter Name */
+            setter_name?: string | null;
+            /** Data Index */
+            data_index?: number | null;
+            /** Source Id */
+            source_id?: number | null;
+            /**
+             * Extra Fields
+             * @description Extra fields retrieved from filters that are not part of the main result object.
+             */
+            extra?: {
+                [key: string]: number | string | null;
+            } | null;
+        };
+        /** SemanticImageArgs */
+        SemanticImageArgs: {
+            /**
+             * Query
+             * @description Semantic query to match against the image
+             */
+            query: string;
+            /**
+             * The image embedding model to use
+             * @description
+             *     The image embedding model to use for the semantic search.
+             *     Will search embeddings produced by this model.
+             *
+             */
+            model: string;
+            /**
+             * Distance Aggregation
+             * @description The method to aggregate distances when an item has multiple embeddings. Default is MIN.
+             * @default MIN
+             * @enum {string}
+             */
+            distance_aggregation: "MIN" | "MAX" | "AVG";
+            /**
+             * Embed The Query
+             * @description
+             *     Embed the query using the model already specified in `model`.
+             *     This is useful when the query is a string and needs to be converted to an embedding.
+             *
+             *     If this is not present, the query is assumed to be an embedding already.
+             *     In that case, it must be a base64 encoded string of a numpy array.
+             *
+             */
+            embed?: components["schemas"]["EmbedArgs"];
+        };
+        /** SemanticImageSearch */
+        SemanticImageSearch: {
+            /**
+             * Order by this filter's rank output
+             * @description This filter generates a value that can be used for ordering.
+             * @default true
+             */
+            order_by: boolean;
+            /**
+             * Order Direction
+             * @description
+             *     The order direction for this filter.
+             *     If not set, the default order direction for this field is used.
+             *
+             * @default asc
+             * @enum {string}
+             */
+            direction: "asc" | "desc";
+            /**
+             * Order By Priority
+             * @description
+             *     The priority of this filter in the order by clause.
+             *     If there are multiple filters with order_by set to True,
+             *     the priority is used to determine the order.
+             *     If two filter order bys have the same priority,
+             *     their values are coalesced into a single column to order by,
+             *     and the order direction is determined by the first filter that we find from this set.
+             *
+             *     It's assumed that if the filters have the same priority, and should be coalesced,
+             *     they will have the same order direction.
+             *
+             * @default 0
+             */
+            priority: number;
+            /**
+             * Use Row Number for rank column
+             * @description
+             *     Only applied if either order_by is True, or select_as is set.
+             *
+             *     If True, internally sorts the filter's output by its rank_order
+             *     column and assigns a row number to each row.
+             *
+             *     The row number is used to order the final query.
+             *
+             *     This is useful for combining multiple filters with different
+             *     rank_order types that may not be directly comparable,
+             *     such as text search and embeddings search.
+             *
+             *     See `RRF` for a way to combine heterogeneous rank_order filters when using row_n = True.
+             *
+             * @default false
+             */
+            row_n: boolean;
+            /**
+             * Order Direction For Row Number
+             * @description
+             *     The order direction (asc or desc) for the internal row number calculation.
+             *     Only used if `order_by_row_n` is True.
+             *     When `order_by_row_n` is True, the filter's output is sorted by its rank_order column
+             *     following this direction, and a row number is assigned to each row.
+             *     This row number is used to order the final query.
+             *     You should generally leave this as the default value.
+             *
+             * @default asc
+             * @enum {string}
+             */
+            row_n_direction: "asc" | "desc";
+            /**
+             * Order By Greater Than
+             * @description
+             *     If set, only include items with an order_rank greater than this value.
+             *     Can be used for cursor-based pagination.
+             *     The type depends on the filter.
+             *     Will be ignored in the count query, which is
+             *     used to determine the total number of results when count = True.
+             *     With cursor-based pagination, you should probably not rely on count = True anyhow.
+             *
+             */
+            gt?: number | string | null;
+            /**
+             * Order By Less Than
+             * @description
+             *     If set, only include items with an order_rank less than this value.
+             *     Can be used for cursor-based pagination.
+             *     The type depends on the filter.
+             *     Will be ignored in the count query, which is
+             *     used to determine the total number of results when count = True.
+             *
+             */
+            lt?: number | string | null;
+            /**
+             * Order By Select As
+             * @description
+             *     If set, the order_rank column will be returned with the results as this alias under the "extra" object.
+             *
+             */
+            select_as?: string | null;
+            /**
+             * Reciprocal Ranked Fusion Parameters
+             * @description
+             *     Parameters for the Reciprocal Ranked Fusion.
+             *     If set, when coalescing multiple filters with the same priority,
+             *     the RRF function will be applied to the rank_order columns.
+             *
+             *     If only one filter has RRF set, but multiple filters have the same priority,
+             *     RRF will be ignored.
+             *
+             *     If using RRF, you should set row_n to True for all the filters involved.
+             *     Moreover, the correct direction for RRF is "desc" (higher is better).
+             *
+             */
+            rrf?: components["schemas"]["RRF"] | null;
+            /**
+             * Search Image Embeddings
+             * @description
+             *     Search for image using semantic search on image embeddings.
+             *
+             */
+            image_embeddings: components["schemas"]["SemanticImageArgs"];
+        };
+        /** SemanticTextArgs */
+        SemanticTextArgs: {
+            /**
+             * Query
+             * @description Semantic query to match against the text
+             */
+            query: string;
+            /**
+             * The text embedding model to use
+             * @description
+             *     The text embedding model to use for the semantic search.
+             *     Will search embeddings produced by this model.
+             *
+             */
+            model: string;
+            /**
+             * Include text from these setters
+             * @description
+             *     Filter out text that is was not set by these setters.
+             *     The setters are usually the names of the models that extracted or generated the text.
+             *     For example, the OCR model, the Whisper STT model, the captioning model or the tagger model.
+             *
+             */
+            setters?: string[];
+            /**
+             * Included languages
+             * @description Filter out text that is not in these languages
+             */
+            languages?: string[];
+            /**
+             * Minimum Confidence for Language Detection
+             * @description
+             *     Filter out text that has a language confidence score below this threshold.
+             *     Must be a value between 0 and 1.
+             *     Language confidence scores are usually set by the model that extracted the text.
+             *     For tagging models, it's always 1.
+             *
+             */
+            language_min_confidence?: number | null;
+            /**
+             * Minimum Confidence for the text
+             * @description
+             *     Filter out text that has a confidence score below this threshold.
+             *     Must be a value between 0 and 1.
+             *     Confidence scores are usually set by the model that extracted the text.
+             *
+             */
+            min_confidence?: number | null;
+            /**
+             * Minimum Length
+             * @description Filter out text that is shorter than this. Inclusive.
+             */
+            min_length?: number | null;
+            /**
+             * Maximum Length
+             * @description Filter out text that is longer than this. Inclusive.
+             */
+            max_length?: number | null;
+            /**
+             * Distance Aggregation
+             * @description The method to aggregate distances when an item has multiple embeddings. Default is MIN.
+             * @default MIN
+             * @enum {string}
+             */
+            distance_aggregation: "MIN" | "MAX" | "AVG";
+            /**
+             * Confidence Weight
+             * @description
+             *     The weight to apply to the confidence of the source text
+             *     on the embedding distance aggregation for individual items with multiple embeddings.
+             *     Default is 0.0, which means that the confidence of the source text
+             *     does not affect the distance aggregation.
+             *     This parameter is only relevant when the source text has a confidence value.
+             *     The confidence of the source text is multiplied by the confidence of the other
+             *     source text when calculating the distance between two items.
+             *     The formula for the distance calculation is as follows:
+             *     ```
+             *     weights = POW(COALESCE(text.confidence, 1)), src_confidence_weight)
+             *     distance = SUM(distance * weights) / SUM(weights)
+             *     ```
+             *     So this weight is the exponent to which the confidence is raised, which means that it can be greater than 1.
+             *     When confidence weights are set, the distance_aggregation setting is ignored.
+             *
+             * @default 0
+             */
+            confidence_weight: number;
+            /**
+             * Language Confidence Weight
+             * @description
+             *     The weight to apply to the confidence of the source text language
+             *     on the embedding distance aggregation.
+             *     Default is 0.0, which means that the confidence of the source text language detection
+             *     does not affect the distance calculation.
+             *     Totally analogous to `src_confidence_weight`, but for the language confidence.
+             *     When both are present, the results of the POW() functions for both are multiplied together before being applied to the distance.
+             *     ```
+             *     weights = POW(..., src_confidence_weight) * POW(..., src_language_confidence_weight)
+             *     ```
+             *
+             * @default 0
+             */
+            language_confidence_weight: number;
+            /**
+             * Embed The Query
+             * @description
+             *     Embed the query using the model already specified in `model`.
+             *     This is useful when the query is a string and needs to be converted to an embedding.
+             *
+             *     If this is not present, the query is assumed to be an embedding already.
+             *     In that case, it must be a base64 encoded string of a numpy array.
+             *
+             */
+            embed?: components["schemas"]["EmbedArgs"];
+        };
+        /** SemanticTextSearch */
+        SemanticTextSearch: {
+            /**
+             * Order by this filter's rank output
+             * @description This filter generates a value that can be used for ordering.
+             * @default true
+             */
+            order_by: boolean;
+            /**
+             * Order Direction
+             * @description
+             *     The order direction for this filter.
+             *     If not set, the default order direction for this field is used.
+             *
+             * @default asc
+             * @enum {string}
+             */
+            direction: "asc" | "desc";
+            /**
+             * Order By Priority
+             * @description
+             *     The priority of this filter in the order by clause.
+             *     If there are multiple filters with order_by set to True,
+             *     the priority is used to determine the order.
+             *     If two filter order bys have the same priority,
+             *     their values are coalesced into a single column to order by,
+             *     and the order direction is determined by the first filter that we find from this set.
+             *
+             *     It's assumed that if the filters have the same priority, and should be coalesced,
+             *     they will have the same order direction.
+             *
+             * @default 0
+             */
+            priority: number;
+            /**
+             * Use Row Number for rank column
+             * @description
+             *     Only applied if either order_by is True, or select_as is set.
+             *
+             *     If True, internally sorts the filter's output by its rank_order
+             *     column and assigns a row number to each row.
+             *
+             *     The row number is used to order the final query.
+             *
+             *     This is useful for combining multiple filters with different
+             *     rank_order types that may not be directly comparable,
+             *     such as text search and embeddings search.
+             *
+             *     See `RRF` for a way to combine heterogeneous rank_order filters when using row_n = True.
+             *
+             * @default false
+             */
+            row_n: boolean;
+            /**
+             * Order Direction For Row Number
+             * @description
+             *     The order direction (asc or desc) for the internal row number calculation.
+             *     Only used if `order_by_row_n` is True.
+             *     When `order_by_row_n` is True, the filter's output is sorted by its rank_order column
+             *     following this direction, and a row number is assigned to each row.
+             *     This row number is used to order the final query.
+             *     You should generally leave this as the default value.
+             *
+             * @default asc
+             * @enum {string}
+             */
+            row_n_direction: "asc" | "desc";
+            /**
+             * Order By Greater Than
+             * @description
+             *     If set, only include items with an order_rank greater than this value.
+             *     Can be used for cursor-based pagination.
+             *     The type depends on the filter.
+             *     Will be ignored in the count query, which is
+             *     used to determine the total number of results when count = True.
+             *     With cursor-based pagination, you should probably not rely on count = True anyhow.
+             *
+             */
+            gt?: number | string | null;
+            /**
+             * Order By Less Than
+             * @description
+             *     If set, only include items with an order_rank less than this value.
+             *     Can be used for cursor-based pagination.
+             *     The type depends on the filter.
+             *     Will be ignored in the count query, which is
+             *     used to determine the total number of results when count = True.
+             *
+             */
+            lt?: number | string | null;
+            /**
+             * Order By Select As
+             * @description
+             *     If set, the order_rank column will be returned with the results as this alias under the "extra" object.
+             *
+             */
+            select_as?: string | null;
+            /**
+             * Reciprocal Ranked Fusion Parameters
+             * @description
+             *     Parameters for the Reciprocal Ranked Fusion.
+             *     If set, when coalescing multiple filters with the same priority,
+             *     the RRF function will be applied to the rank_order columns.
+             *
+             *     If only one filter has RRF set, but multiple filters have the same priority,
+             *     RRF will be ignored.
+             *
+             *     If using RRF, you should set row_n to True for all the filters involved.
+             *     Moreover, the correct direction for RRF is "desc" (higher is better).
+             *
+             */
+            rrf?: components["schemas"]["RRF"] | null;
+            /**
+             * Search Text Embeddings
+             * @description
+             *     Search for text using semantic search on text embeddings.
+             *
+             */
+            text_embeddings: components["schemas"]["SemanticTextArgs"];
         };
         /** SimilarItemsRequest */
         SimilarItemsRequest: {
@@ -1208,6 +2760,10 @@ export interface components {
             /** All */
             all: string[];
         };
+        /** StartsWith */
+        StartsWith: {
+            startswith: components["schemas"]["ArgValues"];
+        };
         /** StatusResponse */
         StatusResponse: {
             /** Status */
@@ -1249,6 +2805,44 @@ export interface components {
             /** Min Confidence */
             min_confidence: number;
         };
+        /** TagsArgs */
+        TagsArgs: {
+            /** List of tags to match */
+            tags?: string[];
+            /**
+             * Match any tag
+             * @description
+             *     If true, match items with at least one of the given tags.
+             *     If false (default), only match items with all of the given tags.
+             *
+             * @default false
+             */
+            match_any: boolean;
+            /**
+             * Minimum confidence
+             * @description
+             *     Only consider tags with a confidence greater than or equal to this value
+             *
+             * @default 0
+             */
+            min_confidence: number;
+            /** Only consider tags set by these setters */
+            setters?: string[];
+            /** Only consider tags in these namespaces (includes sub-namespaces) */
+            namespaces?: string[];
+            /**
+             * Require all setters to match
+             * @description
+             *     Only consider tags that have been set by all of the given setters.
+             *     If match_any is true, and there is more than one tag, this will be ignored.
+             *
+             *     If you really want to match any tag set by all of the given setters,
+             *     you can combine this with a separate filter for each tag in an OrOperator.
+             *
+             * @default false
+             */
+            all_setters_required: boolean;
+        };
         /** TextFilter */
         TextFilter: {
             /**
@@ -1284,6 +2878,11 @@ export interface components {
         TextResponse: {
             /** Text */
             text: components["schemas"]["ExtractedText"][];
+        };
+        /** TypeIn */
+        TypeIn: {
+            /** MIME Type must begin with one of the given strings */
+            type_in: string[];
         };
         /** ValidationError */
         ValidationError: {
@@ -1422,6 +3021,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FileSearchResultModel"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pql_api_search_pql_post: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PQLQuery"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileSearchResponse"];
                 };
             };
             /** @description Not found */
@@ -1669,6 +3313,92 @@ export interface operations {
             };
         };
     };
+    get_item_by_id_api_items_from_id__item_id__get: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path: {
+                item_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemMetadata"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_item_by_file_id_api_items_from_file_id__file_id__get: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path: {
+                file_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemMetadata"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_item_by_path_api_items_from_path__path__get: {
         parameters: {
             query?: {
@@ -1816,6 +3546,49 @@ export interface operations {
             path: {
                 sha256: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TextResponse"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_texts_by_text_ids_api_items_text_get: {
+        parameters: {
+            query: {
+                /** @description List of extracted text IDs */
+                text_ids: number[];
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
