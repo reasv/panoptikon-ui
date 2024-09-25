@@ -17,6 +17,7 @@ import {
   ATPathTextFilter,
   AnyTextFilterOptions,
   KeymapComponents,
+  embedArgsKeyMap,
 } from "./searchQueryKeyMaps"
 import { useScopedQueryStates } from "../nuqsScopedWrappers/scopedQueryStates"
 import { getOrderBy, queryFromState } from "./searchQuery"
@@ -42,6 +43,18 @@ export function useOrderArgs(): [
     SetFn<KeymapComponents["OrderParams"]>
   ]
 }
+
+export function useEmbedArgs(): [
+  KeymapComponents["EmbedArgs"],
+  SetFn<KeymapComponents["EmbedArgs"]>
+] {
+  const [state, set] = useQueryStates(embedArgsKeyMap(def as any))
+  return [state, set] as [
+    KeymapComponents["EmbedArgs"],
+    SetFn<KeymapComponents["EmbedArgs"]>
+  ]
+}
+
 export function useSearchPage(): [number, SetFn<number>] {
   const [state, set] = useQueryState("page", orderParamsKeyMap(def as any).page)
   return [state, set] as const
@@ -167,6 +180,7 @@ export function useAnyTextFilterOptions(): AnyTextFilterOptions {
 
 export const useSearchQueryState = () => {
   const keymapComponents: KeymapComponents = {
+    EmbedArgs: useEmbedArgs()[0],
     ExtractedTextFilter: useExtractedTextFilters()[0],
     PathTextFilter: usePathTextFilters()[0],
     OrderParams: useOrderArgs()[0],

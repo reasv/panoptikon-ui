@@ -46,6 +46,13 @@ export const tagFiltersKeyMap = (p: typeof def) =>
     namespaces: p.parseAsArrayOf(p.parseAsString).withDefault([]),
     min_confidence: p.parseAsFloat.withDefault(0),
   })
+
+export const embedArgsKeyMap = (p: typeof def) =>
+  applyOptionsToMap({
+    cache_key: p.parseAsString.withDefault("search"),
+    lru_size: p.parseAsInteger.withDefault(2),
+    ttl_seconds: p.parseAsInteger.withDefault(600),
+  })
 export const fileFiltersKeyMap = (p: typeof def) =>
   applyOptionsToMap({
     item_types: p.parseAsArrayOf(p.parseAsString).withDefault([]),
@@ -141,6 +148,7 @@ export interface AnyTextFilterOptions {
 // Wrap the types in Required<>
 export type KeymapComponents = {
   ExtractedTextFilter: Required<components["schemas"]["ExtractedTextFilter"]>
+  EmbedArgs: Required<components["schemas"]["EmbedArgs"]>
   PathTextFilter: Required<components["schemas"]["PathTextFilter"]>
   OrderParams: Required<components["schemas"]["OrderParams"]>
   QueryTagFilters: Required<components["schemas"]["QueryTagFilters"]>
