@@ -1761,7 +1761,7 @@ export interface components {
              *     For tagging models, it's always 1.
              *
              */
-            language_min_confidence?: number | null;
+            min_language_confidence?: number | null;
             /**
              * Minimum Confidence for the text
              * @description
@@ -2454,92 +2454,12 @@ export interface components {
              */
             model: string;
             /**
-             * Include text from these setters
-             * @description
-             *     Filter out text that is was not set by these setters.
-             *     The setters are usually the names of the models that extracted or generated the text.
-             *     For example, the OCR model, the Whisper STT model, the captioning model or the tagger model.
-             *
-             */
-            setters?: string[];
-            /**
-             * Included languages
-             * @description Filter out text that is not in these languages
-             */
-            languages?: string[];
-            /**
-             * Minimum Confidence for Language Detection
-             * @description
-             *     Filter out text that has a language confidence score below this threshold.
-             *     Must be a value between 0 and 1.
-             *     Language confidence scores are usually set by the model that extracted the text.
-             *     For tagging models, it's always 1.
-             *
-             */
-            language_min_confidence?: number | null;
-            /**
-             * Minimum Confidence for the text
-             * @description
-             *     Filter out text that has a confidence score below this threshold.
-             *     Must be a value between 0 and 1.
-             *     Confidence scores are usually set by the model that extracted the text.
-             *
-             */
-            min_confidence?: number | null;
-            /**
-             * Minimum Length
-             * @description Filter out text that is shorter than this. Inclusive.
-             */
-            min_length?: number | null;
-            /**
-             * Maximum Length
-             * @description Filter out text that is longer than this. Inclusive.
-             */
-            max_length?: number | null;
-            /**
              * Distance Aggregation
              * @description The method to aggregate distances when an item has multiple embeddings. Default is MIN.
              * @default MIN
              * @enum {string}
              */
             distance_aggregation: "MIN" | "MAX" | "AVG";
-            /**
-             * Confidence Weight
-             * @description
-             *     The weight to apply to the confidence of the source text
-             *     on the embedding distance aggregation for individual items with multiple embeddings.
-             *     Default is 0.0, which means that the confidence of the source text
-             *     does not affect the distance aggregation.
-             *     This parameter is only relevant when the source text has a confidence value.
-             *     The confidence of the source text is multiplied by the confidence of the other
-             *     source text when calculating the distance between two items.
-             *     The formula for the distance calculation is as follows:
-             *     ```
-             *     weights = POW(COALESCE(text.confidence, 1)), src_confidence_weight)
-             *     distance = SUM(distance * weights) / SUM(weights)
-             *     ```
-             *     So this weight is the exponent to which the confidence is raised, which means that it can be greater than 1.
-             *     When confidence weights are set, the distance_aggregation setting is ignored.
-             *
-             * @default 0
-             */
-            confidence_weight: number;
-            /**
-             * Language Confidence Weight
-             * @description
-             *     The weight to apply to the confidence of the source text language
-             *     on the embedding distance aggregation.
-             *     Default is 0.0, which means that the confidence of the source text language detection
-             *     does not affect the distance calculation.
-             *     Totally analogous to `src_confidence_weight`, but for the language confidence.
-             *     When both are present, the results of the POW() functions for both are multiplied together before being applied to the distance.
-             *     ```
-             *     weights = POW(..., src_confidence_weight) * POW(..., src_language_confidence_weight)
-             *     ```
-             *
-             * @default 0
-             */
-            language_confidence_weight: number;
             /**
              * Embed The Query
              * @description
@@ -2551,6 +2471,10 @@ export interface components {
              *
              */
             embed?: components["schemas"]["EmbedArgs"];
+            /** @description
+             *     Filters and options to apply on source text that the embeddings are derived from.
+             *      */
+            src_text?: components["schemas"]["SourceArgs"] | null;
         };
         /** SemanticTextSearch */
         SemanticTextSearch: {
@@ -2984,33 +2908,53 @@ export interface components {
         /** SourceArgs */
         SourceArgs: {
             /**
-             * Setter Names
-             * @description The source model names to restrict the search to. These are the models that produced the text.
+             * Include text from these setters
+             * @description
+             *     Filter out text that is was not set by these setters.
+             *     The setters are usually the names of the models that extracted or generated the text.
+             *     For example, the OCR model, the Whisper STT model, the captioning model or the tagger model.
+             *
              */
-            setter_names?: string[] | null;
+            setters?: string[];
             /**
              * Languages
-             * @description The source languages to restrict the search to. These are the languages of the text produced by the source models.
+             * @description
+             *     The source languages to restrict the search to.
+             *     These are the languages of the text produced by the source models.
+             *
              */
             languages?: string[] | null;
             /**
-             * Min Confidence
-             * @description The minimum confidence of the text as given by its source model
-             * @default 0
+             * Minimum Confidence for the text
+             * @description
+             *     Filter out text that has a confidence score below this threshold.
+             *     Usually a value between 0 and 1.
+             *     Confidence scores are usually set by the model that extracted the text.
+             *
              */
-            min_confidence: number;
+            min_confidence?: number | null;
             /**
              * Min Language Confidence
-             * @description The minimum confidence for language detection in the text
+             * @description
+             *     Filter out text that has a language confidence score below this threshold.
+             *     Usually a value between 0 and 1.
+             *     Language confidence scores are usually set by the model that extracted the text.
+             *     For tagging models, it's always 1.
+             *
              * @default 0
              */
             min_language_confidence: number;
             /**
              * Min Length
-             * @description The minimum length of the text in characters
+             * @description Filter out text that is shorter than this. Inclusive.
              * @default 0
              */
             min_length: number;
+            /**
+             * Maximum Length
+             * @description Filter out text that is longer than this. Inclusive.
+             */
+            max_length?: number | null;
             /**
              * Confidence Weight
              * @description
@@ -3023,7 +2967,7 @@ export interface components {
              *     source text when calculating the distance between two items.
              *     The formula for the distance calculation is as follows:
              *     ```
-             *     weights = POW((COALESCE(main_source_text.confidence, 1) * COALESCE(other_source_text.confidence, 1)), src_confidence_weight)
+             *     weights = POW(COALESCE(text.confidence, 1)), src_confidence_weight)
              *     distance = SUM(distance * weights) / SUM(weights)
              *     ```
              *     So this weight is the exponent to which the confidence is raised, which means that it can be greater than 1.
