@@ -808,126 +808,12 @@ export interface components {
         /** AndOperator */
         AndOperator: {
             /** And  */
-            and_: (components["schemas"]["InPaths"] | components["schemas"]["InBookmarks"] | components["schemas"]["TypeIn"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasDataFrom"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["Equals"] | components["schemas"]["NotEquals"] | components["schemas"]["In"] | components["schemas"]["NotIn"] | components["schemas"]["GtThan"] | components["schemas"]["GtThanOrEq"] | components["schemas"]["LessThan"] | components["schemas"]["LessThanOrEq"] | components["schemas"]["StartsWith"] | components["schemas"]["EndsWith"] | components["schemas"]["Contains"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"])[];
+            and_: (components["schemas"]["SimilarTo"] | components["schemas"]["InBookmarks"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasDataFrom"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["Match"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"])[];
         };
         /** AnyTextFilter */
         AnyTextFilter: {
             path?: components["schemas"]["PathTextFilter"] | null;
             extracted_text?: components["schemas"]["ExtractedTextFilter"] | null;
-        };
-        /** ArgValues */
-        ArgValues: {
-            /** File Id */
-            file_id?: number | number[] | null;
-            /** Item Id */
-            item_id?: number | number[] | null;
-            /** Path */
-            path?: string | string[] | null;
-            /** Filename */
-            filename?: string | string[] | null;
-            /** Sha256 */
-            sha256?: string | string[] | null;
-            /** Last Modified */
-            last_modified?: string | string[] | null;
-            /** Type */
-            type?: string | string[] | null;
-            /** Size */
-            size?: number | number[] | null;
-            /** Width */
-            width?: number | number[] | null;
-            /** Height */
-            height?: number | number[] | null;
-            /** Duration */
-            duration?: number | number[] | null;
-            /** Time Added */
-            time_added?: string | string[] | null;
-            /** Md5 */
-            md5?: string | string[] | null;
-            /** Audio Tracks */
-            audio_tracks?: number | number[] | null;
-            /** Video Tracks */
-            video_tracks?: number | number[] | null;
-            /** Subtitle Tracks */
-            subtitle_tracks?: number | number[] | null;
-            /** Data Id */
-            data_id?: number | number[] | null;
-            /** Language */
-            language?: string | string[] | null;
-            /** Language Confidence */
-            language_confidence?: number | number[] | null;
-            /** Text */
-            text?: string | string[] | null;
-            /** Confidence */
-            confidence?: number | number[] | null;
-            /** Text Length */
-            text_length?: number | number[] | null;
-            /** Job Id */
-            job_id?: number | number[] | null;
-            /** Setter Id */
-            setter_id?: number | number[] | null;
-            /** Setter Name */
-            setter_name?: string | string[] | null;
-            /** Data Index */
-            data_index?: number | number[] | null;
-            /** Source Id */
-            source_id?: number | number[] | null;
-        };
-        /** ArgValuesScalar */
-        ArgValuesScalar: {
-            /** File Id */
-            file_id?: number | null;
-            /** Item Id */
-            item_id?: number | null;
-            /** Path */
-            path?: string | null;
-            /** Filename */
-            filename?: string | null;
-            /** Sha256 */
-            sha256?: string | null;
-            /** Last Modified */
-            last_modified?: string | null;
-            /** Type */
-            type?: string | null;
-            /** Size */
-            size?: number | null;
-            /** Width */
-            width?: number | null;
-            /** Height */
-            height?: number | null;
-            /** Duration */
-            duration?: number | null;
-            /** Time Added */
-            time_added?: string | null;
-            /** Md5 */
-            md5?: string | null;
-            /** Audio Tracks */
-            audio_tracks?: number | null;
-            /** Video Tracks */
-            video_tracks?: number | null;
-            /** Subtitle Tracks */
-            subtitle_tracks?: number | null;
-            /** Data Id */
-            data_id?: number | null;
-            /** Language */
-            language?: string | null;
-            /** Language Confidence */
-            language_confidence?: number | null;
-            /** Text */
-            text?: string | null;
-            /** Confidence */
-            confidence?: number | null;
-            /** Text Length */
-            text_length?: number | null;
-            /** Job Id */
-            job_id?: number | null;
-            /** Setter Id */
-            setter_id?: number | null;
-            /** Setter Name */
-            setter_name?: string | null;
-            /** Data Index */
-            data_index?: number | null;
-            /** Source Id */
-            source_id?: number | null;
         };
         /** Body_predict_api_inference_predict__group___inference_id__post */
         Body_predict_api_inference_predict__group___inference_id__post: {
@@ -1022,10 +908,6 @@ export interface components {
                 [key: string]: string[];
             };
         };
-        /** Contains */
-        Contains: {
-            contains: components["schemas"]["ArgValues"];
-        };
         /** DBInfo */
         DBInfo: {
             index: components["schemas"]["SingleDBInfo"];
@@ -1058,14 +940,6 @@ export interface components {
              * @default 60
              */
             ttl_seconds: number;
-        };
-        /** EndsWith */
-        EndsWith: {
-            endswith: components["schemas"]["ArgValues"];
-        };
-        /** Equals */
-        Equals: {
-            eq: components["schemas"]["ArgValuesScalar"];
         };
         /** ExistingBookmarkMetadata */
         ExistingBookmarkMetadata: {
@@ -1195,14 +1069,6 @@ export interface components {
             /** Mime Types */
             mime_types: string[];
         };
-        /** GtThan */
-        GtThan: {
-            gt: components["schemas"]["ArgValuesScalar"];
-        };
-        /** GtThanOrEq */
-        GtThanOrEq: {
-            gte: components["schemas"]["ArgValuesScalar"];
-        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1227,10 +1093,6 @@ export interface components {
             query: string;
             /** Model */
             model: string;
-        };
-        /** In */
-        In: {
-            in_: components["schemas"]["ArgValues"];
         };
         /** InBookmarks */
         InBookmarks: {
@@ -1388,11 +1250,6 @@ export interface components {
              */
             include_wildcard: boolean;
         };
-        /** InPaths */
-        InPaths: {
-            /** Path must begin with one of the given strings */
-            in_paths: string[];
-        };
         /** ItemBookmarks */
         ItemBookmarks: {
             /** Bookmarks */
@@ -1443,13 +1300,49 @@ export interface components {
             /** Metadata */
             metadata?: Record<string, never> | null;
         };
-        /** LessThan */
-        LessThan: {
-            lt: components["schemas"]["ArgValuesScalar"];
+        /** Match */
+        Match: {
+            /**
+             * Match
+             * @description
+             *     The match operations to apply. Match filters operate on key-value pairs representing
+             *     the primitive attributes of items, files, and extracted data.
+             *     For example, a match filter can be used to filter items
+             *     based on their type, size, or the path of the file they are associated with.
+             *
+             */
+            match: components["schemas"]["MatchOps"] | components["schemas"]["MatchAnd"] | components["schemas"]["MatchOr"] | components["schemas"]["MatchNot"];
         };
-        /** LessThanOrEq */
-        LessThanOrEq: {
-            lte: components["schemas"]["ArgValuesScalar"];
+        /** MatchAnd */
+        MatchAnd: {
+            /** And  */
+            and_: components["schemas"]["MatchOps"][];
+        };
+        /** MatchNot */
+        MatchNot: {
+            not_: components["schemas"]["MatchOps"];
+        };
+        /** MatchOps */
+        MatchOps: {
+            eq?: components["schemas"]["MatchValue"] | null;
+            neq?: components["schemas"]["MatchValue"] | null;
+            in_?: components["schemas"]["MatchValues"] | null;
+            nin?: components["schemas"]["MatchValues"] | null;
+            gt?: components["schemas"]["MatchValue"] | null;
+            gte?: components["schemas"]["MatchValue"] | null;
+            lt?: components["schemas"]["MatchValue"] | null;
+            lte?: components["schemas"]["MatchValue"] | null;
+            startswith?: components["schemas"]["MatchValues"] | null;
+            not_startswith?: components["schemas"]["MatchValues"] | null;
+            endswith?: components["schemas"]["MatchValues"] | null;
+            not_endswith?: components["schemas"]["MatchValues"] | null;
+            contains?: components["schemas"]["MatchValues"] | null;
+            not_contains?: components["schemas"]["MatchValues"] | null;
+        };
+        /** MatchOr */
+        MatchOr: {
+            /** Or  */
+            or_: components["schemas"]["MatchOps"][];
         };
         /** MatchPath */
         MatchPath: {
@@ -1929,23 +1822,129 @@ export interface components {
              */
             s_end_tag: string;
         };
+        /** MatchValue */
+        MatchValue: {
+            /** File Id */
+            file_id?: number | null;
+            /** Item Id */
+            item_id?: number | null;
+            /** Path */
+            path?: string | null;
+            /** Filename */
+            filename?: string | null;
+            /** Sha256 */
+            sha256?: string | null;
+            /** Last Modified */
+            last_modified?: string | null;
+            /** Type */
+            type?: string | null;
+            /** Size */
+            size?: number | null;
+            /** Width */
+            width?: number | null;
+            /** Height */
+            height?: number | null;
+            /** Duration */
+            duration?: number | null;
+            /** Time Added */
+            time_added?: string | null;
+            /** Md5 */
+            md5?: string | null;
+            /** Audio Tracks */
+            audio_tracks?: number | null;
+            /** Video Tracks */
+            video_tracks?: number | null;
+            /** Subtitle Tracks */
+            subtitle_tracks?: number | null;
+            /** Data Id */
+            data_id?: number | null;
+            /** Language */
+            language?: string | null;
+            /** Language Confidence */
+            language_confidence?: number | null;
+            /** Text */
+            text?: string | null;
+            /** Confidence */
+            confidence?: number | null;
+            /** Text Length */
+            text_length?: number | null;
+            /** Job Id */
+            job_id?: number | null;
+            /** Setter Id */
+            setter_id?: number | null;
+            /** Setter Name */
+            setter_name?: string | null;
+            /** Data Index */
+            data_index?: number | null;
+            /** Source Id */
+            source_id?: number | null;
+        };
+        /** MatchValues */
+        MatchValues: {
+            /** File Id */
+            file_id?: number | number[] | null;
+            /** Item Id */
+            item_id?: number | number[] | null;
+            /** Path */
+            path?: string | string[] | null;
+            /** Filename */
+            filename?: string | string[] | null;
+            /** Sha256 */
+            sha256?: string | string[] | null;
+            /** Last Modified */
+            last_modified?: string | string[] | null;
+            /** Type */
+            type?: string | string[] | null;
+            /** Size */
+            size?: number | number[] | null;
+            /** Width */
+            width?: number | number[] | null;
+            /** Height */
+            height?: number | number[] | null;
+            /** Duration */
+            duration?: number | number[] | null;
+            /** Time Added */
+            time_added?: string | string[] | null;
+            /** Md5 */
+            md5?: string | string[] | null;
+            /** Audio Tracks */
+            audio_tracks?: number | number[] | null;
+            /** Video Tracks */
+            video_tracks?: number | number[] | null;
+            /** Subtitle Tracks */
+            subtitle_tracks?: number | number[] | null;
+            /** Data Id */
+            data_id?: number | number[] | null;
+            /** Language */
+            language?: string | string[] | null;
+            /** Language Confidence */
+            language_confidence?: number | number[] | null;
+            /** Text */
+            text?: string | string[] | null;
+            /** Confidence */
+            confidence?: number | number[] | null;
+            /** Text Length */
+            text_length?: number | number[] | null;
+            /** Job Id */
+            job_id?: number | number[] | null;
+            /** Setter Id */
+            setter_id?: number | number[] | null;
+            /** Setter Name */
+            setter_name?: string | string[] | null;
+            /** Data Index */
+            data_index?: number | number[] | null;
+            /** Source Id */
+            source_id?: number | number[] | null;
+        };
         /** MessageResult */
         MessageResult: {
             /** Message */
             message: string;
         };
-        /** NotEquals */
-        NotEquals: {
-            neq: components["schemas"]["ArgValuesScalar"];
-        };
-        /** NotIn */
-        NotIn: {
-            nin: components["schemas"]["ArgValues"];
-        };
         /** NotOperator */
         NotOperator: {
             /** Not  */
-            not_: components["schemas"]["InPaths"] | components["schemas"]["InBookmarks"] | components["schemas"]["TypeIn"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasDataFrom"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["Equals"] | components["schemas"]["NotEquals"] | components["schemas"]["In"] | components["schemas"]["NotIn"] | components["schemas"]["GtThan"] | components["schemas"]["GtThanOrEq"] | components["schemas"]["LessThan"] | components["schemas"]["LessThanOrEq"] | components["schemas"]["StartsWith"] | components["schemas"]["EndsWith"] | components["schemas"]["Contains"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"];
+            not_: components["schemas"]["SimilarTo"] | components["schemas"]["InBookmarks"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasDataFrom"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["Match"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"];
         };
         /** OpenResponse */
         OpenResponse: {
@@ -1957,7 +1956,7 @@ export interface components {
         /** OrOperator */
         OrOperator: {
             /** Or  */
-            or_: (components["schemas"]["InPaths"] | components["schemas"]["InBookmarks"] | components["schemas"]["TypeIn"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasDataFrom"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["Equals"] | components["schemas"]["NotEquals"] | components["schemas"]["In"] | components["schemas"]["NotIn"] | components["schemas"]["GtThan"] | components["schemas"]["GtThanOrEq"] | components["schemas"]["LessThan"] | components["schemas"]["LessThanOrEq"] | components["schemas"]["StartsWith"] | components["schemas"]["EndsWith"] | components["schemas"]["Contains"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"])[];
+            or_: (components["schemas"]["SimilarTo"] | components["schemas"]["InBookmarks"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasDataFrom"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["Match"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"])[];
         };
         /** OrderArgs */
         OrderArgs: {
@@ -2002,7 +2001,7 @@ export interface components {
         /** PQLQuery */
         PQLQuery: {
             /** Query */
-            query?: components["schemas"]["InPaths"] | components["schemas"]["InBookmarks"] | components["schemas"]["TypeIn"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasDataFrom"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["Equals"] | components["schemas"]["NotEquals"] | components["schemas"]["In"] | components["schemas"]["NotIn"] | components["schemas"]["GtThan"] | components["schemas"]["GtThanOrEq"] | components["schemas"]["LessThan"] | components["schemas"]["LessThanOrEq"] | components["schemas"]["StartsWith"] | components["schemas"]["EndsWith"] | components["schemas"]["Contains"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"] | null;
+            query?: components["schemas"]["SimilarTo"] | components["schemas"]["InBookmarks"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasDataFrom"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["Match"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"] | null;
             /**
              * Values to order results by
              * @description
@@ -2266,7 +2265,11 @@ export interface components {
         SemanticImageArgs: {
             /**
              * Query
-             * @description Semantic query to match against the image
+             * @description
+             *     Semantic query to match against the image.
+             *     Can be a string or a base64 encoded numpy array
+             *     to supply an embedding directly.
+             *
              */
             query: string;
             /**
@@ -2295,6 +2298,25 @@ export interface components {
              *
              */
             embed?: components["schemas"]["EmbedArgs"];
+            /**
+             * Clip Xmodal
+             * @description
+             *     If true, will search among text embeddings as well as image embeddings created by the same CLIP model.
+             *
+             *     Note that you must have both image and text embeddings with the same CLIP model for this setting to work.
+             *     Text embeddings are derived from text which must have been already previously produced by another model, such as an OCR model or a tagger.
+             *     They are generated *separately* from the image embeddings, using a different job (Under 'CLIP Text Embeddings').
+             *     Run a batch job with the same clip model for both image and text embeddings to use this setting.
+             *
+             * @default false
+             */
+            clip_xmodal: boolean;
+            /** @description
+             *     Filters and options to apply on source text.
+             *     Can exclusively be used with `clip_xmodal` set to True.
+             *     Otherwise, it will be ignored, as it only applies to text embeddings.
+             *      */
+            src_text?: components["schemas"]["SourceArgs"] | null;
         };
         /** SemanticImageSearch */
         SemanticImageSearch: {
@@ -2753,6 +2775,205 @@ export interface components {
              */
             full_count: boolean;
         };
+        /** SimilarTo */
+        SimilarTo: {
+            /**
+             * Order by this filter's rank output
+             * @description This filter generates a value that can be used for ordering.
+             * @default true
+             */
+            order_by: boolean;
+            /**
+             * Order Direction
+             * @description
+             *     The order direction for this filter.
+             *     If not set, the default order direction for this field is used.
+             *
+             * @default asc
+             * @enum {string}
+             */
+            direction: "asc" | "desc";
+            /**
+             * Order By Priority
+             * @description
+             *     The priority of this filter in the order by clause.
+             *     If there are multiple filters with order_by set to True,
+             *     the priority is used to determine the order.
+             *     If two filter order bys have the same priority,
+             *     their values are coalesced into a single column to order by,
+             *     and the order direction is determined by the first filter that we find from this set.
+             *
+             *     It's assumed that if the filters have the same priority, and should be coalesced,
+             *     they will have the same order direction.
+             *
+             * @default 0
+             */
+            priority: number;
+            /**
+             * Use Row Number for rank column
+             * @description
+             *     Only applied if either order_by is True, or select_as is set.
+             *
+             *     If True, internally sorts the filter's output by its rank_order
+             *     column and assigns a row number to each row.
+             *
+             *     The row number is used to order the final query.
+             *
+             *     This is useful for combining multiple filters with different
+             *     rank_order types that may not be directly comparable,
+             *     such as text search and embeddings search.
+             *
+             *     See `RRF` for a way to combine heterogeneous rank_order filters when using row_n = True.
+             *
+             * @default false
+             */
+            row_n: boolean;
+            /**
+             * Order Direction For Row Number
+             * @description
+             *     The order direction (asc or desc) for the internal row number calculation.
+             *     Only used if `order_by_row_n` is True.
+             *     When `order_by_row_n` is True, the filter's output is sorted by its rank_order column
+             *     following this direction, and a row number is assigned to each row.
+             *     This row number is used to order the final query.
+             *     You should generally leave this as the default value.
+             *
+             * @default asc
+             * @enum {string}
+             */
+            row_n_direction: "asc" | "desc";
+            /**
+             * Order By Greater Than
+             * @description
+             *     If set, only include items with an order_rank greater than this value.
+             *     Can be used for cursor-based pagination.
+             *     The type depends on the filter.
+             *     Will be ignored in the count query, which is
+             *     used to determine the total number of results when count = True.
+             *     With cursor-based pagination, you should probably not rely on count = True anyhow.
+             *
+             */
+            gt?: number | string | null;
+            /**
+             * Order By Less Than
+             * @description
+             *     If set, only include items with an order_rank less than this value.
+             *     Can be used for cursor-based pagination.
+             *     The type depends on the filter.
+             *     Will be ignored in the count query, which is
+             *     used to determine the total number of results when count = True.
+             *
+             */
+            lt?: number | string | null;
+            /**
+             * Order By Select As
+             * @description
+             *     If set, the order_rank column will be returned with the results as this alias under the "extra" object.
+             *
+             */
+            select_as?: string | null;
+            /**
+             * Reciprocal Ranked Fusion Parameters
+             * @description
+             *     Parameters for the Reciprocal Ranked Fusion.
+             *     If set, when coalescing multiple filters with the same priority,
+             *     the RRF function will be applied to the rank_order columns.
+             *
+             *     If only one filter has RRF set, but multiple filters have the same priority,
+             *     RRF will be ignored.
+             *
+             *     If using RRF, you should set row_n to True for all the filters involved.
+             *     Moreover, the correct direction for RRF is "desc" (higher is better).
+             *
+             */
+            rrf?: components["schemas"]["RRF"] | null;
+            /**
+             * Item Similarity Search
+             * @description
+             *     Search for items similar to a target item using similarity search on embeddings.
+             *     The search is based on the image or text embeddings of the provided item.
+             *
+             *     The setter name refers to the model that produced the embeddings.
+             *     You can find a list of available values for this parameter using the /api/search/stats endpoint.
+             *     Any setters of type "text-embedding" or "clip" can be used for this search.
+             *
+             *     "text" embeddings are derived from text produced by another model, such as an OCR model or a tagger.
+             *     You can restrict the search to embeddings derived from text that was
+             *     produced by one of a list of specific models by providing the appropriate filter.
+             *     You can find a list of available values for text sources using the
+             *     /api/search/stats endpoint, specifically any setter of type "text" will apply.
+             *     Remember that tagging models also produce text by concatenating the tags,
+             *      and are therefore also returned as "text" models by the stats endpoint.
+             *     Restricting similarity to a tagger model or a set of tagger models
+             *      is recommended for item similarity search based on text embeddings.
+             *
+             */
+            similar_to: components["schemas"]["SimilarityArgs"];
+        };
+        /** SimilarityArgs */
+        SimilarityArgs: {
+            /**
+             * Target
+             * @description Sha256 hash of the target item to find similar items for
+             */
+            target: string;
+            /**
+             * Model
+             * @description The name of the embedding model used for similarity search
+             */
+            model: string;
+            /**
+             * Distance Function
+             * @description The distance function to use for similarity search. Default is L2.
+             * @default L2
+             * @enum {string}
+             */
+            distance_function: "L2" | "COSINE";
+            /**
+             * Distance Aggregation
+             * @description The method to aggregate distances when an item has multiple embeddings. Default is AVG.
+             * @default AVG
+             * @enum {string}
+             */
+            distance_aggregation: "MIN" | "MAX" | "AVG";
+            /** @description
+             *     Filters and options to apply on source text.
+             *     If not provided, all text embeddings are considered.
+             *     The source text is the text which was used to produce the text embeddings.
+             *      */
+            src_text?: components["schemas"]["SourceArgs"] | null;
+            /**
+             * Clip Xmodal
+             * @description
+             *     Whether to use cross-modal similarity for CLIP models.
+             *     Default is False. What this means is that the similarity is calculated between image and text embeddings,
+             *     rather than just between image embeddings. By default will also use text-to-text similarity.
+             *
+             *     Note that you must have both image and text embeddings with the same CLIP model for this setting to work.
+             *     Text embeddings are derived from text which must have been already previously produced by another model, such as an OCR model or a tagger.
+             *     They are generated *separately* from the image embeddings, using a different job (Under 'CLIP Text Embeddings').
+             *     Run a batch job with the same clip model for both image and text embeddings to use this setting.
+             *
+             * @default false
+             */
+            clip_xmodal: boolean;
+            /**
+             * Xmodal T2T
+             * @description
+             *     When using CLIP cross-modal similarity, whether to use text-to-text similarity as well or just image-to-text and image-to-image.
+             *
+             * @default true
+             */
+            xmodal_t2t: boolean;
+            /**
+             * Xmodal I2I
+             * @description
+             *     When using CLIP cross-modal similarity, whether to use image-to-image similarity as well or just image-to-text and text-to-text.
+             *
+             * @default true
+             */
+            xmodal_i2i: boolean;
+        };
         /** SingleDBInfo */
         SingleDBInfo: {
             /** Current */
@@ -2760,9 +2981,73 @@ export interface components {
             /** All */
             all: string[];
         };
-        /** StartsWith */
-        StartsWith: {
-            startswith: components["schemas"]["ArgValues"];
+        /** SourceArgs */
+        SourceArgs: {
+            /**
+             * Setter Names
+             * @description The source model names to restrict the search to. These are the models that produced the text.
+             */
+            setter_names?: string[] | null;
+            /**
+             * Languages
+             * @description The source languages to restrict the search to. These are the languages of the text produced by the source models.
+             */
+            languages?: string[] | null;
+            /**
+             * Min Confidence
+             * @description The minimum confidence of the text as given by its source model
+             * @default 0
+             */
+            min_confidence: number;
+            /**
+             * Min Language Confidence
+             * @description The minimum confidence for language detection in the text
+             * @default 0
+             */
+            min_language_confidence: number;
+            /**
+             * Min Length
+             * @description The minimum length of the text in characters
+             * @default 0
+             */
+            min_length: number;
+            /**
+             * Confidence Weight
+             * @description
+             *     The weight to apply to the confidence of the source text
+             *     on the embedding distance aggregation for individual items with multiple embeddings.
+             *     Default is 0.0, which means that the confidence of the source text
+             *     does not affect the distance aggregation.
+             *     This parameter is only relevant when the source text has a confidence value.
+             *     The confidence of the source text is multiplied by the confidence of the other
+             *     source text when calculating the distance between two items.
+             *     The formula for the distance calculation is as follows:
+             *     ```
+             *     weights = POW((COALESCE(main_source_text.confidence, 1) * COALESCE(other_source_text.confidence, 1)), src_confidence_weight)
+             *     distance = SUM(distance * weights) / SUM(weights)
+             *     ```
+             *     So this weight is the exponent to which the confidence is raised, which means that it can be greater than 1.
+             *     When confidence weights are set, the distance_aggregation setting is ignored.
+             *
+             * @default 0
+             */
+            confidence_weight: number;
+            /**
+             * Language Confidence Weight
+             * @description
+             *     The weight to apply to the confidence of the source text language
+             *     on the embedding distance aggregation.
+             *     Default is 0.0, which means that the confidence of the source text language detection
+             *     does not affect the distance calculation.
+             *     Totally analogous to `src_confidence_weight`, but for the language confidence.
+             *     When both are present, the results of the POW() functions for both are multiplied together before being applied to the distance.
+             *     ```
+             *     weights = POW(..., src_confidence_weight) * POW(..., src_language_confidence_weight)
+             *     ```
+             *
+             * @default 0
+             */
+            language_confidence_weight: number;
         };
         /** StatusResponse */
         StatusResponse: {
@@ -2878,11 +3163,6 @@ export interface components {
         TextResponse: {
             /** Text */
             text: components["schemas"]["ExtractedText"][];
-        };
-        /** TypeIn */
-        TypeIn: {
-            /** MIME Type must begin with one of the given strings */
-            type_in: string[];
         };
         /** ValidationError */
         ValidationError: {
