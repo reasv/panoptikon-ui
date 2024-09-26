@@ -3,10 +3,10 @@ import { KeymapComponents } from "./searchQueryKeyMaps"
 
 export function queryFromState(
   state: KeymapComponents
-): Required<components["schemas"]["SearchQuery"]> {
-  const query: Required<components["schemas"]["SearchQuery"]> = {
+): Required<components["schemas"]["PQLQuery"]> {
+  const query: Required<components["schemas"]["PQLQuery"]> = {
     order_args: {
-      ...state.OrderParams,
+      ...state.OrderArgs,
     },
     count: true,
     check_path: true,
@@ -19,21 +19,21 @@ export function queryFromState(
   if (getIsAnyTextEnabled(state)) {
     if (state.SearchQueryOptions.at_e_path) {
       query.query.filters!.any_text!.path = {
-        ...state.ATPathTextFilter,
+        ...state.ATMatchPath,
         query: state.SearchQueryOptions.at_query,
         raw_fts5_match: state.SearchQueryOptions.at_fts5,
       }
     }
     if (state.SearchQueryOptions.at_e_et) {
       query.query!.filters!.any_text!.extracted_text = {
-        ...state.ATExtractedTextFilter,
+        ...state.ATMatchText,
         query: state.SearchQueryOptions.at_query,
         raw_fts5_match: state.SearchQueryOptions.at_fts5,
       }
     }
   }
-  if (state.BookmarksFilter.restrict_to_bookmarks) {
-    query.query!.filters!.bookmarks = { ...state.BookmarksFilter }
+  if (state.InBookmarks.restrict_to_bookmarks) {
+    query.query!.filters!.bookmarks = { ...state.InBookmarks }
   }
   if (getIsPathPrefixEnabled(state)) {
     query.query!.filters!.files = {
@@ -47,29 +47,26 @@ export function queryFromState(
     }
   }
   if (state.SearchQueryOptions.e_tags) {
-    query.query!.tags = state.QueryTagFilters
+    query.query!.tags = state.MatchTags
   }
-  if (
-    state.SearchQueryOptions.e_temb &&
-    state.ExtractedTextEmbeddingsFilter.query
-  ) {
+  if (state.SearchQueryOptions.e_temb && state.SemanticTextSearch.query) {
     query.query!.filters!.extracted_text_embeddings = {
-      ...state.ExtractedTextEmbeddingsFilter,
+      ...state.SemanticTextSearch,
     }
   }
-  if (state.SearchQueryOptions.e_iemb && state.ImageEmbeddingFilter.query) {
+  if (state.SearchQueryOptions.e_iemb && state.SemanticImageSearch.query) {
     query.query!.filters!.image_embeddings = {
-      ...state.ImageEmbeddingFilter,
+      ...state.SemanticImageSearch,
     }
   }
-  if (state.SearchQueryOptions.e_pt && state.PathTextFilter.query) {
+  if (state.SearchQueryOptions.e_pt && state.MatchPath.query) {
     query.query!.filters!.path = {
-      ...state.PathTextFilter,
+      ...state.MatchPath,
     }
   }
-  if (state.SearchQueryOptions.e_et && state.ExtractedTextFilter.query) {
+  if (state.SearchQueryOptions.e_et && state.MatchText.query) {
     query.query!.filters!.extracted_text = {
-      ...state.ExtractedTextFilter,
+      ...state.MatchText,
     }
   }
   query.order_args!.order_by = getOrderBy(state)
@@ -77,7 +74,7 @@ export function queryFromState(
 }
 
 export function getOrderBy(state: KeymapComponents) {
-  const current_order_by = state.OrderParams.order_by
+  const current_order_by = state.OrderArgs.order_by
   const def = "last_modified"
   if (current_order_by === null) {
     return def
@@ -88,7 +85,7 @@ export function getOrderBy(state: KeymapComponents) {
     }
   }
   if (current_order_by === "time_added") {
-    if (!state.BookmarksFilter.restrict_to_bookmarks) {
+    if (!state.InBookmarks.restrict_to_bookmarks) {
       return def
     }
   }

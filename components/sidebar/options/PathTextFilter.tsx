@@ -1,10 +1,10 @@
 
-import { usePathTextFilters, useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
+import { useMatchPath, useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
 import { TextSearchInput } from "@/components/TextSearchInput"
 import { PathFilter } from "../base/PathTextFilter"
 
 export function PathTextFilter() {
-    const [filter, setFilter] = usePathTextFilters()
+    const [filter, setFilter] = useMatchPath()
     const [options, setOptions] = useQueryOptions()
     return (
         <PathFilter
@@ -22,7 +22,7 @@ export function PathTextFilter() {
 }
 
 export function ExtractedTextQueryInput() {
-    const [filter, setFilter] = usePathTextFilters()
+    const [filter, setFilter] = useMatchPath()
     const setFts5Enabled = (value: boolean) => {
         setFilter({ raw_fts5_match: value })
         return true

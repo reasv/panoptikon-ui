@@ -1,4 +1,4 @@
-import { useAnyTextFilterOptions, useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
+import { useATOptions, useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
 import { TextSearchInput } from "./TextSearchInput"
 
 export function SearchBar({
@@ -6,7 +6,7 @@ export function SearchBar({
 }: {
     onSubmit?: () => void
 }) {
-    const anyTextQuery = useAnyTextFilterOptions()
+    const anyTextQuery = useATOptions()
     const [options, setOptions] = useQueryOptions()
     const onEnableSyntax = (enabled: boolean) => {
         setOptions({ at_fts5: enabled })

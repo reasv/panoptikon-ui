@@ -4,79 +4,120 @@ import {
   orderParamsKeyMap,
   tagFiltersKeyMap,
   fileFiltersKeyMap,
-  pathTextFiltersKeyMap,
-  extractedTextFiltersKeyMap,
-  bookmarksFilterKeyMap,
-  extractedTextEmbeddingsFiltersKeyMap,
-  imageEmbeddingsFiltersKeyMap,
+  matchPathKeyMap,
+  matchTextKeyMap,
+  inBookmarksKeyMap,
+  semanticTextSearchKeyMap,
+  semanticImageSearchKeyMap,
   queryOptionsKeyMap,
+  embedArgsKeyMap,
+  sourceTextKeyMap,
   SearchQueryOptions,
-  ATExtractedTextFilter,
-  ATPathTextFilter,
+  ATMatchText,
+  ATMatchPath,
   KeymapComponents,
+  itemSimilarityKeyMap,
+  rrfKeyMap,
 } from "./searchQueryKeyMaps"
 
 import { createScopedSearchParamsCache } from "../nuqsScopedWrappers/scopedQueryParamsCache"
 import { queryFromState } from "./searchQuery"
+import { get } from "http"
 export type SearchParams = Record<string, string | string[] | undefined>
 
 const caches = {
   orderArgs: createSearchParamsCache(orderParamsKeyMap(def as any)),
   queryOptions: createSearchParamsCache(queryOptionsKeyMap(def as any)),
+  embedArgs: createSearchParamsCache(embedArgsKeyMap(def as any)),
 }
 
 export function getOrderArgsCache(
   params: SearchParams
-): KeymapComponents["OrderParams"] {
+): KeymapComponents["OrderArgs"] {
   return caches.orderArgs.parse(params)
 }
+
 export function getQueryOptionsCache(params: SearchParams): SearchQueryOptions {
   return caches.queryOptions.parse(params)
 }
 
+export function getEmbedArgsCache(
+  params: SearchParams
+): KeymapComponents["EmbedArgs"] {
+  return caches.embedArgs.parse(params)
+}
+
 const scopedCaches = {
-  tagFilters: createScopedSearchParamsCache(
-    "tag",
-    tagFiltersKeyMap(def as any)
-  ),
+  matchTags: createScopedSearchParamsCache("tag", tagFiltersKeyMap(def as any)),
   fileFilters: createScopedSearchParamsCache(
     "file",
     fileFiltersKeyMap(def as any)
   ),
-  pathTextFilters: createScopedSearchParamsCache(
-    "path",
-    pathTextFiltersKeyMap(def as any)
-  ),
-  extractedTextFilters: createScopedSearchParamsCache(
-    "et",
-    extractedTextFiltersKeyMap(def as any)
-  ),
-  bookmarksFilter: createScopedSearchParamsCache(
+  matchPath: createScopedSearchParamsCache("path", matchPathKeyMap(def as any)),
+  matchText: createScopedSearchParamsCache("txt", matchTextKeyMap(def as any)),
+  inBookmarks: createScopedSearchParamsCache(
     "bm",
-    bookmarksFilterKeyMap(def as any)
+    inBookmarksKeyMap(def as any)
   ),
-  extractedTextEmbeddingsFilters: createScopedSearchParamsCache(
-    "te",
-    extractedTextEmbeddingsFiltersKeyMap(def as any)
+  semanticTextSearch: createScopedSearchParamsCache(
+    "st",
+    semanticTextSearchKeyMap(def as any)
   ),
-  imageEmbeddingsFilters: createScopedSearchParamsCache(
-    "ie",
-    imageEmbeddingsFiltersKeyMap(def as any)
+  semanticTextSource: createScopedSearchParamsCache(
+    "st.src",
+    sourceTextKeyMap(def as any)
   ),
-  anyTextPathTextFilters: createScopedSearchParamsCache(
+  semanticImageSearch: createScopedSearchParamsCache(
+    "si",
+    semanticImageSearchKeyMap(def as any)
+  ),
+  atMatchPath: createScopedSearchParamsCache(
     "at.path",
-    pathTextFiltersKeyMap(def as any)
+    matchPathKeyMap(def as any)
   ),
-  anyTextExtractedTextFilters: createScopedSearchParamsCache(
-    "at.et",
-    extractedTextFiltersKeyMap(def as any)
+  atMatchText: createScopedSearchParamsCache(
+    "at.txt",
+    matchTextKeyMap(def as any)
+  ),
+  atTextRRF: createScopedSearchParamsCache("at.txt.rrf", rrfKeyMap(def as any)),
+  atPathRRF: createScopedSearchParamsCache(
+    "at.path.rrf",
+    rrfKeyMap(def as any)
+  ),
+  atSemanticTextRRF: createScopedSearchParamsCache(
+    "at.st.rrf",
+    rrfKeyMap(def as any)
+  ),
+  atSemanticImageRRF: createScopedSearchParamsCache(
+    "at.si.rrf",
+    rrfKeyMap(def as any)
+  ),
+  atSemanticText: createScopedSearchParamsCache(
+    "at.st",
+    semanticTextSearchKeyMap(def as any)
+  ),
+  atSemanticTextSource: createScopedSearchParamsCache(
+    "at.st.src",
+    sourceTextKeyMap(def as any)
+  ),
+  atSemanticImage: createScopedSearchParamsCache(
+    "at.si",
+    semanticImageSearchKeyMap(def as any)
+  ),
+  itemSimilarity: createScopedSearchParamsCache(
+    "iss",
+    itemSimilarityKeyMap(def as any)
+  ),
+  itemSimilarityTextSource: createScopedSearchParamsCache(
+    "iss.src",
+    sourceTextKeyMap(def as any)
   ),
 }
 
-export function getTagFiltersCache(
+export function getMatchTagsCache(
   params: SearchParams
-): KeymapComponents["QueryTagFilters"] {
-  return scopedCaches.tagFilters.parse(params)
+): KeymapComponents["MatchTags"] {
+  return scopedCaches.matchTags.parse(params)
 }
 
 export function getFileFiltersCache(
@@ -85,62 +126,102 @@ export function getFileFiltersCache(
   return scopedCaches.fileFilters.parse(params)
 }
 
-export function getPathTextFiltersCache(
+export function getMatchPathCache(
   params: SearchParams
-): KeymapComponents["PathTextFilter"] {
-  return scopedCaches.pathTextFilters.parse(params)
+): KeymapComponents["MatchPath"] {
+  return scopedCaches.matchPath.parse(params)
 }
 
-export function getExtractedTextFiltersCache(
+export function getMatchTextCache(
   params: SearchParams
-): KeymapComponents["ExtractedTextFilter"] {
-  return scopedCaches.extractedTextFilters.parse(params)
+): KeymapComponents["MatchText"] {
+  return scopedCaches.matchText.parse(params)
 }
 
-export function getBookmarksFilterCache(
+export function getInBookmarksCache(
   params: SearchParams
-): KeymapComponents["BookmarksFilter"] {
-  return scopedCaches.bookmarksFilter.parse(params)
+): KeymapComponents["InBookmarks"] {
+  return scopedCaches.inBookmarks.parse(params)
 }
 
-export function getExtractedTextEmbeddingsFiltersCache(
+export function getSemanticTextSearchCache(
   params: SearchParams
-): KeymapComponents["ExtractedTextEmbeddingsFilter"] {
-  return scopedCaches.extractedTextEmbeddingsFilters.parse(params)
+): KeymapComponents["SemanticTextSearch"] {
+  return scopedCaches.semanticTextSearch.parse(params)
 }
 
-export function getImageEmbeddingsFiltersCache(
+export function getSemanticTextSourceCache(
   params: SearchParams
-): KeymapComponents["ImageEmbeddingFilter"] {
-  return scopedCaches.imageEmbeddingsFilters.parse(params)
+): KeymapComponents["SemanticTextSource"] {
+  return scopedCaches.semanticTextSource.parse(params)
 }
 
-export function getAnyTextPathTextFiltersCache(
+export function getSemanticImageSearchCache(
   params: SearchParams
-): ATPathTextFilter {
-  return scopedCaches.anyTextPathTextFilters.parse(params)
+): KeymapComponents["SemanticImageSearch"] {
+  return scopedCaches.semanticImageSearch.parse(params)
+}
+export function getItemSimilaritySearchCache(
+  params: SearchParams
+): KeymapComponents["ItemSimilarity"] {
+  return scopedCaches.itemSimilarity.parse(params)
+}
+export function getItemSimilarityTextSourceCache(
+  params: SearchParams
+): KeymapComponents["ItemSimilarityTextSource"] {
+  return scopedCaches.itemSimilarityTextSource.parse(params)
 }
 
-export function getAnyTextExtractedTextFiltersCache(
+export function getATMatchPathCache(params: SearchParams): ATMatchPath {
+  return scopedCaches.atMatchPath.parse(params)
+}
+
+export function getATMatchTextCache(params: SearchParams): ATMatchText {
+  return scopedCaches.atMatchText.parse(params)
+}
+
+export function getATSemanticTextCache(
   params: SearchParams
-): ATExtractedTextFilter {
-  return scopedCaches.anyTextExtractedTextFilters.parse(params)
+): KeymapComponents["ATSemanticText"] {
+  return scopedCaches.atSemanticText.parse(params)
+}
+
+export function getATSemanticTextSourceCache(
+  params: SearchParams
+): KeymapComponents["ATSourceText"] {
+  return scopedCaches.atSemanticTextSource.parse(params)
+}
+
+export function getATSemanticImageCache(
+  params: SearchParams
+): KeymapComponents["ATSemanticImage"] {
+  return scopedCaches.atSemanticImage.parse(params)
 }
 
 export function getFullQueryCache(params: SearchParams): KeymapComponents {
   return {
-    ExtractedTextFilter: getExtractedTextFiltersCache(params),
-    PathTextFilter: getPathTextFiltersCache(params),
-    OrderParams: getOrderArgsCache(params),
-    QueryTagFilters: getTagFiltersCache(params),
+    MatchText: getMatchTextCache(params),
+    MatchPath: getMatchPathCache(params),
+    OrderArgs: getOrderArgsCache(params),
+    MatchTags: getMatchTagsCache(params),
     FileFilters: getFileFiltersCache(params),
-    BookmarksFilter: getBookmarksFilterCache(params),
-    ExtractedTextEmbeddingsFilter:
-      getExtractedTextEmbeddingsFiltersCache(params),
-    ImageEmbeddingFilter: getImageEmbeddingsFiltersCache(params),
+    InBookmarks: getInBookmarksCache(params),
+    SemanticTextSearch: getSemanticTextSearchCache(params),
+    SemanticTextSource: getSemanticTextSourceCache(params),
+    SemanticImageSearch: getSemanticImageSearchCache(params),
     SearchQueryOptions: getQueryOptionsCache(params),
-    ATExtractedTextFilter: getAnyTextExtractedTextFiltersCache(params),
-    ATPathTextFilter: getAnyTextPathTextFiltersCache(params),
+    EmbedArgs: getEmbedArgsCache(params),
+    ATMatchText: getATMatchTextCache(params),
+    ATTextRRF: scopedCaches.atTextRRF.parse(params),
+    ATMatchPath: getATMatchPathCache(params),
+    ATPathRRF: scopedCaches.atPathRRF.parse(params),
+    ATSemanticText: getATSemanticTextCache(params),
+    ATSemanticTextRRF: scopedCaches.atSemanticTextRRF.parse(params),
+    ATSemanticImage: getATSemanticImageCache(params),
+    ATSemanticImageRRF: scopedCaches.atSemanticImageRRF.parse(params),
+    ATSourceText: getATSemanticTextSourceCache(params),
+    ItemSimilarity: getItemSimilaritySearchCache(params),
+    ItemSimilarityTextSource: getItemSimilarityTextSourceCache(params),
   }
 }
 

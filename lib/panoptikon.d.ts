@@ -75,39 +75,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/search": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Search for files in the database
-         * @description Search for files in the database based on the provided query parameters.
-         *
-         *     The search query takes a `SearchQuery` object as input, which contains all the parameters supported by search.
-         *     Search operates on `files`, which means that results are not unique by `sha256` value.
-         *     The `count` returned in the response is the total number of unique files that match the query.
-         *     There could be zero results even if the `count` is higher than zero,
-         *     if the `page` parameter is set beyond the number of pages available.
-         *
-         *     For semantic search, embeddings should be provided as base64-encoded byte strings in npy format.
-         *     To get the correct embeddings, use the /api/inference/predict endpoint with the correct inference_id.
-         *
-         *     It will return an application/octet-stream response with the embeddings in the correct format, which can be base64-encoded and used in the search query.
-         *
-         *     To get the list of embedding models the data is indexed with, use /api/search/stats and look for setters with "text-embedding" or "clip" type.
-         */
-        post: operations["search_api_search_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/search/pql": {
         parameters: {
             query?: never;
@@ -810,11 +777,6 @@ export interface components {
             /** And  */
             and_: (components["schemas"]["SimilarTo"] | components["schemas"]["InBookmarks"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasDataFrom"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["Match"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"])[];
         };
-        /** AnyTextFilter */
-        AnyTextFilter: {
-            path?: components["schemas"]["PathTextFilter"] | null;
-            extracted_text?: components["schemas"]["ExtractedTextFilter"] | null;
-        };
         /** Body_predict_api_inference_predict__group___inference_id__post */
         Body_predict_api_inference_predict__group___inference_id__post: {
             /**
@@ -880,26 +842,6 @@ export interface components {
         BookmarkUsers: {
             /** Users */
             users: string[];
-        };
-        /** BookmarksFilter */
-        BookmarksFilter: {
-            /**
-             * Restrict To Bookmarks
-             * @default true
-             */
-            restrict_to_bookmarks: boolean;
-            /** Namespaces */
-            namespaces?: string[];
-            /**
-             * User
-             * @default user
-             */
-            user: string;
-            /**
-             * Include Wildcard
-             * @default true
-             */
-            include_wildcard: boolean;
         };
         /** CacheListResponse */
         CacheListResponse: {
@@ -967,42 +909,6 @@ export interface components {
             /** Length */
             length: number;
         };
-        /** ExtractedTextEmbeddingsFilter */
-        ExtractedTextEmbeddingsFilter: {
-            /**
-             * Query
-             * Format: binary
-             */
-            query: string;
-            /** Model */
-            model: string;
-            /** Targets */
-            targets?: string[];
-            /** Languages */
-            languages?: string[];
-            /** Language Min Confidence */
-            language_min_confidence?: number | null;
-            /** Min Confidence */
-            min_confidence?: number | null;
-        };
-        /** ExtractedTextFilter */
-        ExtractedTextFilter: {
-            /** Query */
-            query: string;
-            /** Targets */
-            targets?: string[];
-            /** Languages */
-            languages?: string[];
-            /** Language Min Confidence */
-            language_min_confidence?: number | null;
-            /** Min Confidence */
-            min_confidence?: number | null;
-            /**
-             * Raw Fts5 Match
-             * @default true
-             */
-            raw_fts5_match: boolean;
-        };
         /** ExtractedTextStats */
         ExtractedTextStats: {
             /** Lowest Confidence */
@@ -1011,13 +917,6 @@ export interface components {
             lowest_language_confidence?: number | null;
             /** Languages */
             languages?: string[];
-        };
-        /** FileFilters */
-        FileFilters: {
-            /** Item Types */
-            item_types?: string[];
-            /** Include Path Prefixes */
-            include_path_prefixes?: string[];
         };
         /** FileRecord */
         FileRecord: {
@@ -1083,16 +982,6 @@ export interface components {
         HasUnprocessedData: {
             /** Item must have item_data of given types that has not been processed by the given setter name */
             has_data_unprocessed: components["schemas"]["DerivedDataArgs"];
-        };
-        /** ImageEmbeddingFilter */
-        ImageEmbeddingFilter: {
-            /**
-             * Query
-             * Format: binary
-             */
-            query: string;
-            /** Model */
-            model: string;
         };
         /** InBookmarks */
         InBookmarks: {
@@ -1222,7 +1111,7 @@ export interface components {
              *
              * @default true
              */
-            enable: boolean;
+            filter: boolean;
             /**
              * Bookmark Namespaces
              * @description
@@ -1978,26 +1867,6 @@ export interface components {
              */
             priority: number;
         };
-        /** OrderParams */
-        OrderParams: {
-            /**
-             * Order By
-             * @default last_modified
-             */
-            order_by: ("last_modified" | "path" | "rank_fts" | "rank_path_fts" | "time_added" | "rank_any_text" | "text_vec_distance" | "image_vec_distance") | null;
-            /** Order */
-            order?: ("asc" | "desc") | null;
-            /**
-             * Page
-             * @default 1
-             */
-            page: number;
-            /**
-             * Page Size
-             * @default 10
-             */
-            page_size: number;
-        };
         /** PQLQuery */
         PQLQuery: {
             /** Query */
@@ -2098,58 +1967,6 @@ export interface components {
              */
             check_path: boolean;
         };
-        /** PathTextFilter */
-        PathTextFilter: {
-            /** Query */
-            query: string;
-            /**
-             * Only Match Filename
-             * @default false
-             */
-            only_match_filename: boolean;
-            /**
-             * Raw Fts5 Match
-             * @default true
-             */
-            raw_fts5_match: boolean;
-        };
-        /** QueryFilters */
-        QueryFilters: {
-            files?: components["schemas"]["FileFilters"] | null;
-            path?: components["schemas"]["PathTextFilter"] | null;
-            extracted_text?: components["schemas"]["ExtractedTextFilter"] | null;
-            extracted_text_embeddings?: components["schemas"]["ExtractedTextEmbeddingsFilter"] | null;
-            image_embeddings?: components["schemas"]["ImageEmbeddingFilter"] | null;
-            any_text?: components["schemas"]["AnyTextFilter"] | null;
-            bookmarks?: components["schemas"]["BookmarksFilter"] | null;
-        };
-        /** QueryParams */
-        QueryParams: {
-            tags?: components["schemas"]["QueryTagFilters"];
-            filters?: components["schemas"]["QueryFilters"];
-        };
-        /** QueryTagFilters */
-        QueryTagFilters: {
-            /** Pos Match All */
-            pos_match_all?: string[];
-            /** Pos Match Any */
-            pos_match_any?: string[];
-            /** Neg Match Any */
-            neg_match_any?: string[];
-            /** Neg Match All */
-            neg_match_all?: string[];
-            /**
-             * All Setters Required
-             * @default false
-             */
-            all_setters_required: boolean;
-            /** Setters */
-            setters?: string[];
-            /** Namespaces */
-            namespaces?: string[];
-            /** Min Confidence */
-            min_confidence?: number | null;
-        };
         /** RRF */
         RRF: {
             /**
@@ -2181,21 +1998,6 @@ export interface components {
             count: number;
             /** Results */
             results: components["schemas"]["FileSearchResult"][];
-        };
-        /** SearchQuery */
-        SearchQuery: {
-            query?: components["schemas"]["QueryParams"];
-            order_args?: components["schemas"]["OrderParams"];
-            /**
-             * Count
-             * @default true
-             */
-            count: boolean;
-            /**
-             * Check Path
-             * @default false
-             */
-            check_path: boolean;
         };
         /** SearchResult */
         SearchResult: {
@@ -3208,51 +3010,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["OpenResponse"];
                 };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    search_api_search_post: {
-        parameters: {
-            query?: {
-                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
-                index_db?: string | null;
-                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
-                user_data_db?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["SearchQuery"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FileSearchResultModel"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description Validation Error */
             422: {

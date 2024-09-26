@@ -1,7 +1,7 @@
 import { Label } from "../../ui/label"
 import { Input } from "../../ui/input"
 import { FilterContainer } from "../base/FilterContainer"
-import { useAnyTextExtractedTextFilters, useAnyTextPathTextFilters, useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
+import { useATMatchText, useATMatchPath, useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
 import { PathFilter } from "../base/PathTextFilter"
 import { TextFilter } from "../base/TextFilter"
 
@@ -43,7 +43,7 @@ export function AnyTextFilter() {
 }
 
 function AnyTextPathFilter() {
-    const [filter, setFilter] = useAnyTextPathTextFilters()
+    const [filter, setFilter] = useATMatchPath()
     const [options, setOptions] = useQueryOptions()
 
     return (
@@ -58,7 +58,7 @@ function AnyTextPathFilter() {
 
 function AnyTextETFilter() {
     const [options, setOptions] = useQueryOptions()
-    const [filter, setFilter] = useAnyTextExtractedTextFilters()
+    const [filter, setFilter] = useATMatchText()
 
     return <TextFilter
         enable={options.at_e_et}

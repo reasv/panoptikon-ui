@@ -1,10 +1,10 @@
 
-import { useExtractedTextFilters, useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
+import { useMatchText, useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
 import { TextSearchInput } from "@/components/TextSearchInput"
 import { TextFilter } from "../base/TextFilter"
 
 export function ExtractedTextFilter() {
-    const [filter, setFilter] = useExtractedTextFilters()
+    const [filter, setFilter] = useMatchText()
     const [options, setOptions] = useQueryOptions()
     return (
         <TextFilter
@@ -22,7 +22,7 @@ export function ExtractedTextFilter() {
 }
 
 export function ExtractedTextQueryInput() {
-    const [filter, setFilter] = useExtractedTextFilters()
+    const [filter, setFilter] = useMatchText()
     const setFts5Enabled = (value: boolean) => {
         setFilter({ raw_fts5_match: value })
         return true

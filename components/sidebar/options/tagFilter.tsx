@@ -7,13 +7,13 @@ import { useSelectedDBs } from "@/lib/state/database";
 import { ReactNode, useEffect, useRef, useState } from "react";
 import { components } from "@/lib/panoptikon";
 import { TagAutoComplete } from "@/components/tagInput";
-import { Nullable, useQueryOptions, useTagFilter } from "@/lib/state/searchQuery/clientHooks";
+import { Nullable, useQueryOptions, useMatchTags } from "@/lib/state/searchQuery/clientHooks";
 import { SwitchFilter } from "../base/SwitchFilter";
 
 type TagFilterUpdate = Nullable<Partial<components["schemas"]["QueryTagFilters"]>>
 type TagFilterType = Required<components["schemas"]["QueryTagFilters"]>
 export function TagFilter() {
-    const [tagFilter, setTagFilter] = useTagFilter()
+    const [tagFilter, setTagFilter] = useMatchTags()
     const [options, setOptions] = useQueryOptions()
 
     function setTagFilterWrapper(newTagFilter: TagFilterUpdate) {

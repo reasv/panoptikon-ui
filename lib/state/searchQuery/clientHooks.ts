@@ -6,18 +6,24 @@ import {
   orderParamsKeyMap,
   tagFiltersKeyMap,
   fileFiltersKeyMap,
-  pathTextFiltersKeyMap,
-  extractedTextFiltersKeyMap,
-  bookmarksFilterKeyMap,
-  extractedTextEmbeddingsFiltersKeyMap,
-  imageEmbeddingsFiltersKeyMap,
+  matchPathKeyMap,
+  matchTextKeyMap,
+  inBookmarksKeyMap,
+  semanticTextSearchKeyMap,
+  semanticImageSearchKeyMap,
   queryOptionsKeyMap,
   SearchQueryOptions,
-  ATExtractedTextFilter,
-  ATPathTextFilter,
+  ATMatchText,
+  ATMatchPath,
   AnyTextFilterOptions,
   KeymapComponents,
   embedArgsKeyMap,
+  ATSemanticText,
+  ATSourceText,
+  sourceTextKeyMap,
+  ATSemanticImage,
+  itemSimilarityKeyMap,
+  rrfKeyMap,
 } from "./searchQueryKeyMaps"
 import { useScopedQueryStates } from "../nuqsScopedWrappers/scopedQueryStates"
 import { getOrderBy, queryFromState } from "./searchQuery"
@@ -34,13 +40,13 @@ export type SetFn<T> = (
 ) => Promise<URLSearchParams>
 
 export function useOrderArgs(): [
-  KeymapComponents["OrderParams"],
-  SetFn<KeymapComponents["OrderParams"]>
+  KeymapComponents["OrderArgs"],
+  SetFn<KeymapComponents["OrderArgs"]>
 ] {
   const [state, set] = useQueryStates(orderParamsKeyMap(def as any))
   return [state, set] as [
-    KeymapComponents["OrderParams"],
-    SetFn<KeymapComponents["OrderParams"]>
+    KeymapComponents["OrderArgs"],
+    SetFn<KeymapComponents["OrderArgs"]>
   ]
 }
 
@@ -68,9 +74,9 @@ export function useQueryOptions(): [
   return [state, set] as const
 }
 
-export function useTagFilter(): [
-  KeymapComponents["QueryTagFilters"],
-  SetFn<KeymapComponents["QueryTagFilters"]>
+export function useMatchTags(): [
+  KeymapComponents["MatchTags"],
+  SetFn<KeymapComponents["MatchTags"]>
 ] {
   const [state, set] = useScopedQueryStates("tag", tagFiltersKeyMap(def as any))
   return [state, set] as const
@@ -87,111 +93,199 @@ export function useFileFilters(): [
   return [state, set] as const
 }
 
-export function usePathTextFilters(): [
-  KeymapComponents["PathTextFilter"],
-  SetFn<KeymapComponents["PathTextFilter"]>
+export function useMatchPath(): [
+  KeymapComponents["MatchPath"],
+  SetFn<KeymapComponents["MatchPath"]>
 ] {
-  const [state, set] = useScopedQueryStates(
-    "path",
-    pathTextFiltersKeyMap(def as any)
-  )
+  const [state, set] = useScopedQueryStates("path", matchPathKeyMap(def as any))
   return [state, set] as const
 }
 
-export function useExtractedTextFilters(): [
-  KeymapComponents["ExtractedTextFilter"],
-  SetFn<KeymapComponents["ExtractedTextFilter"]>
+export function useMatchText(): [
+  KeymapComponents["MatchText"],
+  SetFn<KeymapComponents["MatchText"]>
 ] {
-  const [state, set] = useScopedQueryStates(
-    "et",
-    extractedTextFiltersKeyMap(def as any)
-  )
+  const [state, set] = useScopedQueryStates("txt", matchTextKeyMap(def as any))
   return [state, set] as const
 }
 
 export function useBookmarksFilter(): [
-  KeymapComponents["BookmarksFilter"],
-  SetFn<KeymapComponents["BookmarksFilter"]>
+  KeymapComponents["InBookmarks"],
+  SetFn<KeymapComponents["InBookmarks"]>
+] {
+  const [state, set] = useScopedQueryStates("bm", inBookmarksKeyMap(def as any))
+  return [state, set] as const
+}
+
+export function useSemanticTextSearch(): [
+  KeymapComponents["SemanticTextSearch"],
+  SetFn<KeymapComponents["SemanticTextSearch"]>
 ] {
   const [state, set] = useScopedQueryStates(
-    "bm",
-    bookmarksFilterKeyMap(def as any)
+    "st",
+    semanticTextSearchKeyMap(def as any)
+  )
+  return [state, set] as const
+}
+export function useSemanticTextSource(): [
+  KeymapComponents["SemanticTextSource"],
+  SetFn<KeymapComponents["SemanticTextSource"]>
+] {
+  const [state, set] = useScopedQueryStates(
+    "st.src",
+    sourceTextKeyMap(def as any)
   )
   return [state, set] as const
 }
 
-export function useExtractedTextEmbeddingsFilters(): [
-  KeymapComponents["ExtractedTextEmbeddingsFilter"],
-  SetFn<KeymapComponents["ExtractedTextEmbeddingsFilter"]>
+export function useSemanticImageSearch(): [
+  KeymapComponents["SemanticImageSearch"],
+  SetFn<KeymapComponents["SemanticImageSearch"]>
 ] {
   const [state, set] = useScopedQueryStates(
-    "te",
-    extractedTextEmbeddingsFiltersKeyMap(def as any)
+    "si",
+    semanticImageSearchKeyMap(def as any)
   )
   return [state, set] as const
 }
 
-export function useImageEmbeddingsFilters(): [
-  KeymapComponents["ImageEmbeddingFilter"],
-  SetFn<KeymapComponents["ImageEmbeddingFilter"]>
-] {
-  const [state, set] = useScopedQueryStates(
-    "ie",
-    imageEmbeddingsFiltersKeyMap(def as any)
-  )
-  return [state, set] as const
-}
-
-export function useAnyTextPathTextFilters(): [
-  ATPathTextFilter,
-  SetFn<ATPathTextFilter>
-] {
+export function useATMatchPath(): [ATMatchPath, SetFn<ATMatchPath>] {
   const [state, set] = useScopedQueryStates(
     "at.path",
-    pathTextFiltersKeyMap(def as any)
+    matchPathKeyMap(def as any)
   )
   return [state, set] as const
 }
 
-export function useAnyTextExtractedTextFilters(): [
-  ATExtractedTextFilter,
-  SetFn<ATExtractedTextFilter>
+export function useATMatchText(): [ATMatchText, SetFn<ATMatchText>] {
+  const [state, set] = useScopedQueryStates(
+    "at.txt",
+    matchTextKeyMap(def as any)
+  )
+  return [state, set] as const
+}
+
+export function useATSemanticText(): [ATSemanticText, SetFn<ATSemanticText>] {
+  const [state, set] = useScopedQueryStates(
+    "at.st",
+    semanticTextSearchKeyMap(def as any)
+  )
+  return [state, set] as const
+}
+
+export function useATSemanticTextSrc(): [ATSourceText, SetFn<ATSourceText>] {
+  const [state, set] = useScopedQueryStates(
+    "at.st.src",
+    sourceTextKeyMap(def as any)
+  )
+  return [state, set] as const
+}
+export function useATSemanticImage(): [
+  ATSemanticImage,
+  SetFn<ATSemanticImage>
 ] {
   const [state, set] = useScopedQueryStates(
-    "at.et",
-    extractedTextFiltersKeyMap(def as any)
+    "at.si",
+    semanticImageSearchKeyMap(def as any)
   )
   return [state, set] as const
 }
 
-export function useAnyTextFilterOptions(): AnyTextFilterOptions {
+export function useATTextRRF(): [
+  KeymapComponents["ATTextRRF"],
+  SetFn<KeymapComponents["ATTextRRF"]>
+] {
+  const [state, set] = useScopedQueryStates("at.txt.rrf", rrfKeyMap(def as any))
+  return [state, set] as const
+}
+
+export function useATPathRRF(): [
+  KeymapComponents["ATPathRRF"],
+  SetFn<KeymapComponents["ATPathRRF"]>
+] {
+  const [state, set] = useScopedQueryStates(
+    "at.path.rrf",
+    rrfKeyMap(def as any)
+  )
+  return [state, set] as const
+}
+
+export function useATSemanticTextRRF(): [
+  KeymapComponents["ATSemanticTextRRF"],
+  SetFn<KeymapComponents["ATSemanticTextRRF"]>
+] {
+  const [state, set] = useScopedQueryStates("at.st.rrf", rrfKeyMap(def as any))
+  return [state, set] as const
+}
+
+export function useSemanticImageRRF(): [
+  KeymapComponents["ATSemanticImageRRF"],
+  SetFn<KeymapComponents["ATSemanticImageRRF"]>
+] {
+  const [state, set] = useScopedQueryStates("at.si.rrf", rrfKeyMap(def as any))
+  return [state, set] as const
+}
+
+export function useItemSimilaritySearch(): [
+  KeymapComponents["ItemSimilarity"],
+  SetFn<KeymapComponents["ItemSimilarity"]>
+] {
+  const [state, set] = useScopedQueryStates(
+    "iss",
+    itemSimilarityKeyMap(def as any)
+  )
+  return [state, set] as const
+}
+
+export function useItemSimilarityTextSource(): [
+  KeymapComponents["SemanticTextSource"],
+  SetFn<KeymapComponents["SemanticTextSource"]>
+] {
+  const [state, set] = useScopedQueryStates(
+    "iss.src",
+    sourceTextKeyMap(def as any)
+  )
+  return [state, set] as const
+}
+
+export function useATOptions(): AnyTextFilterOptions {
   const [options, setOptions] = useQueryOptions()
-  const [pathTextFilters, setPathTextFilters] = useAnyTextPathTextFilters()
-  const [etFilters, setEtFilters] = useAnyTextExtractedTextFilters()
+  const [pathTextFilters, setPathTextFilters] = useATMatchPath()
+  const [etFilters, setEtFilters] = useATMatchText()
   return {
     query: options.at_query,
     raw_fts5_match: options.at_fts5,
     enable_path_filter: options.at_e_path,
-    enable_et_filter: options.at_e_et,
+    enable_txt_filter: options.at_e_txt,
     path_filter: pathTextFilters,
-    et_filter: etFilters,
+    txt_filter: etFilters,
   }
 }
 
 export const useSearchQueryState = () => {
   const keymapComponents: KeymapComponents = {
     EmbedArgs: useEmbedArgs()[0],
-    ExtractedTextFilter: useExtractedTextFilters()[0],
-    PathTextFilter: usePathTextFilters()[0],
-    OrderParams: useOrderArgs()[0],
-    QueryTagFilters: useTagFilter()[0],
+    MatchText: useMatchText()[0],
+    MatchPath: useMatchPath()[0],
+    OrderArgs: useOrderArgs()[0],
+    MatchTags: useMatchTags()[0],
     FileFilters: useFileFilters()[0],
-    BookmarksFilter: useBookmarksFilter()[0],
-    ExtractedTextEmbeddingsFilter: useExtractedTextEmbeddingsFilters()[0],
-    ImageEmbeddingFilter: useImageEmbeddingsFilters()[0],
+    InBookmarks: useBookmarksFilter()[0],
+    SemanticTextSearch: useSemanticTextSearch()[0],
+    SemanticTextSource: useSemanticTextSource()[0],
+    SemanticImageSearch: useSemanticImageSearch()[0],
     SearchQueryOptions: useQueryOptions()[0],
-    ATExtractedTextFilter: useAnyTextExtractedTextFilters()[0],
-    ATPathTextFilter: useAnyTextPathTextFilters()[0],
+    ATMatchText: useATMatchText()[0],
+    ATTextRRF: useATTextRRF()[0],
+    ATMatchPath: useATMatchPath()[0],
+    ATPathRRF: useATPathRRF()[0],
+    ATSemanticText: useATSemanticText()[0],
+    ATSemanticTextRRF: useATSemanticTextRRF()[0],
+    ATSourceText: useATSemanticTextSrc()[0],
+    ATSemanticImage: useATSemanticImage()[0],
+    ATSemanticImageRRF: useSemanticImageRRF()[0],
+    ItemSimilarity: useItemSimilaritySearch()[0],
+    ItemSimilarityTextSource: useItemSimilarityTextSource()[0],
   }
   return keymapComponents
 }
@@ -206,22 +300,34 @@ export const useOrderBy = () => {
 
 export const useResetSearchQueryState = () => {
   const setters = [
-    useExtractedTextFilters()[1],
-    useExtractedTextFilters()[1],
-    usePathTextFilters()[1],
+    useMatchText()[1],
+    useMatchText()[1],
+    useMatchPath()[1],
     useOrderArgs()[1],
-    useTagFilter()[1],
+    useMatchTags()[1],
     useFileFilters()[1],
     useBookmarksFilter()[1],
-    useExtractedTextEmbeddingsFilters()[1],
-    useImageEmbeddingsFilters()[1],
+    useSemanticTextSearch()[1],
+    useSemanticImageSearch()[1],
     useQueryOptions()[1],
-    useAnyTextExtractedTextFilters()[1],
-    useAnyTextPathTextFilters()[1],
+    useATMatchText()[1],
+    useATMatchPath()[1],
+    useATSemanticText()[1],
+    useATSemanticTextSrc()[1],
+    useATSemanticImage()[1],
+    useEmbedArgs()[1],
+    useSemanticTextSource()[1],
+    useItemSimilaritySearch()[1],
+    useItemSimilarityTextSource()[1],
+    useATTextRRF()[1],
+    useATPathRRF()[1],
+    useATSemanticTextRRF()[1],
+    useSemanticImageRRF()[1],
   ]
   return () => {
     for (const setter of setters) {
-      setter(null)
+      // @ts-ignore
+      setter(null) // @ts-ignore
     }
   }
 }

@@ -5,42 +5,63 @@ import {
   orderParamsKeyMap,
   tagFiltersKeyMap,
   fileFiltersKeyMap,
-  pathTextFiltersKeyMap,
-  extractedTextFiltersKeyMap,
-  bookmarksFilterKeyMap,
-  extractedTextEmbeddingsFiltersKeyMap,
-  imageEmbeddingsFiltersKeyMap,
+  matchPathKeyMap,
+  matchTextKeyMap,
+  inBookmarksKeyMap,
+  semanticTextSearchKeyMap,
+  semanticImageSearchKeyMap,
   queryOptionsKeyMap,
+  embedArgsKeyMap,
+  sourceTextKeyMap,
+  itemSimilarityKeyMap,
+  rrfKeyMap,
 } from "./searchQueryKeyMaps"
 import { createScopedSerializer } from "../nuqsScopedWrappers/scopedSerializer"
 import { ReadonlyURLSearchParams } from "next/navigation"
 
 export const serializers = {
+  embedArgs: createSerializer(embedArgsKeyMap(def)),
   orderArgs: createSerializer(orderParamsKeyMap(def)),
   queryOptions: createSerializer(queryOptionsKeyMap(def)),
-  tagFilters: createScopedSerializer("tag", tagFiltersKeyMap(def)),
+  matchTags: createScopedSerializer("tag", tagFiltersKeyMap(def)),
   fileFilters: createScopedSerializer("file", fileFiltersKeyMap(def)),
-  pathTextFilters: createScopedSerializer("path", pathTextFiltersKeyMap(def)),
-  extractedTextFilters: createScopedSerializer(
-    "et",
-    extractedTextFiltersKeyMap(def)
+  matchPath: createScopedSerializer("path", matchPathKeyMap(def)),
+  matchText: createScopedSerializer("txt", matchTextKeyMap(def)),
+  inBookmarks: createScopedSerializer("bm", inBookmarksKeyMap(def)),
+  semanticTextSearch: createScopedSerializer(
+    "st",
+    semanticTextSearchKeyMap(def)
   ),
-  bookmarksFilter: createScopedSerializer("bm", bookmarksFilterKeyMap(def)),
-  extractedTextEmbeddingsFilters: createScopedSerializer(
-    "te",
-    extractedTextEmbeddingsFiltersKeyMap(def)
+  semanticTextSource: createScopedSerializer("st.src", sourceTextKeyMap(def)),
+  semanticImageSearch: createScopedSerializer(
+    "si",
+    semanticImageSearchKeyMap(def)
   ),
-  imageEmbeddingsFilters: createScopedSerializer(
-    "ie",
-    imageEmbeddingsFiltersKeyMap(def)
+  itemSimilaritySearch: createScopedSerializer(
+    "iss",
+    itemSimilarityKeyMap(def)
   ),
-  anyTextPathTextFilters: createScopedSerializer(
-    "at.path",
-    pathTextFiltersKeyMap(def)
+  itemSimilarityTextSource: createScopedSerializer(
+    "iss.src",
+    sourceTextKeyMap(def)
   ),
-  anyTextExtractedTextFilters: createScopedSerializer(
-    "at.et",
-    extractedTextFiltersKeyMap(def)
+  atMatchPath: createScopedSerializer("at.path", matchPathKeyMap(def)),
+  atTextRRF: createScopedSerializer("at.txt.rrf", rrfKeyMap(def)),
+  atPathRRF: createScopedSerializer("at.path.rrf", rrfKeyMap(def)),
+  atSemanticTextRRF: createScopedSerializer("at.st.rrf", rrfKeyMap(def)),
+  atSemanticImageRRF: createScopedSerializer("at.si.rrf", rrfKeyMap(def)),
+  atMatchText: createScopedSerializer("at.txt", matchTextKeyMap(def)),
+  atSemanticText: createScopedSerializer(
+    "at.st",
+    semanticTextSearchKeyMap(def)
+  ),
+  atSemanticTextSource: createScopedSerializer(
+    "at.st.src",
+    sourceTextKeyMap(def)
+  ),
+  atSemanticImage: createScopedSerializer(
+    "at.si",
+    semanticImageSearchKeyMap(def)
   ),
 }
 

@@ -1,9 +1,23 @@
 import { components } from "@/lib/panoptikon"
+import { distance } from "framer-motion"
+import { Target } from "lucide-react"
 import def from "nuqs/server"
 
-export type OrderArgsType = components["schemas"]["OrderParams"]
+export type OrderArgsType = Omit<
+  components["schemas"]["OrderArgs"],
+  "priority"
+> & {
+  page: number
+  page_size: number
+}
 export type orderByType = Exclude<OrderArgsType["order_by"], null>
 export type orderType = Exclude<OrderArgsType["order"], null | undefined>
+
+export type distanceAggregation =
+  components["schemas"]["SemanticTextArgs"]["distance_aggregation"]
+
+export type distanceFunction =
+  components["schemas"]["SimilarityArgs"]["distance_function"]
 const applyOptionsToMap = <T extends Record<string, any>>(
   map: T
 ): {
@@ -22,12 +36,9 @@ export const orderParamsKeyMap = (p: typeof def) =>
       .parseAsStringEnum<orderByType>([
         "last_modified",
         "path",
-        "rank_fts",
-        "rank_path_fts",
         "time_added",
-        "rank_any_text",
-        "text_vec_distance",
-        "image_vec_distance",
+        "size",
+        "type",
       ])
       .withDefault("last_modified"),
     order: p.parseAsStringEnum<orderType>(["asc", "desc"]),
@@ -56,61 +67,120 @@ export const embedArgsKeyMap = (p: typeof def) =>
 export const fileFiltersKeyMap = (p: typeof def) =>
   applyOptionsToMap({
     item_types: p.parseAsArrayOf(p.parseAsString).withDefault([]),
-    include_path_prefixes: p.parseAsArrayOf(p.parseAsString).withDefault([]),
+    paths: p.parseAsArrayOf(p.parseAsString).withDefault([]),
+    exclude_paths: p.parseAsArrayOf(p.parseAsString).withDefault([]),
   })
 
-export const pathTextFiltersKeyMap = (p: typeof def) =>
+export const matchPathKeyMap = (p: typeof def) =>
   applyOptionsToMap({
-    query: p.parseAsString.withDefault(""),
-    only_match_filename: p.parseAsBoolean.withDefault(false),
+    match: p.parseAsString.withDefault(""),
+    filename_only: p.parseAsBoolean.withDefault(false),
     raw_fts5_match: p.parseAsBoolean.withDefault(false),
   })
 
-export const extractedTextFiltersKeyMap = (p: typeof def) =>
+export const matchTextKeyMap = (p: typeof def) =>
   applyOptionsToMap({
-    query: p.parseAsString.withDefault(""),
-    targets: p.parseAsArrayOf(p.parseAsString).withDefault([]),
+    match: p.parseAsString.withDefault(""),
+    setters: p.parseAsArrayOf(p.parseAsString).withDefault([]),
     languages: p.parseAsArrayOf(p.parseAsString).withDefault([]),
-    language_min_confidence: p.parseAsFloat.withDefault(0),
+    min_language_confidence: p.parseAsFloat.withDefault(0),
     min_confidence: p.parseAsFloat.withDefault(0),
     raw_fts5_match: p.parseAsBoolean.withDefault(false),
+    min_length: p.parseAsInteger.withDefault(0),
+    max_length: p.parseAsInteger.withDefault(0),
+    select_snippet_as: p.parseAsString.withDefault(""),
+    s_max_len: p.parseAsInteger.withDefault(30),
+    s_ellipsis: p.parseAsString.withDefault("..."),
+    s_start_tag: p.parseAsString.withDefault("<b>"),
+    s_end_tag: p.parseAsString.withDefault("</b>"),
+    filter_only: p.parseAsBoolean.withDefault(false),
   })
 
-export const bookmarksFilterKeyMap = (p: typeof def) =>
+export const inBookmarksKeyMap = (p: typeof def) =>
   applyOptionsToMap({
-    restrict_to_bookmarks: p.parseAsBoolean.withDefault(false),
+    filter: p.parseAsBoolean.withDefault(false),
     namespaces: p.parseAsArrayOf(p.parseAsString).withDefault([]),
+    sub_ns: p.parseAsBoolean.withDefault(false),
     user: p.parseAsString.withDefault("user"),
     include_wildcard: p.parseAsBoolean.withDefault(true),
   })
 
-export const extractedTextEmbeddingsFiltersKeyMap = (p: typeof def) =>
+export const semanticTextSearchKeyMap = (p: typeof def) =>
   applyOptionsToMap({
     query: p.parseAsString.withDefault(""),
     model: p.parseAsString.withDefault(""),
-    targets: p.parseAsArrayOf(p.parseAsString).withDefault([]),
-    languages: p.parseAsArrayOf(p.parseAsString).withDefault([]),
-    language_min_confidence: p.parseAsFloat.withDefault(0),
-    min_confidence: p.parseAsFloat.withDefault(0),
+    distance_aggregation: p
+      .parseAsStringEnum<distanceAggregation>(["MIN", "MAX", "AVG"])
+      .withDefault("MIN"),
   })
 
-export const imageEmbeddingsFiltersKeyMap = (p: typeof def) =>
+export const sourceTextKeyMap = (p: typeof def) =>
+  applyOptionsToMap({
+    setters: p.parseAsArrayOf(p.parseAsString).withDefault([]),
+    languages: p.parseAsArrayOf(p.parseAsString).withDefault([]),
+    min_language_confidence: p.parseAsFloat.withDefault(0),
+    min_confidence: p.parseAsFloat.withDefault(0),
+    raw_fts5_match: p.parseAsBoolean.withDefault(false),
+    min_length: p.parseAsInteger.withDefault(0),
+    max_length: p.parseAsInteger.withDefault(0),
+    confidence_weight: p.parseAsFloat.withDefault(0),
+    language_confidence_weight: p.parseAsFloat.withDefault(0),
+  })
+
+export const semanticImageSearchKeyMap = (p: typeof def) =>
   applyOptionsToMap({
     query: p.parseAsString.withDefault(""),
     model: p.parseAsString.withDefault(""),
+    distance_aggregation: p
+      .parseAsStringEnum<distanceAggregation>(["MIN", "MAX", "AVG"])
+      .withDefault("MIN"),
+    clip_xmodal: p.parseAsBoolean.withDefault(false),
+  })
+
+export const itemSimilarityKeyMap = (p: typeof def) =>
+  applyOptionsToMap({
+    target: p.parseAsString.withDefault(""),
+    model: p.parseAsString.withDefault(""),
+    distance_aggregation: p
+      .parseAsStringEnum<distanceAggregation>(["MIN", "MAX", "AVG"])
+      .withDefault("MIN"),
+    distance_function: p
+      .parseAsStringEnum<distanceFunction>(["COSINE", "L2"])
+      .withDefault("COSINE"),
+    clip_xmodal: p.parseAsBoolean.withDefault(false),
+    xmodal_t2t: p.parseAsBoolean.withDefault(true),
+    xmodal_i2i: p.parseAsBoolean.withDefault(true),
+  })
+
+export const filterSortKeyMap = (p: typeof def) =>
+  applyOptionsToMap({
+    order_by: p.parseAsBoolean.withDefault(false),
+    direction: p
+      .parseAsStringEnum<orderType>(["asc", "desc"])
+      .withDefault("asc"),
+    row_n: p.parseAsBoolean.withDefault(false),
+    row_n_direction: p
+      .parseAsStringEnum<orderType>(["asc", "desc"])
+      .withDefault("asc"),
+  })
+
+export const rrfKeyMap = (p: typeof def) =>
+  applyOptionsToMap({
+    k: p.parseAsInteger.withDefault(0),
+    weight: p.parseAsFloat.withDefault(0),
   })
 
 export const queryOptionsKeyMap = (p: typeof def) =>
   applyOptionsToMap({
     e_tags: p.parseAsBoolean.withDefault(false),
     e_path: p.parseAsBoolean.withDefault(false),
-    e_et: p.parseAsBoolean.withDefault(false),
+    e_txt: p.parseAsBoolean.withDefault(false),
     e_pt: p.parseAsBoolean.withDefault(false),
     e_mime: p.parseAsBoolean.withDefault(false),
     e_iemb: p.parseAsBoolean.withDefault(false),
     e_temb: p.parseAsBoolean.withDefault(false),
     at_e_path: p.parseAsBoolean.withDefault(true),
-    at_e_et: p.parseAsBoolean.withDefault(true),
+    at_e_txt: p.parseAsBoolean.withDefault(true),
     at_query: p.parseAsString.withDefault(""),
     at_fts5: p.parseAsBoolean.withDefault(false),
     s_enable: p.parseAsBoolean.withDefault(true),
@@ -120,45 +190,87 @@ export interface SearchQueryOptions {
   e_tags: boolean
   e_path: boolean
   e_pt: boolean
-  e_et: boolean
+  e_txt: boolean
   e_mime: boolean
   e_iemb: boolean
   e_temb: boolean
   at_e_path: boolean
-  at_e_et: boolean
+  at_e_txt: boolean
   at_query: string
   at_fts5: boolean
   s_enable: boolean
 }
-export type ATExtractedTextFilter = Required<
-  Omit<components["schemas"]["ExtractedTextFilter"], "query" | "raw_fts5_match">
+export type ATMatchText = Required<
+  Omit<components["schemas"]["MatchTextArgs"], "match" | "raw_fts5_match">
 >
-export type ATPathTextFilter = Required<
-  Omit<components["schemas"]["PathTextFilter"], "query" | "raw_fts5_match">
+export type ATMatchPath = Required<
+  Omit<components["schemas"]["MatchPathArgs"], "match" | "raw_fts5_match">
 >
+
+export type ATSemanticText = Required<
+  Omit<
+    components["schemas"]["SemanticTextArgs"],
+    "query" | "embed" | "src_text"
+  >
+>
+export type ATSemanticImage = Required<
+  Omit<
+    components["schemas"]["SemanticImageArgs"],
+    "query" | "embed" | "src_text"
+  >
+>
+export type ATEmbedArgs = Required<components["schemas"]["EmbedArgs"]>
+export type ATSourceText = Required<components["schemas"]["SourceArgs"]>
 export interface AnyTextFilterOptions {
   query: string
   raw_fts5_match: boolean
   enable_path_filter: boolean
-  enable_et_filter: boolean
-  path_filter: ATPathTextFilter
-  et_filter: ATExtractedTextFilter
+  enable_txt_filter: boolean
+  path_filter: ATMatchPath
+  txt_filter: ATMatchText
 }
 
+export interface FileFilters {
+  item_types: string[]
+  paths: string[]
+  exclude_paths: string[]
+}
+
+type tagsArgs = components["schemas"]["TagsArgs"]
+export type MatchTagsArgs = Omit<tagsArgs, "tags" | "match_any"> & {
+  pos_match_all: string[]
+  pos_match_any: string[]
+  neg_match_any: string[]
+  neg_match_all: string[]
+}
 // Wrap the types in Required<>
 export type KeymapComponents = {
-  ExtractedTextFilter: Required<components["schemas"]["ExtractedTextFilter"]>
+  MatchText: Required<components["schemas"]["MatchTextArgs"]>
   EmbedArgs: Required<components["schemas"]["EmbedArgs"]>
-  PathTextFilter: Required<components["schemas"]["PathTextFilter"]>
-  OrderParams: Required<components["schemas"]["OrderParams"]>
-  QueryTagFilters: Required<components["schemas"]["QueryTagFilters"]>
-  FileFilters: Required<components["schemas"]["FileFilters"]>
-  BookmarksFilter: Required<components["schemas"]["BookmarksFilter"]>
-  ExtractedTextEmbeddingsFilter: Required<
-    components["schemas"]["ExtractedTextEmbeddingsFilter"]
+  InBookmarks: Required<components["schemas"]["InBookmarksArgs"]>
+  MatchPath: Required<components["schemas"]["MatchPathArgs"]>
+  OrderArgs: Required<OrderArgsType>
+  MatchTags: Required<MatchTagsArgs>
+  FileFilters: FileFilters
+  SemanticTextSearch: Required<
+    Omit<components["schemas"]["SemanticTextArgs"], "embed" | "src_text">
   >
-  ImageEmbeddingFilter: Required<components["schemas"]["ImageEmbeddingFilter"]>
-  SearchQueryOptions: Required<SearchQueryOptions>
-  ATExtractedTextFilter: ATExtractedTextFilter
-  ATPathTextFilter: ATPathTextFilter
+  SemanticTextSource: Required<components["schemas"]["SourceArgs"]>
+  SemanticImageSearch: Required<
+    Omit<components["schemas"]["SemanticImageArgs"], "embed" | "src_text">
+  >
+  ItemSimilarity: Required<
+    Omit<components["schemas"]["SimilarityArgs"], "embed" | "src_text">
+  >
+  ItemSimilarityTextSource: Required<components["schemas"]["SourceArgs"]>
+  SearchQueryOptions: Required<Omit<SearchQueryOptions, "src_text">>
+  ATMatchText: ATMatchText
+  ATTextRRF: Required<components["schemas"]["RRF"]>
+  ATMatchPath: ATMatchPath
+  ATPathRRF: Required<components["schemas"]["RRF"]>
+  ATSemanticText: ATSemanticText
+  ATSemanticTextRRF: Required<components["schemas"]["RRF"]>
+  ATSemanticImage: ATSemanticImage
+  ATSemanticImageRRF: Required<components["schemas"]["RRF"]>
+  ATSourceText: ATSourceText
 }
