@@ -10,7 +10,7 @@ export interface SearchQueryArgs {
   params: {
     query: queryParams
   }
-  body: components["schemas"]["SearchQuery"]
+  body: components["schemas"]["PQLQuery"]
 }
 
 export interface SimilarityQueryArgs {
@@ -25,7 +25,7 @@ export interface SimilarityQueryArgs {
 
 export async function fetchSearch(args: SearchQueryArgs) {
   try {
-    const { data, error } = await serverFetchClient.POST("/api/search", {
+    const { data, error } = await serverFetchClient.POST("/api/search/pql", {
       params: args.params,
       body: args.body,
     })

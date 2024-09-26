@@ -75,22 +75,24 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const isClient = typeof window !== "undefined"
   const searchQuery = isClient
     ? useSearchQuery()
-    : (initialQuery.body as Required<components["schemas"]["SearchQuery"]>)
+    : (initialQuery.body as Required<components["schemas"]["PQLQuery"]>)
   const dbs = isClient ? useSelectedDBs()[0] : initialQuery.params.query
   const [page, setPage] = useSearchPage()
-  const pageSize = searchQuery.order_args.page_size
+  const pageSize = searchQuery.page_size
   const searchEnabled = useQueryOptions()[0].s_enable
   const instantSearch = useInstantSearch((state) => state.enabled)
   const [mode, _] = useSearchMode()
   const { data, error, isError, refetch, isFetching } = $api.useQuery(
     "post",
-    "/api/search",
+    "/api/search/pql",
     {
       params: {
         query: dbs,
       },
       body: {
         ...searchQuery,
+        results: true,
+        count: false,
       },
     },
     {
@@ -98,12 +100,40 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
       placeholderData: keepPreviousData,
     }
   )
-  const nResults = data?.count || 0
+  const countQuery = $api.useQuery(
+    "post",
+    "/api/search/pql",
+    {
+      params: {
+        query: dbs,
+      },
+      body: {
+        ...searchQuery,
+        page: 1,
+        results: false,
+        count: true,
+      },
+    },
+    {
+      enabled: searchEnabled && instantSearch && mode === Mode.Search,
+      placeholderData: keepPreviousData,
+    }
+  )
+
+  const refetchAll = async () => {
+    await refetch()
+    await countQuery.refetch()
+  }
+
+  const nResults = countQuery.data?.count || 0
   return {
-    data,
+    data: {
+      ...data,
+      count: nResults,
+    },
     error,
     isError,
-    refetch,
+    refetch: refetchAll,
     isFetching,
     nResults,
     page,
