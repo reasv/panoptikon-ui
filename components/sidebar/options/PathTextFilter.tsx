@@ -28,8 +28,8 @@ export function ExtractedTextQueryInput() {
         return true
     }
     return <TextSearchInput
-        textQuery={filter.query}
-        setTextQuery={(value) => setFilter({ query: value })}
+        textQuery={filter.match}
+        setTextQuery={(value) => setFilter({ match: value })}
         fts5Enabled={filter.raw_fts5_match}
         setFts5Enabled={setFts5Enabled}
         noClearSearch

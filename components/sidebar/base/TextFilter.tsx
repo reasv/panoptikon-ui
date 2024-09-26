@@ -16,8 +16,8 @@ export function TextFilter({
 }: {
     enable: boolean,
     setEnable: (value: boolean) => void,
-    filter: KeymapComponents["ATExtractedTextFilter"] | KeymapComponents["ExtractedTextFilter"],
-    setFilter: SetFn<KeymapComponents["ATExtractedTextFilter"] | KeymapComponents["ExtractedTextFilter"]>
+    filter: KeymapComponents["ATMatchText"] | KeymapComponents["MatchText"],
+    setFilter: SetFn<KeymapComponents["ATMatchText"] | KeymapComponents["MatchText"]>
     children?: React.ReactNode
 }) {
     const [dbs, ___] = useSelectedDBs()
@@ -52,8 +52,8 @@ export function TextFilter({
                 <MultiBoxResponsive
                     options={textTargets}
                     resetValue="*" // Reset value is the value that will clear the selection
-                    currentValues={filter.targets}
-                    onSelectionChange={(value) => setFilter({ targets: value })}
+                    currentValues={filter.setters}
+                    onSelectionChange={(value) => setFilter({ setters: value })}
                     maxDisplayed={3}
                     placeholder="Targets..."
                 />
@@ -76,8 +76,8 @@ export function TextFilter({
             </div>
             <ConfidenceFilter
                 label={<span>Language Confidence Threshold</span>}
-                confidence={filter.language_min_confidence || 0}
-                setConfidence={(value) => setFilter({ language_min_confidence: value })}
+                confidence={filter.min_language_confidence || 0}
+                setConfidence={(value) => setFilter({ min_language_confidence: value })}
                 description={<span>Minimum confidence for language detection</span>}
             />
         </div>

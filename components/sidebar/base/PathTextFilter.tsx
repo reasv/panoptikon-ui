@@ -13,8 +13,8 @@ export function PathFilter({
 }: {
     enable: boolean,
     setEnable: (value: boolean) => void,
-    filter: KeymapComponents["ATPathTextFilter"] | KeymapComponents["PathTextFilter"],
-    setFilter: SetFn<KeymapComponents["ATPathTextFilter"] | KeymapComponents["PathTextFilter"]>
+    filter: KeymapComponents["ATMatchPath"] | KeymapComponents["MatchPath"],
+    setFilter: SetFn<KeymapComponents["MatchPath"] | KeymapComponents["ATMatchPath"]>
     children?: React.ReactNode
 }) {
     const onOptionSelected = (option: string | null) => {
@@ -22,9 +22,9 @@ export function PathFilter({
             return
         }
         if (option === "true") {
-            setFilter({ only_match_filename: true })
+            setFilter({ filename_only: true })
         } else {
-            setFilter({ only_match_filename: false })
+            setFilter({ filename_only: false })
         }
     }
     return (
@@ -47,7 +47,7 @@ export function PathFilter({
                         { value: "true", label: "Filename Only" },
                         { value: "false", label: "Full Path" },
                     ]}
-                    currentValue={filter.only_match_filename ? "true" : "false"}
+                    currentValue={filter.filename_only ? "true" : "false"}
                     onChangeValue={onOptionSelected}
                     placeholder="Filename or Path..."
                 />

@@ -27,11 +27,11 @@ export function PathPrefixFilter() {
 
     function addNewCustomPath() {
         if (inputValue === '') return
-        if (!fileFilters.include_path_prefixes.includes(inputValue)) {
+        if (!fileFilters.paths.includes(inputValue)) {
             if (!customPaths.includes(inputValue)) {
                 addCustomPath(inputValue)
             }
-            setFileFilters({ include_path_prefixes: [...fileFilters.include_path_prefixes, inputValue] })
+            setFileFilters({ paths: [...fileFilters.paths, inputValue] })
         }
         setInputValue('')
     }
@@ -49,7 +49,7 @@ export function PathPrefixFilter() {
         ...(customPaths || []),
     ]));
     function onRemoveCustomPath(value: string) {
-        setFileFilters({ include_path_prefixes: fileFilters.include_path_prefixes.filter((t) => t !== value) })
+        setFileFilters({ paths: fileFilters.paths.filter((t) => t !== value) })
         removeCustomPath(value)
     }
     const isCustom = (path: string) => (!(data?.folders || []).includes(path)) && path !== "*"
@@ -82,9 +82,9 @@ export function PathPrefixFilter() {
                         value: "*",
                         label: "Any Path Allowed"
                     }]}
-                    currentValues={fileFilters.include_path_prefixes}
+                    currentValues={fileFilters.paths}
                     onSelectionChange={(values) => setFileFilters({
-                        include_path_prefixes: values
+                        paths: values
                     })}
                     placeholder="Select groups"
                     resetValue="*"

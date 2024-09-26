@@ -26,8 +26,8 @@ export function BookmarksFilter() {
                         Only show items that are in your bookmarks
                     </div>
                 </div>
-                <Switch checked={bookmarksFilter.restrict_to_bookmarks} onCheckedChange={(value) => setBookmarksFilter({
-                    restrict_to_bookmarks: value
+                <Switch checked={bookmarksFilter.filter} onCheckedChange={(value) => setBookmarksFilter({
+                    filter: value
                 })} />
             </div>
             <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">

@@ -61,8 +61,8 @@ function AnyTextETFilter() {
     const [filter, setFilter] = useATMatchText()
 
     return <TextFilter
-        enable={options.at_e_et}
-        setEnable={(value) => setOptions({ at_e_et: value })}
+        enable={options.at_e_txt}
+        setEnable={(value) => setOptions({ at_e_txt: value })}
         filter={filter}
         setFilter={setFilter}
     />

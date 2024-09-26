@@ -9,9 +9,10 @@ import { components } from "@/lib/panoptikon";
 import { TagAutoComplete } from "@/components/tagInput";
 import { Nullable, useQueryOptions, useMatchTags } from "@/lib/state/searchQuery/clientHooks";
 import { SwitchFilter } from "../base/SwitchFilter";
+import { KeymapComponents, MatchTagsArgs } from "@/lib/state/searchQuery/searchQueryKeyMaps";
 
-type TagFilterUpdate = Nullable<Partial<components["schemas"]["QueryTagFilters"]>>
-type TagFilterType = Required<components["schemas"]["QueryTagFilters"]>
+type TagFilterUpdate = Nullable<Partial<KeymapComponents["MatchTags"]>>
+type TagFilterType = Required<KeymapComponents["MatchTags"]>
 export function TagFilter() {
     const [tagFilter, setTagFilter] = useMatchTags()
     const [options, setOptions] = useQueryOptions()
