@@ -174,6 +174,7 @@ export const queryOptionsKeyMap = (p: typeof def) =>
   applyOptionsToMap({
     e_tags: p.parseAsBoolean.withDefault(false),
     e_path: p.parseAsBoolean.withDefault(false),
+    e_path_neg: p.parseAsBoolean.withDefault(false),
     e_txt: p.parseAsBoolean.withDefault(false),
     e_pt: p.parseAsBoolean.withDefault(false),
     e_mime: p.parseAsBoolean.withDefault(false),
@@ -181,14 +182,18 @@ export const queryOptionsKeyMap = (p: typeof def) =>
     e_temb: p.parseAsBoolean.withDefault(false),
     at_e_path: p.parseAsBoolean.withDefault(true),
     at_e_txt: p.parseAsBoolean.withDefault(true),
+    at_e_st: p.parseAsBoolean.withDefault(false),
+    at_e_si: p.parseAsBoolean.withDefault(false),
     at_query: p.parseAsString.withDefault(""),
     at_fts5: p.parseAsBoolean.withDefault(false),
+    e_iss: p.parseAsBoolean.withDefault(false),
     s_enable: p.parseAsBoolean.withDefault(true),
   })
 
 export interface SearchQueryOptions {
   e_tags: boolean
   e_path: boolean
+  e_path_neg: boolean
   e_pt: boolean
   e_txt: boolean
   e_mime: boolean
@@ -196,8 +201,11 @@ export interface SearchQueryOptions {
   e_temb: boolean
   at_e_path: boolean
   at_e_txt: boolean
+  at_e_st: boolean
+  at_e_si: boolean
   at_query: string
   at_fts5: boolean
+  e_iss: boolean
   s_enable: boolean
 }
 export type ATMatchText = Required<
