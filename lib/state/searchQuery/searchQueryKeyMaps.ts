@@ -166,8 +166,8 @@ export const filterSortKeyMap = (p: typeof def) =>
 
 export const rrfKeyMap = (p: typeof def) =>
   applyOptionsToMap({
-    k: p.parseAsInteger.withDefault(0),
-    weight: p.parseAsFloat.withDefault(0),
+    k: p.parseAsInteger.withDefault(5),
+    weight: p.parseAsFloat.withDefault(1),
   })
 
 export const queryOptionsKeyMap = (p: typeof def) =>
