@@ -73,6 +73,7 @@ function AnyTextETFilter() {
     const [filter, setFilter] = useATMatchText()
     const [rrf, setRRF] = useATTextRRF()
     return <TextFilter
+        storageKey="et_filters"
         enable={options.at_e_txt}
         setEnable={(value) => setOptions({ at_e_txt: value })}
         filter={filter}

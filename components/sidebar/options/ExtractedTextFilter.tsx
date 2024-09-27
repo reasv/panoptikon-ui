@@ -12,6 +12,7 @@ export function ExtractedTextFilter() {
             setEnable={(value) => setOptions({ e_txt: value })}
             filter={filter}
             setFilter={setFilter}
+            storageKey="e_txt_filters"
             children={
                 <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-center">
                     <ExtractedTextQueryInput />
