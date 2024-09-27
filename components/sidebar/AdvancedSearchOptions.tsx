@@ -37,8 +37,6 @@ export function SearchOptions() {
                 <AnyTextFilter />
                 <ExclusiveFilters />
                 <TagFilter />
-                <ImgEmbSearch />
-                <TextEmbSearch />
                 <ItemSimilarityWrapper />
                 <ModelOptions />
             </>

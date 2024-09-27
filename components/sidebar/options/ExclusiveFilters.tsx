@@ -3,6 +3,7 @@ import { PathPrefixFilter } from "./PathPrefixFilter"
 import { FilterContainer } from "../base/FilterContainer"
 import { PathTextFilter } from "./PathTextFilter";
 import { ExtractedTextFilter } from "./ExtractedTextFilter";
+import { ImgEmbSearch, TextEmbSearch } from "./EmbeddingFilters";
 
 export function ExclusiveFilters() {
     return (
@@ -18,6 +19,8 @@ export function ExclusiveFilters() {
             <MimeTypeFilter />
             <PathTextFilter />
             <ExtractedTextFilter />
+            <ImgEmbSearch />
+            <TextEmbSearch />
         </FilterContainer>
     );
 }

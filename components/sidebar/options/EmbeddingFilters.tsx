@@ -22,7 +22,7 @@ export function TextEmbSearch() {
                     placeholder={"Semantic Text Search"}
                     value={filter.query}
                     onChange={(e) => setFilter({ query: e.target.value })}
-                    className="flex-grow"
+                    className="flex-grow mt-4"
                 />
             }
         />
@@ -44,7 +44,7 @@ export function ImgEmbSearch() {
                     placeholder={"Semantic Image Search"}
                     value={filter.query}
                     onChange={(e) => setFilter({ query: e.target.value })}
-                    className="flex-grow"
+                    className="flex-grow mt-4"
                 />
             }
         />
