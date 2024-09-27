@@ -12,6 +12,7 @@ import { Mode, useSearchMode } from "@/lib/state/searchMode"
 import { useItemSimilarityOptions } from "@/lib/state/similarityQuery/clientHooks"
 import { SimilarityQueryType } from "@/lib/state/similarityQuery/similarityQueryKeyMaps"
 import { ModelOptions } from "./options/ModelOptions"
+import { ImgEmbSearch, TextEmbSearch } from "./options/EmbeddingFilters"
 
 export function SearchOptions() {
     const [mode, setMode] = useSearchMode()
@@ -35,6 +36,8 @@ export function SearchOptions() {
                 <AnyTextFilter />
                 <ExclusiveFilters />
                 <TagFilter />
+                <ImgEmbSearch />
+                <TextEmbSearch />
                 <ModelOptions />
             </>
             }

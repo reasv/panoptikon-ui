@@ -269,7 +269,9 @@ export type KeymapComponents = {
   SemanticTextSearch: Required<
     Omit<components["schemas"]["SemanticTextArgs"], "embed" | "src_text">
   >
-  SemanticTextSource: Required<components["schemas"]["SourceArgs"]>
+  SemanticTextSource: NonNullableProps<
+    Required<components["schemas"]["SourceArgs"]>
+  >
   SemanticImageSearch: Required<
     Omit<components["schemas"]["SemanticImageArgs"], "embed" | "src_text">
   >
