@@ -6,13 +6,15 @@ import { SetFn } from "@/lib/state/searchQuery/clientHooks"
 export function RRFParams({
     rrf,
     setRrf,
+    storageKey
 }: {
+    storageKey: string,
     rrf: components["schemas"]["RRF"]
     setRrf: SetFn<components["schemas"]["RRF"]>
 }) {
     return (
         <FilterContainer
-            storageKey="rrf"
+            storageKey={storageKey}
             label={<span>Reciprocal Rank Fusion</span>}
             description={
                 <span>Used when &gt;1 flex filters are enabled</span>

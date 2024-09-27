@@ -59,6 +59,7 @@ function AnyTextPathFilter() {
             setFilter={setFilter}
             children={
                 <RRFParams
+                    storageKey="pathrrf"
                     rrf={rrf}
                     setRrf={setRRF}
                 />
@@ -78,6 +79,7 @@ function AnyTextETFilter() {
         setFilter={setFilter}
         children={
             <RRFParams
+                storageKey="etrrf"
                 rrf={rrf}
                 setRrf={setRRF}
             />
@@ -97,6 +99,7 @@ function AnyTextImageEmbeddingSearch() {
             setFilter={setFilter}
             children={
                 <RRFParams
+                    storageKey="si_rrf"
                     rrf={rrf}
                     setRrf={setRRF}
                 />
@@ -120,6 +123,7 @@ function AnyTextSemanticTextSearch() {
             setSrcFilter={setSrcFilter}
             children={
                 <RRFParams
+                    storageKey="st_rrf"
                     rrf={rrf}
                     setRrf={setRRF}
                 />
