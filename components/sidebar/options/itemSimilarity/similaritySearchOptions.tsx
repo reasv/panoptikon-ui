@@ -71,7 +71,7 @@ export function ItemSimilaritySearch({
                     options={models}
                     currentValue={filter.model}
                     onChangeValue={(value) => setFilter({ model: value })}
-                    placeholder="Model..."
+                    placeholder="Select a Model..."
                 />
             </div>
             <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
