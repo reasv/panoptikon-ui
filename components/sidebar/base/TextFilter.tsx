@@ -80,6 +80,18 @@ export function TextFilter({
                 setConfidence={(value) => setFilter({ min_language_confidence: value })}
                 description={<span>Minimum confidence for language detection</span>}
             />
+            <ConfidenceFilter
+                label={<span>Mininum Length</span>}
+                confidence={filter.min_length || 0}
+                setConfidence={(value) => setFilter({ min_length: value })}
+                description={<span>Minimum characters in text</span>}
+            />
+            <ConfidenceFilter
+                label={<span>Maximum Length</span>}
+                confidence={filter.max_length || 0}
+                setConfidence={(value) => setFilter({ max_length: value })}
+                description={<span>Maximum characters in text</span>}
+            />
         </div>
     )
 }
