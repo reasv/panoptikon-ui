@@ -1,9 +1,11 @@
 import { Label } from "../../ui/label"
 import { Input } from "../../ui/input"
 import { FilterContainer } from "../base/FilterContainer"
-import { useATMatchText, useATMatchPath, useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
+import { useATMatchText, useATMatchPath, useQueryOptions, useATSemanticImage, useATSemanticText, useATSemanticTextSrc } from "@/lib/state/searchQuery/clientHooks"
 import { PathFilter } from "../base/PathTextFilter"
 import { TextFilter } from "../base/TextFilter"
+import { ImageEmbeddingSearch } from "../base/ImageEmbeddingsSearch"
+import { TextEmbeddingSearch } from "../base/TextEmbeddingSearch"
 
 export function AnyTextFilter() {
     const [options, _] = useQueryOptions()
@@ -38,6 +40,8 @@ export function AnyTextFilter() {
             </div>
             <AnyTextPathFilter />
             <AnyTextETFilter />
+            <AnyTextImageEmbeddingSearch />
+            <AnyTextSemanticTextSearch />
         </FilterContainer>
     )
 }
@@ -66,4 +70,35 @@ function AnyTextETFilter() {
         filter={filter}
         setFilter={setFilter}
     />
+}
+
+function AnyTextImageEmbeddingSearch() {
+    const [filter, setFilter] = useATSemanticImage()
+    const [options, setOptions] = useQueryOptions()
+
+    return (
+        <ImageEmbeddingSearch
+            enable={options.at_e_si}
+            setEnable={(value) => setOptions({ at_e_si: value })}
+            filter={filter}
+            setFilter={setFilter}
+        />
+    )
+}
+
+function AnyTextSemanticTextSearch() {
+    const [filter, setFilter] = useATSemanticText()
+    const [srcFilter, setSrcFilter] = useATSemanticTextSrc()
+    const [options, setOptions] = useQueryOptions()
+
+    return (
+        <TextEmbeddingSearch
+            enable={options.at_e_st}
+            setEnable={(value) => setOptions({ at_e_st: value })}
+            filter={filter}
+            setFilter={setFilter}
+            srcFilter={srcFilter}
+            setSrcFilter={setSrcFilter}
+        />
+    )
 }

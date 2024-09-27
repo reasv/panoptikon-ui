@@ -208,6 +208,9 @@ export interface SearchQueryOptions {
   e_iss: boolean
   s_enable: boolean
 }
+type NonNullableProps<T> = {
+  [P in keyof T]: NonNullable<T[P]>
+}
 export type ATMatchText = Required<
   Omit<components["schemas"]["MatchTextArgs"], "match" | "raw_fts5_match">
 >
@@ -227,8 +230,11 @@ export type ATSemanticImage = Required<
     "query" | "embed" | "src_text"
   >
 >
+
 export type ATEmbedArgs = Required<components["schemas"]["EmbedArgs"]>
-export type ATSourceText = Required<components["schemas"]["SourceArgs"]>
+export type ATSourceText = NonNullableProps<
+  Required<components["schemas"]["SourceArgs"]>
+>
 export interface AnyTextFilterOptions {
   query: string
   raw_fts5_match: boolean
