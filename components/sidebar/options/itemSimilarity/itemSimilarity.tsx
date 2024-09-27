@@ -5,25 +5,40 @@ import { Input } from "postcss"
 import { ItemSimilaritySearch } from "./similaritySearchOptions"
 import { ComboBoxResponsive } from "@/components/combobox"
 import { SimilarityTarget } from "./similarityTarget"
+import { $api } from "@/lib/api"
+import { useSelectedDBs } from "@/lib/state/database"
 
 
 export function ItemSimilarityWrapper() {
     const [options, setOptions] = useQueryOptions()
     const [filter, setFilter] = useItemSimilaritySearch()
     const [srcFilter, setSrcFilter] = useItemSimilarityTextSource()
+    const [dbs, ___] = useSelectedDBs()
+    const { data } = $api.useQuery("get", "/api/search/stats", {
+        params: {
+            query: dbs
+        }
+    })
+
     const onDistanceFunctionSelected = (option: string | null) => {
         if (option === null) {
             return
         }
+        const models = [...(
+            data?.setters
+                .filter((setter) => setter[0] === (option === "L2" ? "text-embedding" : "clip"))
+                .map((setter) => ({ value: setter[1], label: setter[1] })) || [])
+        ]
+        const model = models.length > 0 ? models[0].value : ""
         if (option === "L2") {
-            setFilter({ distance_function: "L2", model: "" }, { history: "push" })
+            setFilter({ distance_function: "L2", model }, { history: "push" })
         } else if (option === "COSINE") {
-            setFilter({ distance_function: "COSINE", model: "" }, { history: "push" })
+            setFilter({ distance_function: "COSINE", model }, { history: "push" })
         }
     }
     return (
         <FilterContainer
-            storageKey="flexibleSearchContainer" // Add a storageKey prop to make the localStorage key unique
+            storageKey="itemSimilarityFilterContainer" // Add a storageKey prop to make the localStorage key unique
             label={<span>Similarity Search</span>}
             description={
                 <span>Find items similar to a target item</span>
