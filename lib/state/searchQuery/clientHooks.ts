@@ -218,7 +218,7 @@ export function useATSemanticTextRRF(): [
   return [state, set] as const
 }
 
-export function useSemanticImageRRF(): [
+export function useATSemanticImageRRF(): [
   KeymapComponents["ATSemanticImageRRF"],
   SetFn<KeymapComponents["ATSemanticImageRRF"]>
 ] {
@@ -283,7 +283,7 @@ export const useSearchQueryState = () => {
     ATSemanticTextRRF: useATSemanticTextRRF()[0],
     ATSourceText: useATSemanticTextSrc()[0],
     ATSemanticImage: useATSemanticImage()[0],
-    ATSemanticImageRRF: useSemanticImageRRF()[0],
+    ATSemanticImageRRF: useATSemanticImageRRF()[0],
     ItemSimilarity: useItemSimilaritySearch()[0],
     ItemSimilarityTextSource: useItemSimilarityTextSource()[0],
   }
@@ -322,7 +322,7 @@ export const useResetSearchQueryState = () => {
     useATTextRRF()[1],
     useATPathRRF()[1],
     useATSemanticTextRRF()[1],
-    useSemanticImageRRF()[1],
+    useATSemanticImageRRF()[1],
   ]
   return () => {
     for (const setter of setters) {

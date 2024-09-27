@@ -1,11 +1,12 @@
 import { Label } from "../../ui/label"
 import { Input } from "../../ui/input"
 import { FilterContainer } from "../base/FilterContainer"
-import { useATMatchText, useATMatchPath, useQueryOptions, useATSemanticImage, useATSemanticText, useATSemanticTextSrc } from "@/lib/state/searchQuery/clientHooks"
+import { useATMatchText, useATMatchPath, useQueryOptions, useATSemanticImage, useATSemanticText, useATSemanticTextSrc, useATPathRRF, useATTextRRF, useATSemanticTextRRF, useATSemanticImageRRF } from "@/lib/state/searchQuery/clientHooks"
 import { PathFilter } from "../base/PathTextFilter"
 import { TextFilter } from "../base/TextFilter"
 import { ImageEmbeddingSearch } from "../base/ImageEmbeddingsSearch"
 import { TextEmbeddingSearch } from "../base/TextEmbeddingSearch"
+import { RRFParams } from "../base/RRFWeights"
 
 export function AnyTextFilter() {
     const [options, _] = useQueryOptions()
@@ -49,13 +50,19 @@ export function AnyTextFilter() {
 function AnyTextPathFilter() {
     const [filter, setFilter] = useATMatchPath()
     const [options, setOptions] = useQueryOptions()
-
+    const [rrf, setRRF] = useATPathRRF()
     return (
         <PathFilter
             enable={options.at_e_path}
             setEnable={(value) => setOptions({ at_e_path: value })}
             filter={filter}
             setFilter={setFilter}
+            children={
+                <RRFParams
+                    rrf={rrf}
+                    setRrf={setRRF}
+                />
+            }
         />
     )
 }
@@ -63,25 +70,37 @@ function AnyTextPathFilter() {
 function AnyTextETFilter() {
     const [options, setOptions] = useQueryOptions()
     const [filter, setFilter] = useATMatchText()
-
+    const [rrf, setRRF] = useATTextRRF()
     return <TextFilter
         enable={options.at_e_txt}
         setEnable={(value) => setOptions({ at_e_txt: value })}
         filter={filter}
         setFilter={setFilter}
+        children={
+            <RRFParams
+                rrf={rrf}
+                setRrf={setRRF}
+            />
+        }
     />
 }
 
 function AnyTextImageEmbeddingSearch() {
     const [filter, setFilter] = useATSemanticImage()
+    const [rrf, setRRF] = useATSemanticImageRRF()
     const [options, setOptions] = useQueryOptions()
-
     return (
         <ImageEmbeddingSearch
             enable={options.at_e_si}
             setEnable={(value) => setOptions({ at_e_si: value })}
             filter={filter}
             setFilter={setFilter}
+            children={
+                <RRFParams
+                    rrf={rrf}
+                    setRrf={setRRF}
+                />
+            }
         />
     )
 }
@@ -90,7 +109,7 @@ function AnyTextSemanticTextSearch() {
     const [filter, setFilter] = useATSemanticText()
     const [srcFilter, setSrcFilter] = useATSemanticTextSrc()
     const [options, setOptions] = useQueryOptions()
-
+    const [rrf, setRRF] = useATSemanticTextRRF()
     return (
         <TextEmbeddingSearch
             enable={options.at_e_st}
@@ -99,6 +118,12 @@ function AnyTextSemanticTextSearch() {
             setFilter={setFilter}
             srcFilter={srcFilter}
             setSrcFilter={setSrcFilter}
+            children={
+                <RRFParams
+                    rrf={rrf}
+                    setRrf={setRRF}
+                />
+            }
         />
     )
 }

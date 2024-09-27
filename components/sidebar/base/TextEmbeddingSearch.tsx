@@ -7,6 +7,7 @@ import { SetFn } from "@/lib/state/searchQuery/clientHooks"
 import { KeymapComponents } from "@/lib/state/searchQuery/searchQueryKeyMaps"
 import { ConfidenceFilter } from "../options/confidenceFilter"
 import { ComboBoxResponsive } from "@/components/combobox"
+import { SrcTextFilter } from "./SrcTextFilter"
 
 export function TextEmbeddingSearch({
     enable,
@@ -31,13 +32,6 @@ export function TextEmbeddingSearch({
             query: dbs
         }
     })
-
-    const textTargets = [{ value: "*", label: "All Sources" }, ...(
-        data?.setters
-            .filter((setter) => setter[0] === "text")
-            .map((setter) => ({ value: setter[1], label: setter[1] })) || [])
-    ]
-
     const models = [...(
         data?.setters
             .filter((setter) => setter[0] === "text-embedding")
@@ -55,7 +49,6 @@ export function TextEmbeddingSearch({
             setFilter({ distance_aggregation: "AVG" })
         }
     }
-    const textLanguages = [{ value: "*", label: "All Languages" }, ...(data?.text_stats.languages || []).map(lang => ({ value: lang, label: lang }))]
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
             <div className="flex flex-row items-center justify-between">
@@ -90,38 +83,7 @@ export function TextEmbeddingSearch({
                     placeholder="Distance Aggregation..."
                 />
             </div>
-            <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
-                <MultiBoxResponsive
-                    options={textTargets}
-                    resetValue="*" // Reset value is the value that will clear the selection
-                    currentValues={srcFilter.setters}
-                    onSelectionChange={(value) => setSrcFilter({ setters: value })}
-                    maxDisplayed={3}
-                    placeholder="Targets..."
-                />
-            </div>
-            <ConfidenceFilter
-                label={<span>Confidence Threshold</span>}
-                confidence={srcFilter.min_confidence || 0}
-                setConfidence={(value) => setSrcFilter({ min_confidence: value })}
-                description={<span>Minimum confidence for the extracted text</span>}
-            />
-            <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
-                <MultiBoxResponsive
-                    options={textLanguages}
-                    resetValue="*" // Reset value is the value that will clear the selection
-                    currentValues={srcFilter.languages}
-                    onSelectionChange={(value) => setSrcFilter({ languages: value })}
-                    maxDisplayed={3}
-                    placeholder="Languages..."
-                />
-            </div>
-            <ConfidenceFilter
-                label={<span>Language Confidence Threshold</span>}
-                confidence={srcFilter.min_language_confidence || 0}
-                setConfidence={(value) => setSrcFilter({ min_language_confidence: value })}
-                description={<span>Minimum confidence for language detection</span>}
-            />
+            <SrcTextFilter filter={srcFilter} setFilter={setSrcFilter} />
         </div>
     )
 }

@@ -56,6 +56,7 @@ export function ImageEmbeddingSearch({
                 </div>
                 <Switch checked={enable} onCheckedChange={(value) => setEnable(value)} />
             </div>
+            {children}
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
                 <ComboBoxResponsive
                     options={models}
@@ -76,7 +77,6 @@ export function ImageEmbeddingSearch({
                     placeholder="Distance Aggregation..."
                 />
             </div>
-            {children}
         </div>
     )
 }
