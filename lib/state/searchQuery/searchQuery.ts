@@ -275,6 +275,12 @@ export function queryFromState(
     state.ItemSimilarity.target.length > 0 &&
     state.ItemSimilarity.model.length > 0
   ) {
+    let src_text = sourceFilters(state.ItemSimilarityTextSource)
+    if (state.ItemSimilarity.distance_function === "COSINE") {
+      if (!state.ItemSimilarity.clip_xmodal) {
+        src_text = null
+      }
+    }
     const searchItemSimilarity: components["schemas"]["SimilarTo"] = {
       order_by: sort_iss,
       direction: iss_match_asc ? "asc" : "desc",
@@ -283,7 +289,7 @@ export function queryFromState(
       row_n: false,
       similar_to: {
         ...state.ItemSimilarity,
-        src_text: sourceFilters(state.ItemSimilarityTextSource),
+        src_text,
       },
     }
     queryFilters.and_.push(searchItemSimilarity)
@@ -328,28 +334,31 @@ export function getOrderBy(state: KeymapComponents) {
 
 function sourceFilters(source: components["schemas"]["SourceArgs"]) {
   // If none of the filters are enabled, return null
-  if (source.confidence_weight) {
+  if (source.confidence_weight && source.confidence_weight !== 0) {
     return source
   }
-  if (source.confidence_weight) {
+  if (
+    source.language_confidence_weight &&
+    source.language_confidence_weight !== 0
+  ) {
     return source
   }
-  if (source.languages) {
+  if (source.languages && source.languages.length > 0) {
     return source
   }
-  if (source.max_length) {
+  if (source.max_length && source.max_length > 0) {
     return source
   }
-  if (source.min_length) {
+  if (source.min_length && source.min_length > 0) {
     return source
   }
-  if (source.min_language_confidence) {
+  if (source.min_language_confidence && source.min_language_confidence > 0) {
     return source
   }
-  if (source.min_confidence) {
+  if (source.min_confidence && source.min_confidence > 0) {
     return source
   }
-  if (source.setters) {
+  if (source.setters && source.setters.length > 0) {
     return source
   }
   return null
