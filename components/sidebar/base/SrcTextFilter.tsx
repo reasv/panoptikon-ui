@@ -10,7 +10,9 @@ import { SetFn } from "@/lib/state/searchQuery/clientHooks"
 export function SrcTextFilter({
     filter,
     setFilter,
+    storageKey
 }: {
+    storageKey: string,
     filter: components["schemas"]["SourceArgs"] | ATSourceText
     setFilter: SetFn<components["schemas"]["SourceArgs"] | ATSourceText>
 }) {
@@ -22,7 +24,7 @@ export function SrcTextFilter({
     const languageOptions = textLanguages.map((setter) => ({ value: setter, label: setter === "*" ? "All Languages" : setter }))
     return (
         <FilterContainer
-            storageKey="source-text-filter"
+            storageKey={storageKey}
             label={<span>Text Filters</span>}
             description={
                 <span>Filter the source text for text embeddings</span>

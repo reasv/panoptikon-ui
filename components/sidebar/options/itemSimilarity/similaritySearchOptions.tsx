@@ -116,6 +116,7 @@ export function ItemSimilaritySearch({
             }
             {textOptions &&
                 <SrcTextFilter
+                    storageKey="similarityTextSourceFilter"
                     filter={srcFilter}
                     setFilter={setSrcFilter}
                 />}

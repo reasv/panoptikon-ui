@@ -83,7 +83,11 @@ export function TextEmbeddingSearch({
                     placeholder="Distance Aggregation..."
                 />
             </div>
-            <SrcTextFilter filter={srcFilter} setFilter={setSrcFilter} />
+            <SrcTextFilter
+                storageKey="textembeddingsource"
+                filter={srcFilter}
+                setFilter={setSrcFilter}
+            />
         </div>
     )
 }
