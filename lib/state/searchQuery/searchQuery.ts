@@ -1,13 +1,21 @@
 import { components } from "../../panoptikon"
-import { KeymapComponents } from "./searchQueryKeyMaps"
+import { KeymapComponents, orderByType } from "./searchQueryKeyMaps"
 
+export interface OrderMetadata {
+  actual_order_by: KeymapComponents["OrderArgs"]["order_by"]
+  available_filter_orders: string[]
+  force_order_by: boolean
+}
 export function queryFromState(
   state: KeymapComponents
-): components["schemas"]["PQLQuery"] {
+): [components["schemas"]["PQLQuery"], OrderMetadata] {
   const queryFilters: components["schemas"]["AndOperator"] = {
     and_: [],
   }
-
+  let actual_order_by: KeymapComponents["OrderArgs"]["order_by"] =
+    getOrderBy(state)
+  let available_filter_orders = [] as string[]
+  let force_order_by = false
   // Match column filters
   const match_filter_ops: components["schemas"]["MatchOps"] = {}
   let add_match_filter_ops = false
@@ -40,7 +48,7 @@ export function queryFromState(
     queryFilters.and_.push({ match: match_filter_ops })
   }
   // Bookmarks
-  const sort_bookmarks = false
+  const sort_bookmarks = state.OrderArgs.order_by === "bookmark_time"
   const bookmarks_desc: boolean = state.OrderArgs.order !== "asc"
   if (state.InBookmarks.filter) {
     const sortBookmarks: components["schemas"]["InBookmarks"] = {
@@ -52,9 +60,13 @@ export function queryFromState(
       in_bookmarks: state.InBookmarks,
     }
     queryFilters.and_.push(sortBookmarks)
+    if (sort_bookmarks) {
+      actual_order_by = "bookmark_time"
+    }
+    available_filter_orders.push("bookmark_time")
   }
   // Match Path text
-  const sort_path = false
+  const sort_path = state.OrderArgs.order_by === "match_path"
   const path_match_asc: boolean = state.OrderArgs.order !== "desc"
   if (state.SearchQueryOptions.e_pt && state.MatchPath.match.length > 0) {
     const matchPath: components["schemas"]["MatchPath"] = {
@@ -66,9 +78,13 @@ export function queryFromState(
       match_path: state.MatchPath,
     }
     queryFilters.and_.push(matchPath)
+    if (sort_path) {
+      actual_order_by = "match_path"
+    }
+    available_filter_orders.push("match_path")
   }
   // Match Text
-  const sort_text = false
+  const sort_text = state.OrderArgs.order_by === "match_text"
   const text_match_asc: boolean = state.OrderArgs.order !== "desc"
   if (state.SearchQueryOptions.e_txt && state.MatchText.match.length > 0) {
     const matchText: components["schemas"]["MatchText"] = {
@@ -80,9 +96,13 @@ export function queryFromState(
       match_text: state.MatchText,
     }
     queryFilters.and_.push(matchText)
+    if (sort_text) {
+      actual_order_by = "match_text"
+    }
+    available_filter_orders.push("match_text")
   }
   // Match Tags
-  const sort_tags = false
+  const sort_tags = state.OrderArgs.order_by === "match_tags_confidence"
   const tags_match_desc: boolean = state.OrderArgs.order !== "asc"
   if (state.SearchQueryOptions.e_tags) {
     const sortArgs: Omit<components["schemas"]["MatchText"], "match_text"> = {
@@ -92,6 +112,7 @@ export function queryFromState(
       row_n_direction: "asc",
       row_n: false,
     }
+    let tag_filter_enabled = false
     if (state.MatchTags.pos_match_all.length > 0) {
       const matchTags: components["schemas"]["MatchTags"] = {
         ...sortArgs,
@@ -102,6 +123,7 @@ export function queryFromState(
         },
       }
       queryFilters.and_.push(matchTags)
+      tag_filter_enabled = true
     }
     if (state.MatchTags.pos_match_any.length > 0) {
       const matchTags: components["schemas"]["MatchTags"] = {
@@ -113,6 +135,7 @@ export function queryFromState(
         },
       }
       queryFilters.and_.push(matchTags)
+      tag_filter_enabled = true
     }
     if (state.MatchTags.neg_match_all.length > 0) {
       const matchTags: components["schemas"]["MatchTags"] = {
@@ -124,6 +147,7 @@ export function queryFromState(
         },
       }
       queryFilters.and_.push({ not_: matchTags })
+      tag_filter_enabled = true
     }
     if (state.MatchTags.neg_match_any.length > 0) {
       const matchTags: components["schemas"]["MatchTags"] = {
@@ -135,16 +159,23 @@ export function queryFromState(
         },
       }
       queryFilters.and_.push({ not_: matchTags })
+      tag_filter_enabled = true
+    }
+    if (tag_filter_enabled) {
+      if (sort_tags) {
+        actual_order_by = "match_tags_confidence"
+      }
+      available_filter_orders.push("match_tags_confidence")
     }
   }
   // Semantic Image Search
-  const sort_image = false
+  const sort_image = true // Must always sort by this since it's semantic search
   const image_match_asc: boolean = state.OrderArgs.order !== "desc"
   if (state.SearchQueryOptions.e_iemb && state.SemanticImageSearch.query) {
     const searchSemanticImage: components["schemas"]["SemanticImageSearch"] = {
       order_by: sort_image,
       direction: image_match_asc ? "asc" : "desc",
-      priority: 0,
+      priority: 60,
       row_n_direction: "asc",
       row_n: false,
       image_embeddings: {
@@ -153,15 +184,20 @@ export function queryFromState(
       },
     }
     queryFilters.and_.push(searchSemanticImage)
+    if (sort_image) {
+      actual_order_by = "search_semantic_image"
+      force_order_by = true
+    }
+    available_filter_orders = ["search_semantic_image"]
   }
   // Semantic Text Search
-  const sort_semantic_text = false
+  const sort_semantic_text = true // Must always sort by this since it's semantic search
   const semantic_text_match_asc: boolean = state.OrderArgs.order !== "desc"
   if (state.SearchQueryOptions.e_temb && state.SemanticTextSearch.query) {
     const searchSemanticText: components["schemas"]["SemanticTextSearch"] = {
       order_by: sort_semantic_text,
       direction: semantic_text_match_asc ? "asc" : "desc",
-      priority: 0,
+      priority: 60,
       row_n_direction: "asc",
       row_n: false,
       text_embeddings: {
@@ -171,9 +207,21 @@ export function queryFromState(
       },
     }
     queryFilters.and_.push(searchSemanticText)
+    if (sort_semantic_text) {
+      actual_order_by = "search_semantic_text"
+      force_order_by = true
+    }
+    available_filter_orders = ["search_semantic_text"]
   }
   // Flexible search
-  const at_order_by = true
+  let at_order_by = state.OrderArgs.order_by === "match_at"
+  if (state.SearchQueryOptions.at_e_st || state.SearchQueryOptions.at_e_si) {
+    at_order_by = true // Must always sort by this since it's semantic search
+    available_filter_orders = ["match_at"]
+    force_order_by = true
+  } else {
+    available_filter_orders.push("match_at")
+  }
   const at_asc: boolean = state.OrderArgs.order !== "desc"
   if (state.SearchQueryOptions.at_query) {
     let n_at_enabled = 0
@@ -265,10 +313,13 @@ export function queryFromState(
     }
     if (at_filter.or_.length > 0) {
       queryFilters.and_.push(at_filter)
+      if (at_order_by) {
+        actual_order_by = "match_at"
+      }
     }
   }
   // Item Similarity Search
-  const sort_iss = true
+  const sort_iss = true // Must always sort by this since it's semantic search
   const iss_match_asc: boolean = state.OrderArgs.order !== "desc"
   if (
     state.SearchQueryOptions.e_iss &&
@@ -293,6 +344,11 @@ export function queryFromState(
       },
     }
     queryFilters.and_.push(searchItemSimilarity)
+    if (sort_iss) {
+      actual_order_by = "search_item_similarity"
+      force_order_by = true
+    }
+    available_filter_orders = ["search_item_similarity"]
   }
   const query: components["schemas"]["PQLQuery"] = {
     query: queryFilters,
@@ -320,16 +376,37 @@ export function queryFromState(
     results: true,
     check_path: true,
   }
-  return query
+  return [query, { actual_order_by, available_filter_orders, force_order_by }]
 }
 
-export function getOrderBy(state: KeymapComponents) {
+export function getOrderBy(state: KeymapComponents): orderByType {
   const current_order_by = state.OrderArgs.order_by
-  const def = "last_modified"
+  const def: orderByType = "last_modified"
+
   if (current_order_by === null) {
     return def
   }
-  return current_order_by
+
+  const disallowedOrders = [
+    "bookmark_time",
+    "match_at",
+    "match_text",
+    "match_path",
+    "match_tags_confidence",
+    "search_semantic_text",
+    "search_semantic_image",
+    "search_item_similarity",
+  ] as const
+
+  if (
+    disallowedOrders.includes(
+      current_order_by as (typeof disallowedOrders)[number]
+    )
+  ) {
+    return def
+  }
+
+  return current_order_by as orderByType
 }
 
 function sourceFilters(source: components["schemas"]["SourceArgs"]) {

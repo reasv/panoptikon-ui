@@ -3,14 +3,26 @@ import { distance } from "framer-motion"
 import { Target } from "lucide-react"
 import def from "nuqs/server"
 
-export type OrderArgsType = Omit<
-  components["schemas"]["OrderArgs"],
-  "priority"
-> & {
+export type OrderArgsType = {
+  order_by:
+    | components["schemas"]["OrderArgs"]["order_by"]
+    | "bookmark_time"
+    | "match_at"
+    | "match_text"
+    | "match_path"
+    | "match_tags_confidence"
+    | "search_semantic_text"
+    | "search_semantic_image"
+    | "search_item_similarity"
+
+  order: components["schemas"]["OrderArgs"]["order"]
   page: number
   page_size: number
 }
-export type orderByType = Exclude<OrderArgsType["order_by"], null>
+export type orderByType = Exclude<
+  components["schemas"]["OrderArgs"]["order_by"],
+  null
+>
 export type orderType = Exclude<OrderArgsType["order"], null | undefined>
 
 export type distanceAggregation =

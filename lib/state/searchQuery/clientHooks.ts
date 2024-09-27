@@ -291,11 +291,12 @@ export const useSearchQueryState = () => {
 }
 
 export const useSearchQuery = () => {
-  return queryFromState(useSearchQueryState())
+  return queryFromState(useSearchQueryState())[0]
 }
 
 export const useOrderBy = () => {
-  return getOrderBy(useSearchQueryState())
+  const state = useSearchQueryState()
+  return { order_by: getOrderBy(state), meta: queryFromState(state)[1] }
 }
 
 export const useResetSearchQueryState = () => {

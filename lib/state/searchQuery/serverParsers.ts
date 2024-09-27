@@ -226,5 +226,5 @@ export function getFullQueryCache(params: SearchParams): KeymapComponents {
 }
 
 export function getSearchQueryCache(params: SearchParams) {
-  return queryFromState(getFullQueryCache(params))
+  return queryFromState(getFullQueryCache(params))[0]
 }
