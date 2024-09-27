@@ -43,6 +43,15 @@ export function ImageEmbeddingSearch({
             setFilter({ distance_aggregation: "AVG" })
         }
     }
+    const onEnableChange = (value: boolean) => {
+        if (models.length === 0) {
+            return
+        }
+        if (filter.model.length === 0) {
+            setFilter({ model: models[0].value })
+        }
+        setEnable(value)
+    }
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
             <div className="flex flex-row items-center justify-between">
@@ -54,7 +63,7 @@ export function ImageEmbeddingSearch({
                         Searches the semantic content of images
                     </div>
                 </div>
-                <Switch checked={enable} onCheckedChange={(value) => setEnable(value)} />
+                <Switch checked={enable} onCheckedChange={(value) => onEnableChange(value)} />
             </div>
             {children}
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
