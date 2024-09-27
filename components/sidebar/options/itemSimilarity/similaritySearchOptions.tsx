@@ -3,11 +3,11 @@ import { useSelectedDBs } from "@/lib/state/database"
 import { SetFn } from "@/lib/state/searchQuery/clientHooks"
 import { KeymapComponents } from "@/lib/state/searchQuery/searchQueryKeyMaps"
 import { ComboBoxResponsive } from "@/components/combobox"
-import { Switch } from "@radix-ui/react-switch"
-import { Label } from "@radix-ui/react-label"
 import { SrcTextFilter } from "../../base/SrcTextFilter"
 import { FilterContainer } from "../../base/FilterContainer"
 import { SwitchFilter } from "../../base/SwitchFilter"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 
 export function ItemSimilaritySearch({
     enable,

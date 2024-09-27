@@ -38,18 +38,18 @@ export function ItemSimilarityWrapper() {
                 setSrcFilter={setSrcFilter}
                 children={
                     <>
+                        <SimilarityTarget />
                         <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
                             <ComboBoxResponsive
                                 options={[
                                     { value: "L2", label: "Text Embeddings" },
                                     { value: "COSINE", label: "Clip Embeddings" },
                                 ]}
-                                currentValue={filter.distance_aggregation}
+                                currentValue={filter.distance_function}
                                 onChangeValue={onDistanceFunctionSelected}
                                 placeholder="Embedding Type..."
                             />
                         </div>
-                        <SimilarityTarget />
                     </>
                 }
             />

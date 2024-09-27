@@ -38,8 +38,8 @@ export function SearchOptions() {
                 <ExclusiveFilters />
                 <TagFilter />
                 <ImgEmbSearch />
-                <ItemSimilarityWrapper />
                 <TextEmbSearch />
+                <ItemSimilarityWrapper />
                 <ModelOptions />
             </>
             }
