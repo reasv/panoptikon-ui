@@ -14,6 +14,7 @@ export function ExclusiveFilters() {
             }
         >
             <PathPrefixFilter />
+            <PathPrefixFilter negative />
             <MimeTypeFilter />
             <PathTextFilter />
             <ExtractedTextFilter />
