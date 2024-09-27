@@ -327,7 +327,7 @@ export const useResetSearchQueryState = () => {
   return () => {
     for (const setter of setters) {
       // @ts-ignore
-      setter(null) // @ts-ignore
+      setter(null, { history: "push" }) // @ts-ignore
     }
   }
 }
