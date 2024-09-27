@@ -50,6 +50,15 @@ export function ItemSimilaritySearch({
             setFilter({ distance_aggregation: "AVG" })
         }
     }
+    const onEnableChange = (value: boolean) => {
+        if (models.length === 0) {
+            return
+        }
+        if (filter.model.length === 0) {
+            setFilter({ model: models[0].value })
+        }
+        setEnable(value)
+    }
 
     const textOptions = (embeddingType === "text-embedding") || (embeddingType === "clip" && filter.clip_xmodal)
     return (
@@ -63,7 +72,7 @@ export function ItemSimilaritySearch({
                         Find items similar to a target item
                     </div>
                 </div>
-                <Switch checked={enable} onCheckedChange={(value) => setEnable(value)} />
+                <Switch checked={enable} onCheckedChange={(value) => onEnableChange(value)} />
             </div>
             {children}
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
