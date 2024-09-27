@@ -171,7 +171,11 @@ export function queryFromState(
   // Semantic Image Search
   const sort_image = true // Must always sort by this since it's semantic search
   const image_match_asc: boolean = state.OrderArgs.order !== "desc"
-  if (state.SearchQueryOptions.e_iemb && state.SemanticImageSearch.query) {
+  if (
+    state.SearchQueryOptions.e_iemb &&
+    state.SemanticImageSearch.query &&
+    state.SemanticImageSearch.model.length > 0
+  ) {
     const searchSemanticImage: components["schemas"]["SemanticImageSearch"] = {
       order_by: sort_image,
       direction: image_match_asc ? "asc" : "desc",
@@ -193,7 +197,11 @@ export function queryFromState(
   // Semantic Text Search
   const sort_semantic_text = true // Must always sort by this since it's semantic search
   const semantic_text_match_asc: boolean = state.OrderArgs.order !== "desc"
-  if (state.SearchQueryOptions.e_temb && state.SemanticTextSearch.query) {
+  if (
+    state.SearchQueryOptions.e_temb &&
+    state.SemanticTextSearch.query &&
+    state.SemanticTextSearch.model.length > 0
+  ) {
     const searchSemanticText: components["schemas"]["SemanticTextSearch"] = {
       order_by: sort_semantic_text,
       direction: semantic_text_match_asc ? "asc" : "desc",
@@ -295,7 +303,10 @@ export function queryFromState(
         embed: state.EmbedArgs,
       },
     }
-    if (state.SearchQueryOptions.at_e_si) {
+    if (
+      state.SearchQueryOptions.at_e_si &&
+      state.ATSemanticImage.model.length > 0
+    ) {
       at_filter.or_.push(searchSemanticImage)
     }
     const searchSemanticText: components["schemas"]["SemanticTextSearch"] = {
@@ -308,7 +319,10 @@ export function queryFromState(
         embed: state.EmbedArgs,
       },
     }
-    if (state.SearchQueryOptions.at_e_st) {
+    if (
+      state.SearchQueryOptions.at_e_st &&
+      state.ATSemanticText.model.length > 0
+    ) {
       at_filter.or_.push(searchSemanticText)
     }
     if (at_filter.or_.length > 0) {
