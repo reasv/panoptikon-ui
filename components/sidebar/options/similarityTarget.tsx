@@ -9,9 +9,7 @@ import { Button } from "@/components/ui/button";
 import { useItemSelection } from "@/lib/state/itemSelection";
 import { useItemSimilarityOptions } from "@/lib/state/similarityQuery/clientHooks";
 
-export function SimilarityTargetItem({
-}: {
-    }) {
+export function SimilarityTargetItem() {
     const selected = useItemSelection((state) => state.getSelected())
     const [dbs, ___] = useSelectedDBs()
     const [options, setOptions] = useItemSimilarityOptions()
