@@ -172,43 +172,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/search/similar/{sha256}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Find similar items in the database
-         * @description Find similar items in the database based on the provided SHA256 and setter name.
-         *     The search is based on the image or text embeddings of the provided item.
-         *
-         *     The count value in the response is equal to the number of items returned (+ (page_size - 1) * page for page > 1), rather than the total number of similar items in the database.
-         *     This is because there is no way to define what constitutes a "similar" item in a general sense. We just return the top N items that are most similar to the provided item.
-         *     If you still need the total number of "similar" items in the database, set the `full_count` parameter to true.
-         *
-         *     The setter name refers to the model that produced the embeddings.
-         *     You can find a list of available values for this parameter using the /api/search/stats endpoint.
-         *     Any setters of type "text-embedding" or "clip" can be used for this search.
-         *
-         *     The `limit` parameter can be used to control the number of similar items to return.
-         *
-         *     "text" embeddings are derived from text produced by another model, such as an OCR model or a tagger.
-         *     You can restrict the search to embeddings derived from text that was produced by one of a list of specific models by providing the appropriate filter.
-         *     You can find a list of available values for text sources using the /api/search/stats endpoint, specifically any setter of type "text" will apply.
-         *     Remember that tagging models also produce text by concatenating the tags, and are therefore also returned as "text" models by the stats endpoint.
-         *     Restricting similarity to a tagger model or a set of tagger models is recommended for item similarity search based on text embeddings.
-         */
-        post: operations["find_similar_api_search_similar__sha256__post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/items/item/{sha256}": {
         parameters: {
             query?: never;
@@ -951,13 +914,6 @@ export interface components {
             last_modified: string;
             /** Type */
             type: string;
-        };
-        /** FileSearchResultModel */
-        FileSearchResultModel: {
-            /** Count */
-            count: number;
-            /** Results */
-            results: components["schemas"]["FileSearchResult"][];
         };
         /** FileStats */
         FileStats: {
@@ -2398,109 +2354,6 @@ export interface components {
              */
             text_embeddings: components["schemas"]["SemanticTextArgs"];
         };
-        /** SimilarItemsRequest */
-        SimilarItemsRequest: {
-            /**
-             * Setter Name
-             * @description The name of the embedding model used for similarity search
-             */
-            setter_name: string;
-            /**
-             * Distance Aggregation
-             * @description The method to aggregate distances when an item has multiple embeddings. Default is AVG.
-             * @default AVG
-             * @enum {string}
-             */
-            distance_aggregation: "MIN" | "MAX" | "AVG";
-            /** @description Filters to apply on source text. If not provided, all text embeddings are considered. The source text is the text which was used to produce the text embeddings. */
-            src_text?: components["schemas"]["TextFilter"] | null;
-            /**
-             * Src Confidence Weight
-             * @description
-             *     The weight to apply to the confidence of the source text
-             *     on the embedding distance aggregation for individual items with multiple embeddings.
-             *     Default is 0.0, which means that the confidence of the source text
-             *     does not affect the distance aggregation.
-             *     This parameter is only relevant when the source text has a confidence value.
-             *     The confidence of the source text is multiplied by the confidence of the other
-             *     source text when calculating the distance between two items.
-             *     The formula for the distance calculation is as follows:
-             *     ```
-             *     weights = POW((COALESCE(main_source_text.confidence, 1) * COALESCE(other_source_text.confidence, 1)), src_confidence_weight)
-             *     distance = SUM(distance * weights) / SUM(weights)
-             *     ```
-             *     So this weight is the exponent to which the confidence is raised, which means that it can be greater than 1.
-             *     When confidence weights are set, the distance_aggregation setting is ignored.
-             *
-             * @default 0
-             */
-            src_confidence_weight: number;
-            /**
-             * Src Language Confidence Weight
-             * @description
-             *     The weight to apply to the confidence of the source text language
-             *     on the embedding distance aggregation.
-             *     Default is 0.0, which means that the confidence of the source text language detection
-             *     does not affect the distance calculation.
-             *     Totally analogous to `src_confidence_weight`, but for the language confidence.
-             *     When both are present, the results of the POW() functions for both are multiplied together before being applied to the distance.
-             *     ```
-             *     weights = POW(..., src_confidence_weight) * POW(..., src_language_confidence_weight)
-             *     ```
-             *
-             * @default 0
-             */
-            src_language_confidence_weight: number;
-            /**
-             * Clip Xmodal
-             * @description
-             *     Whether to use cross-modal similarity for CLIP models.
-             *     Default is False. What this means is that the similarity is calculated between image and text embeddings,
-             *     rather than just between image embeddings. By default will also use text-to-text similarity.
-             *
-             *     Note that you must have both image and text embeddings with the same CLIP model for this setting to work.
-             *     Text embeddings are derived from text which must have been already previously produced by another model, such as an OCR model or a tagger.
-             *     They are generated *separately* from the image embeddings, using a different job (Under 'CLIP Text Embeddings').
-             *     Run a batch job with the same clip model for both image and text embeddings to use this setting.
-             *
-             * @default false
-             */
-            clip_xmodal: boolean;
-            /**
-             * Xmodal T2T
-             * @description
-             *     When using CLIP cross-modal similarity, whether to use text-to-text similarity as well or just image-to-text and image-to-image.
-             *
-             * @default true
-             */
-            xmodal_t2t: boolean;
-            /**
-             * Xmodal I2I
-             * @description
-             *     When using CLIP cross-modal similarity, whether to use image-to-image similarity as well or just image-to-text and text-to-text.
-             *
-             * @default false
-             */
-            xmodal_i2i: boolean;
-            /**
-             * Page
-             * @description The page number to return
-             * @default 1
-             */
-            page: number;
-            /**
-             * Page Size
-             * @description The number of similar items to return
-             * @default 10
-             */
-            page_size: number;
-            /**
-             * Full Count
-             * @description Whether to return the full count of resulting items in the database
-             * @default false
-             */
-            full_count: boolean;
-        };
         /** SimilarTo */
         SimilarTo: {
             /**
@@ -2874,37 +2727,6 @@ export interface components {
              */
             all_setters_required: boolean;
         };
-        /** TextFilter */
-        TextFilter: {
-            /**
-             * Setter Names
-             * @description The source model names to restrict the search to. These are the models that produced the text.
-             */
-            setter_names?: string[] | null;
-            /**
-             * Languages
-             * @description The source languages to restrict the search to. These are the languages of the text produced by the source models.
-             */
-            languages?: string[] | null;
-            /**
-             * Min Confidence
-             * @description The minimum confidence of the text as given by its source model
-             * @default 0
-             */
-            min_confidence: number;
-            /**
-             * Min Language Confidence
-             * @description The minimum confidence for language detection in the text
-             * @default 0
-             */
-            min_language_confidence: number;
-            /**
-             * Min Length
-             * @description The minimum length of the text in characters
-             * @default 0
-             */
-            min_length: number;
-        };
         /** TextResponse */
         TextResponse: {
             /** Text */
@@ -3184,53 +3006,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TagSearchResults"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    find_similar_api_search_similar__sha256__post: {
-        parameters: {
-            query?: {
-                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
-                index_db?: string | null;
-                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
-                user_data_db?: string | null;
-            };
-            header?: never;
-            path: {
-                sha256: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SimilarItemsRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FileSearchResultModel"];
                 };
             };
             /** @description Not found */
