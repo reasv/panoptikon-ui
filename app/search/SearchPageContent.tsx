@@ -158,7 +158,7 @@ export function ResultGrid({
                         ('lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'))}>
                     {results.map((result, index) => (
                         <SearchResultImage
-                            key={result.path}
+                            key={result.file_id}
                             result={result}
                             index={index}
                             dbs={dbs}

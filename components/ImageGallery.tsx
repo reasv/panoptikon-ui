@@ -200,7 +200,7 @@ export function GalleryHorizontalScroll({
                 <div className="flex w-max space-x-4 p-4">
                     {items.map((item, i) => (
                         <HorizontalScrollElement
-                            key={item.path}
+                            key={item.file_id}
                             item={item}
                             ownIndex={i}
                             nItems={items.length}
@@ -245,7 +245,7 @@ export function HorizontalScrollElement({
     }
     return (
         <figure
-            key={item.path}
+            key={item.file_id}
             className={cn("w-60 h-80 relative rounded-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none cursor-pointer group",
                 isSelected ? "scale-105 ring-2 ring-blue-500" : "scale-100"
             )}>
