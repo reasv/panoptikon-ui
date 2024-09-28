@@ -22,5 +22,5 @@ export const usePartitionBy = (): [PartitionBy, SetFn<PartitionBy>] =>
   ) as any
 
 export const partitionBySerializer = createSerializer({
-  partition_by: parseAsStringEnum(["item_id"]),
+  partition_by: parseAsArrayOf(parseAsStringEnum(["item_id"])),
 })

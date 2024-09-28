@@ -11,7 +11,7 @@ import { SimilaritySideBarComponents } from "@/lib/state/searchQuery/searchQuery
 import { useSearchParams } from "next/navigation"
 import { serializers } from "@/lib/state/searchQuery/serializers"
 import { useMemo } from "react"
-import { usePartitionBy } from "@/lib/state/partitionBy"
+import { PartitionBy, partitionBySerializer, usePartitionBy } from "@/lib/state/partitionBy"
 
 
 type ObjectWithDefaults<T> = {
@@ -130,6 +130,7 @@ export function SimilarItemsView({
         simModel: string,
         target: string,
         distance_function: "COSINE" | "L2",
+        partition_by: PartitionBy
     ) => {
         let fullURL = serializers.itemSimilaritySearch({
             ...filter,
@@ -140,6 +141,9 @@ export function SimilarItemsView({
         fullURL = selectedDBsSerializer(fullURL, {
             index_db: dbs.index_db,
             user_data_db: dbs.user_data_db,
+        })
+        fullURL = partitionBySerializer(fullURL, {
+            partition_by: partition_by.partition_by
         })
 
         fullURL = serializers.itemSimilarityTextSource(fullURL, srcFilter as any)
@@ -158,10 +162,11 @@ export function SimilarItemsView({
             query.page_size,
             model,
             sha256,
-            distance_function
+            distance_function,
+            partitionBy
         )
         return data?.results.map((_, index) => getSimilarityModeImageLink(baseLink, index))
-    }, [data, query.page_size, filter, srcFilter, model, sha256, distance_function])
+    }, [data, query.page_size, filter, srcFilter, model, sha256, distance_function, partitionBy])
 
     return (
         <div className="mt-4">
