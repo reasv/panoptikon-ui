@@ -307,7 +307,7 @@ export type KeymapComponents = {
 export const similaritySBPageArgsKeyMap = (p: typeof def) =>
   applyOptionsToMap({
     page: p.parseAsInteger.withDefault(1).withOptions({ history: "push" }),
-    page_size: p.parseAsInteger.withDefault(10),
+    page_size: p.parseAsInteger.withDefault(6),
   })
 
 export type SimilaritySideBarComponents = {

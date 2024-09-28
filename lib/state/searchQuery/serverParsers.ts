@@ -266,16 +266,6 @@ export function getFullSimilaritySBQueryCache(
   }
 }
 
-export function getSimilaritySBQueryCache(
-  params: SearchParams,
-  target: string,
-  textModelFallback: string,
-  clipModelFallback: string
-) {
-  return sbSimilarityQueryFromState(
-    getFullSimilaritySBQueryCache(params),
-    target,
-    textModelFallback,
-    clipModelFallback
-  )
+export function getSimilaritySBQueryCache(params: SearchParams) {
+  return sbSimilarityQueryFromState(getFullSimilaritySBQueryCache(params))
 }

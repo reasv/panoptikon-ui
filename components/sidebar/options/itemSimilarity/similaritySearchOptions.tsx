@@ -1,7 +1,7 @@
 import { $api } from "@/lib/api"
 import { useSelectedDBs } from "@/lib/state/database"
 import { SetFn } from "@/lib/state/searchQuery/clientHooks"
-import { KeymapComponents } from "@/lib/state/searchQuery/searchQueryKeyMaps"
+import { KeymapComponents, SimilaritySideBarComponents } from "@/lib/state/searchQuery/searchQueryKeyMaps"
 import { ComboBoxResponsive } from "@/components/combobox"
 import { SrcTextFilter } from "../../base/SrcTextFilter"
 import { FilterContainer } from "../../base/FilterContainer"
@@ -12,9 +12,11 @@ export function ItemSimilaritySearchOptions({
     setFilter,
     srcFilter,
     setSrcFilter,
+    storageKey,
 }: {
+    storageKey: string
     filter: KeymapComponents["ItemSimilarity"],
-    setFilter: SetFn<KeymapComponents["ItemSimilarity"]>
+    setFilter: SetFn<KeymapComponents["ItemSimilarity"]> | SetFn<SimilaritySideBarComponents["CLIPSimilarity"]> | SetFn<SimilaritySideBarComponents["TextSimilarity"]>
     srcFilter: KeymapComponents["ItemSimilarityTextSource"],
     setSrcFilter: SetFn<KeymapComponents["ItemSimilarityTextSource"]>
 }) {
@@ -42,8 +44,6 @@ export function ItemSimilaritySearchOptions({
             setFilter({ distance_aggregation: "AVG" })
         }
     }
-
-
     const textOptions = (embeddingType === "text-embedding") || (embeddingType === "clip" && filter.clip_xmodal)
     return (
         <>
@@ -97,7 +97,7 @@ export function ItemSimilaritySearchOptions({
             }
             {textOptions &&
                 <SrcTextFilter
-                    storageKey="similarityTextSourceFilter"
+                    storageKey={storageKey}
                     filter={srcFilter}
                     setFilter={setSrcFilter}
                 />}

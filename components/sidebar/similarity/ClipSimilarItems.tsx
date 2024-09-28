@@ -11,6 +11,8 @@ import { SwitchFilter } from "../base/SwitchFilter"
 import { AggregationOptions } from "../base/AggregationOptions"
 import { SourceTextFilter } from "../base/SourceTextFilter"
 import { SimilarityQueryType } from "@/lib/state/similarityQuery/similarityQueryKeyMaps"
+import { useSBClipSimilarity, useSBClipSimilarityTextSrc, useSBSimilarityPageArgs, useSBSimilarityQuery } from "@/lib/state/searchQuery/clientHooks"
+import { ItemSimilaritySearchOptions } from "../options/itemSimilarity/similaritySearchOptions"
 
 export function ClipItemSimilarity() {
     const sha256 = useItemSelection((state) => state.getSelected()?.sha256)
@@ -23,7 +25,10 @@ export function ClipItemSimilarity() {
     })
     const clipSetters = data?.setters.filter((setter) => setter[0] === "clip").map((setter) => setter[1]) || []
     const clipQuery = useImageSimilarity((state) => state.getClipQuery(clipSetters[0] || ""))
-    const setClipQuery = useImageSimilarity((state) => state.setClipQuery)
+    const [filter, setFilter] = useSBClipSimilarity()
+    const [srcFilter, setSrcFilter] = useSBClipSimilarityTextSrc()
+    const { clip } = useSBSimilarityQuery()
+    const [pageArgs, setPageArgs] = useSBSimilarityPageArgs()
     return (
         <FilterContainer
             label={<span>CLIP Similarity</span>}
@@ -31,7 +36,33 @@ export function ClipItemSimilarity() {
             storageKey="clip-similarity"
             unMountOnCollapse
         >
-            <CLIPSimilarityFilter setters={clipSetters} clipQuery={clipQuery} setClipQuery={setClipQuery} />
+            <FilterContainer
+                label={<span>CLIP Options</span>}
+                description={<span>Options for CLIP similarity</span>}
+                storageKey="clip-similarity-options"
+            >
+                <ConfidenceFilter
+                    label={<span>Max Results Displayed</span>}
+                    confidence={pageArgs.page_size}
+                    setConfidence={(value) => setPageArgs({ page_size: value })}
+                    description={<span>'0' disables this similarity query</span>}
+                    min={0}
+                    max={50}
+                    step={1}
+                />
+                <ItemSimilaritySearchOptions
+                    storageKey="clip-item-similarity-src"
+                    filter={{
+                        ...filter,
+                        distance_function: "COSINE",
+                        target: "",
+                        model: filter.model.length > 0 ? filter.model : clipSetters[0] || ""
+                    }}
+                    setFilter={setFilter}
+                    srcFilter={srcFilter}
+                    setSrcFilter={setSrcFilter}
+                />
+            </FilterContainer>
             <div className="mt-4">
                 {sha256 && clipQuery.setter_name.length > 0 && clipQuery.page_size > 0 && (
                     <SimilarItemsView

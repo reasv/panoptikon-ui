@@ -84,6 +84,7 @@ export function ItemSimilarityWrapper() {
                     />
                 </div>
                 <ItemSimilaritySearchOptions
+                    storageKey="item-similarity-options"
                     filter={filter}
                     setFilter={setFilter}
                     srcFilter={srcFilter}

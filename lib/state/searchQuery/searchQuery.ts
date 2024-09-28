@@ -459,15 +459,7 @@ function sourceFilters(source: components["schemas"]["SourceArgs"]) {
   return null
 }
 
-export function sbSimilarityQueryFromState(
-  state: SimilaritySideBarComponents,
-  target: string,
-  textModelFallback: string,
-  clipModelFallback: string
-): {
-  clip: components["schemas"]["PQLQuery"]
-  text: components["schemas"]["PQLQuery"]
-} {
+export function sbSimilarityQueryFromState(state: SimilaritySideBarComponents) {
   const query: components["schemas"]["PQLQuery"] = {
     query: null,
     order_by: [
@@ -494,7 +486,13 @@ export function sbSimilarityQueryFromState(
     results: true,
     check_path: true,
   }
-  const clip: components["schemas"]["PQLQuery"] = {
+  const clip: (
+    target: string,
+    modelFallback: string
+  ) => components["schemas"]["PQLQuery"] = (
+    target: string,
+    modelFallback: string
+  ) => ({
     ...query,
     query: {
       and_: [
@@ -510,7 +508,7 @@ export function sbSimilarityQueryFromState(
             model:
               state.CLIPSimilarity.model.length > 0
                 ? state.CLIPSimilarity.model
-                : clipModelFallback,
+                : modelFallback,
             distance_function: "COSINE",
             src_text: state.CLIPSimilarity.clip_xmodal
               ? sourceFilters(state.CLIPTextSource)
@@ -519,8 +517,14 @@ export function sbSimilarityQueryFromState(
         },
       ],
     },
-  }
-  const text: components["schemas"]["PQLQuery"] = {
+  })
+  const text: (
+    target: string,
+    modelFallback: string
+  ) => components["schemas"]["PQLQuery"] = (
+    target: string,
+    modelFallback: string
+  ) => ({
     ...query,
     query: {
       and_: [
@@ -536,7 +540,7 @@ export function sbSimilarityQueryFromState(
             model:
               state.TextSimilarity.model.length > 0
                 ? state.TextSimilarity.model
-                : textModelFallback,
+                : modelFallback,
             clip_xmodal: false,
             xmodal_i2i: true,
             xmodal_t2t: true,
@@ -546,6 +550,6 @@ export function sbSimilarityQueryFromState(
         },
       ],
     },
-  }
+  })
   return { clip, text }
 }

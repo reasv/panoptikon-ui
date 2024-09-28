@@ -3,6 +3,7 @@ import { ClipItemSimilarity } from "./ClipSimilarItems"
 import { TextEmbeddingsSimilarity } from "./TextSimilarItems"
 import { Button } from "@/components/ui/button"
 import { Delete } from "lucide-react"
+import { useSBResetSimilarityOptions } from "@/lib/state/searchQuery/clientHooks"
 
 export function SimilarItemsSideBar() {
     return (
@@ -15,7 +16,7 @@ export function SimilarItemsSideBar() {
 }
 
 function ResetFilters() {
-    const resetFilters = useImageSimilarity((state) => state.resetAll)
+    const resetFilters = useSBResetSimilarityOptions()
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
             <div className="flex flex-row items-center justify-between">

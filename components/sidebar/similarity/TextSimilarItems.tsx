@@ -11,6 +11,8 @@ import { useSelectedDBs } from "@/lib/state/database"
 import { SourceTextFilter } from "../base/SourceTextFilter"
 import { AggregationOptions } from "../base/AggregationOptions"
 import { SimilarityQueryType } from "@/lib/state/similarityQuery/similarityQueryKeyMaps"
+import { useSBSimilarityPageArgs, useSBSimilarityQuery, useSBTextSimilarity, useSBTextSimilarityTextSrc } from "@/lib/state/searchQuery/clientHooks"
+import { ItemSimilaritySearchOptions } from "../options/itemSimilarity/similaritySearchOptions"
 
 export function TextEmbeddingsSimilarity() {
     const sha256 = useItemSelection((state) => state.getSelected()?.sha256)
@@ -23,6 +25,12 @@ export function TextEmbeddingsSimilarity() {
     const setters = data?.setters.filter((setter) => setter[0] === "text-embedding").map((setter) => setter[1]) || []
     const textEmbeddingQuery = useImageSimilarity((state) => state.getTextEmbedQuery(setters[0] || ""))
     const setTextEmbeddingQuery = useImageSimilarity((state) => state.setTextEmbedQuery)
+    const clipSetters = data?.setters.filter((setter) => setter[0] === "clip").map((setter) => setter[1]) || []
+    const clipQuery = useImageSimilarity((state) => state.getClipQuery(clipSetters[0] || ""))
+    const [filter, setFilter] = useSBTextSimilarity()
+    const [srcFilter, setSrcFilter] = useSBTextSimilarityTextSrc()
+    const { text } = useSBSimilarityQuery()
+    const [pageArgs, setPageArgs] = useSBSimilarityPageArgs()
     return (
         <FilterContainer
             label={<span>Text Semantic Similarity</span>}
@@ -30,13 +38,38 @@ export function TextEmbeddingsSimilarity() {
             storageKey="text-embeddings-similarity"
             unMountOnCollapse
         >
-            <TextEmbeddingsSimilarityFilter
-                setters={setters}
-                setTextEmbeddingQuery={setTextEmbeddingQuery}
-                textEmbeddingQuery={textEmbeddingQuery}
-            />
+            <FilterContainer
+                label={<span>Text Embedding Options</span>}
+                description={<span>Options for text embeddings</span>}
+                storageKey="text-similarity-options"
+            >
+                <ConfidenceFilter
+                    label={<span>Max Results Displayed</span>}
+                    confidence={clipQuery.page_size}
+                    setConfidence={(value) => setPageArgs({ page_size: value })}
+                    description={<span>'0' disables this similarity query</span>}
+                    min={0}
+                    max={50}
+                    step={1}
+                />
+                <ItemSimilaritySearchOptions
+                    storageKey="text-item-similarity-src"
+                    filter={{
+                        ...filter,
+                        distance_function: "L2",
+                        target: "",
+                        clip_xmodal: false,
+                        xmodal_i2i: true,
+                        xmodal_t2t: true,
+                        model: filter.model.length > 0 ? filter.model : setters[0] || ""
+                    }}
+                    setFilter={setFilter}
+                    srcFilter={srcFilter}
+                    setSrcFilter={setSrcFilter}
+                />
+            </FilterContainer>
             <div className="mt-4">
-                {sha256 && textEmbeddingQuery.setter_name.length > 0 && textEmbeddingQuery.page_size > 0 && (
+                {sha256 && textEmbeddingQuery.setter_name.length > 0 && pageArgs.page_size > 0 && (
                     <SimilarItemsView
                         type={SimilarityQueryType.textEmbedding}
                         sha256={sha256}

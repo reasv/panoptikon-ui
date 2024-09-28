@@ -395,7 +395,7 @@ export function useSBSimilarityPageArgs(): [
   return [state, set] as const
 }
 
-export const useResetSimilaritySB = () => {
+export const useSBResetSimilarityOptions = () => {
   const setters = [
     useSBClipSimilarity()[1],
     useSBClipSimilarityTextSrc()[1],
@@ -406,7 +406,7 @@ export const useResetSimilaritySB = () => {
   return () => {
     for (const setter of setters) {
       // @ts-ignore
-      setter(null, { history: "push" }) // @ts-ignore
+      setter(null, { history: "replace" }) // @ts-ignore
     }
   }
 }
@@ -420,15 +420,6 @@ export const useSBSimilarityQueryState = () => {
   }
   return keymapComponents
 }
-export const useSBSimilarityQuery = (
-  target: string,
-  textModelFallback: string,
-  clipModelFallback: string
-) => {
-  return sbSimilarityQueryFromState(
-    useSBSimilarityQueryState(),
-    target,
-    textModelFallback,
-    clipModelFallback
-  )
+export const useSBSimilarityQuery = () => {
+  return sbSimilarityQueryFromState(useSBSimilarityQueryState())
 }
