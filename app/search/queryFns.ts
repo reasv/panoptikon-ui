@@ -13,16 +13,6 @@ export interface SearchQueryArgs {
   body: components["schemas"]["PQLQuery"]
 }
 
-export interface SimilarityQueryArgs {
-  params: {
-    query: queryParams
-    path: {
-      sha256: string
-    }
-  }
-  body: components["schemas"]["SimilarItemsRequest"]
-}
-
 export async function fetchSearch(args: SearchQueryArgs) {
   try {
     const { data, error } = await serverFetchClient.POST("/api/search/pql", {
