@@ -1,12 +1,12 @@
 import { useItemSimilaritySearch, useItemSimilarityTextSource, useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
 import { FilterContainer } from "../../base/FilterContainer"
 import { Label } from "@radix-ui/react-label"
-import { Input } from "postcss"
 import { ItemSimilaritySearchOptions } from "./similaritySearchOptions"
 import { ComboBoxResponsive } from "@/components/combobox"
 import { SimilarityTarget } from "./similarityTarget"
 import { $api } from "@/lib/api"
 import { useSelectedDBs } from "@/lib/state/database"
+import { Switch } from "@/components/ui/switch"
 
 
 export function ItemSimilarityWrapper() {
@@ -36,6 +36,21 @@ export function ItemSimilarityWrapper() {
             setFilter({ distance_function: "COSINE", model }, { history: "push" })
         }
     }
+    const onEnableChange = (value: boolean) => {
+        const models = [...(
+            data?.setters
+                .filter((setter) => setter[0] === (filter.distance_function === "L2" ? "text-embedding" : "clip"))
+                .map((setter) => ({ value: setter[1], label: setter[1] })) || [])
+        ]
+        const model = models.length > 0 ? models[0].value : ""
+        if (models.length === 0) {
+            return
+        }
+        if (filter.model.length === 0) {
+            setFilter({ model: model })
+        }
+        setOptions({ e_iss: value })
+    }
     return (
         <FilterContainer
             storageKey="itemSimilarityFilterContainer" // Add a storageKey prop to make the localStorage key unique
@@ -44,30 +59,38 @@ export function ItemSimilarityWrapper() {
                 <span>Find items similar to a target item</span>
             }
         >
-            <ItemSimilaritySearchOptions
-                enable={options.e_iss}
-                setEnable={(value) => setOptions({ e_iss: value })}
-                filter={filter}
-                setFilter={setFilter}
-                srcFilter={srcFilter}
-                setSrcFilter={setSrcFilter}
-                children={
-                    <>
-                        <SimilarityTarget />
-                        <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
-                            <ComboBoxResponsive
-                                options={[
-                                    { value: "L2", label: "Text Embeddings" },
-                                    { value: "COSINE", label: "Clip Embeddings" },
-                                ]}
-                                currentValue={filter.distance_function}
-                                onChangeValue={onDistanceFunctionSelected}
-                                placeholder="Embedding Type..."
-                            />
+            <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
+                <div className="flex flex-row items-center justify-between">
+                    <div className="space-y-0.5">
+                        <Label className="text-base">
+                            Similarity Search Options
+                        </Label>
+                        <div className="text-gray-400">
+                            Options for similarity search
                         </div>
-                    </>
-                }
-            />
+                    </div>
+                    <Switch checked={options.e_iss} onCheckedChange={(value) => onEnableChange(value)} />
+                </div>
+                <SimilarityTarget />
+                <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
+                    <ComboBoxResponsive
+                        options={[
+                            { value: "L2", label: "Text Embeddings" },
+                            { value: "COSINE", label: "Clip Embeddings" },
+                        ]}
+                        currentValue={filter.distance_function}
+                        onChangeValue={onDistanceFunctionSelected}
+                        placeholder="Embedding Type..."
+                    />
+                </div>
+                <ItemSimilaritySearchOptions
+                    filter={filter}
+                    setFilter={setFilter}
+                    srcFilter={srcFilter}
+                    setSrcFilter={setSrcFilter}
+                />
+
+            </div>
 
         </FilterContainer>
     )

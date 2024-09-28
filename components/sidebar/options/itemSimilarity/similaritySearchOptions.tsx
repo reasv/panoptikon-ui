@@ -6,25 +6,17 @@ import { ComboBoxResponsive } from "@/components/combobox"
 import { SrcTextFilter } from "../../base/SrcTextFilter"
 import { FilterContainer } from "../../base/FilterContainer"
 import { SwitchFilter } from "../../base/SwitchFilter"
-import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
 
 export function ItemSimilaritySearchOptions({
-    enable,
-    setEnable,
     filter,
     setFilter,
     srcFilter,
     setSrcFilter,
-    children,
 }: {
-    enable: boolean,
-    setEnable: (value: boolean) => void,
     filter: KeymapComponents["ItemSimilarity"],
     setFilter: SetFn<KeymapComponents["ItemSimilarity"]>
     srcFilter: KeymapComponents["ItemSimilarityTextSource"],
     setSrcFilter: SetFn<KeymapComponents["ItemSimilarityTextSource"]>
-    children?: React.ReactNode
 }) {
     const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/search/stats", {
@@ -50,31 +42,11 @@ export function ItemSimilaritySearchOptions({
             setFilter({ distance_aggregation: "AVG" })
         }
     }
-    const onEnableChange = (value: boolean) => {
-        if (models.length === 0) {
-            return
-        }
-        if (filter.model.length === 0) {
-            setFilter({ model: models[0].value })
-        }
-        setEnable(value)
-    }
+
 
     const textOptions = (embeddingType === "text-embedding") || (embeddingType === "clip" && filter.clip_xmodal)
     return (
-        <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
-            <div className="flex flex-row items-center justify-between">
-                <div className="space-y-0.5">
-                    <Label className="text-base">
-                        Similarity Search Options
-                    </Label>
-                    <div className="text-gray-400">
-                        Options for similarity search
-                    </div>
-                </div>
-                <Switch checked={enable} onCheckedChange={(value) => onEnableChange(value)} />
-            </div>
-            {children}
+        <>
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
                 <ComboBoxResponsive
                     options={models}
@@ -129,6 +101,6 @@ export function ItemSimilaritySearchOptions({
                     filter={srcFilter}
                     setFilter={setSrcFilter}
                 />}
-        </div>
+        </>
     )
 }
