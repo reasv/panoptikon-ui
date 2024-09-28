@@ -155,7 +155,7 @@ export const itemSimilarityKeyMap = (p: typeof def) =>
     model: p.parseAsString.withDefault(""),
     distance_aggregation: p
       .parseAsStringEnum<distanceAggregation>(["MIN", "MAX", "AVG"])
-      .withDefault("MIN"),
+      .withDefault("AVG"),
     distance_function: p
       .parseAsStringEnum<distanceFunction>(["COSINE", "L2"])
       .withDefault("COSINE"),
