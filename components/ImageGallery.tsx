@@ -1,9 +1,7 @@
-"use client"
 import Image from 'next/image'
 import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons"
 import { Toggle } from "@/components/ui/toggle"
 import { X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal } from "lucide-react"
-
 import { Button } from "@/components/ui/button"
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { cn, getFullFileURL, getLocale, getThumbnailURL } from "@/lib/utils";
