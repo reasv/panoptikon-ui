@@ -19,10 +19,9 @@ import { SearchResultImage } from "@/components/SearchResultImage";
 import { useGalleryIndex, useGalleryName } from "@/lib/state/gallery";
 import { useSideBarOpen } from "@/lib/state/sideBar";
 import { useSelectedDBs } from "@/lib/state/database";
-import { useItemSimilaritySearch, useSearch } from "@/lib/searchHooks";
+import { useSearch } from "@/lib/searchHooks";
 import { ImageGallery } from '@/components/ImageGallery';
 import { ImageSimilarityHeader } from '@/components/ImageSimilarityHeader';
-import { Mode, useSearchMode } from "@/lib/state/searchMode";
 import { useItemSelection } from "@/lib/state/itemSelection";
 import { useQueryOptions } from "@/lib/state/searchQuery/clientHooks";
 
@@ -43,11 +42,7 @@ export function SearchPageContent({ initialQuery }:
 
 export function MultiSearchView({ initialQuery }:
     { initialQuery: SearchQueryArgs }) {
-    const [mode, _] = useSearchMode()
-    const search = useSearch({ initialQuery })
-    const similarity = useItemSimilaritySearch()
-    const hook = mode === Mode.ItemSimilarity ? similarity : search
-    const { data, error, isError, refetch, isFetching, nResults, page, pageSize, setPage, searchEnabled, getPageURL } = hook
+    const { data, error, isError, refetch, isFetching, nResults, page, pageSize, setPage, searchEnabled, getPageURL } = useSearch({ initialQuery })
     const { toast } = useToast()
     const onRefresh = async () => {
         if (!searchEnabled) {
@@ -92,7 +87,7 @@ export function MultiSearchView({ initialQuery }:
     const [options, setOptions] = useQueryOptions()
     return (
         <>
-            <SearchErrorToast noFtsErrors={mode === Mode.ItemSimilarity} isError={isError} error={error} />
+            <SearchErrorToast noFtsErrors={options.e_iss} isError={isError} error={error} />
             <div className={cn("mb-4 2xl:mx-auto",
                 sidebarOpen ? '2xl:w-2/3' : '2xl:w-1/2'
             )}>

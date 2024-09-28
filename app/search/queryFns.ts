@@ -43,29 +43,6 @@ export async function fetchSearch(args: SearchQueryArgs) {
   }
 }
 
-export async function fetchSimilarity(args: SimilarityQueryArgs) {
-  try {
-    const { data, error } = await serverFetchClient.POST(
-      "/api/search/similar/{sha256}",
-      {
-        params: args.params,
-        body: args.body,
-      }
-    )
-    if (!data || error) {
-      console.error(error)
-      console.log("Error fetching similarity results")
-      throw error
-    }
-    console.log("Fetched similarity results successfully")
-    return data
-  } catch (error) {
-    console.error(error)
-    console.log("Error similarity search results")
-    throw error
-  }
-}
-
 export async function fetchStats(args: {
   index_db?: string | null
   user_data_db?: string | null

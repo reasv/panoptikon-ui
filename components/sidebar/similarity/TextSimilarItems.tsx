@@ -5,7 +5,6 @@ import { ConfidenceFilter } from "../options/confidenceFilter"
 import { SimilarItemsView } from "./SimilarItemsView"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { useSelectedDBs } from "@/lib/state/database"
-import { SimilarityQueryType } from "@/lib/state/similarityQuery/similarityQueryKeyMaps"
 import { useSBSimilarityPageArgs, useSBSimilarityQuery, useSBTextSimilarity, useSBTextSimilarityTextSrc } from "@/lib/state/searchQuery/clientHooks"
 import { ItemSimilaritySearchOptions } from "../options/itemSimilarity/similaritySearchOptions"
 
@@ -66,7 +65,7 @@ export function TextEmbeddingsSimilarity() {
                         filterOptions={filter}
                         srcFilterOptions={srcFilter}
                         model={model}
-                        type={SimilarityQueryType.textEmbedding}
+                        distance_function="L2"
                         sha256={sha256}
                         query={text(sha256, model)}
                     />)}

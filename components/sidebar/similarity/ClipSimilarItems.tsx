@@ -4,7 +4,6 @@ import { ConfidenceFilter } from "../options/confidenceFilter"
 import { SimilarItemsView } from "./SimilarItemsView"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { useSelectedDBs } from "@/lib/state/database"
-import { SimilarityQueryType } from "@/lib/state/similarityQuery/similarityQueryKeyMaps"
 import { useSBClipSimilarity, useSBClipSimilarityTextSrc, useSBSimilarityPageArgs, useSBSimilarityQuery } from "@/lib/state/searchQuery/clientHooks"
 import { ItemSimilaritySearchOptions } from "../options/itemSimilarity/similaritySearchOptions"
 
@@ -63,7 +62,7 @@ export function ClipItemSimilarity() {
                         model={model}
                         srcFilterOptions={srcFilter}
                         filterOptions={filter}
-                        type={SimilarityQueryType.clip}
+                        distance_function={"COSINE"}
                         sha256={sha256}
                         query={clip(sha256, model)}
                     />)}

@@ -5,7 +5,6 @@ import { keepPreviousData } from "@tanstack/react-query"
 import { SearchResultImage } from "@/components/SearchResultImage"
 import { getGalleryOptionsSerializer, useGalleryIndex, useGalleryName } from "@/lib/state/gallery"
 import { selectedDBsSerializer, useSelectedDBs } from "@/lib/state/database"
-import { SimilarityQueryType } from "@/lib/state/similarityQuery/similarityQueryKeyMaps"
 import { useItemSimilaritySearch, useItemSimilarityTextSource, useOrderArgs, useQueryOptions, useResetSearchQueryState } from "@/lib/state/searchQuery/clientHooks"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { SimilaritySideBarComponents } from "@/lib/state/searchQuery/searchQueryKeyMaps"
@@ -37,7 +36,7 @@ export function SimilarItemsView({
     sha256,
     query,
     model,
-    type,
+    distance_function,
     filterOptions,
     srcFilterOptions
 }: {
@@ -46,7 +45,7 @@ export function SimilarItemsView({
     filterOptions: SimilaritySideBarComponents["CLIPSimilarity"] | SimilaritySideBarComponents["TextSimilarity"]
     srcFilterOptions: SimilaritySideBarComponents["CLIPTextSource"] | SimilaritySideBarComponents["TextSource"]
     query: components["schemas"]["PQLQuery"]
-    type: SimilarityQueryType
+    distance_function: "COSINE" | "L2"
 
 }) {
     const [dbs, ___] = useSelectedDBs()
@@ -106,7 +105,7 @@ export function SimilarItemsView({
             ...filterOptions,
             target: sha256,
             model: model,
-            distance_function: type == SimilarityQueryType.clip ? "COSINE" : "L2",
+            distance_function,
         }, {
             history: "push",
         })
@@ -127,13 +126,13 @@ export function SimilarItemsView({
         page_size: number,
         simModel: string,
         target: string,
-        queryType: SimilarityQueryType
+        distance_function: "COSINE" | "L2",
     ) => {
         let fullURL = serializers.itemSimilaritySearch({
             ...filter,
             target,
             model: simModel,
-            distance_function: queryType == SimilarityQueryType.clip ? "COSINE" : "L2",
+            distance_function,
         })
         fullURL = selectedDBsSerializer(fullURL, {
             index_db: dbs.index_db,
@@ -156,10 +155,10 @@ export function SimilarItemsView({
             query.page_size,
             model,
             sha256,
-            type
+            distance_function
         )
         return data?.results.map((_, index) => getSimilarityModeImageLink(baseLink, index))
-    }, [data, query.page_size, filter, srcFilter, model, sha256, type])
+    }, [data, query.page_size, filter, srcFilter, model, sha256, distance_function])
 
     return (
         <div className="mt-4">
