@@ -4,7 +4,6 @@ import { ConfidenceFilter } from "../options/confidenceFilter"
 import { ComboBoxResponsive } from "@/components/combobox"
 import { SimilarItemsView } from "./SimilarItemsView"
 import { components } from "@/lib/panoptikon"
-import { useImageSimilarity } from "@/lib/state/similarityStore"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { useSelectedDBs } from "@/lib/state/database"
 import { SwitchFilter } from "../base/SwitchFilter"
@@ -66,6 +65,9 @@ export function ClipItemSimilarity() {
             <div className="mt-4">
                 {sha256 && model.length > 0 && pageArgs.page_size_clip > 0 && (
                     <SimilarItemsView
+                        model={model}
+                        srcFilterOptions={srcFilter}
+                        filterOptions={filter}
                         type={SimilarityQueryType.clip}
                         sha256={sha256}
                         query={clip(sha256, model)}

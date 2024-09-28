@@ -68,6 +68,9 @@ export function TextEmbeddingsSimilarity() {
             <div className="mt-4">
                 {sha256 && model.length > 0 && pageArgs.page_size_text > 0 && (
                     <SimilarItemsView
+                        filterOptions={filter}
+                        srcFilterOptions={srcFilter}
+                        model={model}
                         type={SimilarityQueryType.textEmbedding}
                         sha256={sha256}
                         query={text(sha256, model)}
