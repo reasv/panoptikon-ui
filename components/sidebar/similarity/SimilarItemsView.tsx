@@ -3,12 +3,15 @@ import { components } from "@/lib/panoptikon"
 import { $api } from "@/lib/api"
 import { keepPreviousData } from "@tanstack/react-query"
 import { SearchResultImage } from "@/components/SearchResultImage"
-import { useGalleryIndex, useGalleryName } from "@/lib/state/gallery"
-import { useSelectedDBs } from "@/lib/state/database"
+import { getGalleryOptionsSerializer, useGalleryIndex, useGalleryName } from "@/lib/state/gallery"
+import { selectedDBsSerializer, useSelectedDBs } from "@/lib/state/database"
 import { SimilarityQueryType } from "@/lib/state/similarityQuery/similarityQueryKeyMaps"
 import { useItemSimilaritySearch, useItemSimilarityTextSource, useOrderArgs, useQueryOptions, useResetSearchQueryState } from "@/lib/state/searchQuery/clientHooks"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { SimilaritySideBarComponents } from "@/lib/state/searchQuery/searchQueryKeyMaps"
+import { useSearchParams } from "next/navigation"
+import { serializers } from "@/lib/state/searchQuery/serializers"
+import { useMemo } from "react"
 
 
 type ObjectWithDefaults<T> = {
@@ -117,36 +120,46 @@ export function SimilarItemsView({
         setSelected(data.results[index] as any)
     }
     // Generate the link for the similarity mode
-    // const params = useSearchParams()
 
-    // const getSimilarityModeLink = (currentParams: URLSearchParams, simQuery: components["schemas"]["SimilarItemsRequest"]) => {
-    //     const queryParameters = new URLSearchParams(currentParams.toString())
-    //     let fullURL = similaritySerializers.similarityOptions(queryParameters, {
-    //         ...{
-    //             ...simQuery,
-    //             src_text: undefined,
-    //             full_count: true,
-    //         },
-    //         item: sha256,
-    //         page: 1,
-    //         type: type,
-    //     })
-    //     let src_update
-    //     if (simQuery.src_text === undefined || simQuery.src_text === null) {
-    //         src_update = setAllPropertiesToDefault(similarityQuerySourceKeymap(def))
-    //     } else {
-    //         src_update = { ...simQuery.src_text } as any
-    //     }
-    //     fullURL = similaritySerializers.similaritySource(fullURL, src_update)
-    //     fullURL = galleryNameSerializer(fullURL, { g: Gallery.similarity })
-    //     return searchModeSerializer(fullURL, { mode: Mode.ItemSimilarity })
-    // }
-    // const getSimilarityModeImageLink = (base: string, index: number) => getGalleryOptionsSerializer(Gallery.similarity)(base, { index })
+    const getSimilarityModeLink = (
+        filter: SimilaritySideBarComponents["CLIPSimilarity"] | SimilaritySideBarComponents["TextSimilarity"],
+        srcFilter: SimilaritySideBarComponents["CLIPTextSource"] | SimilaritySideBarComponents["TextSource"],
+        page_size: number,
+        simModel: string,
+        target: string,
+        queryType: SimilarityQueryType
+    ) => {
+        let fullURL = serializers.itemSimilaritySearch({
+            ...filter,
+            target,
+            model: simModel,
+            distance_function: queryType == SimilarityQueryType.clip ? "COSINE" : "L2",
+        })
+        fullURL = selectedDBsSerializer(fullURL, {
+            index_db: dbs.index_db,
+            user_data_db: dbs.user_data_db,
+        })
 
-    // const indexToLinkMapping = useMemo(() => {
-    //     const baseLink = getSimilarityModeLink(params, query)
-    //     return data?.results.map((_, index) => getSimilarityModeImageLink(baseLink, index))
-    // }, [data, params, query])
+        fullURL = serializers.itemSimilarityTextSource(fullURL, srcFilter as any)
+        fullURL = serializers.orderArgs(fullURL, {
+            page: 1,
+            page_size: page_size,
+        })
+        return serializers.queryOptions(fullURL, { e_iss: true })
+    }
+    const getSimilarityModeImageLink = (base: string, index: number) => getGalleryOptionsSerializer(name)(base, { index })
+
+    const indexToLinkMapping = useMemo(() => {
+        const baseLink = getSimilarityModeLink(
+            filter,
+            srcFilter,
+            query.page_size,
+            model,
+            sha256,
+            type
+        )
+        return data?.results.map((_, index) => getSimilarityModeImageLink(baseLink, index))
+    }, [data, query.page_size, filter, srcFilter, model, sha256, type])
 
     return (
         <div className="mt-4">
@@ -161,7 +174,7 @@ export function SimilarItemsView({
                             imageContainerClassName="h-96 xl:h-80 4xl:h-80 5xl:h-80"
                             onImageClick={() => onImageClick(index)}
                             showLoadingSpinner={isLoading || isFetching}
-                        // overrideURL={indexToLinkMapping ? indexToLinkMapping[index] : undefined}
+                            overrideURL={indexToLinkMapping ? indexToLinkMapping[index] : undefined}
                         />
                     ))}
                 </div>

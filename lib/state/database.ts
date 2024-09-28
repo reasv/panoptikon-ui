@@ -1,4 +1,4 @@
-import { useQueryStates } from "nuqs"
+import { createSerializer, useQueryStates } from "nuqs"
 
 import { parseAsString } from "nuqs"
 
@@ -13,3 +13,8 @@ export const useSelectedDBs = () =>
       clearOnDefault: true,
     }
   )
+
+export const selectedDBsSerializer = createSerializer({
+  index_db: parseAsString,
+  user_data_db: parseAsString,
+})
