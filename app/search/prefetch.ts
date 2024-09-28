@@ -15,12 +15,32 @@ export const prefetchSearchPage = async (
     params: {
       query: dbs,
     },
-    body: searchQuery,
+    body: {
+      ...searchQuery,
+      results: true,
+      count: false,
+    },
+  }
+
+  const countRequest = {
+    params: {
+      query: dbs,
+    },
+    body: {
+      ...searchQuery,
+      page: 1,
+      results: false,
+      count: true,
+    },
   }
 
   await queryClient.prefetchQuery({
-    queryKey: ["post", "/api/search", searchRequest],
+    queryKey: ["post", "/api/search/pql", searchRequest],
     queryFn: () => fetchSearch(searchRequest),
+  })
+  await queryClient.prefetchQuery({
+    queryKey: ["post", "/api/search/pql", countRequest],
+    queryFn: () => fetchSearch(countRequest),
   })
   const requestDBs = {
     params: {
