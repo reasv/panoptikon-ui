@@ -10,10 +10,3 @@ export function PageSizeSlider() {
         })} />
     )
 }
-export function SimilarityPageSizeSlider() {
-    const [options, setOptions] = useItemSimilarityOptions()
-    const setPageSize = (value: number) => setOptions({ page_size: value })
-    return (
-        <PageSizeControl pageSize={options.page_size} setPageSize={setPageSize} />
-    )
-}

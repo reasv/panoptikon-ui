@@ -1,4 +1,3 @@
-
 import { useQueryOptions, useSemanticImageSearch, useSemanticTextSearch, useSemanticTextSource } from "@/lib/state/searchQuery/clientHooks"
 import { TextEmbeddingSearch } from "../base/TextEmbeddingSearch"
 import { Input } from "@/components/ui/input"

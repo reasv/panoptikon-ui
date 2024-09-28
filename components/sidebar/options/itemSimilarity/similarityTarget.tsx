@@ -1,4 +1,3 @@
-"use client"
 import { $api } from "@/lib/api"
 import { keepPreviousData } from "@tanstack/react-query";
 import { getFullFileURL, getLocale, prettyPrintBytes, prettyPrintVideoDuration } from "@/lib/utils";

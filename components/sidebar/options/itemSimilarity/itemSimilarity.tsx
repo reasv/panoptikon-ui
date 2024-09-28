@@ -8,7 +8,6 @@ import { $api } from "@/lib/api"
 import { useSelectedDBs } from "@/lib/state/database"
 import { Switch } from "@/components/ui/switch"
 
-
 export function ItemSimilarityWrapper() {
     const [options, setOptions] = useQueryOptions()
     const [filter, setFilter] = useItemSimilaritySearch()
