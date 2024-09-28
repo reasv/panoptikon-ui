@@ -39,91 +39,110 @@ export function SimilarItemsView({
     type,
 }: {
     sha256: string
-    query: components["schemas"]["SimilarItemsRequest"]
+    query: components["schemas"]["PQLQuery"]
     type: SimilarityQueryType
 }) {
     const [dbs, ___] = useSelectedDBs()
-    const { data, isLoading, isFetching } = $api.useQuery("post", "/api/search/similar/{sha256}", {
-        params: {
-            query: {
-                ...dbs
+    const { data, error, isError, refetch, isFetching, isLoading } = $api.useQuery(
+        "post",
+        "/api/search/pql",
+        {
+            params: {
+                query: dbs,
             },
-            path: {
-                sha256: sha256,
-            }
-        },
-        body: {
-            ...query,
-            full_count: true,
-        }
-    }, {
-        placeholderData: keepPreviousData
-    })
-
-    const [options, setOptions] = useItemSimilarityOptions()
-    const [source, setSource] = useItemSimilaritySource()
-
-    const setSelected = useItemSelection((state) => state.setItem)
-    const [name, setName] = useGalleryName()
-    const [index, setIndex] = useGalleryIndex(Gallery.similarity)
-    const [searchMode, setSearchmode] = useSearchMode()
-
-
-    const onImageClick = (index: number) => {
-        if (!data) return
-        setOptions({
-            ...{
+            body: {
                 ...query,
-                src_text: undefined,
-                full_count: true,
+                results: true,
+                count: false,
             },
-            item: sha256,
-            page: 1,
-            type: type,
-        }, {
-            history: "push",
-        })
-        setSource({
-            ...query.src_text,
-        }, {
-            history: "push",
-        })
-        setName(Gallery.similarity)
-        setSearchmode(Mode.ItemSimilarity)
-        setIndex(index)
-        setSelected(data.results[index])
-    }
-    // Generate the link for the similarity mode
-    const params = useSearchParams()
-
-    const getSimilarityModeLink = (currentParams: URLSearchParams, simQuery: components["schemas"]["SimilarItemsRequest"]) => {
-        const queryParameters = new URLSearchParams(currentParams.toString())
-        let fullURL = similaritySerializers.similarityOptions(queryParameters, {
-            ...{
-                ...simQuery,
-                src_text: undefined,
-                full_count: true,
-            },
-            item: sha256,
-            page: 1,
-            type: type,
-        })
-        let src_update
-        if (simQuery.src_text === undefined || simQuery.src_text === null) {
-            src_update = setAllPropertiesToDefault(similarityQuerySourceKeymap(def))
-        } else {
-            src_update = { ...simQuery.src_text } as any
+        },
+        {
+            placeholderData: keepPreviousData,
         }
-        fullURL = similaritySerializers.similaritySource(fullURL, src_update)
-        fullURL = galleryNameSerializer(fullURL, { g: Gallery.similarity })
-        return searchModeSerializer(fullURL, { mode: Mode.ItemSimilarity })
-    }
-    const getSimilarityModeImageLink = (base: string, index: number) => getGalleryOptionsSerializer(Gallery.similarity)(base, { index })
+    )
+    const countQuery = $api.useQuery(
+        "post",
+        "/api/search/pql",
+        {
+            params: {
+                query: dbs,
+            },
+            body: {
+                ...query,
+                page: 1,
+                results: false,
+                count: true,
+            },
+        },
+        {
+            placeholderData: keepPreviousData,
+        }
+    )
 
-    const indexToLinkMapping = useMemo(() => {
-        const baseLink = getSimilarityModeLink(params, query)
-        return data?.results.map((_, index) => getSimilarityModeImageLink(baseLink, index))
-    }, [data, params, query])
+    // const [options, setOptions] = useItemSimilarityOptions()
+    // const [source, setSource] = useItemSimilaritySource()
+
+    // const setSelected = useItemSelection((state) => state.setItem)
+    // const [name, setName] = useGalleryName()
+    // const [index, setIndex] = useGalleryIndex(Gallery.similarity)
+    // const [searchMode, setSearchmode] = useSearchMode()
+
+
+    // const onImageClick = (index: number) => {
+    //     if (!data) return
+    //     setOptions({
+    //         ...{
+    //             ...query,
+    //             src_text: undefined,
+    //             full_count: true,
+    //         },
+    //         item: sha256,
+    //         page: 1,
+    //         type: type,
+    //     }, {
+    //         history: "push",
+    //     })
+    //     setSource({
+    //         ...query.src_text,
+    //     }, {
+    //         history: "push",
+    //     })
+    //     setName(Gallery.similarity)
+    //     setSearchmode(Mode.ItemSimilarity)
+    //     setIndex(index)
+    //     setSelected(data.results[index])
+    // }
+    // Generate the link for the similarity mode
+    // const params = useSearchParams()
+
+    // const getSimilarityModeLink = (currentParams: URLSearchParams, simQuery: components["schemas"]["SimilarItemsRequest"]) => {
+    //     const queryParameters = new URLSearchParams(currentParams.toString())
+    //     let fullURL = similaritySerializers.similarityOptions(queryParameters, {
+    //         ...{
+    //             ...simQuery,
+    //             src_text: undefined,
+    //             full_count: true,
+    //         },
+    //         item: sha256,
+    //         page: 1,
+    //         type: type,
+    //     })
+    //     let src_update
+    //     if (simQuery.src_text === undefined || simQuery.src_text === null) {
+    //         src_update = setAllPropertiesToDefault(similarityQuerySourceKeymap(def))
+    //     } else {
+    //         src_update = { ...simQuery.src_text } as any
+    //     }
+    //     fullURL = similaritySerializers.similaritySource(fullURL, src_update)
+    //     fullURL = galleryNameSerializer(fullURL, { g: Gallery.similarity })
+    //     return searchModeSerializer(fullURL, { mode: Mode.ItemSimilarity })
+    // }
+    // const getSimilarityModeImageLink = (base: string, index: number) => getGalleryOptionsSerializer(Gallery.similarity)(base, { index })
+
+    // const indexToLinkMapping = useMemo(() => {
+    //     const baseLink = getSimilarityModeLink(params, query)
+    //     return data?.results.map((_, index) => getSimilarityModeImageLink(baseLink, index))
+    // }, [data, params, query])
 
     return (
         <div className="mt-4">
@@ -132,13 +151,13 @@ export function SimilarItemsView({
                     {data.results.map((result, index) => (
                         <SearchResultImage
                             key={index}
-                            result={result}
+                            result={result as any}
                             index={index}
                             dbs={dbs}
                             imageContainerClassName="h-96 xl:h-80 4xl:h-80 5xl:h-80"
-                            onImageClick={() => onImageClick(index)}
+                            // onImageClick={() => onImageClick(index)}
                             showLoadingSpinner={isLoading || isFetching}
-                            overrideURL={indexToLinkMapping ? indexToLinkMapping[index] : undefined}
+                        // overrideURL={indexToLinkMapping ? indexToLinkMapping[index] : undefined}
                         />
                     ))}
                 </div>

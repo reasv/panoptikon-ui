@@ -24,8 +24,8 @@ export function ClipItemSimilarity() {
         },
     })
     const clipSetters = data?.setters.filter((setter) => setter[0] === "clip").map((setter) => setter[1]) || []
-    const clipQuery = useImageSimilarity((state) => state.getClipQuery(clipSetters[0] || ""))
     const [filter, setFilter] = useSBClipSimilarity()
+    const model = filter.model.length > 0 ? filter.model : clipSetters[0] || ""
     const [srcFilter, setSrcFilter] = useSBClipSimilarityTextSrc()
     const { clip } = useSBSimilarityQuery()
     const [pageArgs, setPageArgs] = useSBSimilarityPageArgs()
@@ -56,7 +56,7 @@ export function ClipItemSimilarity() {
                         ...filter,
                         distance_function: "COSINE",
                         target: "",
-                        model: filter.model.length > 0 ? filter.model : clipSetters[0] || ""
+                        model,
                     }}
                     setFilter={setFilter}
                     srcFilter={srcFilter}
@@ -64,11 +64,11 @@ export function ClipItemSimilarity() {
                 />
             </FilterContainer>
             <div className="mt-4">
-                {sha256 && clipQuery.setter_name.length > 0 && clipQuery.page_size > 0 && (
+                {sha256 && model.length > 0 && pageArgs.page_size > 0 && (
                     <SimilarItemsView
                         type={SimilarityQueryType.clip}
                         sha256={sha256}
-                        query={clipQuery}
+                        query={clip(sha256, model)}
                     />)}
             </div>
         </FilterContainer>

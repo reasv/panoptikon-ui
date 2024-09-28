@@ -23,14 +23,11 @@ export function TextEmbeddingsSimilarity() {
         },
     })
     const setters = data?.setters.filter((setter) => setter[0] === "text-embedding").map((setter) => setter[1]) || []
-    const textEmbeddingQuery = useImageSimilarity((state) => state.getTextEmbedQuery(setters[0] || ""))
-    const setTextEmbeddingQuery = useImageSimilarity((state) => state.setTextEmbedQuery)
-    const clipSetters = data?.setters.filter((setter) => setter[0] === "clip").map((setter) => setter[1]) || []
-    const clipQuery = useImageSimilarity((state) => state.getClipQuery(clipSetters[0] || ""))
     const [filter, setFilter] = useSBTextSimilarity()
     const [srcFilter, setSrcFilter] = useSBTextSimilarityTextSrc()
     const { text } = useSBSimilarityQuery()
     const [pageArgs, setPageArgs] = useSBSimilarityPageArgs()
+    const model = filter.model.length > 0 ? filter.model : setters[0] || ""
     return (
         <FilterContainer
             label={<span>Text Semantic Similarity</span>}
@@ -45,7 +42,7 @@ export function TextEmbeddingsSimilarity() {
             >
                 <ConfidenceFilter
                     label={<span>Max Results Displayed</span>}
-                    confidence={clipQuery.page_size}
+                    confidence={pageArgs.page_size}
                     setConfidence={(value) => setPageArgs({ page_size: value })}
                     description={<span>'0' disables this similarity query</span>}
                     min={0}
@@ -57,11 +54,11 @@ export function TextEmbeddingsSimilarity() {
                     filter={{
                         ...filter,
                         distance_function: "L2",
-                        target: "",
+                        target: sha256 || "",
                         clip_xmodal: false,
                         xmodal_i2i: true,
                         xmodal_t2t: true,
-                        model: filter.model.length > 0 ? filter.model : setters[0] || ""
+                        model,
                     }}
                     setFilter={setFilter}
                     srcFilter={srcFilter}
@@ -69,11 +66,11 @@ export function TextEmbeddingsSimilarity() {
                 />
             </FilterContainer>
             <div className="mt-4">
-                {sha256 && textEmbeddingQuery.setter_name.length > 0 && pageArgs.page_size > 0 && (
+                {sha256 && model.length > 0 && pageArgs.page_size > 0 && (
                     <SimilarItemsView
                         type={SimilarityQueryType.textEmbedding}
                         sha256={sha256}
-                        query={textEmbeddingQuery}
+                        query={text(sha256, model)}
                     />)}
             </div>
         </FilterContainer>
