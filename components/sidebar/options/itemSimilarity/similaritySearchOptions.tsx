@@ -9,7 +9,7 @@ import { SwitchFilter } from "../../base/SwitchFilter"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 
-export function ItemSimilaritySearch({
+export function ItemSimilaritySearchOptions({
     enable,
     setEnable,
     filter,

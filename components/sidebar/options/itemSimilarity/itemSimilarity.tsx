@@ -2,7 +2,7 @@ import { useItemSimilaritySearch, useItemSimilarityTextSource, useQueryOptions }
 import { FilterContainer } from "../../base/FilterContainer"
 import { Label } from "@radix-ui/react-label"
 import { Input } from "postcss"
-import { ItemSimilaritySearch } from "./similaritySearchOptions"
+import { ItemSimilaritySearchOptions } from "./similaritySearchOptions"
 import { ComboBoxResponsive } from "@/components/combobox"
 import { SimilarityTarget } from "./similarityTarget"
 import { $api } from "@/lib/api"
@@ -44,7 +44,7 @@ export function ItemSimilarityWrapper() {
                 <span>Find items similar to a target item</span>
             }
         >
-            <ItemSimilaritySearch
+            <ItemSimilaritySearchOptions
                 enable={options.e_iss}
                 setEnable={(value) => setOptions({ e_iss: value })}
                 filter={filter}
