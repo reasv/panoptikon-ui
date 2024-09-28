@@ -67,7 +67,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const nResults = countQuery.data?.count || 0
   return {
     data: {
-      ...data,
+      results: (data?.results as SearchResult[]) || [],
       count: nResults,
     },
     error,

@@ -138,7 +138,7 @@ export function ResultGrid({
     onImageClick,
     isLoading,
 }: {
-    results: components["schemas"]["FileSearchResult"][],
+    results: SearchResult[],
     totalCount: number,
     onImageClick?: (index?: number) => void,
     isLoading?: boolean,

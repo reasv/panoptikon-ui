@@ -26,7 +26,7 @@ function getPrevIndex(length: number, index?: number | null,) {
 export function ImageGallery({
     items,
 }: {
-    items: components["schemas"]["FileSearchResult"][]
+    items: SearchResult[]
 }) {
     const [qIndex, setIndex] = useGalleryIndex()
     const index = (qIndex || 0) % items.length
@@ -125,7 +125,7 @@ export function GalleryImageLarge(
         prevImage,
         nextImage,
     }: {
-        item: components["schemas"]["FileSearchResult"],
+        item: SearchResult,
         prevImage: () => void,
         nextImage: () => void,
         thumbnailsOpen: boolean
@@ -176,7 +176,7 @@ export function GalleryImageLarge(
 export function GalleryHorizontalScroll({
     items,
 }: {
-    items: components["schemas"]["FileSearchResult"][]
+    items: SearchResult[]
 }) {
     const viewportRef = useRef<HTMLDivElement>(null)
     const onWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
@@ -219,7 +219,7 @@ export function HorizontalScrollElement({
     ownIndex,
     nItems,
 }: {
-    item: components["schemas"]["FileSearchResult"],
+    item: SearchResult,
     ownIndex: number,
     nItems: number,
 }) {

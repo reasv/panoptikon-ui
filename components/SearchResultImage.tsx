@@ -21,7 +21,7 @@ export function SearchResultImage({
     overrideURL,
     showLoadingSpinner
 }: {
-    result: components["schemas"]["FileSearchResult"],
+    result: SearchResult,
     index: number,
     dbs: { index_db: string | null, user_data_db: string | null }
     imageClassName?: string

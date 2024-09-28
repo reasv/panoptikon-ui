@@ -9,7 +9,7 @@ import { useSelectedDBs } from "@/lib/state/database";
 export function ItemFileDetails({
     item,
 }: {
-    item: components["schemas"]["FileSearchResult"]
+    item: SearchResult
 }) {
 
     return (
@@ -27,7 +27,7 @@ export function ItemFileDetails({
 function ItemFileDetailsInternal({
     item,
 }: {
-    item: components["schemas"]["FileSearchResult"]
+    item: SearchResult
 }) {
     const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/items/item/{sha256}", {
@@ -87,7 +87,7 @@ function SingleFileItem({
     item,
     path,
 }: {
-    item: components["schemas"]["FileSearchResult"],
+    item: SearchResult,
     path: string
 }) {
     return (

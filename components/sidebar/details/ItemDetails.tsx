@@ -54,7 +54,7 @@ function ResetFilters() {
 function ExtractedText({
     item,
 }: {
-    item: components["schemas"]["FileSearchResult"] | null
+    item: SearchResult | null
 }) {
     const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/search/stats", { params: { query: dbs, } })
@@ -159,7 +159,7 @@ function ExtractedTextList(
         minLanguageConfidence,
         maxLength
     }: {
-        item: components["schemas"]["FileSearchResult"],
+        item: SearchResult,
         selectedSetters: string[],
         selectedLanguages: string[],
         minConfidence: number,
@@ -224,7 +224,7 @@ function ExtractedTextCard(
 function ItemTagDetails({
     item,
 }: {
-    item: components["schemas"]["FileSearchResult"] | null
+    item: SearchResult | null
 }) {
     const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/search/stats", { params: { query: dbs, } })
@@ -320,7 +320,7 @@ function ItemTags(
         minConfidence,
         maxTagsPerNsSetter
     }: {
-        item: components["schemas"]["FileSearchResult"],
+        item: SearchResult,
         setters: string[],
         namespaces: string[],
         minConfidence: number,

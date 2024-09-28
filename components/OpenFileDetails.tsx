@@ -7,14 +7,14 @@ import { Toggle } from "./ui/toggle"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { useSideBarOpen, useSideBarTab } from "@/lib/state/sideBar"
 
-export function itemEquals(a: components["schemas"]["FileSearchResult"], b: components["schemas"]["FileSearchResult"]) {
-    return a.sha256 === b.sha256 && a.path === b.path
+export function itemEquals(a: SearchResult, b: SearchResult) {
+    return a.file_id === b.file_id
 }
 export function OpenDetailsButton({
     item,
     variantButton
 }: {
-    item?: components["schemas"]["FileSearchResult"],
+    item?: SearchResult,
     variantButton?: boolean
 }) {
     const { toast } = useToast()

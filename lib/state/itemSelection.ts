@@ -3,14 +3,14 @@ import { components } from "../panoptikon"
 import { itemEquals } from "@/components/OpenFileDetails"
 
 interface SelectionState {
-  selected: components["schemas"]["FileSearchResult"] | null
-  setItem: (item: components["schemas"]["FileSearchResult"]) => void
-  getSelected: () => components["schemas"]["FileSearchResult"] | null
+  selected: SearchResult | null
+  setItem: (item: SearchResult) => void
+  getSelected: () => SearchResult | null
 }
 
 export const useItemSelection = create<SelectionState>((set, get) => ({
   selected: null,
-  setItem: (item: components["schemas"]["FileSearchResult"]) => {
+  setItem: (item: SearchResult) => {
     const prev = get().selected
     if (prev && itemEquals(prev, item)) return
     set({ selected: item })

@@ -14,7 +14,7 @@ import { useSelectedDBs } from "@/lib/state/database";
 export function FileBookmarks({
     item,
 }: {
-    item: components["schemas"]["FileSearchResult"]
+    item: SearchResult
 }) {
     return (
         <FilterContainer
@@ -32,7 +32,7 @@ function FileBookmarksSetter(
     {
         item,
     }: {
-        item: components["schemas"]["FileSearchResult"]
+        item: SearchResult
     }
 ) {
     const [dbs, ___] = useSelectedDBs()
