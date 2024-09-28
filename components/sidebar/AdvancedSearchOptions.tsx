@@ -8,6 +8,7 @@ import { ExclusiveFilters } from "./options/ExclusiveFilters"
 import { TagFilter } from "./options/tagFilter"
 import { ModelOptions } from "./options/ModelOptions"
 import { ItemSimilarityWrapper } from "./options/itemSimilarity/itemSimilarity"
+import { PartitionByOption } from "./options/partitionBy"
 
 export function SearchOptions() {
     return (
@@ -22,6 +23,7 @@ export function SearchOptions() {
             <TagFilter />
             <ItemSimilarityWrapper />
             <ModelOptions />
+            <PartitionByOption />
         </div>
     )
 }
