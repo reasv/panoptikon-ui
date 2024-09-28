@@ -30,7 +30,11 @@ export function TextEmbeddingsSimilarity() {
             storageKey="text-embeddings-similarity"
             unMountOnCollapse
         >
-            <TextEmbeddingsSimilarityFilter setters={setters} setTextEmbeddingQuery={setTextEmbeddingQuery} textEmbeddingQuery={textEmbeddingQuery} />
+            <TextEmbeddingsSimilarityFilter
+                setters={setters}
+                setTextEmbeddingQuery={setTextEmbeddingQuery}
+                textEmbeddingQuery={textEmbeddingQuery}
+            />
             <div className="mt-4">
                 {sha256 && textEmbeddingQuery.setter_name.length > 0 && textEmbeddingQuery.page_size > 0 && (
                     <SimilarItemsView

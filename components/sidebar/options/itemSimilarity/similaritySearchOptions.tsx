@@ -69,7 +69,7 @@ export function ItemSimilaritySearch({
                         Similarity Search Options
                     </Label>
                     <div className="text-gray-400">
-                        Find items similar to a target item
+                        Options for similarity search
                     </div>
                 </div>
                 <Switch checked={enable} onCheckedChange={(value) => onEnableChange(value)} />
