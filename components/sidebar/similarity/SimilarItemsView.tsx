@@ -11,6 +11,7 @@ import { SimilaritySideBarComponents } from "@/lib/state/searchQuery/searchQuery
 import { useSearchParams } from "next/navigation"
 import { serializers } from "@/lib/state/searchQuery/serializers"
 import { useMemo } from "react"
+import { usePartitionBy } from "@/lib/state/partitionBy"
 
 
 type ObjectWithDefaults<T> = {
@@ -49,6 +50,7 @@ export function SimilarItemsView({
 
 }) {
     const [dbs, ___] = useSelectedDBs()
+    const [partitionBy] = usePartitionBy()
     const { data, error, isError, refetch, isFetching, isLoading } = $api.useQuery(
         "post",
         "/api/search/pql",
@@ -60,6 +62,7 @@ export function SimilarItemsView({
                 ...query,
                 results: true,
                 count: false,
+                partition_by: partitionBy.partition_by,
             },
         },
         {
@@ -78,6 +81,7 @@ export function SimilarItemsView({
                 page: 1,
                 results: false,
                 count: true,
+                partition_by: partitionBy.partition_by,
             },
         },
         {

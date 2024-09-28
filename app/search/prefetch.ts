@@ -2,6 +2,8 @@ import { QueryClient } from "@tanstack/react-query"
 import { selectedDBsServer } from "@/lib/state/databaseServer"
 import { fetchDB, fetchNs, fetchSearch, fetchStats } from "./queryFns"
 import { getSearchQueryCache } from "@/lib/state/searchQuery/serverParsers"
+import { partitionByParamsCache } from "@/lib/state/partitionByServer"
+import { PartitionBy } from "@/lib/state/partitionBy"
 
 export const prefetchSearchPage = async (
   queryClient: QueryClient,
@@ -11,6 +13,7 @@ export const prefetchSearchPage = async (
 ) => {
   const searchQuery = getSearchQueryCache(searchParams)
   const dbs = selectedDBsServer.parse(searchParams)
+  const partitionBy = partitionByParamsCache.parse(searchParams)
   const searchRequest = {
     params: {
       query: dbs,
@@ -19,6 +22,7 @@ export const prefetchSearchPage = async (
       ...searchQuery,
       results: true,
       count: false,
+      partition_by: partitionBy.partition_by as any,
     },
   }
 
@@ -31,6 +35,7 @@ export const prefetchSearchPage = async (
       page: 1,
       results: false,
       count: true,
+      partition_by: partitionBy.partition_by as any,
     },
   }
 

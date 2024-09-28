@@ -10,6 +10,7 @@ import {
 } from "./state/searchQuery/clientHooks"
 import { components } from "./panoptikon"
 import { getSearchPageURL } from "./state/searchQuery/serializers"
+import { usePartitionBy } from "./state/partitionBy"
 
 export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const isClient = typeof window !== "undefined"
@@ -21,6 +22,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const pageSize = searchQuery.page_size
   const searchEnabled = useQueryOptions()[0].s_enable
   const instantSearch = useInstantSearch((state) => state.enabled)
+  const [partitionBy] = usePartitionBy()
   const { data, error, isError, refetch, isFetching } = $api.useQuery(
     "post",
     "/api/search/pql",
@@ -32,6 +34,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
         ...searchQuery,
         results: true,
         count: false,
+        partition_by: partitionBy.partition_by,
       },
     },
     {
@@ -51,6 +54,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
         page: 1,
         results: false,
         count: true,
+        partition_by: partitionBy.partition_by,
       },
     },
     {
