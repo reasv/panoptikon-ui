@@ -99,7 +99,12 @@ export function SimilarItemsView({
             page_size: query.page_size,
         }, { history: "push" })
         setIndex(index, { history: "push" })
-        setFilter({ ...filterOptions, target: sha256, model: model }, {
+        setFilter({
+            ...filterOptions,
+            target: sha256,
+            model: model,
+            distance_function: type == SimilarityQueryType.clip ? "COSINE" : "L2",
+        }, {
             history: "push",
         })
         setSrcFilter(srcFilterOptions, {
