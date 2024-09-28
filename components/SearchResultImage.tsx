@@ -6,7 +6,7 @@ import { cn, getFullFileURL, getLocale, getThumbnailURL } from "@/lib/utils";
 import { components } from "@/lib/panoptikon";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { useSearchParams } from 'next/navigation';
-import { getGalleryOptionsSerializer, useGalleryName } from '@/lib/state/gallery';
+import { getGalleryOptionsSerializer } from '@/lib/state/gallery';
 
 export function SearchResultImage({
     result,
@@ -37,14 +37,13 @@ export function SearchResultImage({
     const thumbnailUrl = getThumbnailURL(result.sha256, dbs)
     const dateString = getLocale(new Date(result.last_modified))
     const params = useSearchParams()
-    const [name, _] = useGalleryName()
 
     const imageLink = useMemo(() => {
         if (!galleryLink) return fileUrl
         const queryParams = new URLSearchParams(params)
-        const indexUrl = getGalleryOptionsSerializer(name)(
+        const indexUrl = getGalleryOptionsSerializer()(
             queryParams,
-            { index: index }
+            { gi: index }
         )
         return indexUrl
     }, [index, name, params, nItems, galleryLink, fileUrl])
