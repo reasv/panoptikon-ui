@@ -3,7 +3,7 @@ import { components } from "@/lib/panoptikon"
 import { $api } from "@/lib/api"
 import { keepPreviousData } from "@tanstack/react-query"
 import { SearchResultImage } from "@/components/SearchResultImage"
-import { getGalleryOptionsSerializer, useGalleryIndex, useGalleryName } from "@/lib/state/gallery"
+import { getGalleryOptionsSerializer, useGalleryIndex } from "@/lib/state/gallery"
 import { selectedDBsSerializer, useSelectedDBs } from "@/lib/state/database"
 import { useItemSimilaritySearch, useItemSimilarityTextSource, useOrderArgs, useQueryOptions, useResetSearchQueryState } from "@/lib/state/searchQuery/clientHooks"
 import { useItemSelection } from "@/lib/state/itemSelection"
@@ -85,8 +85,7 @@ export function SimilarItemsView({
         }
     )
     const setSelected = useItemSelection((state) => state.setItem)
-    const [name, setName] = useGalleryName()
-    const [index, setIndex] = useGalleryIndex(name)
+    const [index, setIndex] = useGalleryIndex()
     const resetSearch = useResetSearchQueryState()
     const [orderArgs, setOrderArgs] = useOrderArgs()
     const [filter, setFilter] = useItemSimilaritySearch()
@@ -146,7 +145,7 @@ export function SimilarItemsView({
         })
         return serializers.queryOptions(fullURL, { e_iss: true })
     }
-    const getSimilarityModeImageLink = (base: string, index: number) => getGalleryOptionsSerializer(name)(base, { index })
+    const getSimilarityModeImageLink = (base: string, index: number) => getGalleryOptionsSerializer()(base, { gi: index })
 
     const indexToLinkMapping = useMemo(() => {
         const baseLink = getSimilarityModeLink(

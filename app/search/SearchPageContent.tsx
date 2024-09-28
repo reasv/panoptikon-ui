@@ -16,7 +16,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { components } from "@/lib/panoptikon";
 import { SideBar } from "@/components/sidebar/SideBar";
 import { SearchResultImage } from "@/components/SearchResultImage";
-import { useGalleryIndex, useGalleryName } from "@/lib/state/gallery";
+import { useGalleryIndex } from "@/lib/state/gallery";
 import { useSideBarOpen } from "@/lib/state/sideBar";
 import { useSelectedDBs } from "@/lib/state/database";
 import { useSearch } from "@/lib/searchHooks";
@@ -68,8 +68,7 @@ export function MultiSearchView({ initialQuery }:
         }
     }, [page])
     const totalPages = Math.ceil((nResults || 1) / (pageSize)) || 1
-    const [name, __] = useGalleryName()
-    const [index, setIndex] = useGalleryIndex(name)
+    const [index, setIndex] = useGalleryIndex()
     const results = data?.results || []
     const [sidebarOpen, setSideBarOpen] = useSideBarOpen()
 

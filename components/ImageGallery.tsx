@@ -12,7 +12,7 @@ import { components } from "@/lib/panoptikon";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { useItemSelection } from "@/lib/state/itemSelection";
-import { useGalleryIndex, useGalleryName, getGalleryOptionsSerializer, useGalleryThumbnail } from "@/lib/state/gallery";
+import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail } from "@/lib/state/gallery";
 import { useSelectedDBs } from "@/lib/state/database";
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link'
@@ -30,15 +30,14 @@ export function ImageGallery({
 }: {
     items: components["schemas"]["FileSearchResult"][]
 }) {
-    const [name, _] = useGalleryName()
-    const [qIndex, setIndex] = useGalleryIndex(name)
+    const [qIndex, setIndex] = useGalleryIndex()
     const index = (qIndex || 0) % items.length
     const nextImage = () => setIndex((prevIndex) => getNextIndex(items.length, prevIndex))
     const prevImage = () => setIndex((prevIndex) => getPrevIndex(items.length, prevIndex))
 
     const closeGallery = () => setIndex(null)
 
-    const [thumbnailsOpen, setThumbnailsOpen] = useGalleryThumbnail(name)
+    const [thumbnailsOpen, setThumbnailsOpen] = useGalleryThumbnail()
 
     const setSelectedItem = useItemSelection((state) => state.setItem)
     useEffect(() => {
@@ -48,8 +47,8 @@ export function ImageGallery({
     const params = useSearchParams()
     const [prevImageLink, nextImageLink] = useMemo(() => {
         const queryParams = new URLSearchParams(params)
-        const nextURL = getGalleryOptionsSerializer(name)(queryParams, { index: getNextIndex(items.length, index) })
-        const prevURL = getGalleryOptionsSerializer(name)(queryParams, { index: getPrevIndex(items.length, index) })
+        const nextURL = getGalleryOptionsSerializer()(queryParams, { gi: getNextIndex(items.length, index) })
+        const prevURL = getGalleryOptionsSerializer()(queryParams, { gi: getPrevIndex(items.length, index) })
         return [prevURL, nextURL]
     }, [index, name, params, items.length])
 
@@ -226,8 +225,7 @@ export function HorizontalScrollElement({
     ownIndex: number,
     nItems: number,
 }) {
-    const [name, _] = useGalleryName()
-    const [qIndex, setIndex] = useGalleryIndex(name)
+    const [qIndex, setIndex] = useGalleryIndex()
     const isSelected = useMemo(() => ownIndex === ((qIndex || 0) % nItems), [qIndex, nItems, ownIndex, name])
     const [dbs, __] = useSelectedDBs()
     const setSelected = useItemSelection((state) => state.setItem)
@@ -236,7 +234,7 @@ export function HorizontalScrollElement({
 
     const imageLink = useMemo(() => {
         const queryParams = new URLSearchParams(params)
-        const indexUrl = getGalleryOptionsSerializer(name)(queryParams, { index: ownIndex % nItems })
+        const indexUrl = getGalleryOptionsSerializer()(queryParams, { gi: ownIndex % nItems })
         return indexUrl
     }, [ownIndex, name, params, nItems])
 
