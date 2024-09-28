@@ -46,7 +46,7 @@ export function SearchResultImage({
             { gi: index }
         )
         return indexUrl
-    }, [index, name, params, nItems, galleryLink, fileUrl])
+    }, [index, params, nItems, galleryLink, fileUrl])
 
     const onClick = useCallback(() => {
         if (onImageClick) {
