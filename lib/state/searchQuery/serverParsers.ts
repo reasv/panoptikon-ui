@@ -18,10 +18,12 @@ import {
   KeymapComponents,
   itemSimilarityKeyMap,
   rrfKeyMap,
+  SimilaritySideBarComponents,
+  similaritySBPageArgsKeyMap,
 } from "./searchQueryKeyMaps"
 
 import { createScopedSearchParamsCache } from "../nuqsScopedWrappers/scopedQueryParamsCache"
-import { queryFromState } from "./searchQuery"
+import { queryFromState, sbSimilarityQueryFromState } from "./searchQuery"
 import { get } from "http"
 export type SearchParams = Record<string, string | string[] | undefined>
 
@@ -227,4 +229,53 @@ export function getFullQueryCache(params: SearchParams): KeymapComponents {
 
 export function getSearchQueryCache(params: SearchParams) {
   return queryFromState(getFullQueryCache(params))[0]
+}
+
+// Similarity sidebar
+const similaritySBCaches = {
+  CLIPSimilarity: createScopedSearchParamsCache(
+    "sb.iss.clip",
+    itemSimilarityKeyMap(def as any)
+  ),
+  CLIPTextSource: createScopedSearchParamsCache(
+    "sb.iss.clip.src",
+    sourceTextKeyMap(def as any)
+  ),
+  TextSimilarity: createScopedSearchParamsCache(
+    "sb.iss.txt",
+    itemSimilarityKeyMap(def as any)
+  ),
+  TextSource: createScopedSearchParamsCache(
+    "sb.iss.txt.src",
+    sourceTextKeyMap(def as any)
+  ),
+  PageArgs: createScopedSearchParamsCache(
+    "sb.iss",
+    similaritySBPageArgsKeyMap(def as any)
+  ),
+}
+export function getFullSimilaritySBQueryCache(
+  params: SearchParams
+): SimilaritySideBarComponents {
+  return {
+    CLIPSimilarity: similaritySBCaches.CLIPSimilarity.parse(params),
+    CLIPTextSource: similaritySBCaches.CLIPTextSource.parse(params),
+    TextSimilarity: similaritySBCaches.TextSimilarity.parse(params),
+    TextSource: similaritySBCaches.TextSource.parse(params),
+    PageArgs: similaritySBCaches.PageArgs.parse(params),
+  }
+}
+
+export function getSimilaritySBQueryCache(
+  params: SearchParams,
+  target: string,
+  textModelFallback: string,
+  clipModelFallback: string
+) {
+  return sbSimilarityQueryFromState(
+    getFullSimilaritySBQueryCache(params),
+    target,
+    textModelFallback,
+    clipModelFallback
+  )
 }

@@ -302,3 +302,37 @@ export type KeymapComponents = {
   ATSemanticImageRRF: Required<components["schemas"]["RRF"]>
   ATSourceText: ATSourceText
 }
+
+// Similar Items Sidebar
+export const similaritySBPageArgsKeyMap = (p: typeof def) =>
+  applyOptionsToMap({
+    page: p.parseAsInteger.withDefault(1).withOptions({ history: "push" }),
+    page_size: p.parseAsInteger.withDefault(10),
+  })
+
+export type SimilaritySideBarComponents = {
+  CLIPSimilarity: Required<
+    Omit<
+      components["schemas"]["SimilarityArgs"],
+      "target" | "distance_function" | "src_text"
+    >
+  >
+  CLIPTextSource: Required<components["schemas"]["SourceArgs"]>
+
+  TextSimilarity: Required<
+    Omit<
+      components["schemas"]["SimilarityArgs"],
+      | "target"
+      | "distance_function"
+      | "src_text"
+      | "clip_xmodal"
+      | "xmodal_t2t"
+      | "xmodal_i2i"
+    >
+  >
+  TextSource: Required<components["schemas"]["SourceArgs"]>
+  PageArgs: Required<{
+    page: number
+    page_size: number
+  }>
+}

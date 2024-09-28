@@ -1,5 +1,9 @@
 import { components } from "../../panoptikon"
-import { KeymapComponents, orderByType } from "./searchQueryKeyMaps"
+import {
+  KeymapComponents,
+  orderByType,
+  SimilaritySideBarComponents,
+} from "./searchQueryKeyMaps"
 
 export interface OrderMetadata {
   actual_order_by: KeymapComponents["OrderArgs"]["order_by"]
@@ -453,4 +457,95 @@ function sourceFilters(source: components["schemas"]["SourceArgs"]) {
     return source
   }
   return null
+}
+
+export function sbSimilarityQueryFromState(
+  state: SimilaritySideBarComponents,
+  target: string,
+  textModelFallback: string,
+  clipModelFallback: string
+): {
+  clip: components["schemas"]["PQLQuery"]
+  text: components["schemas"]["PQLQuery"]
+} {
+  const query: components["schemas"]["PQLQuery"] = {
+    query: null,
+    order_by: [
+      {
+        order_by: "last_modified",
+        order: null,
+        priority: 0,
+      },
+    ],
+    select: [
+      "sha256",
+      "path",
+      "filename",
+      "last_modified",
+      "type",
+      "width",
+      "height",
+    ],
+    entity: "file",
+
+    page: state.PageArgs.page,
+    page_size: state.PageArgs.page_size,
+    count: false,
+    results: true,
+    check_path: true,
+  }
+  const clip: components["schemas"]["PQLQuery"] = {
+    ...query,
+    query: {
+      and_: [
+        {
+          order_by: true,
+          direction: "asc",
+          priority: 150,
+          row_n_direction: "asc",
+          row_n: false,
+          similar_to: {
+            ...state.CLIPSimilarity,
+            target,
+            model:
+              state.CLIPSimilarity.model.length > 0
+                ? state.CLIPSimilarity.model
+                : clipModelFallback,
+            distance_function: "COSINE",
+            src_text: state.CLIPSimilarity.clip_xmodal
+              ? sourceFilters(state.CLIPTextSource)
+              : null,
+          },
+        },
+      ],
+    },
+  }
+  const text: components["schemas"]["PQLQuery"] = {
+    ...query,
+    query: {
+      and_: [
+        {
+          order_by: true,
+          direction: "asc",
+          priority: 150,
+          row_n_direction: "asc",
+          row_n: false,
+          similar_to: {
+            ...state.TextSimilarity,
+            target,
+            model:
+              state.TextSimilarity.model.length > 0
+                ? state.TextSimilarity.model
+                : textModelFallback,
+            clip_xmodal: false,
+            xmodal_i2i: true,
+            xmodal_t2t: true,
+            distance_function: "L2",
+            src_text: sourceFilters(state.TextSource),
+          },
+        },
+      ],
+    },
+  }
+  return { clip, text }
 }

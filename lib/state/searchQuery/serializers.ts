@@ -15,6 +15,7 @@ import {
   sourceTextKeyMap,
   itemSimilarityKeyMap,
   rrfKeyMap,
+  similaritySBPageArgsKeyMap,
 } from "./searchQueryKeyMaps"
 import { createScopedSerializer } from "../nuqsScopedWrappers/scopedSerializer"
 import { ReadonlyURLSearchParams } from "next/navigation"
@@ -73,4 +74,22 @@ export const getSearchPageURL = (
   return serializers.orderArgs(queryParams, {
     page: newPage,
   })
+}
+
+// Similarity sidebar
+export const sbSimilaritySerializers = {
+  CLIPSimilarity: createScopedSerializer(
+    "sb.iss.clip",
+    itemSimilarityKeyMap(def)
+  ),
+  CLIPTextSource: createScopedSerializer(
+    "sb.iss.clip.src",
+    sourceTextKeyMap(def)
+  ),
+  TextSimilarity: createScopedSerializer(
+    "sb.iss.txt",
+    itemSimilarityKeyMap(def)
+  ),
+  TextSource: createScopedSerializer("sb.iss.txt.src", sourceTextKeyMap(def)),
+  PageArgs: createScopedSerializer("sb.iss", similaritySBPageArgsKeyMap(def)),
 }

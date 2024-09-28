@@ -24,9 +24,15 @@ import {
   ATSemanticImage,
   itemSimilarityKeyMap,
   rrfKeyMap,
+  SimilaritySideBarComponents,
+  similaritySBPageArgsKeyMap,
 } from "./searchQueryKeyMaps"
 import { useScopedQueryStates } from "../nuqsScopedWrappers/scopedQueryStates"
-import { getOrderBy, queryFromState } from "./searchQuery"
+import {
+  getOrderBy,
+  queryFromState,
+  sbSimilarityQueryFromState,
+} from "./searchQuery"
 
 export type Nullable<T> = {
   [K in keyof T]: T[K] | null
@@ -331,4 +337,98 @@ export const useResetSearchQueryState = () => {
       setter(null, { history: "push" }) // @ts-ignore
     }
   }
+}
+
+// Similarity sidebar
+export function useSBClipSimilarity(): [
+  SimilaritySideBarComponents["CLIPSimilarity"],
+  SetFn<SimilaritySideBarComponents["CLIPSimilarity"]>
+] {
+  const [state, set] = useScopedQueryStates(
+    "sb.iss.clip",
+    itemSimilarityKeyMap(def as any)
+  )
+  return [state, set] as const
+}
+
+export function useSBClipSimilarityTextSrc(): [
+  SimilaritySideBarComponents["CLIPTextSource"],
+  SetFn<SimilaritySideBarComponents["CLIPTextSource"]>
+] {
+  const [state, set] = useScopedQueryStates(
+    "sb.iss.clip.src",
+    sourceTextKeyMap(def as any)
+  )
+  return [state, set] as const
+}
+
+export function useSBTextSimilarity(): [
+  SimilaritySideBarComponents["TextSimilarity"],
+  SetFn<SimilaritySideBarComponents["TextSimilarity"]>
+] {
+  const [state, set] = useScopedQueryStates(
+    "sb.iss.txt",
+    itemSimilarityKeyMap(def as any)
+  )
+  return [state, set] as const
+}
+
+export function useSBTextSimilarityTextSrc(): [
+  SimilaritySideBarComponents["TextSource"],
+  SetFn<SimilaritySideBarComponents["TextSource"]>
+] {
+  const [state, set] = useScopedQueryStates(
+    "sb.iss.txt.src",
+    sourceTextKeyMap(def as any)
+  )
+  return [state, set] as const
+}
+
+export function useSBSimilarityPageArgs(): [
+  SimilaritySideBarComponents["PageArgs"],
+  SetFn<SimilaritySideBarComponents["PageArgs"]>
+] {
+  const [state, set] = useScopedQueryStates(
+    "sb.iss",
+    similaritySBPageArgsKeyMap(def as any)
+  )
+  return [state, set] as const
+}
+
+export const useResetSimilaritySB = () => {
+  const setters = [
+    useSBClipSimilarity()[1],
+    useSBClipSimilarityTextSrc()[1],
+    useSBTextSimilarity()[1],
+    useSBTextSimilarityTextSrc()[1],
+    useSBSimilarityPageArgs()[1],
+  ]
+  return () => {
+    for (const setter of setters) {
+      // @ts-ignore
+      setter(null, { history: "push" }) // @ts-ignore
+    }
+  }
+}
+export const useSBSimilarityQueryState = () => {
+  const keymapComponents: SimilaritySideBarComponents = {
+    CLIPSimilarity: useSBClipSimilarity()[0],
+    CLIPTextSource: useSBClipSimilarityTextSrc()[0],
+    TextSimilarity: useSBTextSimilarity()[0],
+    TextSource: useSBTextSimilarityTextSrc()[0],
+    PageArgs: useSBSimilarityPageArgs()[0],
+  }
+  return keymapComponents
+}
+export const useSBSimilarityQuery = (
+  target: string,
+  textModelFallback: string,
+  clipModelFallback: string
+) => {
+  return sbSimilarityQueryFromState(
+    useSBSimilarityQueryState(),
+    target,
+    textModelFallback,
+    clipModelFallback
+  )
 }
