@@ -50,7 +50,7 @@ export function ImageGallery({
         const nextURL = getGalleryOptionsSerializer()(queryParams, { gi: getNextIndex(items.length, index) })
         const prevURL = getGalleryOptionsSerializer()(queryParams, { gi: getPrevIndex(items.length, index) })
         return [prevURL, nextURL]
-    }, [index, name, params, items.length])
+    }, [index, params, items.length])
 
     function onClickNextImage(e: React.MouseEvent<HTMLAnchorElement, MouseEvent>) {
         e.preventDefault()
@@ -226,7 +226,7 @@ export function HorizontalScrollElement({
     nItems: number,
 }) {
     const [qIndex, setIndex] = useGalleryIndex()
-    const isSelected = useMemo(() => ownIndex === ((qIndex || 0) % nItems), [qIndex, nItems, ownIndex, name])
+    const isSelected = useMemo(() => ownIndex === ((qIndex || 0) % nItems), [qIndex, nItems, ownIndex])
     const [dbs, __] = useSelectedDBs()
     const setSelected = useItemSelection((state) => state.setItem)
     const thumbnailURL = getThumbnailURL(item.sha256, dbs)
@@ -236,7 +236,7 @@ export function HorizontalScrollElement({
         const queryParams = new URLSearchParams(params)
         const indexUrl = getGalleryOptionsSerializer()(queryParams, { gi: ownIndex % nItems })
         return indexUrl
-    }, [ownIndex, name, params, nItems])
+    }, [ownIndex, params, nItems])
 
     const onClick = (
         e: React.MouseEvent<HTMLAnchorElement, MouseEvent>
