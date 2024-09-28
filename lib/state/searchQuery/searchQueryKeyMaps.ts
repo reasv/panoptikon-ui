@@ -306,8 +306,10 @@ export type KeymapComponents = {
 // Similar Items Sidebar
 export const similaritySBPageArgsKeyMap = (p: typeof def) =>
   applyOptionsToMap({
-    page: p.parseAsInteger.withDefault(1).withOptions({ history: "push" }),
-    page_size: p.parseAsInteger.withDefault(6),
+    page_clip: p.parseAsInteger.withDefault(1).withOptions({ history: "push" }),
+    page_size_clip: p.parseAsInteger.withDefault(6),
+    page_text: p.parseAsInteger.withDefault(1).withOptions({ history: "push" }),
+    page_size_text: p.parseAsInteger.withDefault(6),
   })
 
 export type SimilaritySideBarComponents = {
@@ -332,7 +334,9 @@ export type SimilaritySideBarComponents = {
   >
   TextSource: Required<components["schemas"]["SourceArgs"]>
   PageArgs: Required<{
-    page: number
-    page_size: number
+    page_clip: number
+    page_size_clip: number
+    page_text: number
+    page_size_text: number
   }>
 }

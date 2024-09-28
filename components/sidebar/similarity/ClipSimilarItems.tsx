@@ -43,8 +43,8 @@ export function ClipItemSimilarity() {
             >
                 <ConfidenceFilter
                     label={<span>Max Results Displayed</span>}
-                    confidence={pageArgs.page_size}
-                    setConfidence={(value) => setPageArgs({ page_size: value })}
+                    confidence={pageArgs.page_size_clip}
+                    setConfidence={(value) => setPageArgs({ page_size_clip: value })}
                     description={<span>'0' disables this similarity query</span>}
                     min={0}
                     max={50}
@@ -64,7 +64,7 @@ export function ClipItemSimilarity() {
                 />
             </FilterContainer>
             <div className="mt-4">
-                {sha256 && model.length > 0 && pageArgs.page_size > 0 && (
+                {sha256 && model.length > 0 && pageArgs.page_size_clip > 0 && (
                     <SimilarItemsView
                         type={SimilarityQueryType.clip}
                         sha256={sha256}

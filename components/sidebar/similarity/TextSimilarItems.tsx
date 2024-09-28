@@ -42,8 +42,8 @@ export function TextEmbeddingsSimilarity() {
             >
                 <ConfidenceFilter
                     label={<span>Max Results Displayed</span>}
-                    confidence={pageArgs.page_size}
-                    setConfidence={(value) => setPageArgs({ page_size: value })}
+                    confidence={pageArgs.page_size_text}
+                    setConfidence={(value) => setPageArgs({ page_size_text: value })}
                     description={<span>'0' disables this similarity query</span>}
                     min={0}
                     max={50}
@@ -66,7 +66,7 @@ export function TextEmbeddingsSimilarity() {
                 />
             </FilterContainer>
             <div className="mt-4">
-                {sha256 && model.length > 0 && pageArgs.page_size > 0 && (
+                {sha256 && model.length > 0 && pageArgs.page_size_text > 0 && (
                     <SimilarItemsView
                         type={SimilarityQueryType.textEmbedding}
                         sha256={sha256}

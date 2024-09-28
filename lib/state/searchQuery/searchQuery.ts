@@ -462,6 +462,8 @@ function sourceFilters(source: components["schemas"]["SourceArgs"]) {
 export function sbSimilarityQueryFromState(state: SimilaritySideBarComponents) {
   const query: components["schemas"]["PQLQuery"] = {
     query: null,
+    page: 1,
+    page_size: 10,
     order_by: [
       {
         order_by: "last_modified",
@@ -479,9 +481,6 @@ export function sbSimilarityQueryFromState(state: SimilaritySideBarComponents) {
       "height",
     ],
     entity: "file",
-
-    page: state.PageArgs.page,
-    page_size: state.PageArgs.page_size,
     count: false,
     results: true,
     check_path: true,
@@ -494,6 +493,8 @@ export function sbSimilarityQueryFromState(state: SimilaritySideBarComponents) {
     modelFallback: string
   ) => ({
     ...query,
+    page: state.PageArgs.page_clip,
+    page_size: state.PageArgs.page_size_clip,
     query: {
       and_: [
         {
@@ -526,6 +527,8 @@ export function sbSimilarityQueryFromState(state: SimilaritySideBarComponents) {
     modelFallback: string
   ) => ({
     ...query,
+    page: state.PageArgs.page_text,
+    page_size: state.PageArgs.page_size_text,
     query: {
       and_: [
         {
