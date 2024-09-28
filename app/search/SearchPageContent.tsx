@@ -24,6 +24,7 @@ import { ImageGallery } from '@/components/ImageGallery';
 import { ImageSimilarityHeader } from '@/components/ImageSimilarityHeader';
 import { Mode, useSearchMode } from "@/lib/state/searchMode";
 import { useItemSelection } from "@/lib/state/itemSelection";
+import { useQueryOptions } from "@/lib/state/searchQuery/clientHooks";
 
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }) {
@@ -88,7 +89,7 @@ export function MultiSearchView({ initialQuery }:
         }
         return () => clearTimeout(timer);
     }, [isFetching])
-
+    const [options, setOptions] = useQueryOptions()
     return (
         <>
             <SearchErrorToast noFtsErrors={mode === Mode.ItemSimilarity} isError={isError} error={error} />
@@ -104,7 +105,7 @@ export function MultiSearchView({ initialQuery }:
                     >
                         <Settings className="h-4 w-4" />
                     </Toggle>
-                    {mode === Mode.Search ? <SearchBar onSubmit={onRefresh} /> : <ImageSimilarityHeader />}
+                    {options.e_iss ? <ImageSimilarityHeader /> : <SearchBar onSubmit={onRefresh} />}
                     <InstantSearchLock />
                     <Button title="Refresh search results" onClick={onRefresh} variant="ghost" size="icon">
                         <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />

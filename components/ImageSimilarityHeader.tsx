@@ -3,13 +3,12 @@ import { Button } from "./ui/button";
 import { $api } from "@/lib/api";
 import { useSelectedDBs } from "@/lib/state/database";
 import { FilePathComponent } from "./imageButtons";
-import { Gallery, useGalleryIndex, useGalleryName } from "@/lib/state/gallery";
-import { useItemSimilarityOptions, useItemSimilaritySource } from "@/lib/state/similarityQuery/clientHooks";
-import { Mode, useSearchMode } from "@/lib/state/searchMode";
+import { useItemSimilaritySearch, useQueryOptions } from "@/lib/state/searchQuery/clientHooks";
 
 export function ImageSimilarityHeader() {
     const [dbs, ___] = useSelectedDBs()
-    const [similarityOptions, setSimilarityOptions] = useItemSimilarityOptions()
+    const [filter, setFilter] = useItemSimilaritySearch()
+    const [options, setOptions] = useQueryOptions()
     const { data, refetch, isFetching, isError, error } = $api.useQuery(
         "get",
         "/api/items/item/{sha256}",
@@ -19,22 +18,15 @@ export function ImageSimilarityHeader() {
                     ...dbs,
                 },
                 path: {
-                    sha256: similarityOptions.item || "",
+                    sha256: filter.target || "",
                 },
             },
         }
     )
     const path = data?.files[0]?.path
-    const [name, setName] = useGalleryName()
-    const [index, setIndex] = useGalleryIndex(Gallery.similarity)
-    const [searchMode, setSearchmode] = useSearchMode()
-    const [source, setSource] = useItemSimilaritySource()
     const onExitClick = () => {
         if (!data) return
-        setSimilarityOptions(null)
-        setSource(null)
-        setName(Gallery.search)
-        setSearchmode(Mode.Search)
+        setOptions({ e_iss: false })
     }
     return (
         <div className="relative w-full flex items-center">
@@ -49,7 +41,7 @@ export function ImageSimilarityHeader() {
                     Similarity Search
                 </p>
                 <div className="w-1/4 hidden sm:block lg:hidden xl:block">
-                    {path ? <FilePathComponent path={path} /> : <FilePathComponent path={similarityOptions.item || "[Missing]"} />}
+                    {path ? <FilePathComponent path={path} /> : <FilePathComponent path={filter.target || "[Missing]"} />}
                 </div>
             </div>
 
