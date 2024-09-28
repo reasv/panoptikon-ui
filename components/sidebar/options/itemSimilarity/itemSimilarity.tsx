@@ -47,9 +47,9 @@ export function ItemSimilarityWrapper() {
             return
         }
         if (filter.model.length === 0) {
-            setFilter({ model: model })
+            setFilter({ model: model }, { history: "push" })
         }
-        setOptions({ e_iss: value })
+        setOptions({ e_iss: value, at_query: "" }, { history: "push" }) // We need to reset the anyText query to avoid conflicts
     }
     return (
         <FilterContainer
