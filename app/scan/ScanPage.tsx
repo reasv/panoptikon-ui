@@ -44,13 +44,11 @@ function prettyPrintDate(isoDateString: string): string {
         return "Invalid date";
     }
     const options: Intl.DateTimeFormatOptions = {
-        year: 'numeric',
-        month: 'long',
+        year: '2-digit',
+        month: 'short',
         day: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
-        second: '2-digit',
-        timeZoneName: 'short'
     };
     return new Intl.DateTimeFormat('en-GB', options).format(date);
 }
@@ -81,7 +79,7 @@ function prettyPrintDuration(seconds: number): string {
             result += `${minutes}m`;
         }
         if (minutes === 0 && secs > 0) {
-            result += `${secs}s`;
+            result += `${secs.toFixed(1)}s`;
         }
     }
     return result.trim();
