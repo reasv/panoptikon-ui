@@ -184,12 +184,17 @@ export function ScanPage() {
             placeholderData: keepPreviousData,
         }
     )
-    const dataList: FileScanRecord[] = data ?? []
 
     return (
         <div className="flex w-full h-screen">
             <div className={'p-4 mx-auto w-full'}>
-                <DataTable data={dataList} />
+                {isFetching ? (
+                    <div>Loading...</div>
+                ) : isError ? (
+                    <div>Error: {(error as any).message}</div>
+                ) : (
+                    <DataTable data={data || []} />
+                )}
             </div>
         </div>
     )
@@ -263,18 +268,16 @@ export function DataTable({ data }: { data: FileScanRecord[] }) {
                     <TableHeader>
                         {table.getHeaderGroups().map((headerGroup) => (
                             <TableRow key={headerGroup.id}>
-                                {headerGroup.headers.map((header) => {
-                                    return (
-                                        <TableHead key={header.id}>
-                                            {header.isPlaceholder
-                                                ? null
-                                                : flexRender(
-                                                    header.column.columnDef.header,
-                                                    header.getContext()
-                                                )}
-                                        </TableHead>
-                                    )
-                                })}
+                                {headerGroup.headers.map((header) => (
+                                    <TableHead key={header.id}>
+                                        {header.isPlaceholder
+                                            ? null
+                                            : flexRender(
+                                                header.column.columnDef.header,
+                                                header.getContext()
+                                            )}
+                                    </TableHead>
+                                ))}
                             </TableRow>
                         ))}
                     </TableHeader>
