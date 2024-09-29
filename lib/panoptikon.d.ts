@@ -22,7 +22,13 @@ export interface paths {
          */
         get: operations["get_db_info_api_db_get"];
         put?: never;
-        post?: never;
+        /**
+         * Create new databases
+         * @description Create new databases with the specified names.
+         *     It runs the migration scripts on the provided database names.
+         *     If the databases already exist, the effect is the same as running the migrations.
+         */
+        post: operations["create_db_api_db_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -682,6 +688,111 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/data/extraction/{group}/{inference_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run a data extraction job */
+        post: operations["data_extraction_job_api_jobs_data_extraction__group___inference_id__post"];
+        /** Delete extracted data */
+        delete: operations["delete_extracted_data_api_jobs_data_extraction__group___inference_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/data/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the extraction history */
+        get: operations["get_extraction_history_api_jobs_data_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/folders/rescan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run a file scan */
+        post: operations["file_scan_api_jobs_folders_rescan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the current folder lists */
+        get: operations["get_folders_api_jobs_folders_get"];
+        /** Update the folder lists */
+        put: operations["update_folders_api_jobs_folders_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/folders/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the scan history */
+        get: operations["get_scan_history_api_jobs_folders_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the current system configuration */
+        get: operations["get_config_api_jobs_config_get"];
+        /** Update the system configuration */
+        put: operations["update_config_api_jobs_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/": {
         parameters: {
             query?: never;
@@ -897,6 +1008,39 @@ export interface components {
              */
             filename: string;
         };
+        /** FileScanRecord */
+        FileScanRecord: {
+            /** Id */
+            id: number;
+            /** Start Time */
+            start_time: string;
+            /** End Time */
+            end_time: string;
+            /** Path */
+            path: string;
+            /** Total Available */
+            total_available: number;
+            /** New Items */
+            new_items: number;
+            /** Unchanged Files */
+            unchanged_files: number;
+            /** New Files */
+            new_files: number;
+            /** Modified Files */
+            modified_files: number;
+            /** Marked Unavailable */
+            marked_unavailable: number;
+            /** Errors */
+            errors: number;
+            /** False Changes */
+            false_changes: number;
+            /** Metadata Time */
+            metadata_time: number;
+            /** Hashing Time */
+            hashing_time: number;
+            /** Thumbgen Time */
+            thumbgen_time: number;
+        };
         /** FileSearchResponse */
         FileSearchResponse: {
             /** Count */
@@ -923,6 +1067,13 @@ export interface components {
             unique: number;
             /** Mime Types */
             mime_types: string[];
+        };
+        /** Folders */
+        Folders: {
+            /** Included Folders */
+            included_folders: string[];
+            /** Excluded Folders */
+            excluded_folders: string[];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1144,6 +1295,45 @@ export interface components {
             sha256: string[];
             /** Metadata */
             metadata?: Record<string, never> | null;
+        };
+        /** LogRecord */
+        LogRecord: {
+            /** Id */
+            id: number;
+            /** Start Time */
+            start_time: string;
+            /** End Time */
+            end_time: string;
+            /** Items In Db */
+            items_in_db: number;
+            /** Type */
+            type: string;
+            /** Setter */
+            setter: string;
+            /** Threshold */
+            threshold: number | null;
+            /** Batch Size */
+            batch_size: number;
+            /** Image Files */
+            image_files: number;
+            /** Video Files */
+            video_files: number;
+            /** Other Files */
+            other_files: number;
+            /** Total Segments */
+            total_segments: number;
+            /** Errors */
+            errors: number;
+            /** Total Remaining */
+            total_remaining: number;
+            /** Data Load Time */
+            data_load_time: number;
+            /** Inference Time */
+            inference_time: number;
+            /** Failed */
+            failed: boolean;
+            /** Completed */
+            completed: boolean;
         };
         /** Match */
         Match: {
@@ -2653,6 +2843,49 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** SystemConfig */
+        SystemConfig: {
+            /**
+             * Remove Unavailable Files
+             * @default true
+             */
+            remove_unavailable_files: boolean;
+            /**
+             * Scan Images
+             * @default true
+             */
+            scan_images: boolean;
+            /**
+             * Scan Video
+             * @default true
+             */
+            scan_video: boolean;
+            /**
+             * Scan Audio
+             * @default false
+             */
+            scan_audio: boolean;
+            /**
+             * Scan Html
+             * @default false
+             */
+            scan_html: boolean;
+            /**
+             * Scan Pdf
+             * @default false
+             */
+            scan_pdf: boolean;
+            /**
+             * Enable Cron Job
+             * @default false
+             */
+            enable_cron_job: boolean;
+            /**
+             * Cron Schedule
+             * @default 0 3 * * *
+             */
+            cron_schedule: string;
+        };
         /** TagFrequency */
         TagFrequency: {
             /** Tags */
@@ -2766,6 +2999,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DBInfo"];
+                };
+            };
+        };
+    };
+    create_db_api_db_post: {
+        parameters: {
+            query?: {
+                new_index_db?: string;
+                new_user_data_db?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DBInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -4075,6 +4340,389 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    data_extraction_job_api_jobs_data_extraction__group___inference_id__post: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path: {
+                group: string;
+                inference_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_extracted_data_api_jobs_data_extraction__group___inference_id__delete: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path: {
+                group: string;
+                inference_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_extraction_history_api_jobs_data_history_get: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogRecord"][];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    file_scan_api_jobs_folders_rescan_post: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_folders_api_jobs_folders_get: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Folders"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_folders_api_jobs_folders_put: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Folders"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scan_history_api_jobs_folders_history_get: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileScanRecord"][];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_config_api_jobs_config_get: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemConfig"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_config_api_jobs_config_put: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SystemConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };
