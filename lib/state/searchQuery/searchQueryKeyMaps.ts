@@ -123,7 +123,7 @@ export const semanticTextSearchKeyMap = (p: typeof def) =>
     model: p.parseAsString.withDefault(""),
     distance_aggregation: p
       .parseAsStringEnum<distanceAggregation>(["MIN", "MAX", "AVG"])
-      .withDefault("MIN"),
+      .withDefault("AVG"),
   })
 
 export const sourceTextKeyMap = (p: typeof def) =>
@@ -145,7 +145,7 @@ export const semanticImageSearchKeyMap = (p: typeof def) =>
     model: p.parseAsString.withDefault(""),
     distance_aggregation: p
       .parseAsStringEnum<distanceAggregation>(["MIN", "MAX", "AVG"])
-      .withDefault("MIN"),
+      .withDefault("AVG"),
     clip_xmodal: p.parseAsBoolean.withDefault(false),
   })
 
