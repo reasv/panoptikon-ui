@@ -2,7 +2,124 @@
 import { $api } from "@/lib/api"
 import { useSelectedDBs } from "@/lib/state/database"
 import { keepPreviousData } from "@tanstack/react-query"
+// Definition for the components["schemas"]["FileScanRecord"]
+// FileScanRecord: {
+//     /** Id */
+//     id: number;
+//     /** Start Time (ISO Date) */
+//     start_time: string;
+//     /** End Time (ISO Date) */
+//     end_time: string;
+//     /** Path */
+//     path: string;
+//     /** Total Available */
+//     total_available: number;
+//     /** New Items */
+//     new_items: number;
+//     /** Unchanged Files */
+//     unchanged_files: number;
+//     /** New Files */
+//     new_files: number;
+//     /** Modified Files */
+//     modified_files: number;
+//     /** Marked Unavailable */
+//     marked_unavailable: number;
+//     /** Errors */
+//     errors: number;
+//     /** False Changes */
+//     false_changes: number;
+//     /** Metadata Time (seconds) */
+//     metadata_time: number;
+//     /** Hashing Time (seconds) */
+//     hashing_time: number;
+//     /** Thumbgen Time (seconds) */
+//     thumbgen_time: number;
+// }
+// These are the names of the columns in the table, used for the header
+// "ID",
+// "Start Time",
+// "End Time",
+// "Duration", // Calculated from end_time - start_time using prettyPrintDurationBetweenDates
+// "Path",
+// "Total Available",
+// "Marked Unavailable",
+// "Errors",
+// "New Items",
+// "New Files",
+// "Unchanged Files",
+// "Modified Files",
+// "Wrongly Detected Changes",
+// "Metadata Scan Time",
+// "File Hashing Time",
+// "Thumb Gen Time",
 
+function prettyPrintDate(isoDateString: string): string {
+    // Parse the ISO string to a Date object
+    const date = new Date(isoDateString);
+
+    // Check if the input is a valid date
+    if (isNaN(date.getTime())) {
+        return "Invalid date";
+    }
+
+    // Options for formatting the date
+    const options: Intl.DateTimeFormatOptions = {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZoneName: 'short'
+    };
+
+    // Format the date using Intl.DateTimeFormat
+    return new Intl.DateTimeFormat('en-GB', options).format(date);
+}
+function prettyPrintDurationBetweenDates(isoDateStart: string, isoDateEnd: string): string {
+    // Parse the ISO strings into Date objects
+    const startDate = new Date(isoDateStart);
+    const endDate = new Date(isoDateEnd);
+
+    // Check if both dates are valid
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        return "Invalid date(s)";
+    }
+
+    // Calculate the difference in seconds
+    const diffInSeconds = Math.abs((endDate.getTime() - startDate.getTime()) / 1000);
+
+    // Use the existing prettyPrintDuration function
+    return prettyPrintDuration(diffInSeconds);
+}
+function prettyPrintDuration(seconds: number): string {
+    if (seconds < 0) return "Invalid duration";
+
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+
+    let result = "";
+
+    // If duration is more than an hour, include hours and minutes (omit seconds)
+    if (hours > 0) {
+        result += `${hours}h`;
+        if (minutes > 0) {
+            result += ` ${minutes}m`;
+        }
+    }
+    // If duration is less than an hour, include minutes and seconds (omit seconds if less than a minute)
+    else {
+        if (minutes > 0) {
+            result += `${minutes}m`;
+        }
+        if (minutes === 0 && secs > 0) {
+            result += `${secs}s`;
+        }
+    }
+
+    return result.trim(); // Trim any extra spaces
+}
 export function ScanPage() {
     const [dbs, setDBs] = useSelectedDBs()
     const { data, error, isError, refetch, isFetching } = $api.useQuery(
