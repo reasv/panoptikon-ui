@@ -85,89 +85,6 @@ function prettyPrintDuration(seconds: number): string {
     return result.trim();
 }
 
-const columns: ColumnDef<FileScanRecord>[] = [
-    {
-        accessorKey: "id",
-        header: "ID",
-    },
-    {
-        accessorKey: "start_time",
-        header: ({ column }) => {
-            return (
-                <Button
-                    variant="ghost"
-                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-                >
-                    Start Time
-                    <ArrowUpDown className="ml-2 h-4 w-4" />
-                </Button>
-            )
-        },
-        cell: ({ row }) => prettyPrintDate(row.getValue("start_time")),
-    },
-    {
-        accessorKey: "end_time",
-        header: "End Time",
-        cell: ({ row }) => prettyPrintDate(row.getValue("end_time")),
-    },
-    {
-        accessorKey: "duration",
-        header: "Duration",
-        cell: ({ row }) => prettyPrintDurationBetweenDates(row.getValue("start_time"), row.getValue("end_time")),
-    },
-    {
-        accessorKey: "path",
-        header: "Path",
-    },
-    {
-        accessorKey: "total_available",
-        header: "Total Available",
-    },
-    {
-        accessorKey: "marked_unavailable",
-        header: "Marked Unavailable",
-    },
-    {
-        accessorKey: "errors",
-        header: "Errors",
-    },
-    {
-        accessorKey: "new_items",
-        header: "New Items",
-    },
-    {
-        accessorKey: "new_files",
-        header: "New Files",
-    },
-    {
-        accessorKey: "unchanged_files",
-        header: "Unchanged Files",
-    },
-    {
-        accessorKey: "modified_files",
-        header: "Modified Files",
-    },
-    {
-        accessorKey: "false_changes",
-        header: "Wrongly Detected Changes",
-    },
-    {
-        accessorKey: "metadata_time",
-        header: "Metadata Scan Time",
-        cell: ({ row }) => prettyPrintDuration(row.getValue("metadata_time")),
-    },
-    {
-        accessorKey: "hashing_time",
-        header: "File Hashing Time",
-        cell: ({ row }) => prettyPrintDuration(row.getValue("hashing_time")),
-    },
-    {
-        accessorKey: "thumbgen_time",
-        header: "Thumb Gen Time",
-        cell: ({ row }) => prettyPrintDuration(row.getValue("thumbgen_time")),
-    },
-]
-
 export function ScanPage() {
     const [dbs] = useSelectedDBs()
     const { data, error, isError, refetch, isFetching } = $api.useQuery(
@@ -183,6 +100,92 @@ export function ScanPage() {
         }
     )
 
+    const columns = React.useMemo<ColumnDef<FileScanRecord>[]>(() => [
+        {
+            accessorKey: "id",
+            header: "ID",
+        },
+        {
+            accessorKey: "start_time",
+            header: ({ column }) => {
+                return (
+                    <Button
+                        variant="ghost"
+                        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                    >
+                        Start Time
+                        <ArrowUpDown className="ml-2 h-4 w-4" />
+                    </Button>
+                )
+            },
+            cell: ({ row }) => prettyPrintDate(row.getValue("start_time")),
+        },
+        {
+            accessorKey: "end_time",
+            header: "End Time",
+            cell: ({ row }) => prettyPrintDate(row.getValue("end_time")),
+        },
+        {
+            accessorKey: "duration",
+            header: "Duration",
+            cell: ({ row }) => prettyPrintDurationBetweenDates(row.getValue("start_time"), row.getValue("end_time")),
+        },
+        {
+            accessorKey: "path",
+            header: "Path",
+        },
+        {
+            accessorKey: "total_available",
+            header: "Total Available",
+        },
+        {
+            accessorKey: "marked_unavailable",
+            header: "Marked Unavailable",
+        },
+        {
+            accessorKey: "errors",
+            header: "Errors",
+        },
+        {
+            accessorKey: "new_items",
+            header: "New Items",
+        },
+        {
+            accessorKey: "new_files",
+            header: "New Files",
+        },
+        {
+            accessorKey: "unchanged_files",
+            header: "Unchanged Files",
+        },
+        {
+            accessorKey: "modified_files",
+            header: "Modified Files",
+        },
+        {
+            accessorKey: "false_changes",
+            header: "Wrongly Detected Changes",
+        },
+        {
+            accessorKey: "metadata_time",
+            header: "Metadata Scan Time",
+            cell: ({ row }) => prettyPrintDuration(row.getValue("metadata_time")),
+        },
+        {
+            accessorKey: "hashing_time",
+            header: "File Hashing Time",
+            cell: ({ row }) => prettyPrintDuration(row.getValue("hashing_time")),
+        },
+        {
+            accessorKey: "thumbgen_time",
+            header: "Thumb Gen Time",
+            cell: ({ row }) => prettyPrintDuration(row.getValue("thumbgen_time")),
+        },
+    ], [])
+
+    const memoizedData = React.useMemo<FileScanRecord[]>(() => data || [], [data])
+
+
     return (
         <div className="flex w-full h-screen">
             <div className={'p-4 mx-auto w-full'}>
@@ -191,37 +194,47 @@ export function ScanPage() {
                 ) : isError ? (
                     <div>Error: {(error as any).message}</div>
                 ) : (
-                    <DataTable data={data || []} />
+                    <DataTable data={memoizedData} columns={columns} />
                 )}
             </div>
         </div>
     )
 }
 
-export function DataTable({ data }: { data: FileScanRecord[] }) {
+export function DataTable({ data, columns }: { data: FileScanRecord[], columns: ColumnDef<FileScanRecord>[] }) {
+    // State management for sorting, filtering, pagination, and column visibility
     const [sorting, setSorting] = React.useState<SortingState>([])
     const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
+    const [pagination, setPagination] = React.useState({
+        pageIndex: 0,
+        pageSize: 10,
+    })
     const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({})
-    const [rowSelection, setRowSelection] = React.useState({})
 
     const table = useReactTable({
         data,
         columns,
+        state: {
+            sorting,
+            columnFilters,
+            pagination,
+            columnVisibility,
+        },
         onSortingChange: setSorting,
         onColumnFiltersChange: setColumnFilters,
+        onPaginationChange: setPagination,
+        onColumnVisibilityChange: setColumnVisibility,
         getCoreRowModel: getCoreRowModel(),
         getPaginationRowModel: getPaginationRowModel(),
         getSortedRowModel: getSortedRowModel(),
         getFilteredRowModel: getFilteredRowModel(),
-        onColumnVisibilityChange: setColumnVisibility,
-        onRowSelectionChange: setRowSelection,
-        state: {
-            sorting,
-            columnFilters,
-            columnVisibility,
-            rowSelection,
-        },
+        debugTable: false, // Set to true for debugging
     })
+
+    // Optional: Log table state for debugging
+    React.useEffect(() => {
+        console.log("Table State:", table.getState())
+    }, [table.getState()])
 
     return (
         <div className="w-full">
@@ -309,10 +322,20 @@ export function DataTable({ data }: { data: FileScanRecord[] }) {
                     </TableBody>
                 </Table>
             </div>
-            <div className="flex items-center justify-end space-x-2 py-4">
+            <div className="flex items-center justify-between space-x-2 py-4">
                 <div className="flex-1 text-sm text-muted-foreground">
-                    {table.getFilteredSelectedRowModel().rows.length} of{" "}
-                    {table.getFilteredRowModel().rows.length} row(s) selected.
+                    {table.getFilteredRowModel().rows.length > 0 ? (
+                        <>
+                            Showing {(table.getState().pagination.pageIndex * table.getState().pagination.pageSize) + 1} to{" "}
+                            {Math.min(
+                                (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
+                                table.getFilteredRowModel().rows.length
+                            )}{" "}
+                            of {table.getFilteredRowModel().rows.length} results
+                        </>
+                    ) : (
+                        "No results."
+                    )}
                 </div>
                 <div className="space-x-2">
                     <Button
