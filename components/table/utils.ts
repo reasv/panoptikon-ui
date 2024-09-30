@@ -43,8 +43,8 @@ export function prettyPrintDuration(seconds: number): string {
     if (minutes > 0) {
       result += `${minutes}m`
     }
-    if (minutes === 0 && secs > 0) {
-      result += `${secs.toFixed(1)}s`
+    if (hours === 0 && secs > 0) {
+      result += `${secs.toFixed(minutes === 0 ? 1 : 0)}s`
     }
   }
   return result.trim()
