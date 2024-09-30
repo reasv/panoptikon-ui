@@ -23,7 +23,10 @@ export function ScanPage() {
     return (
         <div className="flex w-full h-screen">
             <div className={'p-4 mx-auto w-full'}>
-                {<DataTable data={data || []} columns={fileScanColumns} />}
+                <DataTable
+                    data={data || []}
+                    columns={fileScanColumns}
+                />
             </div>
         </div>
     )
