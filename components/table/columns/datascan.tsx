@@ -107,4 +107,12 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
         accessorKey: "total_remaining",
         header: "Remaining Unprocessed",
     },
+    {
+        accessorKey: "completed",
+        header: "Completed",
+    },
+    {
+        accessorKey: "failed",
+        header: "Failed",
+    }
 ]
