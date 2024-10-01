@@ -16,7 +16,7 @@ export function ScanPage() {
                 <ScrollArea className="overflow-y-auto">
                     <div className='max-h-[100vh]'>
                         <Tabs defaultValue="filescans">
-                            <TabsList className="grid w-full grid-cols-2">
+                            <TabsList>
                                 <TabsTrigger value="filescans">File Scan History</TabsTrigger>
                                 <TabsTrigger value="data">Data Extraction History</TabsTrigger>
                             </TabsList>

@@ -56,10 +56,12 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
     {
         accessorKey: "data_load_time",
         header: "Data Load Time",
+        cell: ({ row }) => prettyPrintDuration(row.getValue("data_load_time")),
     },
     {
         accessorKey: "inference_time",
         header: "Inference Time",
+        cell: ({ row }) => prettyPrintDuration(row.getValue("inference_time")),
     },
     {
         accessorKey: "type",
