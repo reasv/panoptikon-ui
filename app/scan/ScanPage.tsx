@@ -7,16 +7,26 @@ import { fileScanColumns } from "@/components/table/columns/filescan"
 import { DataTable } from "@/components/table/dataTable"
 import { dataLogColumns } from "@/components/table/columns/datascan"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 export function ScanPage() {
-
     return (
         <div className="flex w-full h-screen">
             <div className={'p-4 mx-auto w-full'}>
                 <ScrollArea className="overflow-y-auto">
                     <div className='max-h-[100vh]'>
-                        <FileScanHistory />
-                        <DataExtractionHistory />
+                        <Tabs defaultValue="filescans">
+                            <TabsList className="grid w-full grid-cols-2">
+                                <TabsTrigger value="filescans">File Scan History</TabsTrigger>
+                                <TabsTrigger value="data">Data Extraction History</TabsTrigger>
+                            </TabsList>
+                            <TabsContent value="filescans">
+                                <FileScanHistory />
+                            </TabsContent>
+                            <TabsContent value="data">
+                                <DataExtractionHistory />
+                            </TabsContent>
+                        </Tabs>
                     </div>
                 </ScrollArea>
             </div>
