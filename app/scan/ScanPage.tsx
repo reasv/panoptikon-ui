@@ -50,12 +50,17 @@ export function GroupList() {
         <TabsList>
             {groups.map(
                 (group) => (
-                    <TabsTrigger value={group.group_name}>{group.name}</TabsTrigger>
+                    <TabsTrigger
+                        key={group.group_name}
+                        value={group.group_name}>{group.name}</TabsTrigger>
                 )
             )}
         </TabsList>
         {groups.map((group) => (
-            <TabsContent value={group.group_name}>
+            <TabsContent
+                key={group.group_name}
+                value={group.group_name}
+            >
                 <ScrollArea className="max-w-[95vw] whitespace-nowrap">
                     <div className="p-4">
                         <DataTable

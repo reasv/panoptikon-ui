@@ -63,6 +63,30 @@ export const modelColumns: ColumnDef<Model>[] = [
             return <div className="max-w-50vw text-wrap">{row.getValue("description")}</div>
         },
     },
+    {
+        accessorKey: "run_job",
+        header: "Run Batch Job",
+        cell: ({ row }) => {
+            return <Button
+                variant="outline"
+                onClick={() => console.log("Run job", row.getValue("inference_id"))}
+            >
+                Run
+            </Button>
+        },
+    },
+    {
+        accessorKey: "delete_data",
+        header: "Delete Generated Data",
+        cell: ({ row }) => {
+            return <Button
+                variant="destructive"
+                onClick={() => console.log("Delete", row.getValue("inference_id"))}
+            >
+                Delete
+            </Button>
+        },
+    },
     // {
     //     accessorKey: "link",
     //     header: "Link",
