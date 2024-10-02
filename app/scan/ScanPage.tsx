@@ -19,8 +19,12 @@ export function ScanPage() {
                         <GroupList />
                         <Tabs defaultValue="filescans">
                             <TabsList>
-                                <TabsTrigger value="filescans">File Scan History</TabsTrigger>
-                                <TabsTrigger value="data">Data Extraction History</TabsTrigger>
+                                <TabsTrigger
+                                    value="filescans"
+                                >File Scan History</TabsTrigger>
+                                <TabsTrigger
+                                    value="data"
+                                >Data Extraction History</TabsTrigger>
                             </TabsList>
                             <TabsContent value="filescans">
                                 <FileScanHistory />
