@@ -26,10 +26,12 @@ export const jobQueueColumns: ColumnDef<components["schemas"]["JobModel"]>[] = [
         enableHiding: false,
     },
     {
+        id: "queue_id",
         accessorKey: "queue_id",
         header: "Queue ID",
     },
     {
+        id: "Status",
         accessorKey: "running",
         header: "Status",
         cell: ({ row }) => {
@@ -40,6 +42,7 @@ export const jobQueueColumns: ColumnDef<components["schemas"]["JobModel"]>[] = [
         },
     },
     {
+        id: "job_type",
         accessorKey: "job_type",
         header: "Type",
         cell: ({ row }) => {
