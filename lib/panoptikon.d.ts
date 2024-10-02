@@ -1352,6 +1352,11 @@ export interface components {
             job_type: "data_extraction" | "data_deletion" | "folder_rescan" | "folder_update";
             /** Metadata */
             metadata?: string | null;
+            /**
+             * Running
+             * @default false
+             */
+            running: boolean;
         };
         /** LogRecord */
         LogRecord: {
@@ -2177,7 +2182,6 @@ export interface components {
         };
         /** QueueStatusModel */
         QueueStatusModel: {
-            running_job: components["schemas"]["RunningJobModel"] | null;
             /** Queue */
             queue: components["schemas"]["JobModel"][];
         };
@@ -2212,18 +2216,6 @@ export interface components {
             count: number;
             /** Results */
             results: components["schemas"]["FileSearchResult"][];
-        };
-        /** RunningJobModel */
-        RunningJobModel: {
-            /** Queue Id */
-            queue_id: number;
-            /**
-             * Job Type
-             * @enum {string}
-             */
-            job_type: "data_extraction" | "data_deletion" | "folder_rescan" | "folder_update";
-            /** Metadata */
-            metadata?: string | null;
         };
         /** SearchResult */
         SearchResult: {
