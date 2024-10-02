@@ -80,9 +80,7 @@ export function GroupList() {
 
 export function GroupTab({ group }: { group: Group }) {
     const [selected, setSelected] = React.useState<RowSelectionState>({})
-    useEffect(() => {
-        console.log(selected)
-    }, [selected])
+    const selectedValues = group.inference_ids.filter((_, index) => selected[index] === true)
     return <TabsContent
         value={group.group_name}
     >
@@ -111,14 +109,14 @@ export function GroupTab({ group }: { group: Group }) {
                             <Button
                                 className="ml-4"
                                 variant="outline"
-                                onClick={() => console.log("Run job", selected)}
+                                onClick={() => console.log("Run job", selectedValues)}
                             >
                                 Run Job(s) for Selected
                             </Button>
                             <Button
                                 className="ml-4 mr-4"
                                 variant="destructive"
-                                onClick={() => console.log("Delete", selected)}
+                                onClick={() => console.log("Delete", selectedValues)}
                             >
                                 Delete Data From Selected
                             </Button>
