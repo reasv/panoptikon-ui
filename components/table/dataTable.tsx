@@ -45,6 +45,7 @@ export function DataTable<TData, TValue>(
         defaultPageSize = 10,
         rowSelection,
         setRowSelection,
+        header,
     }: {
         data: TData[],
         columns: ColumnDef<TData, TValue>[],
@@ -54,6 +55,7 @@ export function DataTable<TData, TValue>(
         defaultPageSize?: number,
         rowSelection?: RowSelectionState,
         setRowSelection?: OnChangeFn<RowSelectionState>,
+        header?: React.ReactNode,
     }) {
     "use no memo"
     const [sorting, setSorting] = React.useState<SortingState>([])
@@ -109,6 +111,7 @@ export function DataTable<TData, TValue>(
                     }
                     className="max-w-sm"
                 />}
+                {header}
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <Button variant="outline" className="ml-auto">

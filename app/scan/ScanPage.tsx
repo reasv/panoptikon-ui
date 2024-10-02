@@ -8,9 +8,10 @@ import { DataTable } from "@/components/table/dataTable"
 import { dataLogColumns } from "@/components/table/columns/datascan"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { InputObject, modelColumns, transformData } from "@/components/table/columns/models"
+import { Group, InputObject, modelColumns, transformData } from "@/components/table/columns/models"
 import React, { useEffect } from "react"
 import { RowSelectionState } from "@tanstack/react-table"
+import { Button } from "@/components/ui/button"
 
 export function ScanPage() {
     return (
@@ -50,10 +51,7 @@ export function GroupList() {
             placeholderData: keepPreviousData,
         }
     )
-    const [selected, setSelected] = React.useState<RowSelectionState>({})
-    useEffect(() => {
-        console.log(selected)
-    }, [selected])
+
     const groups = data ? transformData(data as any as InputObject) : []
 
     return groups.length > 0 ? (
@@ -70,28 +68,53 @@ export function GroupList() {
                 )}
             </TabsList>
             {groups.map((group) => (
-                <TabsContent
-                    key={group.group_name}
-                    value={group.group_name}
-                >
-                    <ScrollArea className="max-w-[95vw] whitespace-nowrap">
-                        <div className="p-4">
-                            <DataTable
-                                setRowSelection={setSelected}
-                                rowSelection={selected}
-                                storageKey={group.group_name}
-                                data={group.inference_ids || []}
-                                columns={modelColumns}
-                                filterColumn="description"
-                                filterPlaceholder="Search description..."
-                            />
-                        </div>
-                        <ScrollBar orientation="horizontal" />
-                    </ScrollArea>
-                </TabsContent>
+                <GroupTab key={group.group_name} group={group} />
             ))}
         </Tabs>
     ) : null
+}
+
+export function GroupTab({ group }: { group: Group }) {
+    const [selected, setSelected] = React.useState<RowSelectionState>({})
+    useEffect(() => {
+        console.log(selected)
+    }, [selected])
+    return <TabsContent
+        value={group.group_name}
+    >
+        <ScrollArea className="max-w-[95vw] whitespace-nowrap">
+            <div className="p-4">
+                <DataTable
+                    setRowSelection={setSelected}
+                    rowSelection={selected}
+                    storageKey={group.group_name}
+                    data={group.inference_ids || []}
+                    columns={modelColumns}
+                    filterColumn="description"
+                    filterPlaceholder="Search description..."
+                    header={
+                        <>
+                            <Button
+                                className="ml-4"
+                                variant="outline"
+                                onClick={() => console.log("Run job", selected)}
+                            >
+                                Run Job for Selected
+                            </Button>
+                            <Button
+                                className="ml-4 mr-4"
+                                variant="destructive"
+                                onClick={() => console.log("Delete", selected)}
+                            >
+                                Delete Data From Selected
+                            </Button>
+                        </>
+                    }
+                />
+            </div>
+            <ScrollBar orientation="horizontal" />
+        </ScrollArea>
+    </TabsContent>
 }
 
 export function DataExtractionHistory() {
