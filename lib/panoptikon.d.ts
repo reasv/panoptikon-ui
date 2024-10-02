@@ -688,7 +688,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/jobs/data/extraction/{group}/{inference_id}": {
+    "/api/jobs/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get running job and queue status */
+        get: operations["get_queue_status_api_jobs_queue_get"];
+        put?: never;
+        post?: never;
+        /** Cancel queued jobs */
+        delete: operations["cancel_queued_jobs_api_jobs_queue_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/data/extraction": {
         parameters: {
             query?: never;
             header?: never;
@@ -698,26 +716,9 @@ export interface paths {
         get?: never;
         put?: never;
         /** Run a data extraction job */
-        post: operations["data_extraction_job_api_jobs_data_extraction__group___inference_id__post"];
+        post: operations["enqueue_data_extraction_job_api_jobs_data_extraction_post"];
         /** Delete extracted data */
-        delete: operations["delete_extracted_data_api_jobs_data_extraction__group___inference_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/jobs/data/history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get the extraction history */
-        get: operations["get_extraction_history_api_jobs_data_history_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
+        delete: operations["enqueue_delete_extracted_data_api_jobs_data_extraction_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -732,8 +733,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Run a file scan */
-        post: operations["file_scan_api_jobs_folders_rescan_post"];
+        /** Run a folder rescan */
+        post: operations["enqueue_folder_rescan_api_jobs_folders_rescan_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -750,8 +751,25 @@ export interface paths {
         /** Get the current folder lists */
         get: operations["get_folders_api_jobs_folders_get"];
         /** Update the folder lists */
-        put: operations["update_folders_api_jobs_folders_put"];
+        put: operations["enqueue_update_folders_api_jobs_folders_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel the currently running job */
+        post: operations["cancel_current_job_api_jobs_cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -767,6 +785,23 @@ export interface paths {
         };
         /** Get the scan history */
         get: operations["get_scan_history_api_jobs_folders_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/data/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the extraction history */
+        get: operations["get_extraction_history_api_jobs_data_history_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -923,6 +958,16 @@ export interface components {
             cache: {
                 [key: string]: string[];
             };
+        };
+        /** CancelResponse */
+        CancelResponse: {
+            /** Detail */
+            detail: string;
+        };
+        /** ConfigResponse */
+        ConfigResponse: {
+            /** Detail */
+            detail: string;
         };
         /** DBInfo */
         DBInfo: {
@@ -1295,6 +1340,18 @@ export interface components {
             sha256: string[];
             /** Metadata */
             metadata?: Record<string, never> | null;
+        };
+        /** JobModel */
+        JobModel: {
+            /** Queue Id */
+            queue_id: number;
+            /**
+             * Job Type
+             * @enum {string}
+             */
+            job_type: "data_extraction" | "data_deletion" | "folder_rescan" | "folder_update";
+            /** Metadata */
+            metadata?: string | null;
         };
         /** LogRecord */
         LogRecord: {
@@ -2113,6 +2170,17 @@ export interface components {
              */
             check_path: boolean;
         };
+        /** QueueCancelResponse */
+        QueueCancelResponse: {
+            /** Cancelled Jobs */
+            cancelled_jobs: number[];
+        };
+        /** QueueStatusModel */
+        QueueStatusModel: {
+            running_job: components["schemas"]["RunningJobModel"] | null;
+            /** Queue */
+            queue: components["schemas"]["JobModel"][];
+        };
         /** RRF */
         RRF: {
             /**
@@ -2144,6 +2212,18 @@ export interface components {
             count: number;
             /** Results */
             results: components["schemas"]["FileSearchResult"][];
+        };
+        /** RunningJobModel */
+        RunningJobModel: {
+            /** Queue Id */
+            queue_id: number;
+            /**
+             * Job Type
+             * @enum {string}
+             */
+            job_type: "data_extraction" | "data_deletion" | "folder_rescan" | "folder_update";
+            /** Metadata */
+            metadata?: string | null;
         };
         /** SearchResult */
         SearchResult: {
@@ -4343,19 +4423,11 @@ export interface operations {
             };
         };
     };
-    data_extraction_job_api_jobs_data_extraction__group___inference_id__post: {
+    get_queue_status_api_jobs_queue_get: {
         parameters: {
-            query?: {
-                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
-                index_db?: string | null;
-                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
-                user_data_db?: string | null;
-            };
+            query?: never;
             header?: never;
-            path: {
-                group: string;
-                inference_id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -4366,7 +4438,36 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["QueueStatusModel"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    cancel_queued_jobs_api_jobs_queue_delete: {
+        parameters: {
+            query: {
+                queue_ids: number[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueCancelResponse"];
                 };
             };
             /** @description Not found */
@@ -4387,53 +4488,10 @@ export interface operations {
             };
         };
     };
-    delete_extracted_data_api_jobs_data_extraction__group___inference_id__delete: {
+    enqueue_data_extraction_job_api_jobs_data_extraction_post: {
         parameters: {
-            query?: {
-                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
-                index_db?: string | null;
-                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
-                user_data_db?: string | null;
-            };
-            header?: never;
-            path: {
-                group: string;
-                inference_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_extraction_history_api_jobs_data_history_get: {
-        parameters: {
-            query?: {
+            query: {
+                inference_ids: string[];
                 /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
                 /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
@@ -4451,7 +4509,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LogRecord"][];
+                    "application/json": components["schemas"]["JobModel"][];
                 };
             };
             /** @description Not found */
@@ -4472,7 +4530,49 @@ export interface operations {
             };
         };
     };
-    file_scan_api_jobs_folders_rescan_post: {
+    enqueue_delete_extracted_data_api_jobs_data_extraction_delete: {
+        parameters: {
+            query: {
+                inference_ids: string[];
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobModel"][];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enqueue_folder_rescan_api_jobs_folders_rescan_post: {
         parameters: {
             query?: {
                 /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
@@ -4487,12 +4587,12 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["JobModel"];
                 };
             };
             /** @description Not found */
@@ -4554,7 +4654,7 @@ export interface operations {
             };
         };
     };
-    update_folders_api_jobs_folders_put: {
+    enqueue_update_folders_api_jobs_folders_put: {
         parameters: {
             query?: {
                 /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
@@ -4573,12 +4673,12 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["JobModel"];
                 };
             };
             /** @description Not found */
@@ -4596,6 +4696,33 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    cancel_current_job_api_jobs_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancelResponse"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -4620,6 +4747,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FileScanRecord"][];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_extraction_history_api_jobs_data_history_get: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogRecord"][];
                 };
             };
             /** @description Not found */
@@ -4705,7 +4873,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ConfigResponse"];
                 };
             };
             /** @description Not found */

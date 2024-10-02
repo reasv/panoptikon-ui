@@ -13,6 +13,8 @@ import React, { useEffect } from "react"
 import { RowSelectionState } from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { jobQueueColumns } from "@/components/table/columns/queue"
+import { useToast } from "@/components/ui/use-toast"
 
 export function ScanPage() {
     return (
@@ -22,6 +24,7 @@ export function ScanPage() {
                     <div className='max-h-[100vh]'>
                         <FolderLists />
                         <GroupList />
+                        <JobQueue />
                         <Tabs defaultValue="filescans">
                             <TabsList>
                                 <TabsTrigger
@@ -89,6 +92,12 @@ export function FolderLists() {
                         },
                     ],
                 });
+                queryClient.invalidateQueries({
+                    queryKey: [
+                        "get",
+                        "/api/jobs/queue",
+                    ],
+                });
             },
         }
     );
@@ -107,6 +116,12 @@ export function FolderLists() {
                                 query: dbs,
                             },
                         },
+                    ],
+                });
+                queryClient.invalidateQueries({
+                    queryKey: [
+                        "get",
+                        "/api/jobs/queue",
                     ],
                 });
             },
@@ -214,6 +229,57 @@ export function GroupList() {
 export function GroupTab({ group }: { group: Group }) {
     const [selected, setSelected] = React.useState<RowSelectionState>({})
     const selectedValues = group.inference_ids.filter((_, index) => selected[index] === true)
+    const queryClient = useQueryClient()
+    const { toast } = useToast()
+    const [dbs] = useSelectedDBs()
+    const runJob = $api.useMutation("post", "/api/jobs/data/extraction", {
+        onSuccess: () => {
+            queryClient.invalidateQueries({
+                queryKey: [
+                    "get",
+                    "/api/jobs/queue",
+                ],
+            })
+            toast({
+                title: "Jobs Scheduled",
+                description: "The selected jobs have been scheduled.",
+            })
+        },
+    })
+    const deleteData = $api.useMutation("delete", "/api/jobs/data/extraction", {
+        onSuccess: () => {
+            queryClient.invalidateQueries({
+                queryKey: [
+                    "get",
+                    "/api/jobs/queue",
+                ],
+            })
+            toast({
+                title: "Data Deleted",
+                description: "The data deletion has been scheduled",
+            })
+        },
+    })
+    const runSelected = () => {
+        runJob.mutate({
+            params: {
+                query: {
+                    ...dbs,
+                    inference_ids: selectedValues.map((model) => model.inference_id),
+                },
+            },
+        });
+    }
+    const deleteSelected = () => {
+        deleteData.mutate({
+            params: {
+                query: {
+                    ...dbs,
+                    inference_ids: selectedValues.map((model) => model.inference_id),
+                },
+            },
+        });
+    }
     return <TabsContent
         value={group.group_name}
     >
@@ -240,16 +306,18 @@ export function GroupTab({ group }: { group: Group }) {
                     header={
                         <>
                             <Button
+                                disabled={selectedValues.length === 0}
                                 className="ml-4"
                                 variant="outline"
-                                onClick={() => console.log("Run job", selectedValues)}
+                                onClick={() => runSelected()}
                             >
                                 Run Job(s) for Selected
                             </Button>
                             <Button
+                                disabled={selectedValues.length === 0}
                                 className="ml-4 mr-4"
                                 variant="destructive"
-                                onClick={() => console.log("Delete", selectedValues)}
+                                onClick={() => deleteSelected()}
                             >
                                 Delete Data From Selected
                             </Button>
@@ -261,6 +329,72 @@ export function GroupTab({ group }: { group: Group }) {
         </ScrollArea>
     </TabsContent>
 }
+
+export function JobQueue() {
+    const { data, error, isError, refetch, isFetching } = $api.useQuery(
+        "get",
+        "/api/jobs/queue",
+        {
+            placeholderData: keepPreviousData,
+        }
+    )
+    const queryClient = useQueryClient()
+    const { toast } = useToast()
+    const cancelJob = $api.useMutation("delete", "/api/jobs/queue",
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries({
+                    queryKey: [
+                        "get",
+                        "/api/jobs/queue",
+                    ],
+                })
+                toast({
+                    title: "Jobs Cancelled",
+                    description: "The selected jobs have been cancelled.",
+                })
+            }
+        }
+    )
+    const queue = data?.queue || []
+    const [selected, setSelected] = React.useState<RowSelectionState>({})
+    const selectedValues = queue.filter((_, index) => selected[index] === true)
+    const cancelSelected = () => {
+        cancelJob.mutate({
+            params: {
+                query: {
+                    queue_ids: selectedValues.map((job) => job.queue_id),
+                }
+            },
+        })
+    }
+    return <ScrollArea className="max-w-[95vw] whitespace-nowrap">
+        <h1 className="text-wrap mt-3">
+            Job Queue
+        </h1>
+        <div className="p-4">
+            <DataTable
+                setRowSelection={setSelected}
+                rowSelection={selected}
+                storageKey="jobQueue"
+                data={queue}
+                columns={jobQueueColumns}
+                header={
+                    <Button
+                        disabled={selectedValues.length === 0}
+                        className="ml-4"
+                        variant="destructive"
+                        onClick={() => cancelSelected()}
+                    >
+                        Cancel Selected
+                    </Button>
+                }
+            />
+        </div>
+        <ScrollBar orientation="horizontal" />
+    </ScrollArea>
+}
+
 
 export function DataExtractionHistory() {
     const [dbs] = useSelectedDBs()
