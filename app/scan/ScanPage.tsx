@@ -9,6 +9,8 @@ import { dataLogColumns } from "@/components/table/columns/datascan"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { InputObject, modelColumns, transformData } from "@/components/table/columns/models"
+import React, { useEffect } from "react"
+import { RowSelectionState } from "@tanstack/react-table"
 
 export function ScanPage() {
     return (
@@ -48,6 +50,10 @@ export function GroupList() {
             placeholderData: keepPreviousData,
         }
     )
+    const [selected, setSelected] = React.useState<RowSelectionState>({})
+    useEffect(() => {
+        console.log(selected)
+    }, [selected])
     const groups = data ? transformData(data as any as InputObject) : []
 
     return groups.length > 0 ? (
@@ -71,6 +77,8 @@ export function GroupList() {
                     <ScrollArea className="max-w-[95vw] whitespace-nowrap">
                         <div className="p-4">
                             <DataTable
+                                setRowSelection={setSelected}
+                                rowSelection={selected}
                                 storageKey={group.group_name}
                                 data={group.inference_ids || []}
                                 columns={modelColumns}
