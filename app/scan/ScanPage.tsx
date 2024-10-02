@@ -334,7 +334,9 @@ export function JobQueue() {
     const { data, error, isError, refetch, isFetching } = $api.useQuery(
         "get",
         "/api/jobs/queue",
+        {},
         {
+            refetchInterval: 2500,
             placeholderData: keepPreviousData,
         }
     )
@@ -407,6 +409,7 @@ export function DataExtractionHistory() {
             },
         },
         {
+            refetchInterval: 2500,
             placeholderData: keepPreviousData,
         }
     )
@@ -436,6 +439,7 @@ export function FileScanHistory() {
             },
         },
         {
+            refetchInterval: 2500,
             placeholderData: keepPreviousData,
         }
     )
