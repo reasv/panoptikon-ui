@@ -46,35 +46,39 @@ export function GroupList() {
     )
     const groups = data ? transformData(data as any as InputObject) : []
 
-    return groups.length > 0 ? <Tabs defaultValue={groups[0].group_name}>
-        <TabsList>
-            {groups.map(
-                (group) => (
-                    <TabsTrigger
-                        key={group.group_name}
-                        value={group.group_name}>{group.name}</TabsTrigger>
-                )
-            )}
-        </TabsList>
-        {groups.map((group) => (
-            <TabsContent
-                key={group.group_name}
-                value={group.group_name}
-            >
-                <ScrollArea className="max-w-[95vw] whitespace-nowrap">
-                    <div className="p-4">
-                        <DataTable
-                            data={group.inference_ids || []}
-                            columns={modelColumns}
-                            filterColumn="description"
-                            filterPlaceholder="Search description..."
-                        />
-                    </div>
-                    <ScrollBar orientation="horizontal" />
-                </ScrollArea>
-            </TabsContent>
-        ))}
-    </Tabs> : null
+    return groups.length > 0 ? (
+        <Tabs
+            defaultValue={groups[0].group_name}
+        >
+            <TabsList>
+                {groups.map(
+                    (group) => (
+                        <TabsTrigger
+                            key={group.group_name}
+                            value={group.group_name}>{group.name}</TabsTrigger>
+                    )
+                )}
+            </TabsList>
+            {groups.map((group) => (
+                <TabsContent
+                    key={group.group_name}
+                    value={group.group_name}
+                >
+                    <ScrollArea className="max-w-[95vw] whitespace-nowrap">
+                        <div className="p-4">
+                            <DataTable
+                                data={group.inference_ids || []}
+                                columns={modelColumns}
+                                filterColumn="description"
+                                filterPlaceholder="Search description..."
+                            />
+                        </div>
+                        <ScrollBar orientation="horizontal" />
+                    </ScrollArea>
+                </TabsContent>
+            ))}
+        </Tabs>
+    ) : null
 }
 
 export function DataExtractionHistory() {
