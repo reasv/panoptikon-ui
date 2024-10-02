@@ -4,6 +4,8 @@ import * as React from "react"
 import {
     ColumnDef,
     ColumnFiltersState,
+    OnChangeFn,
+    RowSelectionState,
     SortingState,
     VisibilityState,
     flexRender,
@@ -41,6 +43,8 @@ export function DataTable<TData, TValue>(
         filterPlaceholder,
         storageKey,
         defaultPageSize = 10,
+        rowSelection,
+        setRowSelection,
     }: {
         data: TData[],
         columns: ColumnDef<TData, TValue>[],
@@ -48,6 +52,8 @@ export function DataTable<TData, TValue>(
         filterColumn?: string,
         filterPlaceholder?: string,
         defaultPageSize?: number,
+        rowSelection?: RowSelectionState,
+        setRowSelection?: OnChangeFn<RowSelectionState>,
     }) {
     "use no memo"
     const [sorting, setSorting] = React.useState<SortingState>([])
@@ -79,6 +85,7 @@ export function DataTable<TData, TValue>(
             columnFilters,
             pagination,
             columnVisibility,
+            rowSelection,
         },
         onSortingChange: setSorting,
         onColumnFiltersChange: setColumnFilters,
@@ -88,6 +95,7 @@ export function DataTable<TData, TValue>(
         getPaginationRowModel: getPaginationRowModel(),
         getSortedRowModel: getSortedRowModel(),
         getFilteredRowModel: getFilteredRowModel(),
+        onRowSelectionChange: setRowSelection,
     })
 
     return (
