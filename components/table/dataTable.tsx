@@ -33,7 +33,7 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table"
-import { useTableStore } from "@/lib/state/columnShow"
+import { useColumnVisibility, useTableStore } from "@/lib/state/columnShow"
 
 export function DataTable<TData, TValue>(
     {
@@ -64,17 +64,20 @@ export function DataTable<TData, TValue>(
         pageIndex: 0,
         pageSize: defaultPageSize,
     })
-    const { tables, setTableVisibility } = useTableStore();
+    // Get the current column visibility using the zustand selector
+    const columnVisibility = useColumnVisibility(storageKey);
 
-    const columnVisibility = tables[storageKey]?.columnVisibility || {};
+    // Access the zustand action to set the column visibility
+    const setTableVisibility = useTableStore((state) => state.setTableVisibility);
 
+    // Function to handle visibility changes
     const handleVisibilityChange = (updaterOrValue: VisibilityState | ((old: VisibilityState) => VisibilityState)) => {
-        if (typeof updaterOrValue === 'function') {
-            // It's an updater function, so we need to apply it to the current visibility state
+        if (typeof updaterOrValue === "function") {
+            // Apply the updater function to the current visibility state
             const newState = updaterOrValue(columnVisibility);
             setTableVisibility(storageKey, newState);
         } else {
-            // It's a new visibility state object
+            // Set the new visibility state directly
             setTableVisibility(storageKey, updaterOrValue);
         }
     };

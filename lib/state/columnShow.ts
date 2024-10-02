@@ -1,7 +1,6 @@
 import { createJSONStorage, persist } from "zustand/middleware"
 import { persistLocalStorage } from "./store"
 import { create } from "zustand"
-import { useEffect, useState } from "react"
 import { VisibilityState } from "@tanstack/react-table"
 
 interface TableState {
@@ -35,3 +34,7 @@ export const useTableStore = create(
     storage
   )
 )
+
+// Selector to get the column visibility for a specific table identified by storageKey
+export const useColumnVisibility = (storageKey: string) =>
+  useTableStore((state) => state.tables[storageKey]?.columnVisibility || {})
