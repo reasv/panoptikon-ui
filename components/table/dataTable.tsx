@@ -31,6 +31,7 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table"
+import { useTableStore } from "@/lib/state/columnShow"
 
 export function DataTable<TData, TValue>(
     {
@@ -38,10 +39,12 @@ export function DataTable<TData, TValue>(
         columns,
         filterColumn,
         filterPlaceholder,
+        storageKey,
         defaultPageSize = 10,
     }: {
         data: TData[],
         columns: ColumnDef<TData, TValue>[],
+        storageKey: string,
         filterColumn?: string,
         filterPlaceholder?: string,
         defaultPageSize?: number,
@@ -53,7 +56,20 @@ export function DataTable<TData, TValue>(
         pageIndex: 0,
         pageSize: defaultPageSize,
     })
-    const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({})
+    const { tables, setTableVisibility } = useTableStore();
+
+    const columnVisibility = tables[storageKey]?.columnVisibility || {};
+
+    const handleVisibilityChange = (updaterOrValue: VisibilityState | ((old: VisibilityState) => VisibilityState)) => {
+        if (typeof updaterOrValue === 'function') {
+            // It's an updater function, so we need to apply it to the current visibility state
+            const newState = updaterOrValue(columnVisibility);
+            setTableVisibility(storageKey, newState);
+        } else {
+            // It's a new visibility state object
+            setTableVisibility(storageKey, updaterOrValue);
+        }
+    };
 
     const table = useReactTable({
         data,
@@ -67,7 +83,7 @@ export function DataTable<TData, TValue>(
         onSortingChange: setSorting,
         onColumnFiltersChange: setColumnFilters,
         onPaginationChange: setPagination,
-        onColumnVisibilityChange: setColumnVisibility,
+        onColumnVisibilityChange: handleVisibilityChange,
         getCoreRowModel: getCoreRowModel(),
         getPaginationRowModel: getPaginationRowModel(),
         getSortedRowModel: getSortedRowModel(),

@@ -71,6 +71,7 @@ export function GroupList() {
                     <ScrollArea className="max-w-[95vw] whitespace-nowrap">
                         <div className="p-4">
                             <DataTable
+                                storageKey={group.group_name}
                                 data={group.inference_ids || []}
                                 columns={modelColumns}
                                 filterColumn="description"
@@ -103,6 +104,7 @@ export function DataExtractionHistory() {
     return <ScrollArea className="max-w-[95vw] whitespace-nowrap">
         <div className="p-4">
             <DataTable
+                storageKey="dataextraction"
                 data={data || []}
                 columns={dataLogColumns}
                 filterColumn="setter"
@@ -130,6 +132,7 @@ export function FileScanHistory() {
     return <ScrollArea className="max-w-[95vw] whitespace-nowrap">
         <div className="p-4">
             <DataTable
+                storageKey="filescan"
                 data={data || []}
                 columns={fileScanColumns}
                 filterColumn="path"
