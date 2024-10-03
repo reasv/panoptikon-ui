@@ -1350,6 +1350,8 @@ export interface components {
              * @enum {string}
              */
             job_type: "data_extraction" | "data_deletion" | "folder_rescan" | "folder_update";
+            /** Index Db */
+            index_db: string;
             /** Metadata */
             metadata?: string | null;
             /**
@@ -1393,9 +1395,9 @@ export interface components {
             /** Inference Time */
             inference_time: number;
             /** Failed */
-            failed: boolean;
+            failed: number;
             /** Completed */
-            completed: boolean;
+            completed: number;
         };
         /** Match */
         Match: {

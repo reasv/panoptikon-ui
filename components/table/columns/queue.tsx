@@ -31,15 +31,20 @@ export const jobQueueColumns: ColumnDef<components["schemas"]["JobModel"]>[] = [
         header: "Queue ID",
     },
     {
-        id: "Status",
+        id: "status",
         accessorKey: "running",
         header: "Status",
         cell: ({ row }) => {
-            if (row.getValue("running")) {
+            if (row.getValue("status")) {
                 return "Running"
             }
             return "Queued"
         },
+    },
+    {
+        id: "index_db",
+        accessorKey: "index_db",
+        header: "Index DB",
     },
     {
         id: "job_type",
