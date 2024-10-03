@@ -49,7 +49,7 @@ export function ScanPage() {
 }
 
 export function FolderLists() {
-    const [dbs] = useSelectedDBs();
+    const [dbs] = useSelectedDBs()
     const { data, error, isError, refetch, isFetching } = $api.useQuery(
         "get",
         "/api/jobs/folders",
@@ -61,20 +61,20 @@ export function FolderLists() {
         {
             placeholderData: keepPreviousData,
         }
-    );
-    const queryClient = useQueryClient();
+    )
+    const queryClient = useQueryClient()
 
     // Local state for editable folder paths
-    const [includedFolders, setIncludedFolders] = React.useState("");
-    const [excludedFolders, setExcludedFolders] = React.useState("");
+    const [includedFolders, setIncludedFolders] = React.useState("")
+    const [excludedFolders, setExcludedFolders] = React.useState("")
 
     // Update the local state whenever data is fetched
     useEffect(() => {
         if (data) {
-            setIncludedFolders(data.included_folders.join("\n"));
-            setExcludedFolders(data.excluded_folders.join("\n"));
+            setIncludedFolders(data.included_folders.join("\n"))
+            setExcludedFolders(data.excluded_folders.join("\n"))
         }
-    }, [data]);
+    }, [data])
 
     const update = $api.useMutation(
         "put",
@@ -91,16 +91,16 @@ export function FolderLists() {
                             },
                         },
                     ],
-                });
+                })
                 queryClient.invalidateQueries({
                     queryKey: [
                         "get",
                         "/api/jobs/queue",
                     ],
-                });
+                })
             },
         }
-    );
+    )
 
     const rescan = $api.useMutation(
         "post",
@@ -117,16 +117,16 @@ export function FolderLists() {
                             },
                         },
                     ],
-                });
+                })
                 queryClient.invalidateQueries({
                     queryKey: [
                         "get",
                         "/api/jobs/queue",
                     ],
-                });
+                })
             },
         }
-    );
+    )
 
     const updateFolders = async () => {
         update.mutate({
@@ -137,16 +137,16 @@ export function FolderLists() {
                 included_folders: includedFolders.split("\n").map((line) => line.trim()).filter((line) => line !== ""),
                 excluded_folders: excludedFolders.split("\n").map((line) => line.trim()).filter((line) => line !== ""),
             },
-        });
-    };
+        })
+    }
 
     const rescanFolders = () => {
         rescan.mutate({
             params: {
                 query: dbs,
             },
-        });
-    };
+        })
+    }
 
     return (
         <>
@@ -187,7 +187,7 @@ export function FolderLists() {
                 Rescan All Paths
             </Button>
         </>
-    );
+    )
 }
 
 
@@ -268,7 +268,7 @@ export function GroupTab({ group }: { group: Group }) {
                     inference_ids: selectedValues.map((model) => model.inference_id),
                 },
             },
-        });
+        })
     }
     const deleteSelected = () => {
         deleteData.mutate({
@@ -278,7 +278,7 @@ export function GroupTab({ group }: { group: Group }) {
                     inference_ids: selectedValues.map((model) => model.inference_id),
                 },
             },
-        });
+        })
     }
     return <TabsContent
         value={group.group_name}
