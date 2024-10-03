@@ -969,6 +969,13 @@ export interface components {
             /** Detail */
             detail: string;
         };
+        /** DBCreateResponse */
+        DBCreateResponse: {
+            /** Index Db */
+            index_db: string;
+            /** User Data Db */
+            user_data_db: string;
+        };
         /** DBInfo */
         DBInfo: {
             index: components["schemas"]["SingleDBInfo"];
@@ -3095,7 +3102,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DBInfo"];
+                    "application/json": components["schemas"]["DBCreateResponse"];
                 };
             };
             /** @description Validation Error */

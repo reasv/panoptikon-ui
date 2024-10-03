@@ -17,6 +17,7 @@ import { jobQueueColumns } from "@/components/table/columns/queue"
 import { useToast } from "@/components/ui/use-toast"
 import { SwitchDB } from "@/components/sidebar/options/switchDB"
 import { Label } from "@/components/ui/label"
+import { CreateNewDB } from "@/components/CreateDB"
 
 export function ScanPage() {
     return (
@@ -25,6 +26,7 @@ export function ScanPage() {
                 <ScrollArea className="overflow-y-auto">
                     <div className='max-h-[100vh]'>
                         <SwitchDB />
+                        <CreateNewDB />
                         <FolderLists />
                         <GroupList />
                         <JobQueue />
