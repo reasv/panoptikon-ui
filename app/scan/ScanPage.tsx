@@ -180,7 +180,7 @@ export function FolderLists() {
                 </TabsContent>
             </Tabs>
             <Button
-                className="ml-4 mt-4"
+                className="mt-4"
                 variant="outline"
                 onClick={() => updateFolders()}
             >
