@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { jobQueueColumns } from "@/components/table/columns/queue"
 import { useToast } from "@/components/ui/use-toast"
+import { SwitchDB } from "@/components/sidebar/options/switchDB"
+import { Label } from "@/components/ui/label"
 
 export function ScanPage() {
     return (
@@ -22,30 +24,35 @@ export function ScanPage() {
             <div className={'p-4 mx-auto w-full'}>
                 <ScrollArea className="overflow-y-auto">
                     <div className='max-h-[100vh]'>
+                        <SwitchDB />
                         <FolderLists />
                         <GroupList />
                         <JobQueue />
-                        <Tabs defaultValue="filescans">
-                            <TabsList>
-                                <TabsTrigger
-                                    value="filescans"
-                                >File Scan History</TabsTrigger>
-                                <TabsTrigger
-                                    value="data"
-                                >Data Extraction History</TabsTrigger>
-                            </TabsList>
-                            <TabsContent value="filescans">
-                                <FileScanHistory />
-                            </TabsContent>
-                            <TabsContent value="data">
-                                <DataExtractionHistory />
-                            </TabsContent>
-                        </Tabs>
+                        <History />
                     </div>
                 </ScrollArea>
             </div>
         </div>
     )
+}
+
+export function History() {
+    return <Tabs defaultValue="filescans" className="rounded-lg border p-4 mt-4">
+        <TabsList>
+            <TabsTrigger
+                value="filescans"
+            >File Scan History</TabsTrigger>
+            <TabsTrigger
+                value="data"
+            >Data Extraction History</TabsTrigger>
+        </TabsList>
+        <TabsContent value="filescans">
+            <FileScanHistory />
+        </TabsContent>
+        <TabsContent value="data">
+            <DataExtractionHistory />
+        </TabsContent>
+    </Tabs>
 }
 
 export function FolderLists() {
@@ -149,8 +156,8 @@ export function FolderLists() {
     }
 
     return (
-        <>
-            <Tabs className="mb-4" defaultValue="included">
+        <div className="rounded-lg border p-4 mb-4 mt-4">
+            <Tabs className="" defaultValue="included">
                 <TabsList>
                     <TabsTrigger value="included">Included Folder Paths</TabsTrigger>
                     <TabsTrigger value="excluded">Excluded Folder Paths</TabsTrigger>
@@ -173,20 +180,20 @@ export function FolderLists() {
                 </TabsContent>
             </Tabs>
             <Button
-                className="ml-4 mb-4"
+                className="ml-4 mt-4"
                 variant="outline"
                 onClick={() => updateFolders()}
             >
                 Save And Scan New Paths
             </Button>
             <Button
-                className="ml-4 mb-4"
+                className="ml-4 mt-4"
                 variant="outline"
                 onClick={() => rescanFolders()}
             >
                 Rescan All Paths
             </Button>
-        </>
+        </div>
     )
 }
 
@@ -205,6 +212,7 @@ export function GroupList() {
     return groups.length > 0 ? (
         <Tabs
             defaultValue={groups[0].group_name}
+            className="rounded-lg border p-4"
         >
             <TabsList>
                 {groups.map(
@@ -288,7 +296,7 @@ export function GroupTab({ group }: { group: Group }) {
                 <p className="text-wrap">
                     {group.description}
                 </p>
-                <p className="text-wrap mt-3">
+                <p className="text-wrap mt-3 text-gray-400">
                     Select one or more models and click on "Run Job(s) for Selected"
                     in order to schedule batch job(s) to generate index data for your files
                     using the selected models.<br />
@@ -370,11 +378,20 @@ export function JobQueue() {
             },
         })
     }
-    return <ScrollArea className="max-w-[95vw] whitespace-nowrap">
-        <h1 className="text-wrap mt-3">
-            Job Queue
-        </h1>
-        <div className="p-4">
+
+
+    return <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
+        <div className="flex flex-row items-center justify-between">
+            <div className="space-y-0.5">
+                <Label className="text-base">
+                    Job Queue
+                </Label>
+                <div className="text-gray-400">
+                    Queued and running jobs
+                </div>
+            </div>
+        </div>
+        <ScrollArea className="max-w-[95vw] whitespace-nowrap">
             <DataTable
                 setRowSelection={setSelected}
                 rowSelection={selected}
@@ -392,9 +409,9 @@ export function JobQueue() {
                     </Button>
                 }
             />
-        </div>
-        <ScrollBar orientation="horizontal" />
-    </ScrollArea>
+            <ScrollBar orientation="horizontal" />
+        </ScrollArea>
+    </div>
 }
 
 
@@ -415,15 +432,13 @@ export function DataExtractionHistory() {
     )
 
     return <ScrollArea className="max-w-[95vw] whitespace-nowrap">
-        <div className="p-4">
-            <DataTable
-                storageKey="dataextraction"
-                data={data || []}
-                columns={dataLogColumns}
-                filterColumn="setter"
-                filterPlaceholder="Search model..."
-            />
-        </div>
+        <DataTable
+            storageKey="dataextraction"
+            data={data || []}
+            columns={dataLogColumns}
+            filterColumn="setter"
+            filterPlaceholder="Search model..."
+        />
         <ScrollBar orientation="horizontal" />
     </ScrollArea>
 }
@@ -444,15 +459,13 @@ export function FileScanHistory() {
         }
     )
     return <ScrollArea className="max-w-[95vw] whitespace-nowrap">
-        <div className="p-4">
-            <DataTable
-                storageKey="filescan"
-                data={data || []}
-                columns={fileScanColumns}
-                filterColumn="path"
-                filterPlaceholder="Search path..."
-            />
-        </div>
+        <DataTable
+            storageKey="filescan"
+            data={data || []}
+            columns={fileScanColumns}
+            filterColumn="path"
+            filterPlaceholder="Search path..."
+        />
         <ScrollBar orientation="horizontal" />
     </ScrollArea>
 }
