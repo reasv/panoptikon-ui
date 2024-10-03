@@ -27,15 +27,15 @@ const nextConfig = {
   async rewrites() {
     return [
       {
-        source: '/api/:path*',
-        destination: `${process.env.API_URL}/api/:path*`,
+        source: "/api/:path*",
+        destination: `${process.env.API_URL || "http://127.0.0.1:6342"}/api/:path*`,
       },
       {
-        source: '/gradio/:path*',
-        destination: `${process.env.API_URL}/gradio/:path*`,
+        source: "/gradio/:path*",
+        destination: `${process.env.API_URL || "http://127.0.0.1:6342"}/gradio/:path*`,
       },
     ];
-  }
+  },
 };
 
 export default nextConfig;
