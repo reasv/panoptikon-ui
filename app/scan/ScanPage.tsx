@@ -275,7 +275,7 @@ export function GroupTab({ group }: { group: Group }) {
             params: {
                 query: {
                     ...dbs,
-                    inference_ids: selectedValues.map((model) => model.inference_id),
+                    inference_ids: selectedValues.map((model) => `${group.group_name}/${model.inference_id}`),
                 },
             },
         })
@@ -285,7 +285,7 @@ export function GroupTab({ group }: { group: Group }) {
             params: {
                 query: {
                     ...dbs,
-                    inference_ids: selectedValues.map((model) => model.inference_id),
+                    inference_ids: selectedValues.map((model) => `${group.group_name}/${model.inference_id}`),
                 },
             },
         })
