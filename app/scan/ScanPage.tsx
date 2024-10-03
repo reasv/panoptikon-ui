@@ -88,6 +88,8 @@ export function FolderLists() {
     }
   }, [data]);
 
+  const { toast } = useToast();
+
   const update = $api.useMutation("put", "/api/jobs/folders", {
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -103,6 +105,11 @@ export function FolderLists() {
       });
       queryClient.invalidateQueries({
         queryKey: ["get", "/api/jobs/queue"],
+      });
+      toast({
+        title: "Folder Update Queued",
+        description:
+          "The folders will be updated only after the job has been completed",
       });
     },
   });
@@ -122,6 +129,10 @@ export function FolderLists() {
       });
       queryClient.invalidateQueries({
         queryKey: ["get", "/api/jobs/queue"],
+      });
+      toast({
+        title: "Folder Rescan Queued",
+        description: "The folders will be rescanned once the job is executed",
       });
     },
   });
