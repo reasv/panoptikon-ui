@@ -8,14 +8,21 @@ import { Label } from "./ui/label";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { useToast } from "./ui/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 
 export function CreateNewDB() {
     const [dbs, setDbs] = useSelectedDBs()
     const [inputValue, setInputValue] = useState('');
     const { toast } = useToast()
-
+    const queryClient = useQueryClient()
     const createDB = $api.useMutation("post", "/api/db", {
         onSuccess: (data) => {
+            queryClient.invalidateQueries({
+                queryKey: [
+                    "get",
+                    "/api/db",
+                ],
+            })
             setDbs({
                 index_db: data.index_db,
             })
@@ -24,7 +31,6 @@ export function CreateNewDB() {
             toast({
                 title: "Success",
                 description: "Created Index DB If it didn't exist and switched to it",
-                variant: "destructive"
             })
         }
     })
@@ -46,6 +52,7 @@ export function CreateNewDB() {
             })
             return false
         }
+        return true
     }
     function handleKeyPress(e: React.KeyboardEvent<HTMLInputElement>) {
         if (e.key === 'Enter') {
