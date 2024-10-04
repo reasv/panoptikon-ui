@@ -23,6 +23,9 @@ import { useToast } from "@/components/ui/use-toast";
 import { SwitchDB } from "@/components/sidebar/options/switchDB";
 import { Label } from "@/components/ui/label";
 import { CreateNewDB } from "@/components/CreateDB";
+import { components } from "@/lib/panoptikon";
+import { FilterContainer } from "@/components/sidebar/base/FilterContainer";
+import { SwitchFilter } from "@/components/sidebar/base/SwitchFilter";
 
 export function ScanPage() {
   return (
@@ -31,6 +34,7 @@ export function ScanPage() {
         <ScrollArea className="overflow-y-auto">
           <div className="max-h-[100vh]">
             <SwitchDB />
+            <Config />
             <CreateNewDB />
             <FolderLists />
             <GroupList />
@@ -461,5 +465,93 @@ export function FileScanHistory() {
       />
       <ScrollBar orientation="horizontal" />
     </ScrollArea>
+  );
+}
+
+export function Config() {
+  const [dbs] = useSelectedDBs();
+  const { data, error, isError, refetch, isFetching } = $api.useQuery(
+    "get",
+    "/api/jobs/config",
+    {
+      params: {
+        query: dbs,
+      },
+    },
+    {
+      placeholderData: keepPreviousData,
+    },
+  );
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const changeSettings = $api.useMutation("put", "/api/jobs/config", {
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: [
+          "get",
+          "/api/jobs/config",
+          {
+            params: {
+              query: dbs,
+            },
+          }
+        ],
+      })
+      toast({
+        title: "Settings Updated",
+        description: "The changes have been applied",
+      });
+    },
+  })
+
+  const changeConfig = (config: components["schemas"]["SystemConfig"]) => {
+    changeSettings.mutate({ body: config, params: { query: dbs } })
+  }
+
+  return (
+    <FilterContainer
+      label="Scan Configuration"
+      description="Change scan settings"
+      storageKey="scanConfig"
+    >
+      {data ? <>
+        <SwitchFilter
+          label="Image Files"
+          description="Include Image Files in the scan"
+          value={data.scan_images}
+          onChange={(value) => changeConfig({ ...data, scan_images: value })}
+        />
+        <SwitchFilter
+          label="Video Files"
+          description="Include Video Files in the scan"
+          value={data.scan_video}
+          onChange={(value) => changeConfig({ ...data, scan_video: value })}
+        />
+        <SwitchFilter
+          label="Audio Files"
+          description="Include Audio Files in the scan"
+          value={data.scan_audio}
+          onChange={(value) => changeConfig({ ...data, scan_audio: value })}
+        />
+        <SwitchFilter
+          label="PDF Files"
+          description="Include PDF Files in the scan"
+          value={data.scan_pdf}
+          onChange={(value) => changeConfig({ ...data, scan_pdf: value })}
+        />
+        <SwitchFilter
+          label="HTML Files"
+          description="Include HTML Files in the scan"
+          value={data.scan_html}
+          onChange={(value) => changeConfig({ ...data, scan_html: value })}
+        />
+        <SwitchFilter
+          label="Remove Unavailable Files"
+          description="After a scan, remove files from db if no longer present on disk"
+          value={data.remove_unavailable_files}
+          onChange={(value) => changeConfig({ ...data, remove_unavailable_files: value })}
+        />
+      </> : null}
+    </FilterContainer>
   );
 }

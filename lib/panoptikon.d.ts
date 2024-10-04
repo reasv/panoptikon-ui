@@ -16,7 +16,7 @@ export interface paths {
          * @description Get information about the database, including the names of all other available databases.
          *     Most API endpoints support specifying the databases to use for index and user data
          *     through the `index_db` and `user_data_db` query parameters.
-         *     Regardless of which database is currently being used by panoptikon,
+         *     Regardless of which database is currently being defaulted to by panoptikon,
          *     the API allows you to perform actions and query data from any of the available databases.
          *     The current databases are simply the ones that are used by default.
          */
@@ -862,6 +862,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Scan */
+        get: operations["scan_scan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -961,11 +978,6 @@ export interface components {
         };
         /** CancelResponse */
         CancelResponse: {
-            /** Detail */
-            detail: string;
-        };
-        /** ConfigResponse */
-        ConfigResponse: {
             /** Detail */
             detail: string;
         };
@@ -1366,6 +1378,17 @@ export interface components {
              * @default false
              */
             running: boolean;
+        };
+        /** JobSettings */
+        JobSettings: {
+            /** Group Name */
+            group_name: string;
+            /** Inference Id */
+            inference_id?: string | null;
+            /** Default Batch Size */
+            default_batch_size?: number | null;
+            /** Default Threshold */
+            default_threshold?: number | null;
         };
         /** LogRecord */
         LogRecord: {
@@ -2966,6 +2989,8 @@ export interface components {
              * @default 0 3 * * *
              */
             cron_schedule: string;
+            /** Job Settings */
+            job_settings?: components["schemas"]["JobSettings"][];
         };
         /** TagFrequency */
         TagFrequency: {
@@ -4874,7 +4899,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ConfigResponse"];
+                    "application/json": components["schemas"]["SystemConfig"];
                 };
             };
             /** @description Not found */
@@ -4916,6 +4941,26 @@ export interface operations {
         };
     };
     search_search_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    scan_scan_get: {
         parameters: {
             query?: never;
             header?: never;
