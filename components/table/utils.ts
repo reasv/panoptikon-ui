@@ -49,3 +49,16 @@ export function prettyPrintDuration(seconds: number): string {
   }
   return result.trim()
 }
+
+export function estimateEta(
+  scanStartTime: string,
+  itemsProcessed: number,
+  remainingItems: number
+): string {
+  const timeElapsed = Date.now() - new Date(scanStartTime).getTime()
+  const timeElapsedInSeconds = timeElapsed / 1000
+  const itemsPerSecond = itemsProcessed / (timeElapsedInSeconds || 1)
+  const remainingTime = remainingItems / (itemsPerSecond || 1)
+
+  return prettyPrintDuration(remainingTime)
+}

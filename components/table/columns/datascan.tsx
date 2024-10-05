@@ -1,8 +1,9 @@
 import { ColumnDef } from "@tanstack/react-table"
-import { prettyPrintDate, prettyPrintDuration, prettyPrintDurationBetweenDates } from "../utils"
+import { estimateEta, prettyPrintDate, prettyPrintDuration, prettyPrintDurationBetweenDates } from "../utils"
 import { Button } from "@/components/ui/button"
 import { ArrowUpDown } from "lucide-react"
 import { components } from "@/lib/panoptikon"
+
 
 export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
     {
@@ -46,8 +47,12 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
             if (row.getValue("completed")) {
                 return prettyPrintDate(row.getValue("end_time"))
             }
-
-            return "In Progress"
+            const totalProcessed: number = (row.getValue("image_files") as number) + (row.getValue("video_files") as number) + (row.getValue("other_files") as number)
+            const remaining = row.getValue("total_remaining") as number
+            return `ETA: ${estimateEta(row.getValue("start_time"),
+                totalProcessed,
+                remaining
+            )}`
         },
     },
     {
