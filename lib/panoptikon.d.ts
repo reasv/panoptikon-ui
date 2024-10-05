@@ -1391,6 +1391,8 @@ export interface components {
              * @default false
              */
             running: boolean;
+            /** Tag */
+            tag?: string | null;
         };
         /** JobSettings */
         JobSettings: {

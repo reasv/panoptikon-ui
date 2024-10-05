@@ -79,5 +79,10 @@ export const jobQueueColumns: ColumnDef<components["schemas"]["JobModel"]>[] = [
         id: "threshold",
         accessorKey: "threshold",
         header: "Confidence Threshold",
+    },
+    {
+        id: "tag",
+        accessorKey: "tag",
+        header: "Tag",
     }
 ]

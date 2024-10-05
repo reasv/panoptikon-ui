@@ -312,6 +312,7 @@ export function GroupTab({ group }: { group: Group }) {
     const batchSize = modelConfig.default_batch_size || undefined
     const threshold = modelConfig.default_threshold === null ? undefined : modelConfig.default_threshold
     addToSchedule(selectedValues.map((model) => `${group.group_name}/${model.inference_id}`), batchSize, threshold)
+    setSelected({})
   }
   return (
     <TabsContent value={group.group_name}>
