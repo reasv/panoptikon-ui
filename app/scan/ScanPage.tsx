@@ -34,8 +34,8 @@ export function ScanPage() {
         <ScrollArea className="overflow-y-auto">
           <div className="max-h-[100vh]">
             <SwitchDB />
-            <Config />
             <CreateNewDB />
+            <Config />
             <FolderLists />
             <GroupList />
             <JobQueue />
