@@ -102,7 +102,7 @@ export function DataTable<TData, TValue>(
         getFilteredRowModel: getFilteredRowModel(),
         onRowSelectionChange: setRowSelection,
     })
-
+    const [open, setOpen] = React.useState(false)
     return (
         <div className="w-full">
             <div className="flex items-center py-4">
@@ -115,13 +115,13 @@ export function DataTable<TData, TValue>(
                     className="max-w-sm"
                 />}
                 {header}
-                <DropdownMenu>
+                <DropdownMenu open={open} onOpenChange={setOpen}>
                     <DropdownMenuTrigger asChild>
                         <Button variant="outline" className="ml-auto">
                             Columns <ChevronDown className="ml-2 h-4 w-4" />
                         </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
+                    <DropdownMenuContent align="end" className="w-[200px]">
                         {table
                             .getAllColumns()
                             .filter((column) => column.getCanHide())
@@ -131,9 +131,12 @@ export function DataTable<TData, TValue>(
                                         key={column.id}
                                         className="capitalize"
                                         checked={column.getIsVisible()}
-                                        onCheckedChange={(value) =>
+                                        onCheckedChange={(value) => {
                                             column.toggleVisibility(!!value)
-                                        }
+                                        }}
+                                        onSelect={(event) => {
+                                            event.preventDefault()
+                                        }}
                                     >
                                         {column.id}
                                     </DropdownMenuCheckboxItem>
