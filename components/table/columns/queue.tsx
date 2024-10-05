@@ -66,7 +66,18 @@ export const jobQueueColumns: ColumnDef<components["schemas"]["JobModel"]>[] = [
         },
     },
     {
+        id: "model",
         accessorKey: "metadata",
         header: "Model",
+    },
+    {
+        id: "batch_size",
+        accessorKey: "batch_size",
+        header: "Batch Size",
+    },
+    {
+        id: "threshold",
+        accessorKey: "threshold",
+        header: "Confidence Threshold",
     }
 ]

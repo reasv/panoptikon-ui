@@ -278,6 +278,8 @@ export function GroupTab({ group }: { group: Group }) {
           inference_ids: selectedValues.map(
             (model) => `${group.group_name}/${model.inference_id}`,
           ),
+          batch_size: modelConfig.default_batch_size,
+          threshold: modelConfig.default_threshold,
         },
       },
     })

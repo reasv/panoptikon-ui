@@ -1373,6 +1373,10 @@ export interface components {
             index_db: string;
             /** Metadata */
             metadata?: string | null;
+            /** Batch Size */
+            batch_size?: number | null;
+            /** Threshold */
+            threshold?: number | null;
             /**
              * Running
              * @default false
@@ -4518,6 +4522,8 @@ export interface operations {
         parameters: {
             query: {
                 inference_ids: string[];
+                batch_size?: number | null;
+                threshold?: number | null;
                 /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
                 /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
