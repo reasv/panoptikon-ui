@@ -322,7 +322,6 @@ export function GroupTab({ group }: { group: Group }) {
           </p>
           {data && <ModelConfig
             modelConfig={modelConfig}
-            systemConfig={data}
           />}
           <DataTable
             setRowSelection={setSelected}
@@ -523,8 +522,15 @@ export function Config() {
     },
   })
 
-  const changeConfig = (config: components["schemas"]["SystemConfig"]) => {
-    changeSettings.mutate({ body: config, params: { query: dbs } })
+  const changeConfig = async (modifyConfig: (currentConfig: components["schemas"]["SystemConfig"]) => components["schemas"]["SystemConfig"]) => {
+    // Refetch the latest configuration
+    const latestConfig = await refetch()
+
+    // Apply the change to the latest config
+    if (latestConfig.data) {
+      const newConfig = modifyConfig(latestConfig.data)
+      changeSettings.mutate({ body: newConfig, params: { query: dbs } })
+    }
   }
 
   return (
@@ -538,43 +544,60 @@ export function Config() {
           label="Image Files"
           description="Include Image Files in the scan"
           value={data.scan_images}
-          onChange={(value) => changeConfig({ ...data, scan_images: value })}
+          onChange={(value) => changeConfig((currentConfig) => ({
+            ...currentConfig,
+            scan_images: value,
+          }))}
         />
         <SwitchFilter
           label="Video Files"
           description="Include Video Files in the scan"
           value={data.scan_video}
-          onChange={(value) => changeConfig({ ...data, scan_video: value })}
+          onChange={(value) => changeConfig((currentConfig) => ({
+            ...currentConfig,
+            scan_video: value,
+          }))}
         />
         <SwitchFilter
           label="Audio Files"
           description="Include Audio Files in the scan"
           value={data.scan_audio}
-          onChange={(value) => changeConfig({ ...data, scan_audio: value })}
+          onChange={(value) => changeConfig((currentConfig) => ({
+            ...currentConfig,
+            scan_audio: value,
+          }))}
         />
         <SwitchFilter
           label="PDF Files"
           description="Include PDF Files in the scan"
           value={data.scan_pdf}
-          onChange={(value) => changeConfig({ ...data, scan_pdf: value })}
+          onChange={(value) => changeConfig((currentConfig) => ({
+            ...currentConfig,
+            scan_pdf: value,
+          }))}
         />
         <SwitchFilter
           label="HTML Files"
           description="Include HTML Files in the scan"
           value={data.scan_html}
-          onChange={(value) => changeConfig({ ...data, scan_html: value })}
+          onChange={(value) => changeConfig((currentConfig) => ({
+            ...currentConfig,
+            scan_html: value,
+          }))}
         />
         <SwitchFilter
           label="Remove Unavailable Files"
           description="After a scan, remove files from db if no longer present on disk"
           value={data.remove_unavailable_files}
-          onChange={(value) => changeConfig({ ...data, remove_unavailable_files: value })}
+          onChange={(value) => changeConfig((currentConfig) => ({
+            ...currentConfig,
+            remove_unavailable_files: value,
+          }))}
         />
       </> : null}
     </FilterContainer>
   )
 }
-
 export function useModelConfig(group: Group) {
   const [dbs] = useSelectedDBs()
   const { data, error, isError, refetch, isFetching } = $api.useQuery(
@@ -599,11 +622,9 @@ export function useModelConfig(group: Group) {
 
 export function ModelConfig(
   {
-    systemConfig,
     modelConfig
   }: {
     modelConfig: components["schemas"]["JobSettings"],
-    systemConfig: components["schemas"]["SystemConfig"]
   }
 ) {
   const [dbs] = useSelectedDBs()
@@ -628,24 +649,39 @@ export function ModelConfig(
       })
     },
   })
+  const { refetch } = $api.useQuery(
+    "get",
+    "/api/jobs/config",
+    {
+      params: {
+        query: dbs,
+      },
+    },
+    {
+      placeholderData: keepPreviousData,
+    },
+  )
 
-  const changeConfig = (config: components["schemas"]["SystemConfig"]) => {
-    changeSettings.mutate({ body: config, params: { query: dbs } })
-  }
-  const setValues = (batchSize: number | null | undefined, threshold: number | null | undefined) => {
+  const setValues = async (batchSize: number | null | undefined, threshold: number | null | undefined) => {
+    const { data } = await refetch()
+    if (!data) return
+    const systemConfig = data
     // The config without the current group
     const job_settings = systemConfig.job_settings !== undefined ? systemConfig.job_settings.filter((v) => !((v.group_name === modelConfig.group_name) && !v.inference_id)) : []
     // Add the new config
-    changeConfig({
-      ...systemConfig,
-      job_settings: [
-        ...job_settings,
-        {
-          group_name: modelConfig.group_name,
-          default_batch_size: batchSize,
-          default_threshold: threshold,
-        },
-      ],
+    changeSettings.mutate({
+      body: {
+        ...systemConfig,
+        job_settings: [
+          ...job_settings,
+          {
+            group_name: modelConfig.group_name,
+            default_batch_size: batchSize,
+            default_threshold: threshold,
+          },
+        ],
+      },
+      params: { query: dbs }
     })
   }
 
