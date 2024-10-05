@@ -981,6 +981,15 @@ export interface components {
             /** Detail */
             detail: string;
         };
+        /** CronJob */
+        CronJob: {
+            /** Inference Id */
+            inference_id?: string | null;
+            /** Batch Size */
+            batch_size?: number | null;
+            /** Threshold */
+            threshold?: number | null;
+        };
         /** DBCreateResponse */
         DBCreateResponse: {
             /** Index Db */
@@ -2993,6 +3002,8 @@ export interface components {
              * @default 0 3 * * *
              */
             cron_schedule: string;
+            /** Cron Jobs */
+            cron_jobs?: components["schemas"]["CronJob"][];
             /** Job Settings */
             job_settings?: components["schemas"]["JobSettings"][];
         };
