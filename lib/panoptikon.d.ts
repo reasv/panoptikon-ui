@@ -984,7 +984,7 @@ export interface components {
         /** CronJob */
         CronJob: {
             /** Inference Id */
-            inference_id?: string | null;
+            inference_id: string;
             /** Batch Size */
             batch_size?: number | null;
             /** Threshold */

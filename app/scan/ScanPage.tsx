@@ -24,8 +24,6 @@ import { SwitchDB } from "@/components/sidebar/options/switchDB"
 import { Label } from "@/components/ui/label"
 import { CreateNewDB } from "@/components/CreateDB"
 import { components } from "@/lib/panoptikon"
-import { FilterContainer } from "@/components/sidebar/base/FilterContainer"
-import { SwitchFilter } from "@/components/sidebar/base/SwitchFilter"
 import { ConfidenceFilter } from "@/components/sidebar/options/confidenceFilter"
 import { Config } from "@/components/Config"
 
@@ -309,7 +307,12 @@ export function GroupTab({ group }: { group: Group }) {
       placeholderData: keepPreviousData,
     },
   )
-
+  const addToSchedule = useCronJobSchedule()
+  const addToCronSchedule = () => {
+    const batchSize = modelConfig.default_batch_size || undefined
+    const threshold = modelConfig.default_threshold === null ? undefined : modelConfig.default_threshold
+    addToSchedule(selectedValues.map((model) => `${group.group_name}/${model.inference_id}`), batchSize, threshold)
+  }
   return (
     <TabsContent value={group.group_name}>
       <ScrollArea className="max-w-[95vw] whitespace-nowrap">
@@ -346,11 +349,19 @@ export function GroupTab({ group }: { group: Group }) {
                 </Button>
                 <Button
                   disabled={selectedValues.length === 0}
-                  className="ml-4 mr-4"
+                  className="ml-4"
                   variant="destructive"
                   onClick={() => deleteSelected()}
                 >
                   Delete Data From Selected
+                </Button>
+                <Button
+                  disabled={selectedValues.length === 0}
+                  className="ml-4 mr-4"
+                  variant="outline"
+                  onClick={() => addToCronSchedule()}
+                >
+                  Add to Cron Schedule
                 </Button>
               </>
             }
@@ -509,6 +520,72 @@ export function useModelConfig(group: Group) {
     default_batch_size: group.default_batch_size,
     default_threshold: group.default_threshold,
   }
+}
+
+export function useCronJobSchedule() {
+  const [dbs] = useSelectedDBs()
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const changeSettings = $api.useMutation("put", "/api/jobs/config", {
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: [
+          "get",
+          "/api/jobs/config",
+          {
+            params: {
+              query: dbs,
+            },
+          }
+        ],
+      })
+      toast({
+        title: "Settings Updated",
+        description: "The changes have been applied",
+      })
+    },
+  })
+  const { refetch } = $api.useQuery(
+    "get",
+    "/api/jobs/config",
+    {
+      params: {
+        query: dbs,
+      },
+    },
+    {
+      placeholderData: keepPreviousData,
+    },
+  )
+  const addToSchedule = async (inference_ids: string[], batch_size?: number, threshold?: number) => {
+    const { data } = await refetch()
+    if (!data) return
+    const systemConfig = data
+    // The config without the jobs that are being added
+    const jobs = systemConfig.cron_jobs !== undefined ? systemConfig.cron_jobs.filter((v) => {
+      return !(inference_ids.includes(v.inference_id))
+    }) : []
+
+    const newJobs = inference_ids.map((inference_id) => {
+      return {
+        inference_id,
+        batch_size,
+        threshold,
+      }
+    })
+    // Add the new config
+    changeSettings.mutate({
+      body: {
+        ...systemConfig,
+        cron_jobs: [
+          ...jobs,
+          ...newJobs,
+        ],
+      },
+      params: { query: dbs }
+    })
+  }
+  return addToSchedule
 }
 
 export function ModelConfig(
