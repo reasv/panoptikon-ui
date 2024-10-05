@@ -61,6 +61,31 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
         ),
     },
     {
+        id: "progress",
+        header: "Progress",
+        cell: ({ row }) => {
+            const totalProcessed: number = (row.getValue("image_files") as number) + (row.getValue("video_files") as number) + (row.getValue("other_files") as number)
+            if (row.getValue("completed") && !row.getValue("failed")) {
+                return `${totalProcessed}/${totalProcessed}`
+            }
+            const remaining = row.getValue("total_remaining") as number
+            return `${totalProcessed}/${totalProcessed + remaining}`
+        },
+    },
+    {
+        id: "percentage",
+        header: "Percentage",
+        cell: ({ row }) => {
+            const totalProcessed: number = (row.getValue("image_files") as number) + (row.getValue("video_files") as number) + (row.getValue("other_files") as number)
+            if (row.getValue("completed") && !row.getValue("failed")) {
+                return `100%`
+            }
+            const remaining = row.getValue("total_remaining") as number
+            const perc = (totalProcessed / (totalProcessed + remaining)) * 100
+            return `${perc.toFixed(1)}%`
+        },
+    },
+    {
         id: "data_load_time",
         accessorKey: "data_load_time",
         header: "Data Load Time",
