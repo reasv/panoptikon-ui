@@ -6,6 +6,7 @@ import { components } from "@/lib/panoptikon"
 
 export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
     {
+        id: "id",
         accessorKey: "id",
         header: "ID",
     },
@@ -25,6 +26,7 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
         cell: ({ row }) => prettyPrintDate(row.getValue("start_time")),
     },
     {
+        id: "end_time",
         accessorKey: "end_time",
         header: ({ column }) => {
             return (
@@ -49,6 +51,7 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
         },
     },
     {
+        id: "duration",
         accessorKey: "duration",
         header: "Duration",
         cell: ({ row }) => prettyPrintDurationBetweenDates(
@@ -58,6 +61,7 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
         ),
     },
     {
+        id: "data_load_time",
         accessorKey: "data_load_time",
         header: "Data Load Time",
         cell: ({ row }) => prettyPrintDuration(
@@ -65,6 +69,7 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
         ),
     },
     {
+        id: "inference_time",
         accessorKey: "inference_time",
         header: "Inference Time",
         cell: ({ row }) => prettyPrintDuration(
@@ -72,6 +77,7 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
         ),
     },
     {
+
         accessorKey: "type",
         header: "Type",
     },
@@ -80,6 +86,7 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
         header: "Model",
     },
     {
+        id: "saved_data",
         accessorKey: "items_in_db",
         header: "Saved Data",
     },
@@ -104,6 +111,7 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
         header: "Other Files",
     },
     {
+        id: "data_segments",
         accessorKey: "total_segments",
         header: "Data Segments",
     },
