@@ -10,6 +10,10 @@ import { Input } from "./ui/input"
 import { Button } from "./ui/button"
 import { Plus, Save } from "lucide-react"
 import React, { useEffect } from "react"
+import { ScrollArea, ScrollBar } from "./ui/scroll-area"
+import { DataTable } from "./table/dataTable"
+import { RowSelectionState } from "@tanstack/react-table"
+import { scheduleColumns } from "./table/columns/scheduled"
 
 export function Config() {
     const [dbs] = useSelectedDBs()
@@ -91,7 +95,17 @@ export function Config() {
             cron_schedule: cronInputValue,
         }))
     }
-
+    const [selected, setSelected] = React.useState<RowSelectionState>({})
+    const cronJobs = data?.cron_jobs || []
+    const selectedValues = data?.cron_jobs?.filter((_, index) => selected[index] === true) || []
+    const cancelSelected = () => {
+        changeConfig((currentConfig) => ({
+            ...currentConfig,
+            cron_jobs: (currentConfig?.cron_jobs || []).filter(job => {
+                return !selectedValues.some(selectedJob => selectedJob.inference_id === job.inference_id)
+            }),
+        }))
+    }
     return (
         <FilterContainer
             label="Scan Configuration"
@@ -184,6 +198,34 @@ export function Config() {
                             <Save className="h-4 w-4" />
                         </Button>
                     </div>
+                </div>
+                <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
+                    <div className="flex flex-row items-center justify-between">
+                        <div className="space-y-0.5">
+                            <Label className="text-base">Cron Data Extraction Schedule</Label>
+                            <div className="text-gray-400">These jobs will be run with the cronjob after the file scan</div>
+                        </div>
+                    </div>
+                    <ScrollArea className="max-w-[95vw] whitespace-nowrap">
+                        <DataTable
+                            setRowSelection={setSelected}
+                            rowSelection={selected}
+                            storageKey="cronJobs"
+                            data={cronJobs}
+                            columns={scheduleColumns}
+                            header={
+                                <Button
+                                    disabled={selectedValues.length === 0}
+                                    className="ml-4"
+                                    variant="destructive"
+                                    onClick={() => cancelSelected()}
+                                >
+                                    Remove Selected
+                                </Button>
+                            }
+                        />
+                        <ScrollBar orientation="horizontal" />
+                    </ScrollArea>
                 </div>
             </> : null}
         </FilterContainer>
