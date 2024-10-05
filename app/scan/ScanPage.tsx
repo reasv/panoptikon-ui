@@ -1,31 +1,32 @@
-"use client";
+"use client"
 
-import { $api } from "@/lib/api";
-import { useSelectedDBs } from "@/lib/state/database";
-import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
-import { fileScanColumns } from "@/components/table/columns/filescan";
-import { DataTable } from "@/components/table/dataTable";
-import { dataLogColumns } from "@/components/table/columns/datascan";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { $api } from "@/lib/api"
+import { useSelectedDBs } from "@/lib/state/database"
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query"
+import { fileScanColumns } from "@/components/table/columns/filescan"
+import { DataTable } from "@/components/table/dataTable"
+import { dataLogColumns } from "@/components/table/columns/datascan"
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Group,
   InputObject,
   modelColumns,
   transformData,
-} from "@/components/table/columns/models";
-import React, { useEffect } from "react";
-import { RowSelectionState } from "@tanstack/react-table";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { jobQueueColumns } from "@/components/table/columns/queue";
-import { useToast } from "@/components/ui/use-toast";
-import { SwitchDB } from "@/components/sidebar/options/switchDB";
-import { Label } from "@/components/ui/label";
-import { CreateNewDB } from "@/components/CreateDB";
-import { components } from "@/lib/panoptikon";
-import { FilterContainer } from "@/components/sidebar/base/FilterContainer";
-import { SwitchFilter } from "@/components/sidebar/base/SwitchFilter";
+} from "@/components/table/columns/models"
+import React, { useEffect } from "react"
+import { RowSelectionState } from "@tanstack/react-table"
+import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
+import { jobQueueColumns } from "@/components/table/columns/queue"
+import { useToast } from "@/components/ui/use-toast"
+import { SwitchDB } from "@/components/sidebar/options/switchDB"
+import { Label } from "@/components/ui/label"
+import { CreateNewDB } from "@/components/CreateDB"
+import { components } from "@/lib/panoptikon"
+import { FilterContainer } from "@/components/sidebar/base/FilterContainer"
+import { SwitchFilter } from "@/components/sidebar/base/SwitchFilter"
+import { ConfidenceFilter } from "@/components/sidebar/options/confidenceFilter"
 
 export function ScanPage() {
   return (
@@ -44,7 +45,7 @@ export function ScanPage() {
         </ScrollArea>
       </div>
     </div>
-  );
+  )
 }
 
 export function History() {
@@ -61,11 +62,11 @@ export function History() {
         <DataExtractionHistory />
       </TabsContent>
     </Tabs>
-  );
+  )
 }
 
 export function FolderLists() {
-  const [dbs] = useSelectedDBs();
+  const [dbs] = useSelectedDBs()
   const { data, error, isError, refetch, isFetching } = $api.useQuery(
     "get",
     "/api/jobs/folders",
@@ -77,22 +78,22 @@ export function FolderLists() {
     {
       placeholderData: keepPreviousData,
     },
-  );
-  const queryClient = useQueryClient();
+  )
+  const queryClient = useQueryClient()
 
   // Local state for editable folder paths
-  const [includedFolders, setIncludedFolders] = React.useState("");
-  const [excludedFolders, setExcludedFolders] = React.useState("");
+  const [includedFolders, setIncludedFolders] = React.useState("")
+  const [excludedFolders, setExcludedFolders] = React.useState("")
 
   // Update the local state whenever data is fetched
   useEffect(() => {
     if (data) {
-      setIncludedFolders(data.included_folders.join("\n"));
-      setExcludedFolders(data.excluded_folders.join("\n"));
+      setIncludedFolders(data.included_folders.join("\n"))
+      setExcludedFolders(data.excluded_folders.join("\n"))
     }
-  }, [data]);
+  }, [data])
 
-  const { toast } = useToast();
+  const { toast } = useToast()
 
   const update = $api.useMutation("put", "/api/jobs/folders", {
     onSuccess: () => {
@@ -106,17 +107,17 @@ export function FolderLists() {
             },
           },
         ],
-      });
+      })
       queryClient.invalidateQueries({
         queryKey: ["get", "/api/jobs/queue"],
-      });
+      })
       toast({
         title: "Folder Update Queued",
         description:
           "The folders will be updated only after the job has been completed",
-      });
+      })
     },
-  });
+  })
 
   const rescan = $api.useMutation("post", "/api/jobs/folders/rescan", {
     onSuccess: () => {
@@ -130,16 +131,16 @@ export function FolderLists() {
             },
           },
         ],
-      });
+      })
       queryClient.invalidateQueries({
         queryKey: ["get", "/api/jobs/queue"],
-      });
+      })
       toast({
         title: "Folder Rescan Queued",
         description: "The folders will be rescanned once the job is executed",
-      });
+      })
     },
-  });
+  })
 
   const updateFolders = async () => {
     update.mutate({
@@ -156,16 +157,16 @@ export function FolderLists() {
           .map((line) => line.trim())
           .filter((line) => line !== ""),
       },
-    });
-  };
+    })
+  }
 
   const rescanFolders = () => {
     rescan.mutate({
       params: {
         query: dbs,
       },
-    });
-  };
+    })
+  }
 
   return (
     <div className="rounded-lg border p-4 mb-4 mt-4">
@@ -206,7 +207,7 @@ export function FolderLists() {
         Rescan All Paths
       </Button>
     </div>
-  );
+  )
 }
 
 export function GroupList() {
@@ -216,9 +217,9 @@ export function GroupList() {
     {
       placeholderData: keepPreviousData,
     },
-  );
+  )
 
-  const groups = data ? transformData(data as any as InputObject) : [];
+  const groups = data ? transformData(data as any as InputObject) : []
 
   return groups.length > 0 ? (
     <Tabs defaultValue={groups[0].group_name} className="rounded-lg border p-4">
@@ -233,41 +234,41 @@ export function GroupList() {
         <GroupTab key={group.group_name} group={group} />
       ))}
     </Tabs>
-  ) : null;
+  ) : null
 }
 
 export function GroupTab({ group }: { group: Group }) {
-  const [selected, setSelected] = React.useState<RowSelectionState>({});
+  const [selected, setSelected] = React.useState<RowSelectionState>({})
   const selectedValues = group.inference_ids.filter(
     (_, index) => selected[index] === true,
-  );
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  const [dbs] = useSelectedDBs();
+  )
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const [dbs] = useSelectedDBs()
   const runJob = $api.useMutation("post", "/api/jobs/data/extraction", {
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["get", "/api/jobs/queue"],
-      });
+      })
       toast({
         title: "Jobs Scheduled",
         description: "The selected jobs have been scheduled.",
-      });
-      setSelected({});
+      })
+      setSelected({})
     },
-  });
+  })
   const deleteData = $api.useMutation("delete", "/api/jobs/data/extraction", {
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["get", "/api/jobs/queue"],
-      });
+      })
       toast({
         title: "Data Deleted",
         description: "The data deletion has been scheduled",
-      });
-      setSelected({});
+      })
+      setSelected({})
     },
-  });
+  })
   const runSelected = () => {
     runJob.mutate({
       params: {
@@ -278,8 +279,8 @@ export function GroupTab({ group }: { group: Group }) {
           ),
         },
       },
-    });
-  };
+    })
+  }
   const deleteSelected = () => {
     deleteData.mutate({
       params: {
@@ -290,8 +291,21 @@ export function GroupTab({ group }: { group: Group }) {
           ),
         },
       },
-    });
-  };
+    })
+  }
+  const { data, error, isError, refetch, isFetching } = $api.useQuery(
+    "get",
+    "/api/jobs/config",
+    {
+      params: {
+        query: dbs,
+      },
+    },
+    {
+      placeholderData: keepPreviousData,
+    },
+  )
+
   return (
     <TabsContent value={group.group_name}>
       <ScrollArea className="max-w-[95vw] whitespace-nowrap">
@@ -305,6 +319,7 @@ export function GroupTab({ group }: { group: Group }) {
             "Delete Data From Selected" will remove the data previously
             generated by the selected models.
           </p>
+          {data && <ModelConfig group={group} systemConfig={data} />}
           <DataTable
             setRowSelection={setSelected}
             rowSelection={selected}
@@ -338,7 +353,7 @@ export function GroupTab({ group }: { group: Group }) {
         <ScrollBar orientation="horizontal" />
       </ScrollArea>
     </TabsContent>
-  );
+  )
 }
 
 export function JobQueue() {
@@ -350,23 +365,23 @@ export function JobQueue() {
       refetchInterval: 2500,
       placeholderData: keepPreviousData,
     },
-  );
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
+  )
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
   const cancelJob = $api.useMutation("delete", "/api/jobs/queue", {
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["get", "/api/jobs/queue"],
-      });
+      })
       toast({
         title: "Jobs Cancelled",
         description: "The selected jobs have been cancelled.",
-      });
+      })
     },
-  });
-  const queue = data?.queue || [];
-  const [selected, setSelected] = React.useState<RowSelectionState>({});
-  const selectedValues = queue.filter((_, index) => selected[index] === true);
+  })
+  const queue = data?.queue || []
+  const [selected, setSelected] = React.useState<RowSelectionState>({})
+  const selectedValues = queue.filter((_, index) => selected[index] === true)
   const cancelSelected = () => {
     cancelJob.mutate({
       params: {
@@ -374,8 +389,8 @@ export function JobQueue() {
           queue_ids: selectedValues.map((job) => job.queue_id),
         },
       },
-    });
-  };
+    })
+  }
 
   return (
     <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
@@ -406,11 +421,11 @@ export function JobQueue() {
         <ScrollBar orientation="horizontal" />
       </ScrollArea>
     </div>
-  );
+  )
 }
 
 export function DataExtractionHistory() {
-  const [dbs] = useSelectedDBs();
+  const [dbs] = useSelectedDBs()
   const { data, error, isError, refetch, isFetching } = $api.useQuery(
     "get",
     "/api/jobs/data/history",
@@ -423,7 +438,7 @@ export function DataExtractionHistory() {
       refetchInterval: 2500,
       placeholderData: keepPreviousData,
     },
-  );
+  )
 
   return (
     <ScrollArea className="max-w-[95vw] whitespace-nowrap">
@@ -436,11 +451,11 @@ export function DataExtractionHistory() {
       />
       <ScrollBar orientation="horizontal" />
     </ScrollArea>
-  );
+  )
 }
 
 export function FileScanHistory() {
-  const [dbs] = useSelectedDBs();
+  const [dbs] = useSelectedDBs()
   const { data, error, isError, refetch, isFetching } = $api.useQuery(
     "get",
     "/api/jobs/folders/history",
@@ -453,7 +468,7 @@ export function FileScanHistory() {
       refetchInterval: 2500,
       placeholderData: keepPreviousData,
     },
-  );
+  )
   return (
     <ScrollArea className="max-w-[95vw] whitespace-nowrap">
       <DataTable
@@ -465,11 +480,11 @@ export function FileScanHistory() {
       />
       <ScrollBar orientation="horizontal" />
     </ScrollArea>
-  );
+  )
 }
 
 export function Config() {
-  const [dbs] = useSelectedDBs();
+  const [dbs] = useSelectedDBs()
   const { data, error, isError, refetch, isFetching } = $api.useQuery(
     "get",
     "/api/jobs/config",
@@ -481,9 +496,9 @@ export function Config() {
     {
       placeholderData: keepPreviousData,
     },
-  );
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
+  )
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
   const changeSettings = $api.useMutation("put", "/api/jobs/config", {
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -500,7 +515,7 @@ export function Config() {
       toast({
         title: "Settings Updated",
         description: "The changes have been applied",
-      });
+      })
     },
   })
 
@@ -553,5 +568,96 @@ export function Config() {
         />
       </> : null}
     </FilterContainer>
-  );
+  )
 }
+
+export function useModelConfig(group: Group) {
+  const [dbs] = useSelectedDBs()
+  const { data, error, isError, refetch, isFetching } = $api.useQuery(
+    "get",
+    "/api/jobs/config",
+    {
+      params: {
+        query: dbs,
+      },
+    },
+    {
+      placeholderData: keepPreviousData,
+    },
+  )
+  const config = data && data.job_settings !== undefined ? data.job_settings.filter((v) => (v.group_name === group.group_name) && !v.inference_id) : []
+  return config.length > 0 ? config[0] : {
+    group_name: group.group_name,
+    default_batch_size: group.default_batch_size,
+    default_threshold: group.default_threshold,
+  }
+}
+
+export function ModelConfig({ group, systemConfig }: { group: Group, systemConfig: components["schemas"]["SystemConfig"] }) {
+  const [dbs] = useSelectedDBs()
+  const modelConfig = useModelConfig(group)
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const changeSettings = $api.useMutation("put", "/api/jobs/config", {
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: [
+          "get",
+          "/api/jobs/config",
+          {
+            params: {
+              query: dbs,
+            },
+          }
+        ],
+      })
+      toast({
+        title: "Settings Updated",
+        description: "The changes have been applied",
+      })
+    },
+  })
+
+  const changeConfig = (config: components["schemas"]["SystemConfig"]) => {
+    changeSettings.mutate({ body: config, params: { query: dbs } })
+  }
+  const setValues = (batchSize: number | null | undefined, threshold: number | null | undefined) => {
+    // The config without the current group
+    const job_settings = systemConfig.job_settings !== undefined ? systemConfig.job_settings.filter((v) => !((v.group_name === group.group_name) && !v.inference_id)) : []
+    // Add the new config
+    changeConfig({
+      ...systemConfig,
+      job_settings: [
+        ...job_settings,
+        {
+          group_name: group.group_name,
+          default_batch_size: batchSize,
+          default_threshold: threshold,
+        },
+      ],
+    })
+  }
+
+  return (
+    <>
+      {modelConfig.default_batch_size !== undefined && modelConfig.default_batch_size !== null && <ConfidenceFilter
+        label="Batch Size"
+        description="Set to a lower value if you have little VRAM"
+        min={1}
+        max={256}
+        step={1}
+        confidence={modelConfig.default_batch_size}
+        setConfidence={(value) => setValues(value, modelConfig.default_threshold)}
+      />}
+      {modelConfig.default_threshold !== undefined && modelConfig.default_threshold !== null && <ConfidenceFilter
+        label="Confidence Threshold"
+        description="Lower values will produce more data"
+        min={0}
+        max={1}
+        confidence={modelConfig.default_threshold}
+        setConfidence={(value) => setValues(modelConfig.default_batch_size, value)}
+      />}
+    </>
+  )
+}
+

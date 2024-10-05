@@ -8,7 +8,7 @@ export type Group = {
     group_name: string;
     description: string;
     name: string;
-    default_threshold: number;
+    default_threshold?: number;
     default_batch_size: number;
     default_inference_id: string;
     target_entities: string[];
