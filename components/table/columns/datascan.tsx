@@ -85,22 +85,7 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
             return `${perc.toFixed(1)}%`
         },
     },
-    {
-        id: "data_load_time",
-        accessorKey: "data_load_time",
-        header: "Data Load Time",
-        cell: ({ row }) => prettyPrintDuration(
-            row.getValue("data_load_time")
-        ),
-    },
-    {
-        id: "inference_time",
-        accessorKey: "inference_time",
-        header: "Inference Time",
-        cell: ({ row }) => prettyPrintDuration(
-            row.getValue("inference_time")
-        ),
-    },
+
     {
 
         accessorKey: "type",
@@ -122,6 +107,22 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
     {
         accessorKey: "threshold",
         header: "Threshold",
+    },
+    {
+        id: "data_load_time",
+        accessorKey: "data_load_time",
+        header: "Data Load Time",
+        cell: ({ row }) => prettyPrintDuration(
+            row.getValue("data_load_time")
+        ),
+    },
+    {
+        id: "inference_time",
+        accessorKey: "inference_time",
+        header: "Inference Time",
+        cell: ({ row }) => prettyPrintDuration(
+            row.getValue("inference_time")
+        ),
     },
     {
         accessorKey: "image_files",
