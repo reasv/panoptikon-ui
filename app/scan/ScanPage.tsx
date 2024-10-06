@@ -408,6 +408,7 @@ export function JobQueue() {
         },
       },
     })
+    setSelected({})
   }
 
   return (
