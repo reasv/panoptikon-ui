@@ -13,7 +13,6 @@ import { SearchQueryArgs } from "./queryFns";
 import { SearchErrorToast } from "@/components/searchErrorToaster";
 import { cn, } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { components } from "@/lib/panoptikon";
 import { SideBar } from "@/components/sidebar/SideBar";
 import { SearchResultImage } from "@/components/SearchResultImage";
 import { useGalleryIndex } from "@/lib/state/gallery";
@@ -22,7 +21,6 @@ import { useSelectedDBs } from "@/lib/state/database";
 import { useSearch } from "@/lib/searchHooks";
 import { ImageGallery } from '@/components/ImageGallery';
 import { ImageSimilarityHeader } from '@/components/ImageSimilarityHeader';
-import { useItemSelection } from "@/lib/state/itemSelection";
 import { useQueryOptions } from "@/lib/state/searchQuery/clientHooks";
 
 export function SearchPageContent({ initialQuery }:
