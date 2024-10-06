@@ -90,7 +90,6 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
             return `${perc.toFixed(1)}%`
         },
     },
-
     {
 
         accessorKey: "type",
