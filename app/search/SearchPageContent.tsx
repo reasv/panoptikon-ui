@@ -11,7 +11,7 @@ import { SearchBar } from "@/components/searchBar"
 import { useEffect, useState } from "react";
 import { SearchQueryArgs } from "./queryFns";
 import { SearchErrorToast } from "@/components/searchErrorToaster";
-import { cn, } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SideBar } from "@/components/sidebar/SideBar";
 import { SearchResultImage } from "@/components/SearchResultImage";
