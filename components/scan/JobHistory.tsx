@@ -11,7 +11,7 @@ import React from "react"
 import { useToast } from "../ui/use-toast"
 import { RowSelectionState } from "@tanstack/react-table"
 import { Button } from "../ui/button"
-import { useJobHistoryTab } from "@/lib/state/JobHistoryTab"
+import { useJobHistoryTab } from "@/lib/state/ScanTabs"
 
 export function JobHistory() {
     const [jobHistoryTab, setJobHistoryTab] = useJobHistoryTab()

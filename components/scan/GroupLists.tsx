@@ -15,9 +15,10 @@ import { RowSelectionState } from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/use-toast"
 import { ModelConfig, useCronJobSchedule, useModelConfig } from "./ModelConfig"
+import { useExtractionGroupTabs } from "@/lib/state/ScanTabs"
 
 export function GroupList() {
-    const { data, error, isError, refetch, isFetching } = $api.useQuery(
+    const { data } = $api.useQuery(
         "get",
         "/api/inference/metadata",
         {
@@ -26,21 +27,32 @@ export function GroupList() {
     )
 
     const groups = data ? transformData(data as any as InputObject) : []
+    return groups.length > 0 ? (<GroupListInnner groups={groups} />) : null
+}
 
-    return groups.length > 0 ? (
-        <Tabs defaultValue={groups[0].group_name} className="rounded-lg border p-4">
-            <TabsList>
-                {groups.map((group) => (
-                    <TabsTrigger key={group.group_name} value={group.group_name}>
-                        {group.name}
-                    </TabsTrigger>
-                ))}
-            </TabsList>
+function GroupListInnner(
+    { groups }: { groups: Group[] }
+) {
+    const groupNames = groups.map((group) => group.group_name)
+    const [selectedTab, setSelectedTab] = useExtractionGroupTabs()
+    const currentTab = (selectedTab && groupNames.includes(selectedTab)) ? selectedTab : groups[0].group_name
+    return <Tabs
+        value={currentTab}
+        onValueChange={(value) => setSelectedTab(value)}
+        defaultValue={groups[0].group_name}
+        className="rounded-lg border p-4"
+    >
+        <TabsList>
             {groups.map((group) => (
-                <GroupTab key={group.group_name} group={group} />
+                <TabsTrigger key={group.group_name} value={group.group_name}>
+                    {group.name}
+                </TabsTrigger>
             ))}
-        </Tabs>
-    ) : null
+        </TabsList>
+        {groups.map((group) => (
+            <GroupTab key={group.group_name} group={group} />
+        ))}
+    </Tabs>
 }
 
 export function GroupTab({ group }: { group: Group }) {
