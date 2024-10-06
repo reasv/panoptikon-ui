@@ -135,7 +135,7 @@ export function GroupTab({ group }: { group: Group }) {
     }
     return (
         <TabsContent value={group.group_name}>
-            <ScrollArea className="max-w-[95vw] whitespace-nowrap">
+            <ScrollArea className="max-w-[97vw] whitespace-nowrap">
                 <div className="p-4">
                     <p className="text-wrap">{group.description}</p>
                     <p className="text-wrap mt-3 text-gray-400">

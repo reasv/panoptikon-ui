@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/use-toast"
 import { components } from "@/lib/panoptikon"
+import { Label } from "../ui/label"
 
 export function FolderLists() {
     const [dbs] = useSelectedDBs()
@@ -115,28 +116,48 @@ export function FolderLists() {
 
     return (
         <div className="rounded-lg border p-4 mb-4 mt-4">
-            <Tabs className="" defaultValue="included">
-                <TabsList>
-                    <TabsTrigger value="included">Included Folder Paths</TabsTrigger>
-                    <TabsTrigger value="excluded">Excluded Folder Paths</TabsTrigger>
-                </TabsList>
-                <TabsContent value="included">
-                    <Textarea
-                        className="min-h-40"
-                        placeholder="One path per line. These folders will be scanned for files."
-                        value={includedFolders}
-                        onChange={(e) => setIncludedFolders(e.target.value)}
-                    />
-                </TabsContent>
-                <TabsContent value="excluded">
-                    <Textarea
-                        className="min-h-40"
-                        placeholder="One path per line. These folders will be excluded from the scan."
-                        value={excludedFolders}
-                        onChange={(e) => setExcludedFolders(e.target.value)}
-                    />
-                </TabsContent>
-            </Tabs>
+            <div className='grid gap-4 grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 4xl:grid-cols-4'>
+                <div className="flex flex-col items-left">
+                    <div className="flex flex-row items-center justify-between">
+                        <div className="space-y-0.5">
+                            <Label className="text-base">
+                                Included Directories
+                            </Label>
+                            <div className="text-gray-400">
+                                These folders will be scanned for files
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-center">
+                        <Textarea
+                            className="min-h-40"
+                            placeholder="One path per line. These folders will be scanned for files."
+                            value={includedFolders}
+                            onChange={(e) => setIncludedFolders(e.target.value)}
+                        />
+                    </div>
+                </div>
+                <div className="flex flex-col items-left">
+                    <div className="flex flex-row items-center justify-between">
+                        <div className="space-y-0.5">
+                            <Label className="text-base">
+                                Excluded Directories
+                            </Label>
+                            <div className="text-gray-400">
+                                These folders will be excluded from the scan
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-center">
+                        <Textarea
+                            className="min-h-40"
+                            placeholder="One path per line. These folders will be excluded from the scan."
+                            value={excludedFolders}
+                            onChange={(e) => setExcludedFolders(e.target.value)}
+                        />
+                    </div>
+                </div>
+            </div>
             <Button
                 className="mt-4"
                 variant="outline"

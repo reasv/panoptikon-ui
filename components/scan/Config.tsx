@@ -209,7 +209,7 @@ export function Config() {
                             <div className="text-gray-400">These jobs will be run with the cronjob after the file scan</div>
                         </div>
                     </div>
-                    <ScrollArea className="max-w-[95vw] whitespace-nowrap">
+                    <ScrollArea className="max-w-[97vw] whitespace-nowrap">
                         <DataTable
                             setRowSelection={setSelected}
                             rowSelection={selected}

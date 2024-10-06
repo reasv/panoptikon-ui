@@ -75,7 +75,7 @@ export function ModelConfig(
     }
 
     return (
-        <>
+        <div className='grid gap-4 grid-cols-1 lg:grid-cols-2'>
             {modelConfig.default_batch_size !== undefined && modelConfig.default_batch_size !== null && <ConfidenceFilter
                 label="Batch Size"
                 description="Set to a lower value if you have little VRAM"
@@ -93,7 +93,7 @@ export function ModelConfig(
                 confidence={modelConfig.default_threshold}
                 setConfidence={(value) => setValues(modelConfig.default_batch_size, value)}
             />}
-        </>
+        </div>
     )
 }
 

@@ -89,7 +89,7 @@ export function DataExtractionHistory() {
         })
     }
     return (
-        <ScrollArea className="max-w-[95vw] whitespace-nowrap">
+        <ScrollArea className="max-w-[97vw] whitespace-nowrap">
             <DataTable
                 setRowSelection={setSelected}
                 rowSelection={selected}
@@ -130,7 +130,7 @@ export function FileScanHistory() {
         },
     )
     return (
-        <ScrollArea className="max-w-[95vw] whitespace-nowrap">
+        <ScrollArea className="max-w-[97vw] whitespace-nowrap">
             <DataTable
                 storageKey="filescan"
                 data={data || []}

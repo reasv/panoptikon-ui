@@ -54,7 +54,7 @@ export function JobQueue() {
                     <div className="text-gray-400">Queued and running jobs</div>
                 </div>
             </div>
-            <ScrollArea className="max-w-[95vw] whitespace-nowrap">
+            <ScrollArea className="max-w-[97vw] whitespace-nowrap">
                 <DataTable
                     setRowSelection={setSelected}
                     rowSelection={selected}
