@@ -11,15 +11,22 @@ import React from "react"
 import { useToast } from "../ui/use-toast"
 import { RowSelectionState } from "@tanstack/react-table"
 import { Button } from "../ui/button"
+import { useJobHistoryTab } from "@/lib/state/JobHistoryTab"
 
 export function JobHistory() {
+    const [jobHistoryTab, setJobHistoryTab] = useJobHistoryTab()
     return (
-        <Tabs defaultValue="filescans" className="rounded-lg border p-4 mt-4">
+        <Tabs
+            defaultValue="files"
+            value={jobHistoryTab}
+            onValueChange={(value) => setJobHistoryTab(value as any)}
+            className="rounded-lg border p-4 mt-4"
+        >
             <TabsList>
-                <TabsTrigger value="filescans">File Scan History</TabsTrigger>
+                <TabsTrigger value="files">File Scan History</TabsTrigger>
                 <TabsTrigger value="data">Data Extraction History</TabsTrigger>
             </TabsList>
-            <TabsContent value="filescans">
+            <TabsContent value="files">
                 <FileScanHistory />
             </TabsContent>
             <TabsContent value="data">
