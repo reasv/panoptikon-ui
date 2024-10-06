@@ -114,90 +114,92 @@ export function Config() {
             storageKey="scanConfig"
         >
             {data ? <>
-                <SwitchFilter
-                    label="Image Files"
-                    description="Include Image Files in the scan"
-                    value={data.scan_images}
-                    onChange={(value) => changeConfig((currentConfig) => ({
-                        ...currentConfig,
-                        scan_images: value,
-                    }))}
-                />
-                <SwitchFilter
-                    label="Video Files"
-                    description="Include Video Files in the scan"
-                    value={data.scan_video}
-                    onChange={(value) => changeConfig((currentConfig) => ({
-                        ...currentConfig,
-                        scan_video: value,
-                    }))}
-                />
-                <SwitchFilter
-                    label="Audio Files"
-                    description="Include Audio Files in the scan"
-                    value={data.scan_audio}
-                    onChange={(value) => changeConfig((currentConfig) => ({
-                        ...currentConfig,
-                        scan_audio: value,
-                    }))}
-                />
-                <SwitchFilter
-                    label="PDF Files"
-                    description="Include PDF Files in the scan"
-                    value={data.scan_pdf}
-                    onChange={(value) => changeConfig((currentConfig) => ({
-                        ...currentConfig,
-                        scan_pdf: value,
-                    }))}
-                />
-                <SwitchFilter
-                    label="HTML Files"
-                    description="Include HTML Files in the scan"
-                    value={data.scan_html}
-                    onChange={(value) => changeConfig((currentConfig) => ({
-                        ...currentConfig,
-                        scan_html: value,
-                    }))}
-                />
-                <SwitchFilter
-                    label="Remove Unavailable Files"
-                    description="After a scan, remove files from db if no longer present on disk"
-                    value={data.remove_unavailable_files}
-                    onChange={(value) => changeConfig((currentConfig) => ({
-                        ...currentConfig,
-                        remove_unavailable_files: value,
-                    }))}
-                />
-                <SwitchFilter
-                    label="Enable Cron Job"
-                    description="Enable the cron job to run the file scan and selected extraction jobs at regular intervals"
-                    value={data.enable_cron_job}
-                    onChange={(value) => changeConfig((currentConfig) => ({
-                        ...currentConfig,
-                        enable_cron_job: value,
-                    }))}
-                />
-                <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
-                    <div className="flex flex-row items-center justify-between">
-                        <div className="space-y-0.5">
-                            <Label className="text-base">
-                                Cron String
-                            </Label>
-                            <div className="text-gray-400">
-                                Cron Schedule String
+                <div className='grid gap-4 grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 4xl:grid-cols-4'>
+                    <SwitchFilter
+                        label="Image Files"
+                        description="Include Image Files in the scan"
+                        value={data.scan_images}
+                        onChange={(value) => changeConfig((currentConfig) => ({
+                            ...currentConfig,
+                            scan_images: value,
+                        }))}
+                    />
+                    <SwitchFilter
+                        label="Video Files"
+                        description="Include Video Files in the scan"
+                        value={data.scan_video}
+                        onChange={(value) => changeConfig((currentConfig) => ({
+                            ...currentConfig,
+                            scan_video: value,
+                        }))}
+                    />
+                    <SwitchFilter
+                        label="Audio Files"
+                        description="Include Audio Files in the scan"
+                        value={data.scan_audio}
+                        onChange={(value) => changeConfig((currentConfig) => ({
+                            ...currentConfig,
+                            scan_audio: value,
+                        }))}
+                    />
+                    <SwitchFilter
+                        label="PDF Files"
+                        description="Include PDF Files in the scan"
+                        value={data.scan_pdf}
+                        onChange={(value) => changeConfig((currentConfig) => ({
+                            ...currentConfig,
+                            scan_pdf: value,
+                        }))}
+                    />
+                    <SwitchFilter
+                        label="HTML Files"
+                        description="Include HTML Files in the scan"
+                        value={data.scan_html}
+                        onChange={(value) => changeConfig((currentConfig) => ({
+                            ...currentConfig,
+                            scan_html: value,
+                        }))}
+                    />
+                    <SwitchFilter
+                        label="Remove Unavailable Files"
+                        description="After a scan, remove files from db if no longer present on disk"
+                        value={data.remove_unavailable_files}
+                        onChange={(value) => changeConfig((currentConfig) => ({
+                            ...currentConfig,
+                            remove_unavailable_files: value,
+                        }))}
+                    />
+                    <SwitchFilter
+                        label="Enable Cron Job"
+                        description="Enable the cron job to run the file scan and selected extraction jobs at regular intervals"
+                        value={data.enable_cron_job}
+                        onChange={(value) => changeConfig((currentConfig) => ({
+                            ...currentConfig,
+                            enable_cron_job: value,
+                        }))}
+                    />
+                    <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
+                        <div className="flex flex-row items-center justify-between">
+                            <div className="space-y-0.5">
+                                <Label className="text-base">
+                                    Cron String
+                                </Label>
+                                <div className="text-gray-400">
+                                    Cron Schedule String
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-center">
-                        <Input
-                            minLength={3}
-                            maxLength={16}
-                            onChange={(e) => setCronInputValue(e.target.value)}
-                            value={cronInputValue}
-                            placeholder="Type a valid cron string like '0 3 * * *'" />
-                        <Button title="Save Cron String" onClick={changeCron} variant="ghost" size="icon">
-                            <Save className="h-4 w-4" />
-                        </Button>
+                        <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-center">
+                            <Input
+                                minLength={3}
+                                maxLength={16}
+                                onChange={(e) => setCronInputValue(e.target.value)}
+                                value={cronInputValue}
+                                placeholder="Type a valid cron string like '0 3 * * *'" />
+                            <Button title="Save Cron String" onClick={changeCron} variant="ghost" size="icon">
+                                <Save className="h-4 w-4" />
+                            </Button>
+                        </div>
                     </div>
                 </div>
                 <div className="flex flex-col items-left rounded-lg border p-4 mt-4">

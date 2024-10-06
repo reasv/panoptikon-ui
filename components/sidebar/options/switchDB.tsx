@@ -8,7 +8,7 @@ export function SwitchDB() {
     const [{ index_db }, setDBs] = useSelectedDBs()
     return (
         <>
-            <div className="flex flex-row items-center justify-between rounded-lg border p-4">
+            <div className="flex flex-row items-center justify-between rounded-lg border p-4 mt-4">
                 <div className="space-y-0.5">
                     <Label className="text-base">
                         Index Database
