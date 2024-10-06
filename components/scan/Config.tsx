@@ -219,7 +219,6 @@ export function Config() {
                             header={
                                 <Button
                                     disabled={selectedValues.length === 0}
-                                    className="ml-4"
                                     variant="destructive"
                                     onClick={() => cancelSelected()}
                                 >

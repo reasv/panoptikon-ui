@@ -106,22 +106,13 @@ export function DataTable<TData, TValue>(
     return (
         <div className="w-full">
             <div className="flex items-center py-4">
-                {filterColumn && <Input
-                    placeholder={filterPlaceholder ?? "Filter..."}
-                    value={(table.getColumn(filterColumn)?.getFilterValue() as string) ?? ""}
-                    onChange={(event) =>
-                        table.getColumn(filterColumn)?.setFilterValue(event.target.value)
-                    }
-                    className="max-w-sm"
-                />}
-                {header}
                 <DropdownMenu open={open} onOpenChange={setOpen}>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="outline" className="ml-auto">
+                        <Button variant="outline" className="mr-4">
                             Columns <ChevronDown className="ml-2 h-4 w-4" />
                         </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-[200px]">
+                    <DropdownMenuContent className="w-[200px]">
                         {table
                             .getAllColumns()
                             .filter((column) => column.getCanHide())
@@ -144,6 +135,16 @@ export function DataTable<TData, TValue>(
                             })}
                     </DropdownMenuContent>
                 </DropdownMenu>
+                {filterColumn && <Input
+                    placeholder={filterPlaceholder ?? "Filter..."}
+                    value={(table.getColumn(filterColumn)?.getFilterValue() as string) ?? ""}
+                    onChange={(event) =>
+                        table.getColumn(filterColumn)?.setFilterValue(event.target.value)
+                    }
+                    className="max-w-sm mr-4"
+                />}
+                {header}
+
             </div>
             <div className="rounded-md border">
                 <Table>
@@ -194,21 +195,7 @@ export function DataTable<TData, TValue>(
                 </Table>
             </div>
             <div className="flex items-center justify-between space-x-2 py-4">
-                <div className="flex-1 text-sm text-muted-foreground">
-                    {table.getFilteredRowModel().rows.length > 0 ? (
-                        <>
-                            Showing {(table.getState().pagination.pageIndex * table.getState().pagination.pageSize) + 1} to{" "}
-                            {Math.min(
-                                (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
-                                table.getFilteredRowModel().rows.length
-                            )}{" "}
-                            of {table.getFilteredRowModel().rows.length} results
-                        </>
-                    ) : (
-                        "No results."
-                    )}
-                </div>
-                <div className="space-x-2">
+                <div className="space-x-2 mr-4">
                     <Button
                         variant="outline"
                         size="sm"
@@ -226,6 +213,21 @@ export function DataTable<TData, TValue>(
                         Next
                     </Button>
                 </div>
+                <div className="flex-1 text-sm text-muted-foreground">
+                    {table.getFilteredRowModel().rows.length > 0 ? (
+                        <>
+                            Showing {(table.getState().pagination.pageIndex * table.getState().pagination.pageSize) + 1} to{" "}
+                            {Math.min(
+                                (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
+                                table.getFilteredRowModel().rows.length
+                            )}{" "}
+                            of {table.getFilteredRowModel().rows.length} results
+                        </>
+                    ) : (
+                        "No results."
+                    )}
+                </div>
+
             </div>
         </div>
     )

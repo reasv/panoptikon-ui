@@ -116,7 +116,7 @@ export function FolderLists() {
 
     return (
         <div className="rounded-lg border p-4 mb-4 mt-4">
-            <div className='grid gap-4 grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 4xl:grid-cols-4'>
+            <div className='grid gap-4 grid-cols-1 lg:grid-cols-2'>
                 <div className="flex flex-col items-left">
                     <div className="flex flex-row items-center justify-between">
                         <div className="space-y-0.5">

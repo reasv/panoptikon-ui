@@ -101,7 +101,6 @@ export function DataExtractionHistory() {
                 header={
                     <Button
                         disabled={selectedValues.length === 0}
-                        className="ml-4"
                         variant="destructive"
                         onClick={() => deleteSelected()}
                     >

@@ -161,7 +161,6 @@ export function GroupTab({ group }: { group: Group }) {
                             <>
                                 <Button
                                     disabled={selectedValues.length === 0}
-                                    className="ml-4"
                                     variant="outline"
                                     onClick={() => runSelected()}
                                 >
