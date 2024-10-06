@@ -105,6 +105,7 @@ export function Config() {
                 return !selectedValues.some(selectedJob => selectedJob.inference_id === job.inference_id)
             }),
         }))
+        setSelected({})
     }
     return (
         <FilterContainer
