@@ -1,13 +1,11 @@
 import { $api } from "@/lib/api"
-import { useCustomPaths } from "@/lib/state/zust"
 import { useState } from "react";
 import { Plus } from "lucide-react";
 import { useSelectedDBs } from "@/lib/state/database";
-import { useFileFilters, useQueryOptions } from "@/lib/state/searchQuery/clientHooks";
-import { Label } from "./ui/label";
-import { Input } from "./ui/input";
-import { Button } from "./ui/button";
-import { useToast } from "./ui/use-toast";
+import { Label } from "../ui/label";
+import { Input } from "../ui/input";
+import { Button } from "../ui/button";
+import { useToast } from "../ui/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 
 export function CreateNewDB() {

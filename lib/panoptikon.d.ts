@@ -748,9 +748,24 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get the current folder lists */
+        /**
+         * Get the current folder lists
+         * @description Get the current included and excluded folders in the database.
+         *     These are the folders that are being scanned and not being scanned, respectively.
+         *
+         *     This list may differ from the config, if the database has not been updated.
+         */
         get: operations["get_folders_api_jobs_folders_get"];
-        /** Update the folder lists */
+        /**
+         * Update the database with the current folder lists in the config
+         * @description Must be run every time after the folder lists in the config are updated,
+         *     to ensure that the database is in sync with the config.
+         *     If you update the config through the API, this will be done automatically if needed.
+         *
+         *     This will remove files and items from the database that are no longer in the included folders,
+         *     and add files and items that are now in the included folders, as well as remove files and items
+         *     from the database that are now in the excluded folders.
+         */
         put: operations["enqueue_update_folders_api_jobs_folders_put"];
         post?: never;
         delete?: never;
@@ -3008,6 +3023,10 @@ export interface components {
             cron_jobs?: components["schemas"]["CronJob"][];
             /** Job Settings */
             job_settings?: components["schemas"]["JobSettings"][];
+            /** Included Folders */
+            included_folders?: string[];
+            /** Excluded Folders */
+            excluded_folders?: string[];
         };
         /** TagFrequency */
         TagFrequency: {
@@ -4711,11 +4730,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["Folders"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             202: {
