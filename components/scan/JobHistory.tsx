@@ -43,7 +43,10 @@ export function DataExtractionHistory() {
         "/api/jobs/data/history",
         {
             params: {
-                query: dbs,
+                query: {
+                    ...dbs,
+                    page_size: 2000,
+                },
             },
         },
         {
@@ -62,12 +65,7 @@ export function DataExtractionHistory() {
             queryClient.invalidateQueries({
                 queryKey: [
                     "get",
-                    "/api/jobs/data/history",
-                    {
-                        params: {
-                            query: dbs,
-                        },
-                    },
+                    "/api/jobs/queue",
                 ],
             })
             toast({
@@ -120,7 +118,10 @@ export function FileScanHistory() {
         "/api/jobs/folders/history",
         {
             params: {
-                query: dbs,
+                query: {
+                    ...dbs,
+                    page_size: 2000,
+                },
             },
         },
         {
