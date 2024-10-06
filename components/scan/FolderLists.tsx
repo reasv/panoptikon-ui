@@ -6,60 +6,15 @@ import React, { useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/use-toast"
+import { components } from "@/lib/panoptikon"
 
 export function FolderLists() {
     const [dbs] = useSelectedDBs()
-    const { data, error, isError, refetch, isFetching } = $api.useQuery(
-        "get",
-        "/api/jobs/folders",
-        {
-            params: {
-                query: dbs,
-            },
-        },
-        {
-            placeholderData: keepPreviousData,
-        },
-    )
     const queryClient = useQueryClient()
-
     // Local state for editable folder paths
     const [includedFolders, setIncludedFolders] = React.useState("")
     const [excludedFolders, setExcludedFolders] = React.useState("")
-
-    // Update the local state whenever data is fetched
-    useEffect(() => {
-        if (data) {
-            setIncludedFolders(data.included_folders.join("\n"))
-            setExcludedFolders(data.excluded_folders.join("\n"))
-        }
-    }, [data])
-
     const { toast } = useToast()
-
-    const update = $api.useMutation("put", "/api/jobs/folders", {
-        onSuccess: () => {
-            queryClient.invalidateQueries({
-                queryKey: [
-                    "get",
-                    "/api/jobs/folders",
-                    {
-                        params: {
-                            query: dbs,
-                        },
-                    },
-                ],
-            })
-            queryClient.invalidateQueries({
-                queryKey: ["get", "/api/jobs/queue"],
-            })
-            toast({
-                title: "Folder Update Queued",
-                description:
-                    "The folders will be updated only after the job has been completed",
-            })
-        },
-    })
 
     const rescan = $api.useMutation("post", "/api/jobs/folders/rescan", {
         onSuccess: () => {
@@ -83,13 +38,61 @@ export function FolderLists() {
             })
         },
     })
-
-    const updateFolders = async () => {
-        update.mutate({
+    const changeSettings = $api.useMutation("put", "/api/jobs/config", {
+        onSuccess: () => {
+            queryClient.invalidateQueries({
+                queryKey: [
+                    "get",
+                    "/api/jobs/config",
+                    {
+                        params: {
+                            query: dbs,
+                        },
+                    }
+                ],
+            })
+            toast({
+                title: "Settings Updated",
+                description: "The changes have been applied",
+            })
+        },
+    })
+    const { data, refetch } = $api.useQuery(
+        "get",
+        "/api/jobs/config",
+        {
             params: {
                 query: dbs,
             },
-            body: {
+        },
+        {
+            placeholderData: keepPreviousData,
+        },
+    )
+    const changeConfig = async (modifyConfig: (currentConfig: components["schemas"]["SystemConfig"]) => components["schemas"]["SystemConfig"]) => {
+        // Refetch the latest configuration
+        const latestConfig = await refetch()
+
+        // Apply the change to the latest config
+        if (latestConfig.data) {
+            const newConfig = modifyConfig(latestConfig.data)
+            changeSettings.mutate({ body: newConfig, params: { query: dbs } })
+        }
+    }
+    // Update the local state whenever data is fetched
+    useEffect(() => {
+        if (data) {
+            const includedFolders = data.included_folders || []
+            const excludedFolders = data.excluded_folders || []
+            setIncludedFolders(includedFolders.join("\n"))
+            setExcludedFolders(excludedFolders.join("\n"))
+        }
+    }, [data])
+
+    const updateFolders = async () => {
+        changeConfig((currentConfig) => {
+            return {
+                ...currentConfig,
                 included_folders: includedFolders
                     .split("\n")
                     .map((line) => line.trim())
@@ -98,7 +101,7 @@ export function FolderLists() {
                     .split("\n")
                     .map((line) => line.trim())
                     .filter((line) => line !== ""),
-            },
+            }
         })
     }
 
