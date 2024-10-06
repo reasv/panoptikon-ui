@@ -66,6 +66,7 @@ export const jobQueueColumns: ColumnDef<components["schemas"]["JobModel"]>[] = [
             if (row.getValue("job_type") === "job_data_deletion") {
                 return "Index Data Deletion (Job)"
             }
+            return "Mystery Job"
         },
     },
     {
