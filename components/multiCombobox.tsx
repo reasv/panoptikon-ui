@@ -29,6 +29,7 @@ export type Option = {
     value: string
     label: string
     removable?: boolean
+    icon?: React.ReactNode
 }
 
 export function MultiBoxResponsive({
@@ -163,12 +164,13 @@ function OptionList({
                                 toggleValue(value)
                             }}
                         >
-                            <Check
-                                className={cn(
-                                    "mr-2 h-4 w-4",
-                                    isSelected(option.value) ? "opacity-100" : "opacity-0"
-                                )}
-                            />
+                            {option.icon ||
+                                <Check
+                                    className={cn(
+                                        "mr-2 h-4 w-4",
+                                        isSelected(option.value) ? "opacity-100" : "opacity-0"
+                                    )}
+                                />}
                             {option.removable && removeOption && (
                                 <Button className="ml-1 mr-4 h-5 w-5 hover:outline" onClick={(e) => {
                                     e.stopPropagation()

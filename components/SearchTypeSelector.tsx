@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
 import { MultiBoxResponsive } from "./multiCombobox"
-import { GlassWater, MSquare, ScanSearch } from "lucide-react"
+import { GlassWater, LoaderCircle, MSquare, ScanSearch } from "lucide-react"
 import { Toggle } from "./ui/toggle"
 
 export function SearchTypeSelection() {
@@ -15,6 +15,8 @@ export function SearchTypeSelection() {
             at_e_st: selectedOptions.includes("temb"),
         })
     }
+    const [iembLoading, setIembLoading] = useState(false)
+    const [tembLoading, setTembLoading] = useState(false)
     const allOptions = [
         {
             label: "File Path",
@@ -27,10 +29,12 @@ export function SearchTypeSelection() {
         {
             label: "Semantic Image Search",
             value: "iemb",
+            icon: iembLoading ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : undefined,
         },
         {
             label: "Semantic Text Search",
             value: "temb",
+            icon: tembLoading ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : undefined,
         },
     ]
     const selectedOptions = useMemo(() => {
