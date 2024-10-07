@@ -2,6 +2,8 @@ import { useEmbedArgs } from "@/lib/state/searchQuery/clientHooks"
 import { $api } from "@/lib/api"
 import { splitByFirstSlash } from "@/components/SearchTypeSelector"
 import { useToast } from "@/components/ui/use-toast"
+import { useLastModelSelection } from "./state/lastModel"
+import { useEffect } from "react"
 
 export function useEnableEmbeddingSearch({
   setEnable,
@@ -16,6 +18,28 @@ export function useEnableEmbeddingSearch({
   models: string[]
   type: "image" | "text"
 }) {
+  const [getLastModel, setLastModel] = useLastModelSelection((state) => [
+    state.getLastSelectedModel,
+    state.setLastSelectedModel,
+  ])
+  useEffect(() => {
+    const lastModel = getLastModel(type)
+    if (model.length > 0 && lastModel !== model) {
+      setLastModel(type, model)
+    }
+  }, [model])
+
+  const getDefaultModel = () => {
+    if (models.length === 0) {
+      return ""
+    }
+    const lastModel = getLastModel(type)
+    if (lastModel && models.includes(lastModel)) {
+      return lastModel
+    }
+    return models[0]
+  }
+
   const [embedArgs, setEmbedArgs] = useEmbedArgs()
   const loadModel = $api.useMutation(
     "put",
@@ -29,8 +53,9 @@ export function useEnableEmbeddingSearch({
     }
     let currentModel = model
     if (model.length === 0) {
-      setModel(models[0])
-      currentModel = models[0]
+      const defaultModel = getDefaultModel()
+      setModel(defaultModel)
+      currentModel = defaultModel
     }
     if (currentModel.length === 0) {
       setEnable(false)
@@ -93,6 +118,7 @@ export function useEnableEmbeddingSearch({
           type === "image" ? "Image" : "Text"
         } Search is now disabled`,
       })
+      setModel("")
       setEnable(false)
     }
   }
