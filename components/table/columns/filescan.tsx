@@ -74,7 +74,7 @@ export const fileScanColumns: ColumnDef<components["schemas"]["FileScanRecord"]>
         header: "New Items",
     },
     {
-        id: "unchanged_items",
+        id: "new_files",
         accessorKey: "new_files",
         header: "New Files",
     },

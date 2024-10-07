@@ -105,6 +105,20 @@ export function DataExtractionHistory() {
                         Delete Saved Data
                     </Button>
                 }
+                defaultColumnVisibility={{
+                    "batch_size": false,
+                    "threshold": false,
+                    "data_load_time": false,
+                    "inference_time": false,
+                    "image_files": false,
+                    "video_files": false,
+                    "other_files": false,
+                    "data_segments": false,
+                    "errors": false,
+                    "total_remaining": false,
+                    "completed": false,
+                    "failed": false,
+                }}
             />
             <ScrollBar orientation="horizontal" />
         </ScrollArea>
@@ -137,6 +151,15 @@ export function FileScanHistory() {
                 columns={fileScanColumns}
                 filterColumn="path"
                 filterPlaceholder="Search path..."
+                defaultColumnVisibility={{
+                    "new_items": false,
+                    "unchanged_files": false,
+                    "modified_files": false,
+                    "false_changes": false,
+                    "metadata_time": false,
+                    "hashing_time": false,
+                    "thumbgen_time": false,
+                }}
             />
             <ScrollBar orientation="horizontal" />
         </ScrollArea>

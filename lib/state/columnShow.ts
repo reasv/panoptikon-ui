@@ -36,5 +36,15 @@ export const useTableStore = create(
 )
 
 // Selector to get the column visibility for a specific table identified by storageKey
-export const useColumnVisibility = (storageKey: string) =>
-  useTableStore((state) => state.tables[storageKey]?.columnVisibility || {})
+export const useColumnVisibility = (
+  storageKey: string,
+  defaultValues?: VisibilityState
+) =>
+  useTableStore((state) => {
+    const columnVisibility = state.tables[storageKey]?.columnVisibility || {}
+    // Merge the default values with the stored columnVisibility
+    return {
+      ...defaultValues,
+      ...columnVisibility,
+    }
+  })

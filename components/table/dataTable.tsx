@@ -46,6 +46,7 @@ export function DataTable<TData, TValue>(
         rowSelection,
         setRowSelection,
         header,
+        defaultColumnVisibility,
     }: {
         data: TData[],
         columns: ColumnDef<TData, TValue>[],
@@ -56,6 +57,7 @@ export function DataTable<TData, TValue>(
         rowSelection?: RowSelectionState,
         setRowSelection?: OnChangeFn<RowSelectionState>,
         header?: React.ReactNode,
+        defaultColumnVisibility?: VisibilityState,
     }) {
     "use no memo"
     const [sorting, setSorting] = React.useState<SortingState>([])
@@ -65,7 +67,7 @@ export function DataTable<TData, TValue>(
         pageSize: defaultPageSize,
     })
     // Get the current column visibility using the zustand selector
-    const columnVisibility = useColumnVisibility(storageKey);
+    const columnVisibility = useColumnVisibility(storageKey, defaultColumnVisibility);
 
     // Access the zustand action to set the column visibility
     const setTableVisibility = useTableStore((state) => state.setTableVisibility);
