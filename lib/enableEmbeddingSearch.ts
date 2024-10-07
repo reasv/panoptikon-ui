@@ -21,8 +21,9 @@ export function useEnableEmbeddingSearch({
     "put",
     "/api/inference/load/{group}/{inference_id}"
   )
+  const { refetch } = $api.useQuery("get", "/api/inference/cache")
   const { toast } = useToast()
-  const onEnableChange = (value: boolean) => {
+  const onEnableChange = async (value: boolean) => {
     if (models.length === 0) {
       return
     }
@@ -36,6 +37,17 @@ export function useEnableEmbeddingSearch({
       return
     }
     if (value) {
+      const { data } = await refetch()
+      if (data && data.cache[currentModel]) {
+        setEnable(true)
+        toast({
+          title: "Enabled",
+          description: `Semantic ${
+            type === "image" ? "Image" : "Text"
+          } Search is now enabled`,
+        })
+        return
+      }
       if (loadModel.isPending) {
         return
       }
