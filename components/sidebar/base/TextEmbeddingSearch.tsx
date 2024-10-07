@@ -3,11 +3,14 @@ import { Label } from "../../ui/label"
 import { Switch } from "../../ui/switch"
 import { MultiBoxResponsive } from "../../multiCombobox"
 import { useSelectedDBs } from "@/lib/state/database"
-import { SetFn } from "@/lib/state/searchQuery/clientHooks"
+import { SetFn, useEmbedArgs } from "@/lib/state/searchQuery/clientHooks"
 import { KeymapComponents } from "@/lib/state/searchQuery/searchQueryKeyMaps"
 import { ConfidenceFilter } from "../options/confidenceFilter"
 import { ComboBoxResponsive } from "@/components/combobox"
 import { SrcTextFilter } from "./SrcTextFilter"
+import { useState } from "react"
+import { splitByFirstSlash } from "@/components/SearchTypeSelector"
+import { LoaderCircle } from "lucide-react"
 
 export function TextEmbeddingSearch({
     enable,
@@ -49,12 +52,39 @@ export function TextEmbeddingSearch({
             setFilter({ distance_aggregation: "AVG" })
         }
     }
-    const onEnableChange = (value: boolean) => {
+    const [embedArgs, setEmbedArgs] = useEmbedArgs()
+    const loadModel = $api.useMutation(
+        "put",
+        "/api/inference/load/{group}/{inference_id}",
+        {
+            onSettled: (data, error, variables, context) => {
+                setIsLoading(false)
+            },
+        }
+    )
+    const [isLoading, setIsLoading] = useState(false)
+    const onEnableChange = async (value: boolean) => {
         if (models.length === 0) {
             return
         }
+        let currentModel = filter.model
         if (filter.model.length === 0) {
             setFilter({ model: models[0].value })
+            currentModel = models[0].value
+        }
+        if (value && currentModel.length > 0) {
+            setIsLoading(true)
+            await loadModel.mutateAsync({
+                params: {
+                    path: {
+                        group: splitByFirstSlash(currentModel)[0],
+                        inference_id: splitByFirstSlash(currentModel)[1]
+                    },
+                    query: {
+                        ...embedArgs
+                    }
+                }
+            })
         }
         setEnable(value)
     }
@@ -69,7 +99,10 @@ export function TextEmbeddingSearch({
                         Searches for similar text in the database
                     </div>
                 </div>
-                <Switch checked={enable} onCheckedChange={(value) => onEnableChange(value)} />
+                {isLoading ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <Switch
+                    checked={enable}
+                    onCheckedChange={(value) => onEnableChange(value)}
+                />}
             </div>
             {children}
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">

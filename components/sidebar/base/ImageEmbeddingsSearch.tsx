@@ -1,10 +1,13 @@
 import { Label } from "../../ui/label"
 import { Switch } from "../../ui/switch"
 import { ComboBoxResponsive } from "../../combobox"
-import { SetFn } from "@/lib/state/searchQuery/clientHooks"
+import { SetFn, useEmbedArgs } from "@/lib/state/searchQuery/clientHooks"
 import { KeymapComponents } from "@/lib/state/searchQuery/searchQueryKeyMaps"
 import { useSelectedDBs } from "@/lib/state/database"
 import { $api } from "@/lib/api"
+import { splitByFirstSlash } from "@/components/SearchTypeSelector"
+import { useState } from "react"
+import { LoaderCircle } from "lucide-react"
 
 export function ImageEmbeddingSearch({
     enable,
@@ -43,12 +46,39 @@ export function ImageEmbeddingSearch({
             setFilter({ distance_aggregation: "AVG" })
         }
     }
-    const onEnableChange = (value: boolean) => {
+    const [embedArgs, setEmbedArgs] = useEmbedArgs()
+    const [isLoading, setIsLoading] = useState(false)
+    const loadModel = $api.useMutation(
+        "put",
+        "/api/inference/load/{group}/{inference_id}",
+        {
+            onSettled: (data, error, variables, context) => {
+                setIsLoading(false)
+            },
+        }
+    )
+    const onEnableChange = async (value: boolean) => {
         if (models.length === 0) {
             return
         }
+        let currentModel = filter.model
         if (filter.model.length === 0) {
             setFilter({ model: models[0].value })
+            currentModel = models[0].value
+        }
+        if (value && currentModel.length > 0) {
+            setIsLoading(true)
+            await loadModel.mutateAsync({
+                params: {
+                    path: {
+                        group: splitByFirstSlash(currentModel)[0],
+                        inference_id: splitByFirstSlash(currentModel)[1]
+                    },
+                    query: {
+                        ...embedArgs
+                    }
+                }
+            })
         }
         setEnable(value)
     }
@@ -63,7 +93,8 @@ export function ImageEmbeddingSearch({
                         Searches the semantic content of images
                     </div>
                 </div>
-                <Switch checked={enable} onCheckedChange={(value) => onEnableChange(value)} />
+                {isLoading ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+                    : <Switch checked={enable} onCheckedChange={(value) => onEnableChange(value)} />}
             </div>
             {children}
             <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">

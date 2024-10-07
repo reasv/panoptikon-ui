@@ -5,7 +5,7 @@ import { GlassWater, LoaderCircle, ScanSearch } from "lucide-react"
 import { Toggle } from "./ui/toggle"
 import { useSelectedDBs } from "@/lib/state/database"
 import { $api } from "@/lib/api"
-function splitByFirstSlash(input: string): [string, string] {
+export function splitByFirstSlash(input: string): [string, string] {
     const index = input.indexOf('/');
     if (index === -1) {
         return [input, ''];
