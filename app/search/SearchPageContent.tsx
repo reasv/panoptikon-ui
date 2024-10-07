@@ -23,6 +23,8 @@ import { ImageGallery } from '@/components/ImageGallery';
 import { ImageSimilarityHeader } from '@/components/ImageSimilarityHeader';
 import { useQueryOptions } from "@/lib/state/searchQuery/clientHooks";
 import Link from "next/link";
+import { useScanDrawerOpen } from "@/lib/state/scanDrawer";
+import { ScanDrawer } from "@/components/scan/ScanDrawer";
 
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }) {
@@ -30,6 +32,7 @@ export function SearchPageContent({ initialQuery }:
     return (
         <div className="flex w-full h-screen">
             <SideBar />
+            <ScanDrawer />
             <div className={cn('p-4 transition-all duration-300 mx-auto',
                 sidebarOpen ? 'w-full lg:w-1/2 xl:w-2/3 2xl:w-3/4 4xl:w-[80%] 5xl:w-[82%]' : 'w-full'
             )}>
@@ -90,6 +93,7 @@ export function MultiSearchView({ initialQuery }:
             user_data_db: dbs.user_data_db,
         })
     }, [dbs])
+    const [scanOpen, setScanOpen] = useScanDrawerOpen()
     return (
         <>
             <SearchErrorToast noFtsErrors={options.e_iss} isError={isError} error={error} />
@@ -105,7 +109,7 @@ export function MultiSearchView({ initialQuery }:
                     >
                         <Settings className="h-4 w-4" />
                     </Toggle>
-                    <Link href={scanLink}>
+                    <Link href={scanLink} onClick={() => setScanOpen(true)}>
                         <Button title="File Scan & Indexing" variant="ghost" size="icon">
                             <ScanEye className="h-4 w-4" />
                         </Button>

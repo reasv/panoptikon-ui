@@ -1,17 +1,11 @@
 "use client"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { SwitchDB } from "@/components/sidebar/options/switchDB"
-import { CreateNewDB } from "@/components/scan/CreateDB"
-import { Config } from "@/components/scan/Config"
-import { GroupList } from "@/components/scan/GroupLists"
-import { JobQueue } from "@/components/scan/JobQueue"
-import { JobHistory } from "@/components/scan/JobHistory"
-import { FolderLists } from "@/components/scan/FolderLists"
 import { Button } from "@/components/ui/button"
 import { SidebarClose } from "lucide-react"
 import Link from "next/link"
 import { selectedDBsSerializer, useSelectedDBs } from "@/lib/state/database"
 import { useMemo } from "react"
+import { ScanInternal } from "@/components/scan/ScanDrawer"
 
 export function ScanPage() {
   const dbs = useSelectedDBs()[0]
@@ -33,15 +27,7 @@ export function ScanPage() {
                 <SidebarClose className="h-4 w-4" />
               </Button>
             </Link>
-            <div className='grid gap-4 grid-cols-1 lg:grid-cols-2'>
-              <SwitchDB />
-              <CreateNewDB />
-            </div>
-            <Config />
-            <FolderLists />
-            <GroupList />
-            <JobQueue />
-            <JobHistory />
+            <ScanInternal />
           </div>
         </ScrollArea>
       </div>
