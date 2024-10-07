@@ -39,8 +39,31 @@ export function SearchTypeSelection() {
     ]
     const [iembLoading, setIembLoading] = useState(false)
     const [tembLoading, setTembLoading] = useState(false)
-    const loadModel = $api.useMutation("put", "/api/inference/load/{group}/{inference_id}")
-    const onSelectionChange = async (selectedOptions: string[]) => {
+    const loadClipModel = $api.useMutation(
+        "put",
+        "/api/inference/load/{group}/{inference_id}",
+        {
+            onMutate: async () => {
+                setIembLoading(true)
+            },
+            onSettled: () => {
+                setIembLoading(false)
+                setOptions({ at_e_si: true })
+            },
+        })
+    const loadTextEmbedModel = $api.useMutation(
+        "put",
+        "/api/inference/load/{group}/{inference_id}",
+        {
+            onMutate: async () => {
+                setTembLoading(true)
+            },
+            onSettled: () => {
+                setTembLoading(false)
+                setOptions({ at_e_st: true })
+            },
+        })
+    const onSelectionChange = (selectedOptions: string[]) => {
         setOptions({
             at_e_path: selectedOptions.includes("path"),
             at_e_txt: selectedOptions.includes("fts"),
@@ -57,8 +80,7 @@ export function SearchTypeSelection() {
                 currentModel = iembModels[0]
             }
             if (currentModel.length > 0) {
-                setIembLoading(true)
-                await loadModel.mutateAsync({
+                loadClipModel.mutate({
                     params: {
                         path: {
                             group: splitByFirstSlash(currentModel)[0],
@@ -69,12 +91,11 @@ export function SearchTypeSelection() {
                         }
                     }
                 })
-                setIembLoading(false)
             }
+        } else {
+            setOptions({ at_e_si: false })
         }
-        setOptions({
-            at_e_si: selectedOptions.includes("iemb"),
-        })
+
         if (selectedOptions.includes("temb")) {
             let currentModel = tembFilter.model
             if (
@@ -87,8 +108,7 @@ export function SearchTypeSelection() {
                 currentModel = tembModels[0]
             }
             if (currentModel.length > 0) {
-                setTembLoading(true)
-                await loadModel.mutateAsync({
+                loadTextEmbedModel.mutate({
                     params: {
                         path: {
                             group: splitByFirstSlash(tembFilter.model)[0],
@@ -99,12 +119,11 @@ export function SearchTypeSelection() {
                         }
                     }
                 })
-                setTembLoading(false)
             }
+        } else {
+            setOptions({ at_e_st: false })
         }
-        setOptions({
-            at_e_st: selectedOptions.includes("temb"),
-        })
+
     }
 
     const allOptions = [
