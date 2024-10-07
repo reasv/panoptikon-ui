@@ -112,9 +112,9 @@ export function MultiSearchView({ initialQuery }:
                     </Link>
                     {options.e_iss ? <ImageSimilarityHeader /> : <SearchBar onSubmit={onRefresh} />}
                     <InstantSearchLock />
-                    <Button title="Refresh search results" onClick={onRefresh} variant="ghost" size="icon">
+                    <Toggle title="Refresh search results" onClick={onRefresh} pressed={false}>
                         <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-                    </Button>
+                    </Toggle>
                 </div>
             </div>
             {

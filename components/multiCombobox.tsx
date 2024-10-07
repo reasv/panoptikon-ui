@@ -41,6 +41,9 @@ export function MultiBoxResponsive({
     popoverClassName,
     buttonClassName,
     onRemoveOption,
+    button,
+    isOpen,
+    onOpenChange,
 }: {
     options: Option[],
     resetValue?: string,
@@ -50,8 +53,10 @@ export function MultiBoxResponsive({
     maxDisplayed: number
     popoverClassName?: string
     buttonClassName?: string
-
     onRemoveOption?: (value: string) => void
+    button?: React.ReactNode
+    isOpen?: boolean
+    onOpenChange?: (isOpen: boolean) => void
 }) {
     const [open, setOpen] = React.useState(false)
     const isDesktop = useMediaQuery("(min-width: 1024px)")
@@ -85,11 +90,16 @@ export function MultiBoxResponsive({
 
     if (isDesktop) {
         return (
-            <Popover open={open} onOpenChange={setOpen}>
+            <Popover
+                open={isOpen !== undefined ? isOpen : open}
+                onOpenChange={onOpenChange !== undefined ? onOpenChange : setOpen}
+            >
                 <PopoverTrigger asChild>
-                    <Button variant="outline" className={cn("justify-start max-w-[270px]", buttonClassName)}>
-                        <span className="truncate">{buttonLabel}</span>
-                    </Button>
+                    {button ||
+                        <Button variant="outline" className={cn("justify-start max-w-[270px]", buttonClassName)}>
+                            <span className="truncate">{buttonLabel}</span>
+                        </Button>
+                    }
                 </PopoverTrigger>
                 <PopoverContent className={cn("max-w-[50vw] w-full p-0", popoverClassName)} align="start">
                     <OptionList removeOption={onRemoveOption} defaultValue={resetValue} selectedValues={currentValues} options={options} toggleValue={onOptionToggle} />
@@ -99,11 +109,16 @@ export function MultiBoxResponsive({
     }
 
     return (
-        <Drawer open={open} onOpenChange={setOpen}>
+        <Drawer
+            open={isOpen !== undefined ? isOpen : open}
+            onOpenChange={onOpenChange !== undefined ? onOpenChange : setOpen}
+        >
             <DrawerTrigger asChild>
-                <Button variant="outline" className={cn("justify-start max-w-[300px]", buttonClassName)}>
-                    <span className="truncate">{buttonLabel}</span>
-                </Button>
+                {button ||
+                    <Button variant="outline" className={cn("justify-start max-w-[300px]", buttonClassName)}>
+                        <span className="truncate">{buttonLabel}</span>
+                    </Button>
+                }
             </DrawerTrigger>
             <DrawerContent>
                 <div className="mt-4 border-t">

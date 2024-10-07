@@ -1,9 +1,8 @@
 "use client"
 import Image from 'next/image'
 import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons"
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useMemo } from "react";
 import { cn, getFullFileURL, getLocale, getThumbnailURL } from "@/lib/utils";
-import { components } from "@/lib/panoptikon";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { useSearchParams } from 'next/navigation';
 import { getGalleryOptionsSerializer } from '@/lib/state/gallery';

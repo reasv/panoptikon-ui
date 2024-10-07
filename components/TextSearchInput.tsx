@@ -8,6 +8,7 @@ import { useTagCompletionEnabled } from "@/lib/enableTagsHook"
 import { TagAutoComplete } from "./tagInput"
 import { cn } from "@/lib/utils"
 import { TagCompletionSwitch } from "./TagCompleteSwitch"
+import { SearchTypeSelection } from "./SearchTypeSelector"
 
 const checkIsInputValid = (
     query: string,
@@ -146,6 +147,7 @@ export function TextSearchInput({
             </div>
             {!noClearSearch && <ClearSearch />}
             <Fts5ToggleButton isFTS5Enabled={fts5Enabled} onFTS5Enable={onFTS5Enable} />
+            <SearchTypeSelection />
         </>
     )
 }
