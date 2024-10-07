@@ -57,13 +57,17 @@ export function TextEmbeddingSearch({
         "put",
         "/api/inference/load/{group}/{inference_id}",
         {
-            onSettled: (data, error, variables, context) => {
+            onMutate: async () => {
+                setIsLoading(true)
+            },
+            onSettled: () => {
                 setIsLoading(false)
+                setEnable(true)
             },
         }
     )
     const [isLoading, setIsLoading] = useState(false)
-    const onEnableChange = async (value: boolean) => {
+    const onEnableChange = (value: boolean) => {
         if (models.length === 0) {
             return
         }
@@ -73,8 +77,7 @@ export function TextEmbeddingSearch({
             currentModel = models[0].value
         }
         if (value && currentModel.length > 0) {
-            setIsLoading(true)
-            await loadModel.mutateAsync({
+            loadModel.mutate({
                 params: {
                     path: {
                         group: splitByFirstSlash(currentModel)[0],
@@ -85,8 +88,9 @@ export function TextEmbeddingSearch({
                     }
                 }
             })
+        } else {
+            setEnable(value)
         }
-        setEnable(value)
     }
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
