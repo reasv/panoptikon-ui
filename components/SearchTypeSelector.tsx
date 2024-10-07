@@ -1,13 +1,24 @@
 import { useMemo, useState } from "react"
-import { useATSemanticImage, useATSemanticText, useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
+import { useATSemanticImage, useATSemanticText, useEmbedArgs, useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
 import { MultiBoxResponsive } from "./multiCombobox"
 import { GlassWater, LoaderCircle, ScanSearch } from "lucide-react"
 import { Toggle } from "./ui/toggle"
 import { useSelectedDBs } from "@/lib/state/database"
 import { $api } from "@/lib/api"
+function splitByFirstSlash(input: string): [string, string] {
+    const index = input.indexOf('/');
+    if (index === -1) {
+        return [input, ''];
+    }
 
+    const part1 = input.substring(0, index);
+    const part2 = input.substring(index + 1);
+
+    return [part1, part2];
+}
 export function SearchTypeSelection() {
     const [options, setOptions] = useQueryOptions()
+    const [embedArgs, setEmbedArgs] = useEmbedArgs()
     const dbs = useSelectedDBs()[0]
     const { data } = $api.useQuery("get", "/api/search/stats", {
         params: {
@@ -26,9 +37,16 @@ export function SearchTypeSelection() {
             .filter((setter) => setter[0] === "text-embedding")
             .map((setter) => setter[1]) || []
     ]
-    const onSelectionChange = (selectedOptions: string[]) => {
-
+    const [iembLoading, setIembLoading] = useState(false)
+    const [tembLoading, setTembLoading] = useState(false)
+    const loadModel = $api.useMutation("put", "/api/inference/load/{group}/{inference_id}")
+    const onSelectionChange = async (selectedOptions: string[]) => {
+        setOptions({
+            at_e_path: selectedOptions.includes("path"),
+            at_e_txt: selectedOptions.includes("fts"),
+        })
         if (selectedOptions.includes("iemb")) {
+            let currentModel = iembFilter.model
             if (
                 iembFilter.model.length === 0
                 && iembModels.length > 0
@@ -36,9 +54,29 @@ export function SearchTypeSelection() {
                 setIembFilter({
                     model: iembModels[0]
                 })
+                currentModel = iembModels[0]
+            }
+            if (currentModel.length > 0) {
+                setIembLoading(true)
+                await loadModel.mutateAsync({
+                    params: {
+                        path: {
+                            group: splitByFirstSlash(currentModel)[0],
+                            inference_id: splitByFirstSlash(currentModel)[1]
+                        },
+                        query: {
+                            ...embedArgs
+                        }
+                    }
+                })
+                setIembLoading(false)
             }
         }
+        setOptions({
+            at_e_si: selectedOptions.includes("iemb"),
+        })
         if (selectedOptions.includes("temb")) {
+            let currentModel = tembFilter.model
             if (
                 tembFilter.model.length === 0
                 && tembModels.length > 0
@@ -46,17 +84,29 @@ export function SearchTypeSelection() {
                 setTembFilter({
                     model: tembModels[0]
                 })
+                currentModel = tembModels[0]
+            }
+            if (currentModel.length > 0) {
+                setTembLoading(true)
+                await loadModel.mutateAsync({
+                    params: {
+                        path: {
+                            group: splitByFirstSlash(tembFilter.model)[0],
+                            inference_id: splitByFirstSlash(tembFilter.model)[1]
+                        },
+                        query: {
+                            ...embedArgs
+                        }
+                    }
+                })
+                setTembLoading(false)
             }
         }
         setOptions({
-            at_e_path: selectedOptions.includes("path"),
-            at_e_txt: selectedOptions.includes("fts"),
-            at_e_si: selectedOptions.includes("iemb"),
             at_e_st: selectedOptions.includes("temb"),
         })
     }
-    const [iembLoading, setIembLoading] = useState(false)
-    const [tembLoading, setTembLoading] = useState(false)
+
     const allOptions = [
         {
             label: "File Path",
