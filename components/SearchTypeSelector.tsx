@@ -39,6 +39,7 @@ export function SearchTypeSelection() {
             .map((setter) => setter[1]) || []
     ]
     const [onIembEnableChange, iembIsLoading] = useEnableEmbeddingSearch({
+        type: "image",
         setEnable: (value: boolean) => setOptions({ at_e_si: value }),
         model: iembFilter.model,
         setModel: (value: string) => setIembFilter({ model: value }),
@@ -46,6 +47,7 @@ export function SearchTypeSelection() {
     })
 
     const [onTembEnableChange, tembIsLoading] = useEnableEmbeddingSearch({
+        type: "text",
         setEnable: (value: boolean) => setOptions({ at_e_st: value }),
         model: tembFilter.model,
         setModel: (value: string) => setTembFilter({ model: value }),
@@ -56,8 +58,15 @@ export function SearchTypeSelection() {
             at_e_path: selectedOptions.includes("path"),
             at_e_txt: selectedOptions.includes("fts"),
         })
-        onTembEnableChange(selectedOptions.includes("temb"))
-        onIembEnableChange(selectedOptions.includes("iemb"))
+        const tembEnabled = selectedOptions.includes("temb")
+        const iembEnabled = selectedOptions.includes("iemb")
+        // if the selected options are different from the current options, update the state
+        if (tembEnabled !== options.at_e_st) {
+            onTembEnableChange(tembEnabled)
+        }
+        if (iembEnabled !== options.at_e_si) {
+            onIembEnableChange(iembEnabled)
+        }
     }
 
     const allOptions = [

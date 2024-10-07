@@ -48,6 +48,7 @@ export function ImageEmbeddingSearch({
             .map((setter) => ({ value: setter[1], label: setter[1] })) || [])
     ]
     const [onEnableChange, isLoading] = useEnableEmbeddingSearch({
+        type: "image",
         setEnable,
         model: filter.model,
         setModel: (value: string) => setFilter({ model: value }),

@@ -8,11 +8,13 @@ export function useEnableEmbeddingSearch({
   model,
   setModel,
   models,
+  type,
 }: {
   setEnable: (value: boolean) => void
   model: string
   setModel: (value: string) => void
   models: string[]
+  type: "image" | "text"
 }) {
   const [embedArgs, setEmbedArgs] = useEmbedArgs()
   const loadModel = $api.useMutation(
@@ -58,7 +60,9 @@ export function useEnableEmbeddingSearch({
             setEnable(true)
             toast({
               title: "Model Loaded",
-              description: "Semantic Search is now enabled",
+              description: `Semantic ${
+                type === "image" ? "Image" : "Text"
+              } Search is now enabled`,
             })
           },
           onError: (error) => {
@@ -71,6 +75,12 @@ export function useEnableEmbeddingSearch({
         }
       )
     } else {
+      toast({
+        title: "Disabled",
+        description: `Semantic ${
+          type === "image" ? "Image" : "Text"
+        } Search is now disabled`,
+      })
       setEnable(false)
     }
   }

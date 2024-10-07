@@ -52,6 +52,7 @@ export function TextEmbeddingSearch({
         }
     }
     const [onEnableChange, isLoading] = useEnableEmbeddingSearch({
+        type: "text",
         setEnable,
         model: filter.model,
         setModel: (value: string) => setFilter({ model: value }),
