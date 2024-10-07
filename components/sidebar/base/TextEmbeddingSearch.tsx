@@ -9,6 +9,7 @@ import { SrcTextFilter } from "./SrcTextFilter"
 import { useState } from "react"
 import { splitByFirstSlash } from "@/components/SearchTypeSelector"
 import { LoaderCircle } from "lucide-react"
+import { useEnableEmbeddingSearch } from "@/lib/enableEmbeddingSearch"
 
 export function TextEmbeddingSearch({
     enable,
@@ -50,46 +51,12 @@ export function TextEmbeddingSearch({
             setFilter({ distance_aggregation: "AVG" })
         }
     }
-    const [embedArgs, setEmbedArgs] = useEmbedArgs()
-    const loadModel = $api.useMutation(
-        "put",
-        "/api/inference/load/{group}/{inference_id}",
-        {
-            onMutate: async () => {
-                setIsLoading(true)
-            },
-            onSettled: () => {
-                setIsLoading(false)
-                setEnable(true)
-            },
-        }
-    )
-    const [isLoading, setIsLoading] = useState(false)
-    const onEnableChange = (value: boolean) => {
-        if (models.length === 0) {
-            return
-        }
-        let currentModel = filter.model
-        if (filter.model.length === 0) {
-            setFilter({ model: models[0].value })
-            currentModel = models[0].value
-        }
-        if (value && currentModel.length > 0) {
-            loadModel.mutate({
-                params: {
-                    path: {
-                        group: splitByFirstSlash(currentModel)[0],
-                        inference_id: splitByFirstSlash(currentModel)[1]
-                    },
-                    query: {
-                        ...embedArgs
-                    }
-                }
-            })
-        } else {
-            setEnable(value)
-        }
-    }
+    const [onEnableChange, isLoading] = useEnableEmbeddingSearch({
+        setEnable,
+        model: filter.model,
+        setModel: (value: string) => setFilter({ model: value }),
+        models: models.map((model) => model.value)
+    })
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
             <div className="flex flex-row items-center justify-between">

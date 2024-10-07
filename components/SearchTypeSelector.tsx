@@ -5,6 +5,7 @@ import { GlassWater, LoaderCircle, ScanSearch } from "lucide-react"
 import { Toggle } from "./ui/toggle"
 import { useSelectedDBs } from "@/lib/state/database"
 import { $api } from "@/lib/api"
+import { useEnableEmbeddingSearch } from "@/lib/enableEmbeddingSearch"
 export function splitByFirstSlash(input: string): [string, string] {
     const index = input.indexOf('/');
     if (index === -1) {
@@ -37,93 +38,26 @@ export function SearchTypeSelection() {
             .filter((setter) => setter[0] === "text-embedding")
             .map((setter) => setter[1]) || []
     ]
-    const [iembLoading, setIembLoading] = useState(false)
-    const [tembLoading, setTembLoading] = useState(false)
-    const loadClipModel = $api.useMutation(
-        "put",
-        "/api/inference/load/{group}/{inference_id}",
-        {
-            onMutate: async () => {
-                setIembLoading(true)
-            },
-            onSettled: () => {
-                setIembLoading(false)
-                setOptions({ at_e_si: true })
-            },
-        })
-    const loadTextEmbedModel = $api.useMutation(
-        "put",
-        "/api/inference/load/{group}/{inference_id}",
-        {
-            onMutate: async () => {
-                setTembLoading(true)
-            },
-            onSettled: () => {
-                setTembLoading(false)
-                setOptions({ at_e_st: true })
-            },
-        })
+    const [onIembEnableChange, iembIsLoading] = useEnableEmbeddingSearch({
+        setEnable: (value: boolean) => setOptions({ at_e_si: value }),
+        model: iembFilter.model,
+        setModel: (value: string) => setIembFilter({ model: value }),
+        models: iembModels
+    })
+
+    const [onTembEnableChange, tembIsLoading] = useEnableEmbeddingSearch({
+        setEnable: (value: boolean) => setOptions({ at_e_st: value }),
+        model: tembFilter.model,
+        setModel: (value: string) => setTembFilter({ model: value }),
+        models: tembModels
+    })
     const onSelectionChange = (selectedOptions: string[]) => {
         setOptions({
             at_e_path: selectedOptions.includes("path"),
             at_e_txt: selectedOptions.includes("fts"),
         })
-        if (selectedOptions.includes("iemb")) {
-            let currentModel = iembFilter.model
-            if (
-                iembFilter.model.length === 0
-                && iembModels.length > 0
-            ) {
-                setIembFilter({
-                    model: iembModels[0]
-                })
-                currentModel = iembModels[0]
-            }
-            if (currentModel.length > 0) {
-                loadClipModel.mutate({
-                    params: {
-                        path: {
-                            group: splitByFirstSlash(currentModel)[0],
-                            inference_id: splitByFirstSlash(currentModel)[1]
-                        },
-                        query: {
-                            ...embedArgs
-                        }
-                    }
-                })
-            }
-        } else {
-            setOptions({ at_e_si: false })
-        }
-
-        if (selectedOptions.includes("temb")) {
-            let currentModel = tembFilter.model
-            if (
-                tembFilter.model.length === 0
-                && tembModels.length > 0
-            ) {
-                setTembFilter({
-                    model: tembModels[0]
-                })
-                currentModel = tembModels[0]
-            }
-            if (currentModel.length > 0) {
-                loadTextEmbedModel.mutate({
-                    params: {
-                        path: {
-                            group: splitByFirstSlash(tembFilter.model)[0],
-                            inference_id: splitByFirstSlash(tembFilter.model)[1]
-                        },
-                        query: {
-                            ...embedArgs
-                        }
-                    }
-                })
-            }
-        } else {
-            setOptions({ at_e_st: false })
-        }
-
+        onTembEnableChange(selectedOptions.includes("temb"))
+        onIembEnableChange(selectedOptions.includes("iemb"))
     }
 
     const allOptions = [
@@ -138,12 +72,12 @@ export function SearchTypeSelection() {
         {
             label: "Semantic Image Search",
             value: "iemb",
-            icon: iembLoading ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : undefined,
+            icon: iembIsLoading ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : undefined,
         },
         {
             label: "Semantic Text Search",
             value: "temb",
-            icon: tembLoading ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : undefined,
+            icon: tembIsLoading ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : undefined,
         },
     ]
     const selectedOptions = useMemo(() => {

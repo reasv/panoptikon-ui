@@ -8,6 +8,8 @@ import { $api } from "@/lib/api"
 import { splitByFirstSlash } from "@/components/SearchTypeSelector"
 import { useState } from "react"
 import { LoaderCircle } from "lucide-react"
+import { useToast } from "@/components/ui/use-toast"
+import { useEnableEmbeddingSearch } from "@/lib/enableEmbeddingSearch"
 
 export function ImageEmbeddingSearch({
     enable,
@@ -28,12 +30,6 @@ export function ImageEmbeddingSearch({
             query: dbs
         }
     })
-
-    const models = [...(
-        data?.setters
-            .filter((setter) => setter[0] === "clip")
-            .map((setter) => ({ value: setter[1], label: setter[1] })) || [])
-    ]
     const onOptionSelected = (option: string | null) => {
         if (option === null) {
             return
@@ -46,46 +42,17 @@ export function ImageEmbeddingSearch({
             setFilter({ distance_aggregation: "AVG" })
         }
     }
-    const [embedArgs, setEmbedArgs] = useEmbedArgs()
-    const [isLoading, setIsLoading] = useState(false)
-    const loadModel = $api.useMutation(
-        "put",
-        "/api/inference/load/{group}/{inference_id}",
-        {
-            onMutate: async () => {
-                setIsLoading(true)
-            },
-            onSettled: () => {
-                setIsLoading(false)
-                setEnable(true)
-            },
-        }
-    )
-    const onEnableChange = (value: boolean) => {
-        if (models.length === 0) {
-            return
-        }
-        let currentModel = filter.model
-        if (filter.model.length === 0) {
-            setFilter({ model: models[0].value })
-            currentModel = models[0].value
-        }
-        if (value && currentModel.length > 0) {
-            loadModel.mutate({
-                params: {
-                    path: {
-                        group: splitByFirstSlash(currentModel)[0],
-                        inference_id: splitByFirstSlash(currentModel)[1]
-                    },
-                    query: {
-                        ...embedArgs
-                    }
-                }
-            })
-        } else {
-            setEnable(value)
-        }
-    }
+    const models = [...(
+        data?.setters
+            .filter((setter) => setter[0] === "clip")
+            .map((setter) => ({ value: setter[1], label: setter[1] })) || [])
+    ]
+    const [onEnableChange, isLoading] = useEnableEmbeddingSearch({
+        setEnable,
+        model: filter.model,
+        setModel: (value: string) => setFilter({ model: value }),
+        models: models.map((model) => model.value)
+    })
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
             <div className="flex flex-row items-center justify-between">
