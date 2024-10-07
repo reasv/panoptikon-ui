@@ -2,13 +2,13 @@
 import { PageSelect } from "@/components/pageselect";
 import { useInstantSearch } from "@/lib/state/zust"
 import { Toggle } from "@/components/ui/toggle"
-import { Settings, RefreshCw } from "lucide-react"
+import { Settings, RefreshCw, ScanEye } from "lucide-react"
 import { AnimatedNumber } from "@/components/ui/animatedNumber"
 import { InstantSearchLock } from "@/components/InstantSearchLock"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/use-toast"
 import { SearchBar } from "@/components/searchBar"
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SearchQueryArgs } from "./queryFns";
 import { SearchErrorToast } from "@/components/searchErrorToaster";
 import { cn } from "@/lib/utils";
@@ -17,11 +17,12 @@ import { SideBar } from "@/components/sidebar/SideBar";
 import { SearchResultImage } from "@/components/SearchResultImage";
 import { useGalleryIndex } from "@/lib/state/gallery";
 import { useSideBarOpen } from "@/lib/state/sideBar";
-import { useSelectedDBs } from "@/lib/state/database";
+import { selectedDBsSerializer, useSelectedDBs } from "@/lib/state/database";
 import { useSearch } from "@/lib/searchHooks";
 import { ImageGallery } from '@/components/ImageGallery';
 import { ImageSimilarityHeader } from '@/components/ImageSimilarityHeader';
 import { useQueryOptions } from "@/lib/state/searchQuery/clientHooks";
+import Link from "next/link";
 
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }) {
@@ -82,6 +83,13 @@ export function MultiSearchView({ initialQuery }:
         return () => clearTimeout(timer);
     }, [isFetching])
     const [options, setOptions] = useQueryOptions()
+    const dbs = useSelectedDBs()[0]
+    const scanLink = useMemo(() => {
+        return selectedDBsSerializer("/scan", {
+            index_db: dbs.index_db,
+            user_data_db: dbs.user_data_db,
+        })
+    }, [dbs])
     return (
         <>
             <SearchErrorToast noFtsErrors={options.e_iss} isError={isError} error={error} />
@@ -97,6 +105,11 @@ export function MultiSearchView({ initialQuery }:
                     >
                         <Settings className="h-4 w-4" />
                     </Toggle>
+                    <Link href={scanLink}>
+                        <Button title="File Scan & Indexing" variant="ghost" size="icon">
+                            <ScanEye className="h-4 w-4" />
+                        </Button>
+                    </Link>
                     {options.e_iss ? <ImageSimilarityHeader /> : <SearchBar onSubmit={onRefresh} />}
                     <InstantSearchLock />
                     <Button title="Refresh search results" onClick={onRefresh} variant="ghost" size="icon">
