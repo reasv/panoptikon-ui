@@ -24,6 +24,20 @@ const nextConfig = {
   //     },
   //   ]
   // },
+  images: {
+    remotePatterns: [
+      {
+        hostname: '127.0.0.1',
+      },
+    ],
+  },
+  images: {
+    remotePatterns: [
+      {
+        hostname: 'localhost',
+      },
+    ],
+  },
   async rewrites() {
     return [
       {
