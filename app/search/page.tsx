@@ -1,4 +1,4 @@
-import { SearchPageContent } from './SearchPageContent'
+import { SearchPageContent } from './SearchPage'
 
 import {
     dehydrate,
