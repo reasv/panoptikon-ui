@@ -31,13 +31,6 @@ const nextConfig = {
       },
     ],
   },
-  images: {
-    remotePatterns: [
-      {
-        hostname: 'localhost',
-      },
-    ],
-  },
   async rewrites() {
     return [
       {
