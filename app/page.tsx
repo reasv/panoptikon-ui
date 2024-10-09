@@ -54,11 +54,13 @@ export default function Home() {
             </div>
             <br />
             <p className="text-left">
-              With the file scan is still running, you can already begin scheduling Data Extraction Jobs.
+              With the file scan still running, you can already begin scheduling Data Extraction Jobs.
               The job queue ensures these will run as soon as the scan is complete.
               <br />
               Select an AI model category tab (Tags, Text Embeddings, Image Embeddings etc) to see the available models and schedule a job
               by selecting a model using the checkbox on the corresponding table row and clicking the <b>Run Job(s) for Selected</b> button.
+              <br />
+              This process ensures that Panoptikon has data to search your files with.
               <br />
               <br />
             </p>
