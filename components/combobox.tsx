@@ -36,18 +36,20 @@ export function ComboBoxResponsive({
     onChangeValue,
     resetValue,
     placeholder,
+    forceDrawer,
 }: {
     options: Option[]
     currentValue: string | null,
     resetValue?: string,
     onChangeValue: (value: string | null) => void
     placeholder: string
+    forceDrawer?: boolean
 }) {
     const [open, setOpen] = React.useState(false)
     const isDesktop = useMediaQuery("(min-width: 1024px)")
     const optionsMap = new Map(options.map((option) => [option.value, option]))
     const buttonLabel = currentValue ? (optionsMap.get(currentValue)?.label || placeholder) : placeholder
-    if (isDesktop) {
+    if (isDesktop && !forceDrawer) {
         return (
             <Popover open={open} onOpenChange={setOpen}>
                 <PopoverTrigger asChild>

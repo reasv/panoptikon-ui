@@ -45,6 +45,7 @@ export function MultiBoxResponsive({
     button,
     isOpen,
     onOpenChange,
+    forceDrawer,
 }: {
     options: Option[],
     resetValue?: string,
@@ -58,6 +59,7 @@ export function MultiBoxResponsive({
     button?: React.ReactNode
     isOpen?: boolean
     onOpenChange?: (isOpen: boolean) => void
+    forceDrawer?: boolean
 }) {
     const [open, setOpen] = React.useState(false)
     const isDesktop = useMediaQuery("(min-width: 1024px)")
@@ -89,7 +91,7 @@ export function MultiBoxResponsive({
         }
     }
 
-    if (isDesktop) {
+    if (isDesktop && !forceDrawer) {
         return (
             <Popover
                 open={isOpen !== undefined ? isOpen : open}
