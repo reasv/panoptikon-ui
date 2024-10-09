@@ -24,8 +24,16 @@ export default function Home() {
             </div>
           </div>
           <div className="mt-4 w-full">
+            <div className="space-y-0.5">
+              <Label className="text-base">
+                1. Add Your Folders
+              </Label>
+              <div className="text-gray-400">
+                Start by adding directories to scan
+              </div>
+            </div>
+            <br />
             <p className="text-left">
-              First, you need to add some directories to scan.<br />
               Visit the <Link href={"/scan"} className="underline">Scan</Link> page, paste the directories you want to scan
               into the <b>Included Directories</b> textbox, and click <b>Save And Scan New Paths</b>.
               A file scan will be added to the job queue and begin running shortly.
@@ -35,13 +43,35 @@ export default function Home() {
               However, before you can actually perform searches on your files, you need to extract data from them which will be indexed and used by the search engine.
               <br />
               <br />
-              While the file scan is still running, you can already begin scheduling Data Extraction Jobs.
+            </p>
+            <div className="space-y-0.5">
+              <Label className="text-base">
+                2. Extract Data For Searching
+              </Label>
+              <div className="text-gray-400">
+                Schedule AI data extraction jobs to run on the scanned files
+              </div>
+            </div>
+            <br />
+            <p className="text-left">
+              With the file scan is still running, you can already begin scheduling Data Extraction Jobs.
               The job queue ensures these will run as soon as the scan is complete.
               <br />
               Select an AI model category tab (Tags, Text Embeddings, Image Embeddings etc) to see the available models and schedule a job
               by selecting a model using the checkbox on the corresponding table row and clicking the <b>Run Job(s) for Selected</b> button.
               <br />
               <br />
+            </p>
+            <div className="space-y-0.5">
+              <Label className="text-base">
+                3. Search Your Files
+              </Label>
+              <div className="text-gray-400">
+                You can now search your files
+              </div>
+            </div>
+            <br />
+            <p className="text-left">
               Once the scan is complete and the data extraction jobs have run, you can start searching your files.
               Visit the <Link href={"/search"} className="underline">Search</Link> page to begin your queries.
             </p>
