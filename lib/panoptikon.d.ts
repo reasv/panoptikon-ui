@@ -844,6 +844,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/data/setters/total": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the total count of index data entry for each setter */
+        get: operations["get_setter_data_count_api_jobs_data_setters_total_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/": {
         parameters: {
             query?: never;
@@ -2680,6 +2697,14 @@ export interface components {
              *
              */
             text_embeddings: components["schemas"]["SemanticTextArgs"];
+        };
+        /** SetterDataStats */
+        SetterDataStats: {
+            /** Total Counts */
+            total_counts: [
+                string,
+                number
+            ][];
         };
         /** SimilarTo */
         SimilarTo: {
@@ -4983,6 +5008,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SystemConfig"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_setter_data_count_api_jobs_data_setters_total_get: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetterDataStats"];
                 };
             };
             /** @description Not found */
