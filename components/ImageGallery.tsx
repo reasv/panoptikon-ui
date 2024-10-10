@@ -16,6 +16,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link'
 import { usePageSize, useSearchPage } from '@/lib/state/searchQuery/clientHooks'
 import { serializers } from '@/lib/state/searchQuery/serializers'
+import { VirtualGalleryHorizontalScroll } from './VirtualizedHorizontalScroll'
 
 function getNextIndex(length: number, index?: number | null,) {
     return ((index || 0) + 1) % length
@@ -154,7 +155,7 @@ export function ImageGallery({
                 nextImage={nextImage}
                 thumbnailsOpen={thumbnailsOpen}
             />
-            {thumbnailsOpen ? <GalleryHorizontalScroll items={items} /> : null}
+            {thumbnailsOpen ? (items.length < 25 ? <GalleryHorizontalScroll items={items} /> : <VirtualGalleryHorizontalScroll items={items} />) : null}
         </div>
     );
 }
