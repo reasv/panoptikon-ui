@@ -23,7 +23,7 @@ export function VirtualGalleryHorizontalScroll({
     const virtualizer = useVirtualizer({
         count: items.length,
         getScrollElement: () => parentRef.current,
-        estimateSize: () => 260, // 240px (width) + 20px (gap)
+        estimateSize: () => 255, // 240px (width) + 20px (gap)
         horizontal: true,
     })
 
@@ -38,7 +38,7 @@ export function VirtualGalleryHorizontalScroll({
         <ScrollAreaPrimitive.Root onWheel={onWheel} className="relative overflow-hidden w-full whitespace-nowrap rounded-md border">
             <ScrollAreaPrimitive.Viewport ref={parentRef} className="h-full w-full rounded-[inherit]">
                 <div
-                    className="flex h-80"
+                    className="flex h-[22rem]"
                     style={{
                         width: `${virtualizer.getTotalSize()}px`,
                         position: 'relative',
@@ -101,12 +101,13 @@ function VirtualHorizontalScrollElement({
         <div
             style={{
                 ...style,
-                width: '200px',
+                width: '240px',
+                padding: '17px',
             }}
         >
             <figure
                 className={cn(
-                    "w-[200px] h-80 relative rounded-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none cursor-pointer group",
+                    "w-[240px] h-80 relative rounded-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none cursor-pointer group",
                     isSelected ? "scale-105 ring-2 ring-blue-500" : "scale-100"
                 )}
             >
@@ -117,7 +118,7 @@ function VirtualHorizontalScrollElement({
                             alt={item.path}
                             className="object-cover object-top rounded-md cursor-pointer"
                             fill
-                            sizes="200px"
+                            sizes="240px"
                         />
                     </div>
                 </Link>
