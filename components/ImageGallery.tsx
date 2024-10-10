@@ -14,6 +14,8 @@ import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail } fro
 import { useSelectedDBs } from "@/lib/state/database";
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link'
+import { useSearchPage } from '@/lib/state/searchQuery/clientHooks'
+import { serializers } from '@/lib/state/searchQuery/serializers'
 
 function getNextIndex(length: number, index?: number | null,) {
     return ((index || 0) + 1) % length
@@ -25,13 +27,33 @@ function getPrevIndex(length: number, index?: number | null,) {
 
 export function ImageGallery({
     items,
+    totalPages,
 }: {
     items: SearchResult[]
+    totalPages: number
 }) {
     const [qIndex, setIndex] = useGalleryIndex()
+    const [page, setPage] = useSearchPage()
     const index = (qIndex || 0) % items.length
-    const nextImage = () => setIndex((prevIndex) => getNextIndex(items.length, prevIndex))
-    const prevImage = () => setIndex((prevIndex) => getPrevIndex(items.length, prevIndex))
+    const nextImage = () => {
+        if (index === (items.length - 1)) {
+            if (page < totalPages) {
+                setPage(page + 1)
+                setIndex(0)
+            }
+            return
+        }
+        setIndex((currentIndex) => getNextIndex(items.length, currentIndex))
+    }
+    const prevImage = () => {
+        if (index === 0) {
+            if (page > 1) {
+                setPage(page - 1)
+            }
+            return
+        }
+        setIndex((currentIndex) => getPrevIndex(items.length, currentIndex))
+    }
 
     const closeGallery = () => setIndex(null)
 
@@ -45,10 +67,22 @@ export function ImageGallery({
     const params = useSearchParams()
     const [prevImageLink, nextImageLink] = useMemo(() => {
         const queryParams = new URLSearchParams(params)
-        const nextURL = getGalleryOptionsSerializer()(queryParams, { gi: getNextIndex(items.length, index) })
-        const prevURL = getGalleryOptionsSerializer()(queryParams, { gi: getPrevIndex(items.length, index) })
+        let nextURL = getGalleryOptionsSerializer()(queryParams, { gi: getNextIndex(items.length, index) })
+        let prevURL = getGalleryOptionsSerializer()(queryParams, { gi: getPrevIndex(items.length, index) })
+        if (index === 0) {
+            if (page > 1) {
+                prevURL = serializers.orderArgs(queryParams, { page: page - 1 })
+            }
+            prevURL = serializers.orderArgs(queryParams, { page: page })
+        }
+        if (index === (items.length - 1)) {
+            if (page < totalPages) {
+                nextURL = serializers.orderArgs(queryParams, { page: page + 1 })
+                nextURL = getGalleryOptionsSerializer()(nextURL, { gi: 0 })
+            }
+        }
         return [prevURL, nextURL]
-    }, [index, params, items.length])
+    }, [index, params, items.length, page, totalPages])
 
     function onClickNextImage(e: React.MouseEvent<HTMLAnchorElement, MouseEvent>) {
         e.preventDefault()

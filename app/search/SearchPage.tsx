@@ -124,7 +124,10 @@ export function MultiSearchView({ initialQuery }:
             {
                 (index !== null && results.length > 0)
                     ?
-                    <ImageGallery items={results} />
+                    <ImageGallery
+                        items={results}
+                        totalPages={totalPages}
+                    />
                     :
                     <ResultGrid
                         results={results}

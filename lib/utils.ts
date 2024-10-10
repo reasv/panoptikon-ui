@@ -17,13 +17,13 @@ export function getFullFileURL(
   sha256: string,
   dbs: { index_db: string | null; user_data_db: string | null }
 ) {
-  return `/api/items/file/${getFileURL(sha256, dbs)}`
+  return `http://127.0.0.1:6342/api/items/file/${getFileURL(sha256, dbs)}`
 }
 export function getThumbnailURL(
   sha256: string,
   dbs: { index_db: string | null; user_data_db: string | null }
 ) {
-  return `/api/items/thumbnail/${getFileURL(sha256, dbs)}`
+  return `http://127.0.0.1:6342/api/items/thumbnail/${getFileURL(sha256, dbs)}`
 }
 
 export function prettyPrintBytes(bytes: number): string {
