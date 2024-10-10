@@ -23,7 +23,7 @@ export function VirtualGalleryHorizontalScroll({
     const virtualizer = useVirtualizer({
         count: items.length,
         getScrollElement: () => parentRef.current,
-        estimateSize: () => 255, // 240px (width) + 20px (gap)
+        estimateSize: () => 256, // 240px (width) + 20px (gap)
         horizontal: true,
     })
 
@@ -102,7 +102,7 @@ function VirtualHorizontalScrollElement({
             style={{
                 ...style,
                 width: '240px',
-                padding: '17px',
+                padding: '16px',
             }}
         >
             <figure
