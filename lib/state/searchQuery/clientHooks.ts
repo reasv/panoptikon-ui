@@ -75,17 +75,21 @@ export function useSearchPage(): [number, SetFn<number>] {
   return [state, set] as const
 }
 
+export function useResetPage<T>(setFunc: SetFn<T>): SetFn<T> {
+  const [page, setPage] = useSearchPage()
+  const setState: SetFn<T> = (newOptions) => {
+    if (page > 1) setPage(1)
+    return setFunc(newOptions)
+  }
+  return setState
+}
+
 export function useQueryOptions(): [
   SearchQueryOptions,
   SetFn<SearchQueryOptions>
 ] {
   const [state, set] = useQueryStates(queryOptionsKeyMap(def as any))
-  const setPage = useSearchPage()[1]
-  const setState: SetFn<SearchQueryOptions> = (newOptions) => {
-    setPage(1)
-    return set(newOptions)
-  }
-  return [state, setState] as const
+  return [state, useResetPage(set)] as const
 }
 
 export function useMatchTags(): [
