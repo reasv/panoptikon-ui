@@ -37,6 +37,7 @@ import {
   queryFromState,
   sbSimilarityQueryFromState,
 } from "./searchQuery"
+import { useGalleryIndex } from "../gallery"
 
 export type Nullable<T> = {
   [K in keyof T]: T[K] | null
@@ -90,7 +91,12 @@ export function usePageSize(): [number, SetFn<number>] {
 
 export function useSearchPage(): [number, SetFn<number>] {
   const [state, set] = useQueryState("page", pageKey(def as any))
-  return [state, set] as const
+  const [gi, setGi] = useGalleryIndex()
+  const setState: SetFn<number> = (newOptions) => {
+    if (gi && gi > 0) setGi(0)
+    return set(newOptions)
+  }
+  return [state, setState] as const
 }
 
 export function useQueryOptions(): [
