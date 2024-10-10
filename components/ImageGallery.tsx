@@ -14,7 +14,7 @@ import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail } fro
 import { useSelectedDBs } from "@/lib/state/database";
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link'
-import { useSearchPage } from '@/lib/state/searchQuery/clientHooks'
+import { usePageSize, useSearchPage } from '@/lib/state/searchQuery/clientHooks'
 import { serializers } from '@/lib/state/searchQuery/serializers'
 
 function getNextIndex(length: number, index?: number | null,) {
@@ -34,6 +34,7 @@ export function ImageGallery({
 }) {
     const [qIndex, setIndex] = useGalleryIndex()
     const [page, setPage] = useSearchPage()
+    const pageSize = usePageSize()[0]
     const index = (qIndex || 0) % items.length
     const nextImage = () => {
         if (index === (items.length - 1)) {
@@ -49,6 +50,7 @@ export function ImageGallery({
         if (index === 0) {
             if (page > 1) {
                 setPage(page - 1)
+                setIndex(Math.max(pageSize - 1, 0))
             }
             return
         }
@@ -72,13 +74,18 @@ export function ImageGallery({
         if (index === 0) {
             if (page > 1) {
                 prevURL = serializers.orderArgs(queryParams, { page: page - 1 })
+                const lastIndex = Math.max(0, pageSize - 1)
+                prevURL = getGalleryOptionsSerializer()(prevURL, { gi: lastIndex })
+            } else {
+                prevURL = serializers.orderArgs(queryParams, { page: page })
             }
-            prevURL = serializers.orderArgs(queryParams, { page: page })
         }
         if (index === (items.length - 1)) {
             if (page < totalPages) {
                 nextURL = serializers.orderArgs(queryParams, { page: page + 1 })
                 nextURL = getGalleryOptionsSerializer()(nextURL, { gi: 0 })
+            } else {
+                nextURL = serializers.orderArgs(queryParams, { page: page })
             }
         }
         return [prevURL, nextURL]
