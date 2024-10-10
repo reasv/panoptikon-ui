@@ -1,11 +1,12 @@
-import { useOrderArgs } from "@/lib/state/searchQuery/clientHooks"
+import { usePageSize } from "@/lib/state/searchQuery/clientHooks"
 import { PageSizeControl } from "../base/PageSizeControl"
 
 export function PageSizeSlider() {
-    const [orderArgs, setOrderArgs] = useOrderArgs()
+    const [pageSize, setPageSize] = usePageSize()
     return (
-        <PageSizeControl pageSize={orderArgs.page_size} setPageSize={(page_size) => setOrderArgs({
-            page_size
-        })} />
+        <PageSizeControl
+            pageSize={pageSize}
+            setPageSize={setPageSize}
+        />
     )
 }

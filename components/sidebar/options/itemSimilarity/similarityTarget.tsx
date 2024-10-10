@@ -5,14 +5,14 @@ import { useSelectedDBs } from "@/lib/state/database";
 import { SearchResultImage } from "@/components/SearchResultImage";
 import { Button } from "@/components/ui/button";
 import { useItemSelection } from "@/lib/state/itemSelection";
-import { useItemSimilaritySearch, useOrderArgs } from "@/lib/state/searchQuery/clientHooks";
+import { useItemSimilaritySearch, useSearchPage } from "@/lib/state/searchQuery/clientHooks";
 import { FilterContainer } from "../../base/FilterContainer";
 
 export function SimilarityTarget() {
     const selected = useItemSelection((state) => state.getSelected())
     const [dbs, ___] = useSelectedDBs()
     const [filter, setFilter] = useItemSimilaritySearch()
-    const [args, setArgs] = useOrderArgs()
+    const [page, setPage] = useSearchPage()
     const currentTargetExists = filter.target.length > 0
     const { data } = $api.useQuery("get", "/api/items/item/{sha256}", {
         params: {
@@ -37,15 +37,17 @@ export function SimilarityTarget() {
         last_modified: file?.last_modified || "1970-09-02T14:30:00Z",
         path: file?.path || "",
         type: item?.type || "unknown",
+        item_id: item?.id || 0,
+        file_id: file?.id || 0,
+        width: item?.width || 0,
+        height: item?.height || 0,
     }
     function switchTarget() {
         if (!selected) return
         setFilter({
             target: selected?.sha256,
         }, { history: "push" })
-        setArgs({
-            page: 1,
-        }, { history: "push" })
+        setPage(1, { history: "push" })
     }
     return (
         <FilterContainer

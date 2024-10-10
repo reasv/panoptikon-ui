@@ -64,6 +64,9 @@ export const pageKey = (p: typeof def) =>
     .withOptions({ history: "push" })
     .withOptions({ clearOnDefault: true })
 
+export const pageSizeKey = (p: typeof def) =>
+  p.parseAsInteger.withDefault(10).withOptions({ clearOnDefault: true })
+
 export const tagFiltersKeyMap = (p: typeof def) =>
   applyOptionsToMap({
     pos_match_all: p.parseAsArrayOf(p.parseAsString).withDefault([]),

@@ -29,6 +29,7 @@ import {
   pageKey,
   rrfKeyMapSemanticImage,
   rrfKeyMapSemanticText,
+  pageSizeKey,
 } from "./searchQueryKeyMaps"
 import { useScopedQueryStates } from "../nuqsScopedWrappers/scopedQueryStates"
 import {
@@ -47,6 +48,18 @@ export type SetFn<T> = (
   values: Partial<Nullable<T>> | UpdaterFn<T> | null,
   options?: Options
 ) => Promise<URLSearchParams>
+
+export function useResetPage<T>(
+  setFunc: SetFn<T>,
+  enabled: boolean = true
+): SetFn<T> {
+  const [page, setPage] = useSearchPage()
+  const setState: SetFn<T> = (newOptions) => {
+    if (page > 1 && enabled) setPage(1)
+    return setFunc(newOptions)
+  }
+  return setState
+}
 
 export function useOrderArgs(): [
   KeymapComponents["OrderArgs"],
@@ -70,18 +83,14 @@ export function useEmbedArgs(): [
   ]
 }
 
+export function usePageSize(): [number, SetFn<number>] {
+  const [state, set] = useQueryState("page_size", pageSizeKey(def as any))
+  return [state, useResetPage(set)] as const
+}
+
 export function useSearchPage(): [number, SetFn<number>] {
   const [state, set] = useQueryState("page", pageKey(def as any))
   return [state, set] as const
-}
-
-export function useResetPage<T>(setFunc: SetFn<T>): SetFn<T> {
-  const [page, setPage] = useSearchPage()
-  const setState: SetFn<T> = (newOptions) => {
-    if (page > 1) setPage(1)
-    return setFunc(newOptions)
-  }
-  return setState
 }
 
 export function useQueryOptions(): [
@@ -97,7 +106,8 @@ export function useMatchTags(): [
   SetFn<KeymapComponents["MatchTags"]>
 ] {
   const [state, set] = useScopedQueryStates("tag", tagFiltersKeyMap(def as any))
-  return [state, set] as const
+  const options = useQueryOptions()[0]
+  return [state, useResetPage(set, options.e_tags)] as const
 }
 
 export function useFileFilters(): [
@@ -108,7 +118,11 @@ export function useFileFilters(): [
     "file",
     fileFiltersKeyMap(def as any)
   )
-  return [state, set] as const
+  const options = useQueryOptions()[0]
+  return [
+    state,
+    useResetPage(set, options.e_mime || options.e_path || options.e_path_neg),
+  ] as const
 }
 
 export function useMatchPath(): [
@@ -116,7 +130,7 @@ export function useMatchPath(): [
   SetFn<KeymapComponents["MatchPath"]>
 ] {
   const [state, set] = useScopedQueryStates("path", matchPathKeyMap(def as any))
-  return [state, set] as const
+  return [state, useResetPage(set, useQueryOptions()[0].e_pt)] as const
 }
 
 export function useMatchText(): [
@@ -124,7 +138,7 @@ export function useMatchText(): [
   SetFn<KeymapComponents["MatchText"]>
 ] {
   const [state, set] = useScopedQueryStates("txt", matchTextKeyMap(def as any))
-  return [state, set] as const
+  return [state, useResetPage(set, useQueryOptions()[0].e_txt)] as const
 }
 
 export function useBookmarksFilter(): [
@@ -132,7 +146,7 @@ export function useBookmarksFilter(): [
   SetFn<KeymapComponents["InBookmarks"]>
 ] {
   const [state, set] = useScopedQueryStates("bm", inBookmarksKeyMap(def as any))
-  return [state, set] as const
+  return [state, useResetPage(set)] as const
 }
 
 export function useSemanticTextSearch(): [
@@ -143,7 +157,7 @@ export function useSemanticTextSearch(): [
     "st",
     semanticTextSearchKeyMap(def as any)
   )
-  return [state, set] as const
+  return [state, useResetPage(set, useQueryOptions()[0].e_temb)] as const
 }
 export function useSemanticTextSource(): [
   KeymapComponents["SemanticTextSource"],
@@ -153,7 +167,7 @@ export function useSemanticTextSource(): [
     "st.src",
     sourceTextKeyMap(def as any)
   )
-  return [state, set] as const
+  return [state, useResetPage(set, useQueryOptions()[0].e_temb)] as const
 }
 
 export function useSemanticImageSearch(): [
@@ -164,7 +178,7 @@ export function useSemanticImageSearch(): [
     "si",
     semanticImageSearchKeyMap(def as any)
   )
-  return [state, set] as const
+  return [state, useResetPage(set, useQueryOptions()[0].e_iemb)] as const
 }
 
 export function useATMatchPath(): [ATMatchPath, SetFn<ATMatchPath>] {
@@ -172,7 +186,7 @@ export function useATMatchPath(): [ATMatchPath, SetFn<ATMatchPath>] {
     "at.path",
     matchPathKeyMap(def as any)
   )
-  return [state, set] as const
+  return [state, useResetPage(set, useQueryOptions()[0].at_e_path)] as const
 }
 
 export function useATMatchText(): [ATMatchText, SetFn<ATMatchText>] {
@@ -180,7 +194,7 @@ export function useATMatchText(): [ATMatchText, SetFn<ATMatchText>] {
     "at.txt",
     matchTextKeyMap(def as any)
   )
-  return [state, set] as const
+  return [state, useResetPage(set, useQueryOptions()[0].at_e_txt)] as const
 }
 
 export function useATSemanticText(): [ATSemanticText, SetFn<ATSemanticText>] {
@@ -188,7 +202,7 @@ export function useATSemanticText(): [ATSemanticText, SetFn<ATSemanticText>] {
     "at.st",
     semanticTextSearchKeyMap(def as any)
   )
-  return [state, set] as const
+  return [state, useResetPage(set, useQueryOptions()[0].at_e_st)] as const
 }
 
 export function useATSemanticTextSrc(): [ATSourceText, SetFn<ATSourceText>] {
@@ -196,7 +210,7 @@ export function useATSemanticTextSrc(): [ATSourceText, SetFn<ATSourceText>] {
     "at.st.src",
     sourceTextKeyMap(def as any)
   )
-  return [state, set] as const
+  return [state, useResetPage(set, useQueryOptions()[0].at_e_st)] as const
 }
 export function useATSemanticImage(): [
   ATSemanticImage,
@@ -206,7 +220,7 @@ export function useATSemanticImage(): [
     "at.si",
     semanticImageSearchKeyMap(def as any)
   )
-  return [state, set] as const
+  return [state, useResetPage(set, useQueryOptions()[0].at_e_si)] as const
 }
 
 export function useATTextRRF(): [
@@ -214,7 +228,7 @@ export function useATTextRRF(): [
   SetFn<KeymapComponents["ATTextRRF"]>
 ] {
   const [state, set] = useScopedQueryStates("at.txt.rrf", rrfKeyMap(def as any))
-  return [state, set] as const
+  return [state, useResetPage(set, useQueryOptions()[0].at_e_txt)] as const
 }
 
 export function useATPathRRF(): [
@@ -225,7 +239,7 @@ export function useATPathRRF(): [
     "at.path.rrf",
     rrfKeyMap(def as any)
   )
-  return [state, set] as const
+  return [state, useResetPage(set, useQueryOptions()[0].at_e_path)] as const
 }
 
 export function useATSemanticTextRRF(): [
@@ -236,7 +250,7 @@ export function useATSemanticTextRRF(): [
     "at.st.rrf",
     rrfKeyMapSemanticText(def as any)
   )
-  return [state, set] as const
+  return [state, useResetPage(set, useQueryOptions()[0].at_e_st)] as const
 }
 
 export function useATSemanticImageRRF(): [
@@ -247,7 +261,7 @@ export function useATSemanticImageRRF(): [
     "at.si.rrf",
     rrfKeyMapSemanticImage(def as any)
   )
-  return [state, set] as const
+  return [state, useResetPage(set, useQueryOptions()[0].at_e_si)] as const
 }
 
 export function useItemSimilaritySearch(): [
@@ -258,7 +272,7 @@ export function useItemSimilaritySearch(): [
     "iss",
     itemSimilarityKeyMap(def as any)
   )
-  return [state, set] as const
+  return [state, useResetPage(set, useQueryOptions()[0].e_iss)] as const
 }
 
 export function useItemSimilarityTextSource(): [
@@ -269,7 +283,7 @@ export function useItemSimilarityTextSource(): [
     "iss.src",
     sourceTextKeyMap(def as any)
   )
-  return [state, set] as const
+  return [state, useResetPage(set, useQueryOptions()[0].e_iss)] as const
 }
 
 export function useATOptions(): AnyTextFilterOptions {
