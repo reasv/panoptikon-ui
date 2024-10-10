@@ -27,6 +27,8 @@ import {
   SimilaritySideBarComponents,
   similaritySBPageArgsKeyMap,
   pageKey,
+  rrfKeyMapSemanticImage,
+  rrfKeyMapSemanticText,
 } from "./searchQueryKeyMaps"
 import { useScopedQueryStates } from "../nuqsScopedWrappers/scopedQueryStates"
 import {
@@ -78,7 +80,12 @@ export function useQueryOptions(): [
   SetFn<SearchQueryOptions>
 ] {
   const [state, set] = useQueryStates(queryOptionsKeyMap(def as any))
-  return [state, set] as const
+  const setPage = useSearchPage()[1]
+  const setState: SetFn<SearchQueryOptions> = (newOptions) => {
+    setPage(1)
+    return set(newOptions)
+  }
+  return [state, setState] as const
 }
 
 export function useMatchTags(): [
@@ -221,7 +228,10 @@ export function useATSemanticTextRRF(): [
   KeymapComponents["ATSemanticTextRRF"],
   SetFn<KeymapComponents["ATSemanticTextRRF"]>
 ] {
-  const [state, set] = useScopedQueryStates("at.st.rrf", rrfKeyMap(def as any))
+  const [state, set] = useScopedQueryStates(
+    "at.st.rrf",
+    rrfKeyMapSemanticText(def as any)
+  )
   return [state, set] as const
 }
 
@@ -229,7 +239,10 @@ export function useATSemanticImageRRF(): [
   KeymapComponents["ATSemanticImageRRF"],
   SetFn<KeymapComponents["ATSemanticImageRRF"]>
 ] {
-  const [state, set] = useScopedQueryStates("at.si.rrf", rrfKeyMap(def as any))
+  const [state, set] = useScopedQueryStates(
+    "at.si.rrf",
+    rrfKeyMapSemanticImage(def as any)
+  )
   return [state, set] as const
 }
 

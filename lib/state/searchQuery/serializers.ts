@@ -15,6 +15,8 @@ import {
   sourceTextKeyMap,
   itemSimilarityKeyMap,
   rrfKeyMap,
+  rrfKeyMapSemanticImage,
+  rrfKeyMapSemanticText,
   similaritySBPageArgsKeyMap,
 } from "./searchQueryKeyMaps"
 import { createScopedSerializer } from "../nuqsScopedWrappers/scopedSerializer"
@@ -49,8 +51,14 @@ export const serializers = {
   atMatchPath: createScopedSerializer("at.path", matchPathKeyMap(def)),
   atTextRRF: createScopedSerializer("at.txt.rrf", rrfKeyMap(def)),
   atPathRRF: createScopedSerializer("at.path.rrf", rrfKeyMap(def)),
-  atSemanticTextRRF: createScopedSerializer("at.st.rrf", rrfKeyMap(def)),
-  atSemanticImageRRF: createScopedSerializer("at.si.rrf", rrfKeyMap(def)),
+  atSemanticTextRRF: createScopedSerializer(
+    "at.st.rrf",
+    rrfKeyMapSemanticText(def)
+  ),
+  atSemanticImageRRF: createScopedSerializer(
+    "at.si.rrf",
+    rrfKeyMapSemanticImage(def)
+  ),
   atMatchText: createScopedSerializer("at.txt", matchTextKeyMap(def)),
   atSemanticText: createScopedSerializer(
     "at.st",

@@ -20,6 +20,8 @@ import {
   rrfKeyMap,
   SimilaritySideBarComponents,
   similaritySBPageArgsKeyMap,
+  rrfKeyMapSemanticText,
+  rrfKeyMapSemanticImage,
 } from "./searchQueryKeyMaps"
 
 import { createScopedSearchParamsCache } from "../nuqsScopedWrappers/scopedQueryParamsCache"
@@ -88,11 +90,11 @@ const scopedCaches = {
   ),
   atSemanticTextRRF: createScopedSearchParamsCache(
     "at.st.rrf",
-    rrfKeyMap(def as any)
+    rrfKeyMapSemanticText(def as any)
   ),
   atSemanticImageRRF: createScopedSearchParamsCache(
     "at.si.rrf",
-    rrfKeyMap(def as any)
+    rrfKeyMapSemanticImage(def as any)
   ),
   atSemanticText: createScopedSearchParamsCache(
     "at.st",

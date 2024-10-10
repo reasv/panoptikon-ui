@@ -188,6 +188,18 @@ export const rrfKeyMap = (p: typeof def) =>
     weight: p.parseAsFloat.withDefault(1),
   })
 
+export const rrfKeyMapSemanticText = (p: typeof def) =>
+  applyOptionsToMap({
+    k: p.parseAsInteger.withDefault(10),
+    weight: p.parseAsFloat.withDefault(0.5),
+  })
+
+export const rrfKeyMapSemanticImage = (p: typeof def) =>
+  applyOptionsToMap({
+    k: p.parseAsInteger.withDefault(10),
+    weight: p.parseAsFloat.withDefault(0.7),
+  })
+
 export const queryOptionsKeyMap = (p: typeof def) =>
   applyOptionsToMap({
     e_tags: p.parseAsBoolean.withDefault(false),
