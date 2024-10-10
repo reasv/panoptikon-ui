@@ -26,6 +26,7 @@ import {
   rrfKeyMap,
   SimilaritySideBarComponents,
   similaritySBPageArgsKeyMap,
+  pageKey,
 } from "./searchQueryKeyMaps"
 import { useScopedQueryStates } from "../nuqsScopedWrappers/scopedQueryStates"
 import {
@@ -68,7 +69,7 @@ export function useEmbedArgs(): [
 }
 
 export function useSearchPage(): [number, SetFn<number>] {
-  const [state, set] = useQueryState("page", orderParamsKeyMap(def as any).page)
+  const [state, set] = useQueryState("page", pageKey(def as any))
   return [state, set] as const
 }
 

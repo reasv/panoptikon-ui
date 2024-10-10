@@ -1,7 +1,7 @@
 import { components } from "@/lib/panoptikon"
 import { distance } from "framer-motion"
 import { Target } from "lucide-react"
-import def from "nuqs/server"
+import * as def from "nuqs/server"
 
 export type OrderArgsType = {
   order_by:
@@ -57,6 +57,12 @@ export const orderParamsKeyMap = (p: typeof def) =>
     page: p.parseAsInteger.withDefault(1).withOptions({ history: "push" }),
     page_size: p.parseAsInteger.withDefault(10),
   })
+
+export const pageKey = (p: typeof def) =>
+  p.parseAsInteger
+    .withDefault(1)
+    .withOptions({ history: "push" })
+    .withOptions({ clearOnDefault: true })
 
 export const tagFiltersKeyMap = (p: typeof def) =>
   applyOptionsToMap({
