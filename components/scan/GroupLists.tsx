@@ -332,6 +332,9 @@ export function ExistingDataTab({ groups }: { groups: Group[] }) {
                         columns={dataSettersColumns}
                         filterColumn="description"
                         filterPlaceholder="Search description..."
+                        defaultColumnVisibility={
+                            { description: false }
+                        }
                         header={
                             <>
                                 <Button
