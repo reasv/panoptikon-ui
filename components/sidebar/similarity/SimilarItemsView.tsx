@@ -119,7 +119,7 @@ export function SimilarItemsView({
             e_iss: true,
         }, { history: "push" })
 
-        setSelected(data.results[index] as any)
+        //setSelected(data.results[index] as any)
     }
     // Generate the link for the similarity mode
 
