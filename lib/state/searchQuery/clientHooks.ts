@@ -55,8 +55,13 @@ export function useResetPage<T>(
   enabled: boolean = true
 ): SetFn<T> {
   const [page, setPage] = useSearchPage()
+  const [gi, setGi] = useGalleryIndex()
   const setState: SetFn<T> = (newOptions) => {
-    if (page > 1 && enabled) setPage(1)
+    if (page > 1 && enabled) {
+      setPage(1)
+    } else {
+      if (enabled && gi && gi > 0) setGi(0)
+    }
     return setFunc(newOptions)
   }
   return setState
