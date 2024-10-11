@@ -103,7 +103,6 @@ export function SimilarItemsView({
             page: 1,
             page_size: query.page_size,
         }, { history: "push" })
-        setIndex(index, { history: "push" })
         setFilter({
             ...filterOptions,
             target: sha256,
@@ -118,6 +117,7 @@ export function SimilarItemsView({
         setOptions({
             e_iss: true,
         }, { history: "push" })
+        setIndex(index, { history: "push" })
 
         //setSelected(data.results[index] as any)
     }
