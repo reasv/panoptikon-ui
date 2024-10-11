@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useCallback, useMemo, useRef } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { useVirtualizer } from '@tanstack/react-virtual'
+import { useVirtualizer, Virtualizer } from '@tanstack/react-virtual'
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { useSearchParams } from 'next/navigation'
 import { BookmarkBtn } from "@/components/imageButtons"
@@ -23,7 +23,7 @@ export function VirtualGalleryHorizontalScroll({
     const virtualizer = useVirtualizer({
         count: items.length,
         getScrollElement: () => parentRef.current,
-        estimateSize: () => 256, // 240px (width) + 20px (gap)
+        estimateSize: () => 256,
         horizontal: true,
     })
 
@@ -33,6 +33,11 @@ export function VirtualGalleryHorizontalScroll({
             parentRef.current.scrollLeft += delta
         }
     }, [])
+    const [qIndex, setIndex] = useGalleryIndex()
+    useEffect(() => {
+        virtualizer.scrollToIndex((qIndex || 0) % items.length)
+
+    }, [items, items.length, qIndex, virtualizer])
 
     return (
         <ScrollAreaPrimitive.Root onWheel={onWheel} className="relative overflow-hidden w-full whitespace-nowrap rounded-md border">
@@ -96,6 +101,7 @@ function VirtualHorizontalScrollElement({
         setIndex(ownIndex % nItems)
         setSelected(item)
     }
+
 
     return (
         <div
