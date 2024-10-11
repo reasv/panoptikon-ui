@@ -26,6 +26,23 @@ export function getThumbnailURL(
   return `http://127.0.0.1:6342/api/items/thumbnail/${getFileURL(sha256, dbs)}`
 }
 
+export function getFullFileURLFromFileID(
+  file_id: number,
+  dbs: { index_db: string | null; user_data_db: string | null }
+) {
+  return `http://127.0.0.1:6342/api/items/from-file-id/${file_id}/file?index_db=${
+    dbs.index_db || ""
+  }&user_data_db=${dbs.user_data_db || ""}`
+}
+export function getThumbnailURLFromFileID(
+  file_id: number,
+  dbs: { index_db: string | null; user_data_db: string | null }
+) {
+  return `http://127.0.0.1:6342/api/items/from-file-id/${file_id}/thumbnail?index_db=${
+    dbs.index_db || ""
+  }&user_data_db=${dbs.user_data_db || ""}`
+}
+
 export function prettyPrintBytes(bytes: number): string {
   const units = ["B", "KB", "MB", "GB", "TB", "PB"]
   let unitIndex = 0
