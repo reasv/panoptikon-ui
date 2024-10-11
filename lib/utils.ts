@@ -32,7 +32,7 @@ export function getFullFileURLFromFileID(
 ) {
   return `http://127.0.0.1:6342/api/items/from-file-id/${file_id}/file?index_db=${
     dbs.index_db || ""
-  }&user_data_db=${dbs.user_data_db || ""}`
+  }`
 }
 export function getThumbnailURLFromFileID(
   file_id: number,
@@ -40,7 +40,7 @@ export function getThumbnailURLFromFileID(
 ) {
   return `http://127.0.0.1:6342/api/items/from-file-id/${file_id}/thumbnail?index_db=${
     dbs.index_db || ""
-  }&user_data_db=${dbs.user_data_db || ""}`
+  }`
 }
 
 export function prettyPrintBytes(bytes: number): string {
