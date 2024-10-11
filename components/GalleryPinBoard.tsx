@@ -7,6 +7,7 @@ import { useMemo, useState, useEffect } from 'react'
 import ReactGridLayout, { Responsive, WidthProvider } from "react-grid-layout"
 import "react-grid-layout/css/styles.css"
 import "react-resizable/css/styles.css"
+import { ScrollArea } from './ui/scroll-area'
 
 const ResponsiveGridLayout = WidthProvider(Responsive)
 
@@ -67,51 +68,53 @@ export function PinBoard(
     }
 
     return (
-        <div
-            className={cn("relative flex-grow overflow-hidden",
-                thumbnailsOpen ? "h-[calc(100vh-570px)]" : "h-[calc(100vh-215px)]"
-            )}
-        >
-            <ResponsiveGridLayout
-                className="layout"
-                layouts={{ lg: layout }}
-                breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
-                cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
-                rowHeight={150}
-                onLayoutChange={(currentLayout) => onLayoutChange(currentLayout)}
-                draggableHandle=".drag-handle"
-                isResizable={true}
-                isDraggable={true}
-                compactType="vertical" // Compacts items vertically to keep them visible on screen
-                preventCollision={false}
+        <ScrollArea className="overflow-y-auto">
+            <div
+                className={cn("relative flex-grow",
+                    thumbnailsOpen ? "h-[calc(100vh-570px)]" : "h-[calc(100vh-215px)]"
+                )}
             >
-                {pinnedFiles.map(([file_id, thumbnail, file]) => {
-                    const key = file_id.toString() // Unique key for react-grid-layout
-                    return (
-                        <div key={key} className="relative bg-gray-800 border rounded shadow group">
-                            <div className="drag-handle cursor-move absolute top-0 left-0 w-full h-full">
-                                <a
-                                    href={file}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    onClick={(e) => e.preventDefault()}
-                                    className="w-full h-full"
-                                >
-                                    <Image
-                                        src={thumbnail}
-                                        alt={`File ID ${file_id}`}
-                                        layout="fill"
-                                        objectFit="contain"
-                                        className="rounded"
-                                        unoptimized={true}
-                                    />
-                                </a>
+                <ResponsiveGridLayout
+                    className="layout"
+                    layouts={{ lg: layout }}
+                    breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
+                    cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
+                    rowHeight={150}
+                    onLayoutChange={(currentLayout) => onLayoutChange(currentLayout)}
+                    draggableHandle=".drag-handle"
+                    isResizable={true}
+                    isDraggable={true}
+                    compactType="vertical" // Compacts items vertically to keep them visible on screen
+                    preventCollision={false}
+                >
+                    {pinnedFiles.map(([file_id, thumbnail, file]) => {
+                        const key = file_id.toString() // Unique key for react-grid-layout
+                        return (
+                            <div key={key} className="relative bg-gray-800 border rounded shadow group">
+                                <div className="drag-handle cursor-move absolute top-0 left-0 w-full h-full">
+                                    <a
+                                        href={file}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.preventDefault()}
+                                        className="w-full h-full"
+                                    >
+                                        <Image
+                                            src={thumbnail}
+                                            alt={`File ID ${file_id}`}
+                                            layout="fill"
+                                            objectFit="contain"
+                                            className="rounded"
+                                            unoptimized={true}
+                                        />
+                                    </a>
+                                </div>
+                                <PinButton file_id={file_id} hidePins={true} />
                             </div>
-                            <PinButton file_id={file_id} hidePins={true} />
-                        </div>
-                    )
-                })}
-            </ResponsiveGridLayout>
-        </div>
+                        )
+                    })}
+                </ResponsiveGridLayout>
+            </div>
+        </ScrollArea>
     )
 }

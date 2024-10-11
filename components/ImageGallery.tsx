@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { cn, getFullFileURL, getLocale, getThumbnailURL } from "@/lib/utils";
 import { ScrollBar } from "@/components/ui/scroll-area";
-import { components } from "@/lib/panoptikon";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { useItemSelection } from "@/lib/state/itemSelection";
