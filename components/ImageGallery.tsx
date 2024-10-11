@@ -155,7 +155,7 @@ export function ImageGallery({
                 nextImage={nextImage}
                 thumbnailsOpen={thumbnailsOpen}
             />
-            {thumbnailsOpen ? (items.length < 25 ? <GalleryHorizontalScroll items={items} /> : <VirtualGalleryHorizontalScroll items={items} />) : null}
+            {thumbnailsOpen ? (items.length < 15 ? <GalleryHorizontalScroll items={items} /> : <VirtualGalleryHorizontalScroll items={items} />) : null}
         </div>
     );
 }
