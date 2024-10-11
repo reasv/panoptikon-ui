@@ -3,15 +3,16 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { useVirtualizer, Virtualizer } from '@tanstack/react-virtual'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { useSearchParams } from 'next/navigation'
 import { BookmarkBtn } from "@/components/imageButtons"
 import { ScrollBar } from "@/components/ui/scroll-area"
 import { cn, getThumbnailURL } from "@/lib/utils"
-import { useGalleryIndex, getGalleryOptionsSerializer } from "@/lib/state/gallery"
+import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryPins } from "@/lib/state/gallery"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useItemSelection } from "@/lib/state/itemSelection"
+import { PinButton } from './PinButton'
 
 export function VirtualGalleryHorizontalScroll({
     items,
@@ -129,6 +130,7 @@ function VirtualHorizontalScrollElement({
                     </div>
                 </Link>
                 <BookmarkBtn sha256={item.sha256} />
+                <PinButton file_id={item.file_id} />
             </figure>
         </div>
     )

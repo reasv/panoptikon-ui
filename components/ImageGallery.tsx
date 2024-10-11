@@ -17,6 +17,7 @@ import Link from 'next/link'
 import { usePageSize, useSearchPage } from '@/lib/state/searchQuery/clientHooks'
 import { serializers } from '@/lib/state/searchQuery/serializers'
 import { VirtualGalleryHorizontalScroll } from './VirtualizedHorizontalScroll'
+import { PinButton } from './PinButton'
 
 function getNextIndex(length: number, index?: number | null,) {
     return ((index || 0) + 1) % length
@@ -302,6 +303,7 @@ export function HorizontalScrollElement({
                 />
             </Link>
             <BookmarkBtn sha256={item.sha256} />
+            <PinButton file_id={item.file_id} />
         </figure>
     )
 }
