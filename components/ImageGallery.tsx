@@ -3,15 +3,15 @@ import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/componen
 import { Toggle } from "@/components/ui/toggle"
 import { X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { useCallback, useEffect, useMemo, useRef } from "react";
-import { cn, getFullFileURL, getLocale, getThumbnailURL } from "@/lib/utils";
-import { ScrollBar } from "@/components/ui/scroll-area";
+import { useCallback, useEffect, useMemo, useRef } from "react"
+import { cn, getFullFileURL, getLocale, getThumbnailURL } from "@/lib/utils"
+import { ScrollBar } from "@/components/ui/scroll-area"
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
-import { OpenDetailsButton } from "@/components/OpenFileDetails";
-import { useItemSelection } from "@/lib/state/itemSelection";
-import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail, useGalleryPins } from "@/lib/state/gallery";
-import { useSelectedDBs } from "@/lib/state/database";
-import { useSearchParams } from 'next/navigation';
+import { OpenDetailsButton } from "@/components/OpenFileDetails"
+import { useItemSelection } from "@/lib/state/itemSelection"
+import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail, useGalleryPins } from "@/lib/state/gallery"
+import { useSelectedDBs } from "@/lib/state/database"
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { usePageSize, useSearchPage } from '@/lib/state/searchQuery/clientHooks'
 import { serializers } from '@/lib/state/searchQuery/serializers'
@@ -168,7 +168,7 @@ export function ImageGallery({
             /> : <PinBoard selectedItem={currentItem} thumbnailsOpen={thumbnailsOpen} />}
             {thumbnailsOpen ? (items.length < 15 ? <GalleryHorizontalScroll items={items} /> : <VirtualGalleryHorizontalScroll items={items} />) : null}
         </div>
-    );
+    )
 }
 
 export function GalleryImageLarge(
