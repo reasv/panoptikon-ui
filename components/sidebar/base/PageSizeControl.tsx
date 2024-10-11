@@ -55,9 +55,9 @@ export function PageSizeControl(
                 value={pageSizeSlider}
                 onValueChange={setPageSizeSlider}
                 onValueCommit={updatePageSize}
-                max={250}
-                min={1}
-                step={1}
+                max={3000}
+                min={0}
+                step={10}
                 className="mt-4"
             />
         </div>
