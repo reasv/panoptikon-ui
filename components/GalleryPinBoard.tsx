@@ -35,39 +35,41 @@ export function PinBoard(
     // Initialize layout state
     const [layout, setLayout] = useState<ReactGridLayout.Layout[]>([])
 
-    // Update layout when pinnedFiles change
+    // Update layout when pinnedFiles change, preserving existing positions and adding new items at the end
     useEffect(() => {
-        setLayout(prevLayout => {
-            // Add new items to the layout
+        setLayout((prevLayout) => {
+            const existingKeys = new Set(prevLayout.map(item => item.i))
             const newLayout = [...prevLayout]
-            pinnedFiles.forEach(([, , file], index) => {
-                const key = file
-                if (!newLayout.find(item => item.i === key)) {
-                    // Assign default position and size
+
+            pinnedFiles.forEach(([file_id, , file], index) => {
+                const key = file_id.toString()
+                if (!existingKeys.has(key)) {
+                    // Add new item at the end with default position and size
                     newLayout.push({
                         i: key,
-                        x: (newLayout.length * 2) % 12,
-                        y: Infinity, // puts it at the bottom
+                        x: ((newLayout.length * 2) % 12), // Wrap across columns
+                        y: Math.floor((newLayout.length * 2) / 12), // Row position
                         w: 2,
                         h: 2,
                     })
                 }
             })
-            // Remove items that are no longer pinned
-            return newLayout.filter(item => pinnedFiles.find(([file_id, , file]) => file === getFullFileURLFromFileID(file_id, dbs)))
+
+            // Filter out layout items that no longer have corresponding pinned files
+            return newLayout.filter(item => pinnedFiles.some(([file_id]) => file_id.toString() === item.i))
         })
-    }, [pinnedFiles, dbs])
+    }, [pinnedFiles])
 
     // Handle layout changes
     const onLayoutChange = (currentLayout: ReactGridLayout.Layout[]) => {
         setLayout(currentLayout)
-        // Optionally, you can persist the layout to your state or backend here
+        // Optionally, persist the layout to your state or backend here
     }
 
     return (
         <div
             className={cn("relative flex-grow overflow-hidden",
-                thumbnailsOpen ? "h-[calc(100vh-570px)]" : "h-[calc(100vh-215px)]" // Set height based on whether thumbnails are open
+                thumbnailsOpen ? "h-[calc(100vh-570px)]" : "h-[calc(100vh-215px)]"
             )}
         >
             <ResponsiveGridLayout
@@ -80,13 +82,13 @@ export function PinBoard(
                 draggableHandle=".drag-handle"
                 isResizable={true}
                 isDraggable={true}
-                compactType={null} // Disable compacting to allow free placement
+                compactType="vertical" // Compacts items vertically to keep them visible on screen
                 preventCollision={false}
             >
                 {pinnedFiles.map(([file_id, thumbnail, file]) => {
-                    const key = file // Unique key for react-grid-layout
+                    const key = file_id.toString() // Unique key for react-grid-layout
                     return (
-                        <div key={key} className="relative bg-gray-200 border rounded shadow group">
+                        <div key={key} className="relative bg-gray-800 border rounded shadow group">
                             <div className="drag-handle cursor-move absolute top-0 left-0 w-full h-full">
                                 <a
                                     href={file}
@@ -99,7 +101,7 @@ export function PinBoard(
                                         src={thumbnail}
                                         alt={`File ID ${file_id}`}
                                         layout="fill"
-                                        objectFit="cover"
+                                        objectFit="contain"
                                         className="rounded"
                                         unoptimized={true}
                                     />
