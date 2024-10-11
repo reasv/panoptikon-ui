@@ -63,10 +63,19 @@ export function ImageGallery({
 
     const [thumbnailsOpen, setThumbnailsOpen] = useGalleryThumbnail()
 
-    const setSelectedItem = useItemSelection((state) => state.setItem)
+    const [selectedItem, setSelectedItem] = useItemSelection((state) => [state.getSelected(), state.setItem])
     useEffect(() => {
         setSelectedItem(items[index])
     }, [index, items])
+
+    useEffect(() => {
+        if (selectedItem && items[index] && selectedItem.file_id !== items[index].file_id) {
+            const newIndex = items.findIndex((item) => item.file_id === selectedItem.file_id)
+            if (newIndex !== -1) {
+                setIndex(newIndex)
+            }
+        }
+    }, [selectedItem])
 
     const params = useSearchParams()
     const [prevImageLink, nextImageLink] = useMemo(() => {
@@ -103,7 +112,7 @@ export function ImageGallery({
         prevImage()
     }
 
-    const currentItem = items[index]
+    const currentItem = selectedItem ? selectedItem : items[index]
     const dateString = getLocale(new Date(currentItem.last_modified))
     const [pins, setPins] = useGalleryPins()
     return (
