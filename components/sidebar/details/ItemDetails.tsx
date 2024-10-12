@@ -168,14 +168,13 @@ function ExtractedTextList(
     }
 ) {
     const [dbs, ___] = useSelectedDBs()
-    const { data } = $api.useQuery("get", "/api/items/text/{sha256}", {
+    const { data } = $api.useQuery("get", "/api/items/item/text", {
         params: {
-            path: {
-                sha256: item?.sha256,
-            },
             query: {
                 setters: selectedSetters,
                 truncate_length: maxLength ? maxLength : undefined,
+                id: item.sha256,
+                id_type: "sha256",
                 ...dbs
             }
         }
@@ -328,16 +327,15 @@ function ItemTags(
     }
 ) {
     const [dbs, ___] = useSelectedDBs()
-    const { data } = $api.useQuery("get", "/api/items/tags/{sha256}", {
+    const { data } = $api.useQuery("get", "/api/items/item/tags", {
         params: {
-            path: {
-                sha256: item?.sha256,
-            },
             query: {
                 setters,
                 namespaces,
                 confidence_threshold: minConfidence,
                 limit_per_namespace: maxTagsPerNsSetter,
+                id: item.sha256,
+                id_type: "sha256",
                 ...dbs
             }
         }

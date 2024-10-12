@@ -4,7 +4,7 @@ import { Toggle } from "@/components/ui/toggle"
 import { X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useCallback, useEffect, useMemo, useRef } from "react"
-import { cn, getFullFileURL, getLocale, getThumbnailURL } from "@/lib/utils"
+import { cn, getFileURL, getLocale } from "@/lib/utils"
 import { ScrollBar } from "@/components/ui/scroll-area"
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { OpenDetailsButton } from "@/components/OpenFileDetails"
@@ -198,8 +198,8 @@ export function GalleryImageLarge(
     }
 ) {
     const [dbs, ___] = useSelectedDBs()
-    const thumbnailURL = getThumbnailURL(item.sha256, dbs)
-    const fileURL = getFullFileURL(item.sha256, dbs)
+    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256)
+    const fileURL = getFileURL(dbs, "file", "sha256", item.sha256)
 
     const handleImageClick = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
         const { clientX, currentTarget } = e
@@ -293,7 +293,7 @@ export function HorizontalScrollElement({
     const isSelected = useMemo(() => ownIndex === ((qIndex || 0) % nItems), [qIndex, nItems, ownIndex])
     const [dbs, __] = useSelectedDBs()
     const setSelected = useItemSelection((state) => state.setItem)
-    const thumbnailURL = getThumbnailURL(item.sha256, dbs)
+    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256)
     const params = useSearchParams()
 
     const imageLink = useMemo(() => {

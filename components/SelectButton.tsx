@@ -14,12 +14,13 @@ export function SelectButton({
     const dbs = useSelectedDBs()[0]
     const [selected, setSelected] = useItemSelection((state) => [state.getSelected(), state.setItem])
     const isSelected = useMemo(() => selected?.item_id === item_id, [selected, item_id])
-    const { data } = $api.useQuery("get", "/api/items/from-id/{item_id}", {
+    const { data } = $api.useQuery("get", "/api/items/item", {
         params: {
-            query: dbs,
-            path: {
-                item_id
-            }
+            query: {
+                ...dbs,
+                id: item_id,
+                id_type: "item_id"
+            },
         }
     })
     const handlePinClick = () => {

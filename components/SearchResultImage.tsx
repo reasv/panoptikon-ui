@@ -2,7 +2,7 @@
 import Image from 'next/image'
 import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons"
 import { useCallback, useMemo } from "react";
-import { cn, getFullFileURL, getLocale, getThumbnailURL } from "@/lib/utils";
+import { cn, getFileURL, getLocale } from "@/lib/utils";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { useSearchParams } from 'next/navigation';
 import { getGalleryOptionsSerializer, useGalleryIndex } from '@/lib/state/gallery';
@@ -33,8 +33,8 @@ export function SearchResultImage({
     overrideURL?: string
     showLoadingSpinner?: boolean
 }) {
-    const fileUrl = overrideURL ? overrideURL : getFullFileURL(result.sha256, dbs)
-    const thumbnailUrl = getThumbnailURL(result.sha256, dbs)
+    const fileUrl = overrideURL ? overrideURL : getFileURL(dbs, "file", "sha256", result.sha256)
+    const thumbnailUrl = getFileURL(dbs, "thumbnail", "sha256", result.sha256)
     const dateString = getLocale(new Date(result.last_modified))
     const params = useSearchParams()
     const galleryOpen = useGalleryIndex()[0] !== null

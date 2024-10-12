@@ -8,7 +8,7 @@ import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { useSearchParams } from 'next/navigation'
 import { BookmarkBtn } from "@/components/imageButtons"
 import { ScrollBar } from "@/components/ui/scroll-area"
-import { cn, getThumbnailURL } from "@/lib/utils"
+import { cn, getFileURL } from "@/lib/utils"
 import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryPins } from "@/lib/state/gallery"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useItemSelection } from "@/lib/state/itemSelection"
@@ -88,7 +88,7 @@ function VirtualHorizontalScrollElement({
     const isSelected = useMemo(() => ownIndex === ((qIndex || 0) % nItems), [qIndex, nItems, ownIndex])
     const [dbs] = useSelectedDBs()
     const setSelected = useItemSelection((state) => state.setItem)
-    const thumbnailURL = getThumbnailURL(item.sha256, dbs)
+    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256)
     const params = useSearchParams()
 
     const imageLink = useMemo(() => {

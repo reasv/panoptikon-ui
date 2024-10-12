@@ -1,6 +1,6 @@
 import { $api } from "@/lib/api"
 import { keepPreviousData } from "@tanstack/react-query";
-import { getFullFileURL, getLocale, prettyPrintBytes, prettyPrintVideoDuration } from "@/lib/utils";
+import { getFileURL, getLocale, prettyPrintBytes, prettyPrintVideoDuration } from "@/lib/utils";
 import { useSelectedDBs } from "@/lib/state/database";
 import { SearchResultImage } from "@/components/SearchResultImage";
 import { Button } from "@/components/ui/button";
@@ -14,12 +14,13 @@ export function SimilarityTarget() {
     const [filter, setFilter] = useItemSimilaritySearch()
     const [page, setPage] = useSearchPage()
     const currentTargetExists = filter.target.length > 0
-    const { data } = $api.useQuery("get", "/api/items/item/{sha256}", {
+    const { data } = $api.useQuery("get", "/api/items/item", {
         params: {
-            path: {
-                sha256: filter.target,
-            },
-            query: dbs
+            query: {
+                ...dbs,
+                id: filter.target,
+                id_type: "sha256",
+            }
         }
     },
         {
@@ -59,7 +60,7 @@ export function SimilarityTarget() {
                 {resultItem && <SearchResultImage className="mt-4 grid grid-cols-1" result={resultItem} index={0} dbs={dbs} />}
                 <div className="space-x-2 mt-4">
                     <p className="text-xs text-gray-500 mt-2">
-                        <a href={getFullFileURL(filter.target, dbs)} target="_blank">Download Original File ({sizeString})</a>
+                        <a href={getFileURL(dbs, "file", "sha256", filter.target)} target="_blank">Download Original File ({sizeString})</a>
                     </p>
                     {item && <p className="text-xs text-gray-500 mt-2">
                         Type: {item.type} {resolutionString && `(${resolutionString})`} {durationString && `(${durationString})`}

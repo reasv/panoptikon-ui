@@ -178,7 +178,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/items/item/{sha256}": {
+    "/api/items/item": {
         parameters: {
             query?: never;
             header?: never;
@@ -186,8 +186,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get item metadata from its sha256 hash
-         * @description Returns metadata for a given item by its sha256 hash.
+         * Get item metadata and associated file metadata
+         * @description Returns metadata for a given item.
          *     This includes the item metadata and a list of all files associated with the item.
          *     Files that do not exist on disk will not be included in the response.
          *     This means the file list may be empty.
@@ -195,7 +195,7 @@ export interface paths {
          *     An `item` is a unique file. `item`s can have multiple `file`s associated with them, but unlike `file`s, `item`s have a unique sha256 hash.
          *     Files are unique by `path`. If all files associated with an `item` are deleted, the item is deleted.
          */
-        get: operations["get_item_by_sha256_api_items_item__sha256__get"];
+        get: operations["get_item_meta_api_items_item_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -204,7 +204,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/items/from-id/{item_id}": {
+    "/api/items/item/file": {
         parameters: {
             query?: never;
             header?: never;
@@ -212,86 +212,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get item metadata from its item_id
-         * @description Returns metadata for a given item by its item_id.
-         *     This includes the item metadata and a list of all files associated with the item.
-         *     Files that do not exist on disk will not be included in the response.
-         *     This means the file list may be empty.
-         *
-         *     An `item` is a unique file. `item`s can have multiple `file`s associated with them, but unlike `file`s, `item`s have a unique sha256 hash.
-         *     Files are unique by `path`. If all files associated with an `item` are deleted, the item is deleted.
-         */
-        get: operations["get_item_by_id_api_items_from_id__item_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/items/from-file-id/{file_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get item metadata from a file_id
-         * @description Returns metadata for a given item by the file_id of one of its files.
-         *     This includes the item metadata and a list of all files associated with the item.
-         *     Files that do not exist on disk will not be included in the response.
-         *     This means the file list may be empty.
-         *
-         *     An `item` is a unique file. `item`s can have multiple `file`s associated with them, but unlike `file`s, `item`s have a unique sha256 hash.
-         *     Files are unique by `path`. If all files associated with an `item` are deleted, the item is deleted.
-         */
-        get: operations["get_item_by_file_id_api_items_from_file_id__file_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/items/from-path/{path}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get item metadata from a path
-         * @description Returns metadata for a given item from its original file path.
-         *     This includes the item metadata and a list of all files associated with the item.
-         *     Files that do not exist on disk will not be included in the response.
-         *     This means the file list may be empty.
-         */
-        get: operations["get_item_by_path_api_items_from_path__path__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/items/from-file-id/{file_id}/file": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get file by id
-         * @description Returns the actual file contents for a given file_id.
+         * Get actual file contents for an item
+         * @description Returns the actual file contents for a given item.
          *     Content type is determined by the file extension.
          */
-        get: operations["get_file_by_id_api_items_from_file_id__file_id__file_get"];
+        get: operations["get_item_file_api_items_item_file_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -300,7 +225,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/items/from-file-id/{file_id}/thumbnail": {
+    "/api/items/item/thumbnail": {
         parameters: {
             query?: never;
             header?: never;
@@ -308,50 +233,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get file by id
-         * @description Returns the thumbnail for a given file_id.
-         *     Content type is determined by the file extension.
-         */
-        get: operations["get_thumbnail_by_file_id_api_items_from_file_id__file_id__thumbnail_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/items/file/{sha256}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get file by sha256
-         * @description Returns the actual file contents for a given sha256 hash.
-         *     Content type is determined by the file extension.
-         */
-        get: operations["get_file_by_sha256_api_items_file__sha256__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/items/thumbnail/{sha256}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get thumbnail for an item by its sha256
-         * @description Returns a thumbnail for a given item by its sha256 hash.
+         * Get thumbnail for an item
+         * @description Returns a thumbnail for a given item.
          *     The thumbnail may be a thumbnail,
          *     the unmodified original image (only for images),
          *     or a placeholder image generated on the fly.
@@ -359,7 +242,7 @@ export interface paths {
          *     For video thumbnails, the `big` parameter can be used to
          *     select between the 2x2 frame grid (big=True) or the first frame from the grid (big=False).
          */
-        get: operations["get_thumbnail_by_sha256_api_items_thumbnail__sha256__get"];
+        get: operations["get_item_thumbnail_api_items_item_thumbnail_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -368,7 +251,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/items/text/{sha256}": {
+    "/api/items/item/text": {
         parameters: {
             query?: never;
             header?: never;
@@ -376,10 +259,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get text extracted from an item by its sha256
-         * @description Returns the text extracted from a given item by its sha256 hash.
+         * Get all text extracted from an item
+         * @description Returns the text extracted from a given item
          */
-        get: operations["get_text_by_sha256_api_items_text__sha256__get"];
+        get: operations["get_item_text_api_items_item_text_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -388,7 +271,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/items/text": {
+    "/api/items/item/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get tags for an item
+         * @description Returns the tags associated with a given item.
+         *     The response contains a list of tuples, where each tuple contains
+         *     the tag namespace, tag name, confidence, and setter name.
+         *     The `setters` parameter can be used to filter tags by the setter name.
+         *     The `confidence_threshold` parameter can be used to filter tags based on
+         *     the minimum confidence threshold
+         */
+        get: operations["get_tags_api_items_item_tags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/items/text/any": {
         parameters: {
             query?: never;
             header?: never;
@@ -397,34 +305,9 @@ export interface paths {
         };
         /**
          * Get text from text_ids
-         * @description Returns texts given a list of text IDs.
+         * @description Returns texts given a list of text IDs
          */
-        get: operations["get_texts_by_text_ids_api_items_text_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/items/tags/{sha256}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get tags for an item by its sha256
-         * @description Returns the tags associated with a given item by its sha256 hash.
-         *     The response contains a list of tuples, where each tuple contains
-         *     the tag namespace, tag name, confidence, and setter name.
-         *     The `setters` parameter can be used to filter tags by the setter name.
-         *     The `confidence_threshold` parameter can be used to filter tags based on
-         *     the minimum confidence threshold
-         */
-        get: operations["get_tags_by_sha256_api_items_tags__sha256__get"];
+        get: operations["get_texts_by_text_ids_api_items_text_any_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3503,18 +3386,20 @@ export interface operations {
             };
         };
     };
-    get_item_by_sha256_api_items_item__sha256__get: {
+    get_item_meta_api_items_item_get: {
         parameters: {
-            query?: {
+            query: {
+                /** @description An item identifier (sha256 hash, file ID, path, item ID, or data ID for associated data) */
+                id: string | number;
+                /** @description The type of the item identifier */
+                id_type: "item_id" | "file_id" | "data_id" | "path" | "sha256" | "md5";
                 /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
                 /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
-            path: {
-                sha256: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -3546,162 +3431,34 @@ export interface operations {
             };
         };
     };
-    get_item_by_id_api_items_from_id__item_id__get: {
+    get_item_file_api_items_item_file_get: {
         parameters: {
-            query?: {
+            query: {
+                /** @description An item identifier (sha256 hash, file ID, path, item ID, or data ID for associated data) */
+                id: string | number;
+                /** @description The type of the item identifier */
+                id_type: "item_id" | "file_id" | "data_id" | "path" | "sha256" | "md5";
                 /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
                 /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
-            path: {
-                item_id: number;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ItemMetadata"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_item_by_file_id_api_items_from_file_id__file_id__get: {
-        parameters: {
-            query?: {
-                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
-                index_db?: string | null;
-                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
-                user_data_db?: string | null;
-            };
-            header?: never;
-            path: {
-                file_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ItemMetadata"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_item_by_path_api_items_from_path__path__get: {
-        parameters: {
-            query?: {
-                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
-                index_db?: string | null;
-                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
-                user_data_db?: string | null;
-            };
-            header?: never;
-            path: {
-                path: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ItemMetadata"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_file_by_id_api_items_from_file_id__file_id__file_get: {
-        parameters: {
-            query?: {
-                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
-                index_db?: string | null;
-                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
-                user_data_db?: string | null;
-            };
-            header?: never;
-            path: {
-                file_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Arbitrary binary data */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": unknown;
-                    "*/*": unknown;
                 };
             };
-            /** @description Item not found */
+            /** @description Not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3719,34 +3476,35 @@ export interface operations {
             };
         };
     };
-    get_thumbnail_by_file_id_api_items_from_file_id__file_id__thumbnail_get: {
+    get_item_thumbnail_api_items_item_thumbnail_get: {
         parameters: {
-            query?: {
+            query: {
                 big?: boolean;
+                /** @description An item identifier (sha256 hash, file ID, path, item ID, or data ID for associated data) */
+                id: string | number;
+                /** @description The type of the item identifier */
+                id_type: "item_id" | "file_id" | "data_id" | "path" | "sha256" | "md5";
                 /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
                 /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
-            path: {
-                file_id: number;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Arbitrary binary data */
+            /** @description Successful Response */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": unknown;
-                    "*/*": unknown;
                 };
             };
-            /** @description Item not found */
+            /** @description Not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3764,146 +3522,16 @@ export interface operations {
             };
         };
     };
-    get_file_by_sha256_api_items_file__sha256__get: {
+    get_item_text_api_items_item_text_get: {
         parameters: {
-            query?: {
-                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
-                index_db?: string | null;
-                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
-                user_data_db?: string | null;
-            };
-            header?: never;
-            path: {
-                sha256: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Arbitrary binary data */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                    "*/*": unknown;
-                };
-            };
-            /** @description Item not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_thumbnail_by_sha256_api_items_thumbnail__sha256__get: {
-        parameters: {
-            query?: {
-                big?: boolean;
-                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
-                index_db?: string | null;
-                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
-                user_data_db?: string | null;
-            };
-            header?: never;
-            path: {
-                sha256: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Image file binary */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                    "*/*": unknown;
-                };
-            };
-            /** @description Item not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_text_by_sha256_api_items_text__sha256__get: {
-        parameters: {
-            query?: {
+            query: {
                 setters?: string[];
                 /** @description Text will be truncated to this length, if set. The `length` field will contain the original length. */
                 truncate_length?: number | null;
-                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
-                index_db?: string | null;
-                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
-                user_data_db?: string | null;
-            };
-            header?: never;
-            path: {
-                sha256: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TextResponse"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_texts_by_text_ids_api_items_text_get: {
-        parameters: {
-            query: {
-                /** @description List of extracted text IDs */
-                text_ids: number[];
+                /** @description An item identifier (sha256 hash, file ID, path, item ID, or data ID for associated data) */
+                id: string | number;
+                /** @description The type of the item identifier */
+                id_type: "item_id" | "file_id" | "data_id" | "path" | "sha256" | "md5";
                 /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
                 /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
@@ -3942,9 +3570,9 @@ export interface operations {
             };
         };
     };
-    get_tags_by_sha256_api_items_tags__sha256__get: {
+    get_tags_api_items_item_tags_get: {
         parameters: {
-            query?: {
+            query: {
                 /** @description List of models that set the tags to filter by (default: all) */
                 setters?: string[];
                 /** @description List of namespaces to filter by (default: all). A namespace includes all namespaces that start with the namespace string. */
@@ -3953,15 +3581,17 @@ export interface operations {
                 confidence_threshold?: number;
                 /** @description Maximum number of tags to return for each *setter, namespace pair* (default: all). Higher confidence tags are given priority. */
                 limit_per_namespace?: number | null;
+                /** @description An item identifier (sha256 hash, file ID, path, item ID, or data ID for associated data) */
+                id: string | number;
+                /** @description The type of the item identifier */
+                id_type: "item_id" | "file_id" | "data_id" | "path" | "sha256" | "md5";
                 /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
                 index_db?: string | null;
                 /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
             };
             header?: never;
-            path: {
-                sha256: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -3973,6 +3603,49 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TagResponse"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_texts_by_text_ids_api_items_text_any_get: {
+        parameters: {
+            query: {
+                /** @description List of extracted text IDs */
+                text_ids: number[];
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TextResponse"];
                 };
             };
             /** @description Not found */

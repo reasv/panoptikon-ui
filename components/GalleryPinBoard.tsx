@@ -1,5 +1,5 @@
 import Image from 'next/image'
-import { cn, getFullFileURLFromFileID, getThumbnailURLFromFileID } from "@/lib/utils"
+import { cn, getFileURL } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useGalleryFullscreen, useGalleryPinBoardLayout, useGalleryPins } from '@/lib/state/gallery'
 import { PinButton } from './PinButton'
@@ -28,8 +28,8 @@ export function PinBoard(
     const pinnedFiles: [number, string, string][] = useMemo(() => {
         return pins.map((item_id) => [
             item_id,
-            getThumbnailURLFromFileID(item_id, dbs),
-            getFullFileURLFromFileID(item_id, dbs)
+            getFileURL(dbs, "file", "item_id", item_id),
+            getFileURL(dbs, "thumbnail", "item_id", item_id)
         ])
     }, [pins, dbs])
 

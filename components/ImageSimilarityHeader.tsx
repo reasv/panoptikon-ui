@@ -11,21 +11,19 @@ export function ImageSimilarityHeader() {
     const [options, setOptions] = useQueryOptions()
     const { data, refetch, isFetching, isError, error } = $api.useQuery(
         "get",
-        "/api/items/item/{sha256}",
+        "/api/items/item",
         {
             params: {
                 query: {
                     ...dbs,
-                },
-                path: {
-                    sha256: filter.target || "",
+                    id: filter.target,
+                    id_type: "sha256",
                 },
             },
         }
     )
     const path = data?.files[0]?.path
     const onExitClick = () => {
-        if (!data) return
         setOptions({ e_iss: false })
     }
     return (

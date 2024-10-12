@@ -1,46 +1,18 @@
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
+import { components, operations } from "./panoptikon"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
-
 export function getFileURL(
-  sha256: string,
-  dbs: { index_db: string | null; user_data_db: string | null }
+  dbs: { index_db: string | null; user_data_db: string | null },
+  file_type: "file" | "thumbnail",
+  id_type: operations["get_item_meta_api_items_item_get"]["parameters"]["query"]["id_type"],
+  id: string | number
 ) {
-  return `${sha256}?index_db=${dbs.index_db || ""}&user_data_db=${
-    dbs.user_data_db || ""
-  }`
-}
-export function getFullFileURL(
-  sha256: string,
-  dbs: { index_db: string | null; user_data_db: string | null }
-) {
-  return `http://127.0.0.1:6342/api/items/file/${getFileURL(sha256, dbs)}`
-}
-export function getThumbnailURL(
-  sha256: string,
-  dbs: { index_db: string | null; user_data_db: string | null }
-) {
-  return `http://127.0.0.1:6342/api/items/thumbnail/${getFileURL(sha256, dbs)}`
-}
-
-export function getFullFileURLFromFileID(
-  file_id: number,
-  dbs: { index_db: string | null; user_data_db: string | null }
-) {
-  return `http://127.0.0.1:6342/api/items/from-file-id/${file_id}/file?index_db=${
-    dbs.index_db || ""
-  }`
-}
-export function getThumbnailURLFromFileID(
-  file_id: number,
-  dbs: { index_db: string | null; user_data_db: string | null }
-) {
-  return `http://127.0.0.1:6342/api/items/from-file-id/${file_id}/thumbnail?index_db=${
-    dbs.index_db || ""
-  }`
+  const index_db_param = dbs.index_db ? `&index_db=${dbs.index_db}` : ""
+  return `http://127.0.0.1:6342/api/items/item/${file_type}?id=${id}&id_type=${id_type}${index_db_param}`
 }
 
 export function prettyPrintBytes(bytes: number): string {

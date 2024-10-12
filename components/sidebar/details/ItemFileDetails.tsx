@@ -3,7 +3,7 @@ import { FilterContainer } from "../base/FilterContainer";
 import { components } from "@/lib/panoptikon";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons";
-import { getFullFileURL, getLocale, prettyPrintBytes, prettyPrintVideoDuration } from "@/lib/utils";
+import { getFileURL, getLocale, prettyPrintBytes, prettyPrintVideoDuration } from "@/lib/utils";
 import { useSelectedDBs } from "@/lib/state/database";
 
 export function ItemFileDetails({
@@ -30,12 +30,13 @@ function ItemFileDetailsInternal({
     item: SearchResult
 }) {
     const [dbs, ___] = useSelectedDBs()
-    const { data } = $api.useQuery("get", "/api/items/item/{sha256}", {
+    const { data } = $api.useQuery("get", "/api/items/item", {
         params: {
-            path: {
-                sha256: item.sha256
-            },
-            query: dbs
+            query: {
+                ...dbs,
+                id: item.sha256,
+                id_type: "sha256",
+            }
         }
     },
         {
@@ -52,7 +53,7 @@ function ItemFileDetailsInternal({
                 <FilePathComponent path={item.path} />
             </div>
             <p className="text-xs text-gray-500 mt-2">
-                <a href={getFullFileURL(item.sha256, dbs)} target="_blank">Download Original File ({sizeString})</a>
+                <a href={getFileURL(dbs, "file", "sha256", item.sha256)} target="_blank">Download Original File ({sizeString})</a>
             </p>
             <p className="text-xs text-gray-500 mt-2">
                 Type: {item.type} {resolutionString && `(${resolutionString})`} {durationString && `(${durationString})`}
