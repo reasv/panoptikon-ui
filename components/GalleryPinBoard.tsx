@@ -14,10 +14,8 @@ const ResponsiveGridLayout = WidthProvider(Responsive)
 
 export function PinBoard(
     {
-        selectedItem,
         thumbnailsOpen,
     }: {
-        selectedItem: SearchResult,
         thumbnailsOpen: boolean
     }
 ) {

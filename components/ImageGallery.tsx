@@ -178,7 +178,7 @@ export function ImageGallery({
                 prevImage={prevImage}
                 nextImage={nextImage}
                 thumbnailsOpen={thumbnailsOpen}
-            /> : <PinBoard selectedItem={currentItem} thumbnailsOpen={thumbnailsOpen} />}
+            /> : <PinBoard thumbnailsOpen={thumbnailsOpen} />}
             {!fs && thumbnailsOpen ? (items.length < 15 ? <GalleryHorizontalScroll items={items} /> : <VirtualGalleryHorizontalScroll items={items} />) : null}
         </div>
     )
