@@ -1,7 +1,7 @@
 import Image from 'next/image'
 import { cn, getFullFileURLFromFileID, getThumbnailURLFromFileID } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
-import { useGalleryPins } from '@/lib/state/gallery'
+import { useGalleryPinBoardLayout, useGalleryPins } from '@/lib/state/gallery'
 import { PinButton } from './PinButton'
 import { useMemo, useState, useEffect } from 'react'
 import ReactGridLayout, { Responsive, WidthProvider } from "react-grid-layout"
@@ -36,7 +36,7 @@ export function PinBoard(
 
     // Initialize layout state
     const [layout, setLayout] = useState<ReactGridLayout.Layout[]>([])
-
+    const [savedLayout, setSavedLayout] = useGalleryPinBoardLayout()
     // Update layout when pinnedFiles change, preserving existing positions and adding new items at the end
     useEffect(() => {
         setLayout((prevLayout) => {
@@ -64,8 +64,39 @@ export function PinBoard(
 
     // Handle layout changes
     const onLayoutChange = (currentLayout: ReactGridLayout.Layout[]) => {
-        setLayout(currentLayout)
-        // Optionally, persist the layout to your state or backend here
+        setLayout((prevLayout) => {
+            if (prevLayout.length === 0 && pinnedFiles.length > 0 && savedLayout.length > 0) {
+                // Layout has not been initialized yet, but we have pinned files and saved layout
+                console.log("Initializing layout from saved layout")
+                // Initialize layout from saved layout
+                // Saved layout is a flat array of [file_id, x, y, w, h] values, so we need to group them into groups of 5
+                const newLayout: ReactGridLayout.Layout[] = []
+                for (let i = 0; i < savedLayout.length; i += 5) {
+                    const [file_id, x, y, w, h] = savedLayout.slice(i, i + 5)
+                    newLayout.push({
+                        i: file_id.toString(),
+                        x, y, w, h
+                    })
+                }
+                // Add items from current layout that are not in saved layout
+                currentLayout.forEach(item => {
+                    if (!newLayout.some(layout => layout.i === item.i)) {
+                        newLayout.push(item)
+                    }
+                })
+                return newLayout.filter(item => pinnedFiles.some(([file_id]) => file_id.toString() === item.i))
+            }
+            return currentLayout
+        })
+        const layoutToSave = pinnedFiles.map(([file_id]) => {
+            const key = file_id.toString()
+            const item = currentLayout.find(item => item.i === key)
+            return item ? item : null
+        }).filter(item => item !== null).map(layout => {
+            return [parseInt(layout.i), layout.x, layout.y, layout.w, layout.h]
+        })
+        const flattenedLayout = layoutToSave.flat()
+        setSavedLayout(flattenedLayout)
     }
 
     return (

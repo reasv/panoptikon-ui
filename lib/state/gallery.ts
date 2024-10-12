@@ -33,6 +33,15 @@ const useGalleryPins = () =>
     })
   )
 
+const useGalleryPinBoardLayout = () =>
+  useQueryState(
+    "pinboard",
+    parseAsArrayOf(parseAsInteger).withDefault([]).withOptions({
+      clearOnDefault: true,
+      history: "replace",
+    })
+  )
+
 const gallerySearchParams = () => ({
   gi: parseAsInteger,
   gt: parseAsBoolean,
@@ -47,4 +56,5 @@ export {
   useGalleryThumbnail,
   getGalleryOptionsSerializer,
   useGalleryPins,
+  useGalleryPinBoardLayout,
 }
