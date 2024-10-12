@@ -25,6 +25,7 @@ import { useQueryOptions } from "@/lib/state/searchQuery/clientHooks";
 import Link from "next/link";
 import { useScanDrawerOpen } from "@/lib/state/scanDrawer";
 import { ScanDrawer } from "@/components/scan/ScanDrawer";
+import { useItemSelection } from "@/lib/state/itemSelection";
 
 export function SearchPageContent({ initialQuery }:
     { initialQuery: SearchQueryArgs }) {
@@ -70,7 +71,7 @@ export function MultiSearchView({ initialQuery }:
         }
     }, [page])
     const totalPages = Math.ceil((nResults || 1) / (pageSize)) || 1
-    const [index, setIndex] = useGalleryIndex()
+    const [qIndex, setIndex] = useGalleryIndex()
     const results = data?.results || []
     const [sidebarOpen, setSideBarOpen] = useSideBarOpen()
 
@@ -94,6 +95,20 @@ export function MultiSearchView({ initialQuery }:
         })
     }, [dbs])
     const [scanOpen, setScanOpen] = useScanDrawerOpen()
+
+    const selectedItem = useItemSelection((state) => state.getSelected())
+    useEffect(() => {
+        if (qIndex === null) {
+            return
+        }
+        const index = (qIndex || 0) % results.length
+        if (selectedItem && results[index] && selectedItem.file_id !== results[index].file_id) {
+            const newIndex = results.findIndex((item) => item.file_id === selectedItem.file_id)
+            if (newIndex !== -1) {
+                setIndex(newIndex)
+            }
+        }
+    }, [selectedItem])
     return (
         <>
             <SearchErrorToast noFtsErrors={options.e_iss} isError={isError} error={error} />
@@ -122,7 +137,7 @@ export function MultiSearchView({ initialQuery }:
                 </div>
             </div>
             {
-                (index !== null && results.length > 0)
+                (qIndex !== null && results.length > 0)
                     ?
                     <ImageGallery
                         items={results}

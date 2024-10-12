@@ -68,15 +68,6 @@ export function ImageGallery({
         setSelectedItem(items[index])
     }, [index, items])
 
-    useEffect(() => {
-        if (selectedItem && items[index] && selectedItem.file_id !== items[index].file_id) {
-            const newIndex = items.findIndex((item) => item.file_id === selectedItem.file_id)
-            if (newIndex !== -1) {
-                setIndex(newIndex)
-            }
-        }
-    }, [selectedItem])
-
     const params = useSearchParams()
     const [prevImageLink, nextImageLink] = useMemo(() => {
         const queryParams = new URLSearchParams(params)
