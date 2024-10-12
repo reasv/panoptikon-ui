@@ -7,22 +7,22 @@ import { useGalleryPins } from "@/lib/state/gallery"
 import { Pin, PinOff } from 'lucide-react'
 
 export function PinButton({
-    file_id,
+    item_id,
     showPins,
     hidePins,
 }: {
-    file_id: number,
+    item_id: number,
     showPins?: boolean
     hidePins?: boolean
 }) {
     const [pins, setPins] = useGalleryPins()
-    const isPinned = useMemo(() => pins.includes(file_id), [pins, file_id])
+    const isPinned = useMemo(() => pins.includes(item_id), [pins, item_id])
     const handlePinClick = () => {
         setPins((prev) => {
-            if (prev.includes(file_id)) {
-                return prev.filter((id) => id !== file_id)
+            if (prev.includes(item_id)) {
+                return prev.filter((id) => id !== item_id)
             } else {
-                return [...prev, file_id]
+                return [...prev, item_id]
             }
         })
     }

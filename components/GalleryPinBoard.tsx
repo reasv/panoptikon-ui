@@ -26,10 +26,10 @@ export function PinBoard(
 
     // Prepare the list of pinned files
     const pinnedFiles: [number, string, string][] = useMemo(() => {
-        return pins.map((file_id) => [
-            file_id,
-            getThumbnailURLFromFileID(file_id, dbs),
-            getFullFileURLFromFileID(file_id, dbs)
+        return pins.map((item_id) => [
+            item_id,
+            getThumbnailURLFromFileID(item_id, dbs),
+            getFullFileURLFromFileID(item_id, dbs)
         ])
     }, [pins, dbs])
 
@@ -43,12 +43,12 @@ export function PinBoard(
                 // Layout has not been initialized yet, but we have pinned files and saved layout
                 console.log("Initializing layout from saved layout")
                 // Initialize layout from saved layout
-                // Saved layout is a flat array of [file_id, x, y, w, h] values, so we need to group them into groups of 5
+                // Saved layout is a flat array of [item_id, x, y, w, h] values, so we need to group them into groups of 5
                 const newLayout: ReactGridLayout.Layout[] = []
                 for (let i = 0; i < savedLayout.length; i += 5) {
-                    const [file_id, x, y, w, h] = savedLayout.slice(i, i + 5)
+                    const [item_id, x, y, w, h] = savedLayout.slice(i, i + 5)
                     newLayout.push({
-                        i: file_id.toString(),
+                        i: item_id.toString(),
                         x, y, w, h
                     })
                 }
@@ -58,12 +58,12 @@ export function PinBoard(
                         newLayout.push(item)
                     }
                 })
-                return newLayout.filter(item => pinnedFiles.some(([file_id]) => file_id.toString() === item.i))
+                return newLayout.filter(item => pinnedFiles.some(([item_id]) => item_id.toString() === item.i))
             }
             return currentLayout
         })
-        const layoutToSave = pinnedFiles.map(([file_id]) => {
-            const key = file_id.toString()
+        const layoutToSave = pinnedFiles.map(([item_id]) => {
+            const key = item_id.toString()
             const item = currentLayout.find(item => item.i === key)
             return item ? item : null
         }).filter(item => item !== null).map(layout => {
@@ -93,23 +93,23 @@ export function PinBoard(
                     compactType="vertical" // Compacts items vertically to keep them visible on screen
                     preventCollision={false}
                 >
-                    {pinnedFiles.map(([file_id, thumbnail, file]) => {
-                        const key = file_id.toString() // Unique key for react-grid-layout
+                    {pinnedFiles.map(([item_id, thumbnail, file]) => {
+                        const key = item_id.toString() // Unique key for react-grid-layout
                         return (
                             <div key={key} className="relative bg-gray-800 border rounded shadow group">
                                 <div className="drag-handle cursor-move absolute top-0 left-0 w-full h-full">
 
                                     <Image
                                         src={thumbnail}
-                                        alt={`File ID ${file_id}`}
+                                        alt={`Item ID ${item_id}`}
                                         fill
                                         className="rounded object-contain"
                                         unoptimized={true}
                                     />
 
                                 </div>
-                                <PinButton file_id={file_id} hidePins={true} />
-                                <SelectButton file_id={file_id} />
+                                <PinButton item_id={item_id} hidePins={true} />
+                                <SelectButton item_id={item_id} />
                             </div>
                         )
                     })}

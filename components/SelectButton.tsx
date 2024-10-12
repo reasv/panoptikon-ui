@@ -6,31 +6,31 @@ import { $api } from '@/lib/api'
 import { useSelectedDBs } from '@/lib/state/database'
 
 export function SelectButton({
-    file_id,
+    item_id,
 }: {
-    file_id: number,
+    item_id: number,
 
 }) {
     const dbs = useSelectedDBs()[0]
     const [selected, setSelected] = useItemSelection((state) => [state.getSelected(), state.setItem])
-    const isSelected = useMemo(() => selected?.file_id === file_id, [selected, file_id])
-    const { data } = $api.useQuery("get", "/api/items/from-file-id/{file_id}", {
+    const isSelected = useMemo(() => selected?.item_id === item_id, [selected, item_id])
+    const { data } = $api.useQuery("get", "/api/items/from-id/{item_id}", {
         params: {
             query: dbs,
             path: {
-                file_id
+                item_id
             }
         }
     })
     const handlePinClick = () => {
         if (!isSelected && data) {
             if (data.files.length === 0) return
-            const file = data.files.find((file) => file.id === file_id) || data.files[0]
+            const file = data.files[0]
             setSelected({
-                file_id,
+                file_id: file.id,
                 path: file.path,
                 sha256: data.item.sha256,
-                item_id: data.item.id,
+                item_id,
                 last_modified: file.last_modified,
                 type: data.item.type,
                 width: data.item.width,

@@ -102,8 +102,8 @@ export function MultiSearchView({ initialQuery }:
             return
         }
         const index = (qIndex || 0) % results.length
-        if (selectedItem && results[index] && selectedItem.file_id !== results[index].file_id) {
-            const newIndex = results.findIndex((item) => item.file_id === selectedItem.file_id)
+        if (selectedItem && results[index] && selectedItem.item_id !== results[index].item_id) {
+            const newIndex = results.findIndex((item) => item.item_id === selectedItem.item_id)
             if (newIndex !== -1) {
                 setIndex(newIndex)
             }
