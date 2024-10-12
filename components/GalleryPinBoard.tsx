@@ -108,9 +108,8 @@ export function PinBoard(
                                         <Image
                                             src={thumbnail}
                                             alt={`File ID ${file_id}`}
-                                            layout="fill"
-                                            objectFit="contain"
-                                            className="rounded"
+                                            fill
+                                            className="rounded object-contain"
                                             unoptimized={true}
                                         />
                                     </a>
