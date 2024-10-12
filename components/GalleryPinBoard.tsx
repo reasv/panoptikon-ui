@@ -1,7 +1,7 @@
 import Image from 'next/image'
 import { cn, getFullFileURLFromFileID, getThumbnailURLFromFileID } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
-import { useGalleryPinBoardLayout, useGalleryPins } from '@/lib/state/gallery'
+import { useGalleryFullscreen, useGalleryPinBoardLayout, useGalleryPins } from '@/lib/state/gallery'
 import { PinButton } from './PinButton'
 import { useMemo, useState, useEffect } from 'react'
 import ReactGridLayout, { Responsive, WidthProvider } from "react-grid-layout"
@@ -72,12 +72,12 @@ export function PinBoard(
         const flattenedLayout = layoutToSave.flat()
         setSavedLayout(flattenedLayout)
     }
-
+    const [fs, setFs] = useGalleryFullscreen()
     return (
         <ScrollArea className="overflow-y-auto">
             <div
                 className={cn("relative flex-grow",
-                    thumbnailsOpen ? "h-[calc(100vh-570px)]" : "h-[calc(100vh-215px)]"
+                    thumbnailsOpen ? "h-[calc(100vh-570px)]" : "h-[calc(100vh-215px)]", fs ? "h-[97vh]" : ""
                 )}
             >
                 <ResponsiveGridLayout

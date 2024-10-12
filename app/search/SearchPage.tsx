@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SideBar } from "@/components/sidebar/SideBar";
 import { SearchResultImage } from "@/components/SearchResultImage";
-import { useGalleryIndex } from "@/lib/state/gallery";
+import { useGalleryFullscreen, useGalleryIndex } from "@/lib/state/gallery";
 import { useSideBarOpen } from "@/lib/state/sideBar";
 import { selectedDBsSerializer, useSelectedDBs } from "@/lib/state/database";
 import { useSearch } from "@/lib/searchHooks";
@@ -109,10 +109,11 @@ export function MultiSearchView({ initialQuery }:
             }
         }
     }, [selectedItem])
+    const [fs, setFs] = useGalleryFullscreen()
     return (
         <>
             <SearchErrorToast noFtsErrors={options.e_iss} isError={isError} error={error} />
-            <div className={cn("mb-4 2xl:mx-auto",
+            {!fs && <div className={cn("mb-4 2xl:mx-auto",
                 sidebarOpen ? '2xl:w-2/3' : '2xl:w-1/2'
             )}>
                 <div className="flex gap-2">
@@ -135,7 +136,7 @@ export function MultiSearchView({ initialQuery }:
                         <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
                     </Toggle>
                 </div>
-            </div>
+            </div>}
             {
                 (qIndex !== null && results.length > 0)
                     ?
@@ -152,7 +153,7 @@ export function MultiSearchView({ initialQuery }:
                     />
             }
             {
-                nResults > pageSize && (
+                !fs && (nResults > pageSize) && (
                     <PageSelect
                         totalPages={totalPages}
                         currentPage={page}

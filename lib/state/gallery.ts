@@ -23,7 +23,14 @@ const useGalleryThumbnail = () =>
       history: "push",
     })
   )
-
+const useGalleryFullscreen = () =>
+  useQueryState(
+    "gf",
+    parseAsBoolean.withDefault(true).withOptions({
+      clearOnDefault: false,
+      history: "push",
+    })
+  )
 const useGalleryPins = () =>
   useQueryState(
     "pins",
@@ -57,4 +64,5 @@ export {
   getGalleryOptionsSerializer,
   useGalleryPins,
   useGalleryPinBoardLayout,
+  useGalleryFullscreen,
 }

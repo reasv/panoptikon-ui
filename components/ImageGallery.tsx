@@ -9,7 +9,7 @@ import { ScrollBar } from "@/components/ui/scroll-area"
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { OpenDetailsButton } from "@/components/OpenFileDetails"
 import { useItemSelection } from "@/lib/state/itemSelection"
-import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail, useGalleryPins, useGalleryPinBoardLayout } from "@/lib/state/gallery"
+import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail, useGalleryPins, useGalleryPinBoardLayout, useGalleryFullscreen } from "@/lib/state/gallery"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -112,9 +112,25 @@ export function ImageGallery({
             setSavedLayout(null)
         }
     }, [pins])
+    const [fs, setFs] = useGalleryFullscreen()
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            // Check for Ctrl + Shift + M
+            if (event.ctrlKey && event.shiftKey && event.code === 'KeyM') {
+                event.preventDefault();
+                console.log('Ctrl + Shift + M detected');
+                setFs((f) => !f)
+            }
+        }
+        window.addEventListener('keydown', handleKeyDown);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, []);
+
     return (
         <div className="flex flex-col border rounded p-2">
-            <div className="flex justify-between items-center mb-2">
+            {!fs && <div className="flex justify-between items-center mb-2">
                 <div className="flex items-center">
                     <BookmarkBtn sha256={currentItem.sha256} buttonVariant />
                     <OpenFile sha256={currentItem.sha256} path={currentItem.path} buttonVariant />
@@ -156,14 +172,14 @@ export function ImageGallery({
                         <X className="h-4 w-4" />
                     </Button>
                 </div>
-            </div>
+            </div>}
             {pins.length === 0 ? <GalleryImageLarge
                 item={currentItem}
                 prevImage={prevImage}
                 nextImage={nextImage}
                 thumbnailsOpen={thumbnailsOpen}
             /> : <PinBoard selectedItem={currentItem} thumbnailsOpen={thumbnailsOpen} />}
-            {thumbnailsOpen ? (items.length < 15 ? <GalleryHorizontalScroll items={items} /> : <VirtualGalleryHorizontalScroll items={items} />) : null}
+            {!fs && thumbnailsOpen ? (items.length < 15 ? <GalleryHorizontalScroll items={items} /> : <VirtualGalleryHorizontalScroll items={items} />) : null}
         </div>
     )
 }
