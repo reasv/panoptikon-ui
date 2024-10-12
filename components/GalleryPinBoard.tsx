@@ -26,42 +26,16 @@ export function PinBoard(
 
     // Prepare the list of pinned files
     const pinnedFiles: [number, string, string][] = useMemo(() => {
-        const allPins: number[] = [...pins, ...(pins.includes(selectedItem.file_id) ? [] : [selectedItem.file_id])]
-        return allPins.map((file_id) => [
+        return pins.map((file_id) => [
             file_id,
             getThumbnailURLFromFileID(file_id, dbs),
             getFullFileURLFromFileID(file_id, dbs)
         ])
-    }, [pins, selectedItem, dbs])
+    }, [pins, dbs])
 
     // Initialize layout state
     const [layout, setLayout] = useState<ReactGridLayout.Layout[]>([])
     const [savedLayout, setSavedLayout] = useGalleryPinBoardLayout()
-    // Update layout when pinnedFiles change, preserving existing positions and adding new items at the end
-    useEffect(() => {
-        setLayout((prevLayout) => {
-            const existingKeys = new Set(prevLayout.map(item => item.i))
-            const newLayout = [...prevLayout]
-
-            pinnedFiles.forEach(([file_id, , file], index) => {
-                const key = file_id.toString()
-                if (!existingKeys.has(key)) {
-                    // Add new item at the end with default position and size
-                    newLayout.push({
-                        i: key,
-                        x: ((newLayout.length * 2) % 12), // Wrap across columns
-                        y: Math.floor((newLayout.length * 2) / 12), // Row position
-                        w: 2,
-                        h: 2,
-                    })
-                }
-            })
-
-            // Filter out layout items that no longer have corresponding pinned files
-            return newLayout.filter(item => pinnedFiles.some(([file_id]) => file_id.toString() === item.i))
-        })
-    }, [pinnedFiles])
-
     // Handle layout changes
     const onLayoutChange = (currentLayout: ReactGridLayout.Layout[]) => {
         setLayout((prevLayout) => {

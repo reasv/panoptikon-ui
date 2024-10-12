@@ -9,7 +9,7 @@ import { ScrollBar } from "@/components/ui/scroll-area"
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { OpenDetailsButton } from "@/components/OpenFileDetails"
 import { useItemSelection } from "@/lib/state/itemSelection"
-import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail, useGalleryPins } from "@/lib/state/gallery"
+import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail, useGalleryPins, useGalleryPinBoardLayout } from "@/lib/state/gallery"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -106,6 +106,12 @@ export function ImageGallery({
     const currentItem = selectedItem ? selectedItem : items[index]
     const dateString = getLocale(new Date(currentItem.last_modified))
     const [pins, setPins] = useGalleryPins()
+    const [savedLayout, setSavedLayout] = useGalleryPinBoardLayout()
+    useEffect(() => {
+        if (pins.length === 0) {
+            setSavedLayout(null)
+        }
+    }, [pins])
     return (
         <div className="flex flex-col border rounded p-2">
             <div className="flex justify-between items-center mb-2">
