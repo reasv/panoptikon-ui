@@ -45,7 +45,7 @@ const useGalleryPinBoardLayout = () =>
     "pinboard",
     parseAsArrayOf(parseAsInteger).withDefault([]).withOptions({
       clearOnDefault: true,
-      history: "replace",
+      history: "push",
     })
   )
 

@@ -98,21 +98,15 @@ export function PinBoard(
                         return (
                             <div key={key} className="relative bg-gray-800 border rounded shadow group">
                                 <div className="drag-handle cursor-move absolute top-0 left-0 w-full h-full">
-                                    <a
-                                        href={file}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        onClick={(e) => e.preventDefault()}
-                                        className="w-full h-full"
-                                    >
-                                        <Image
-                                            src={thumbnail}
-                                            alt={`File ID ${file_id}`}
-                                            fill
-                                            className="rounded object-contain"
-                                            unoptimized={true}
-                                        />
-                                    </a>
+
+                                    <Image
+                                        src={thumbnail}
+                                        alt={`File ID ${file_id}`}
+                                        fill
+                                        className="rounded object-contain"
+                                        unoptimized={true}
+                                    />
+
                                 </div>
                                 <PinButton file_id={file_id} hidePins={true} />
                                 <SelectButton file_id={file_id} />
