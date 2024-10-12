@@ -19,7 +19,7 @@ import { useGalleryFullscreen, useGalleryIndex } from "@/lib/state/gallery";
 import { useSideBarOpen } from "@/lib/state/sideBar";
 import { selectedDBsSerializer, useSelectedDBs } from "@/lib/state/database";
 import { useSearch } from "@/lib/searchHooks";
-import { ImageGallery } from '@/components/ImageGallery';
+import { ImageGallery } from '@/components/gallery/ImageGallery';
 import { ImageSimilarityHeader } from '@/components/ImageSimilarityHeader';
 import { useQueryOptions } from "@/lib/state/searchQuery/clientHooks";
 import Link from "next/link";

@@ -6,7 +6,7 @@ import { cn, getFileURL, getLocale } from "@/lib/utils";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { useSearchParams } from 'next/navigation';
 import { getGalleryOptionsSerializer, useGalleryIndex } from '@/lib/state/gallery';
-import { PinButton } from './PinButton';
+import { PinButton } from './gallery/PinButton';
 
 export function SearchResultImage({
     result,
