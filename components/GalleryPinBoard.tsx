@@ -83,8 +83,8 @@ export function PinBoard(
                 <ResponsiveGridLayout
                     className="layout"
                     layouts={{ lg: layout }}
-                    breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
-                    cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
+                    breakpoints={{ lg: 0, }}
+                    cols={{ lg: 12, }}
                     rowHeight={150}
                     onLayoutChange={(currentLayout) => onLayoutChange(currentLayout)}
                     draggableHandle=".drag-handle"
