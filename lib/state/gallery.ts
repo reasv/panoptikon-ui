@@ -26,7 +26,7 @@ const useGalleryThumbnail = () =>
 const useGalleryFullscreen = () =>
   useQueryState(
     "gf",
-    parseAsBoolean.withDefault(true).withOptions({
+    parseAsBoolean.withDefault(false).withOptions({
       clearOnDefault: false,
       history: "push",
     })
