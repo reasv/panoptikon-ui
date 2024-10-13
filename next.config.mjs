@@ -3,27 +3,6 @@ const nextConfig = {
   experimental: {
     reactCompiler: true,
   },
-  // httpAgentOptions: {
-  //   keepAlive: false,
-  // },
-  // async headers() {
-  //   return [
-  //     {
-  //       // Apply these headers to all routes
-  //       source: '/:path*',
-  //       headers: [
-  //         {
-  //           key: 'Cross-Origin-Opener-Policy',
-  //           value: 'same-origin', // You can also use 'same-origin-allow-popups' if needed
-  //         },
-  //         {
-  //           key: 'Cross-Origin-Embedder-Policy',
-  //           value: 'require-corp', // Or 'credentialless' depending on your use case
-  //         },
-  //       ],
-  //     },
-  //   ]
-  // },
   images: {
     remotePatterns: [
       {
@@ -38,8 +17,12 @@ const nextConfig = {
         destination: `${process.env.API_URL || "http://127.0.0.1:6342"}/api/:path*`,
       },
       {
-        source: "/gradio/:path*",
-        destination: `${process.env.API_URL || "http://127.0.0.1:6342"}/gradio/:path*`,
+        source: "/docs",
+        destination: `${process.env.API_URL || "http://127.0.0.1:6342"}/docs`,
+      },
+      {
+        source: "/openapi.json",
+        destination: `${process.env.API_URL || "http://127.0.0.1:6342"}/openapi.json`,
       },
     ];
   },
