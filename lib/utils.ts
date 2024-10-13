@@ -12,7 +12,7 @@ export function getFileURL(
   id: string | number
 ) {
   const index_db_param = dbs.index_db ? `&index_db=${dbs.index_db}` : ""
-  return `http://127.0.0.1:6342/api/items/item/${file_type}?id=${id}&id_type=${id_type}${index_db_param}`
+  return `/api/items/item/${file_type}?id=${id}&id_type=${id_type}${index_db_param}`
 }
 
 export function prettyPrintBytes(bytes: number): string {
