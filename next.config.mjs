@@ -11,6 +11,7 @@ const nextConfig = {
     ],
   },
   async rewrites() {
+    console.log("PANOPTIKON_API_URL=", process.env.PANOPTIKON_API_URL);
     return [
       {
         source: "/api/:path*",
