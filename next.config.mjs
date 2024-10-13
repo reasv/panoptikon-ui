@@ -14,15 +14,15 @@ const nextConfig = {
     return [
       {
         source: "/api/:path*",
-        destination: `${process.env.API_URL || "http://127.0.0.1:6342"}/api/:path*`,
+        destination: `${process.env.PANOPTIKON_API_URL || "http://127.0.0.1:6342"}/api/:path*`,
       },
       {
         source: "/docs",
-        destination: `${process.env.API_URL || "http://127.0.0.1:6342"}/docs`,
+        destination: `${process.env.PANOPTIKON_API_URL || "http://127.0.0.1:6342"}/docs`,
       },
       {
         source: "/openapi.json",
-        destination: `${process.env.API_URL || "http://127.0.0.1:6342"}/openapi.json`,
+        destination: `${process.env.PANOPTIKON_API_URL || "http://127.0.0.1:6342"}/openapi.json`,
       },
     ];
   },
