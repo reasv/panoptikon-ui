@@ -5,8 +5,9 @@ import {
     QueryClient,
 } from '@tanstack/react-query'
 import { ScanPage } from './ScanPage';
+import { Suspense } from 'react';
 
-export default async function SearchPage({
+export default async function ScanPageRoot({
     searchParams,
 }: {
     searchParams: { [key: string]: string | string[] | undefined };
@@ -15,7 +16,9 @@ export default async function SearchPage({
 
     return (
         <HydrationBoundary state={dehydrate(queryClient)}>
-            <ScanPage />
+            <Suspense>
+                <ScanPage />
+            </Suspense>
         </HydrationBoundary>
     )
 }
