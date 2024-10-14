@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
+import { unstable_noStore as noStore } from 'next/cache.js'
+
 const nextConfig = {
   experimental: {
     reactCompiler: true,
@@ -11,6 +13,7 @@ const nextConfig = {
     ],
   },
   async rewrites() {
+    noStore()
     const panoptikonAPI = process.env.PANOPTIKON_API_URL || "http://127.0.0.1:6342"
     console.log("panoptikonAPI=", panoptikonAPI)
     return [
