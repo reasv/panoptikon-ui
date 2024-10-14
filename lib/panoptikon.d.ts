@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * Get information about all available databases
-         * @description Get information about the database, including the names of all other available databases.
+         * @description Get the name of the current default databases and a list of all available databases.
          *     Most API endpoints support specifying the databases to use for index and user data
          *     through the `index_db` and `user_data_db` query parameters.
          *     Regardless of which database is currently being defaulted to by panoptikon,
@@ -22,13 +22,29 @@ export interface paths {
          */
         get: operations["get_db_info_api_db_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/db/create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
         /**
          * Create new databases
          * @description Create new databases with the specified names.
          *     It runs the migration scripts on the provided database names.
          *     If the databases already exist, the effect is the same as running the migrations.
          */
-        post: operations["create_db_api_db_post"];
+        post: operations["create_db_api_db_create_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3098,7 +3114,7 @@ export interface operations {
             };
         };
     };
-    create_db_api_db_post: {
+    create_db_api_db_create_post: {
         parameters: {
             query?: {
                 new_index_db?: string;

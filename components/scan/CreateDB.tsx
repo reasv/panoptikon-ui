@@ -13,7 +13,7 @@ export function CreateNewDB() {
     const [inputValue, setInputValue] = useState('');
     const { toast } = useToast()
     const queryClient = useQueryClient()
-    const createDB = $api.useMutation("post", "/api/db", {
+    const createDB = $api.useMutation("post", "/api/db/create", {
         onSuccess: (data) => {
             queryClient.invalidateQueries({
                 queryKey: [
