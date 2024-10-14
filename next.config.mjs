@@ -11,19 +11,19 @@ const nextConfig = {
     ],
   },
   async rewrites() {
-    console.log("PANOPTIKON_API_URL=", process.env.PANOPTIKON_API_URL);
+    const panoptikonAPI = process.env.PANOPTIKON_API_URL || "http://127.0.0.1:6342"
     return [
       {
         source: "/api/:path*",
-        destination: `${process.env.PANOPTIKON_API_URL || "http://127.0.0.1:6342"}/api/:path*`,
+        destination: `${panoptikonAPI}/api/:path*`,
       },
       {
         source: "/docs",
-        destination: `${process.env.PANOPTIKON_API_URL || "http://127.0.0.1:6342"}/docs`,
+        destination: `${panoptikonAPI}/docs`,
       },
       {
         source: "/openapi.json",
-        destination: `${process.env.PANOPTIKON_API_URL || "http://127.0.0.1:6342"}/openapi.json`,
+        destination: `${panoptikonAPI}/openapi.json`,
       },
     ];
   },

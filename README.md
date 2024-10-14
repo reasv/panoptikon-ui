@@ -4,8 +4,8 @@ Panoptikon will automatically pull and install the latest version of the UI from
 
 ## Prerequisites
 You must have a running instance of the Panoptikon server to use this UI.
-Set the `API_URL` environment variable to the URL of the Panoptikon server.
-By default, Panoptikon runs at `http://127.0.0.1:6342`, and the UI will automatically use this URL if `API_URL` is not set.
+Set the `PANOPTIKON_API_URL` environment variable to the URL of the Panoptikon server.
+By default, Panoptikon runs at `http://127.0.0.1:6342`, and the UI will automatically use this URL if `PANOPTIKON_API_URL` is not set.
 
 ## Getting Started
 
