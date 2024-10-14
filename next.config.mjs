@@ -12,6 +12,7 @@ const nextConfig = {
   },
   async rewrites() {
     const panoptikonAPI = process.env.PANOPTIKON_API_URL || "http://127.0.0.1:6342"
+    console.log("panoptikonAPI=", panoptikonAPI)
     return [
       {
         source: "/api/:path*",
