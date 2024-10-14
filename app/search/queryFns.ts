@@ -24,7 +24,6 @@ export async function fetchSearch(args: SearchQueryArgs) {
       console.log("Error fetching search results")
       throw error
     }
-    console.log("Fetched search results successfully")
     return data
   } catch (error) {
     console.error(error)
