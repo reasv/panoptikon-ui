@@ -79,8 +79,8 @@ const nextConfig = {
         destination: `${panoptikonAPI}/api/db`,
       },
       {
-        source: "/api/inference/:path*",
-        destination: `${inferenceAPI}/api/inference/:path*`,
+        source: "/api/inference/cache",
+        destination: `${inferenceAPI}/api/inference/cache`,
       },
     ]
   },
