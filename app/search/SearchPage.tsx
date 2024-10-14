@@ -27,24 +27,27 @@ import { useScanDrawerOpen } from "@/lib/state/scanDrawer";
 import { ScanDrawer } from "@/components/scan/ScanDrawer";
 import { useItemSelection } from "@/lib/state/itemSelection";
 
-export function SearchPageContent({ initialQuery }:
-    { initialQuery: SearchQueryArgs }) {
+export function SearchPageContent({ initialQuery, isRestrictedMode }:
+    { initialQuery: SearchQueryArgs, isRestrictedMode: boolean }) {
     const [sidebarOpen, _] = useSideBarOpen()
     return (
         <div className="flex w-full h-screen">
             <SideBar />
-            <ScanDrawer />
+            {!isRestrictedMode && <ScanDrawer />}
             <div className={cn('p-4 transition-all duration-300 mx-auto',
                 sidebarOpen ? 'w-full lg:w-1/2 xl:w-2/3 2xl:w-3/4 4xl:w-[80%] 5xl:w-[82%]' : 'w-full'
             )}>
-                <MultiSearchView initialQuery={initialQuery} />
+                <MultiSearchView
+                    initialQuery={initialQuery}
+                    isRestrictedMode={isRestrictedMode}
+                />
             </div>
         </div>
     )
 }
 
-export function MultiSearchView({ initialQuery }:
-    { initialQuery: SearchQueryArgs }) {
+export function MultiSearchView({ initialQuery, isRestrictedMode }:
+    { initialQuery: SearchQueryArgs, isRestrictedMode: boolean }) {
     const { data, error, isError, refetch, isFetching, nResults, page, pageSize, setPage, searchEnabled, getPageURL } = useSearch({ initialQuery })
     const { toast } = useToast()
     const onRefresh = async () => {
@@ -125,11 +128,11 @@ export function MultiSearchView({ initialQuery }:
                     >
                         <Settings className="h-4 w-4" />
                     </Toggle>
-                    <Link href={scanLink} onClick={() => setScanOpen(true)}>
+                    {!isRestrictedMode && <Link href={scanLink} onClick={() => setScanOpen(true)}>
                         <Button title="File Scan & Indexing" variant="ghost" size="icon">
                             <ScanEye className="h-4 w-4" />
                         </Button>
-                    </Link>
+                    </Link>}
                     {options.e_iss ? <ImageSimilarityHeader /> : <SearchBar onSubmit={onRefresh} />}
                     <InstantSearchLock />
                     <Toggle title="Refresh search results" onClick={onRefresh} pressed={false}>

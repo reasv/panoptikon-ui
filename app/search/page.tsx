@@ -14,10 +14,13 @@ export default async function SearchPage({
 }) {
     const queryClient = new QueryClient()
     const request = await prefetchSearchPage(queryClient, searchParams)
-
+    const restrictedMode = process.env.RESTRICTED_MODE === "true"
     return (
         <HydrationBoundary state={dehydrate(queryClient)}>
-            <SearchPageContent initialQuery={request} />
+            <SearchPageContent
+                initialQuery={request}
+                isRestrictedMode={restrictedMode}
+            />
         </HydrationBoundary>
     )
 }
