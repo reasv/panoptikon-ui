@@ -63,7 +63,11 @@ export function useEnableEmbeddingSearch({
     }
     if (value) {
       const { data } = await refetch()
-      if (data && data.cache[currentModel]) {
+      if (
+        data &&
+        data.cache[currentModel] &&
+        data.cache[currentModel].length > 0
+      ) {
         setEnable(true)
         toast({
           title: "Enabled",
