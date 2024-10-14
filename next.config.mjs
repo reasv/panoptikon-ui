@@ -11,6 +11,24 @@ const nextConfig = {
       },
     ],
   },
+  async redirects() {
+    const restrictedMode = process.env.RESTRICTED_MODE === "true"
+    if (restrictedMode) {
+      return [
+        {
+          source: '/',
+          destination: '/search',
+          permanent: false,
+        },
+        {
+          source: '/scan',
+          destination: '/search',
+          permanent: false,
+        },
+      ]
+    }
+    return []
+  },
   async rewrites() {
     const panoptikonAPI = process.env.PANOPTIKON_API_URL || "http://127.0.0.1:6342"
     const inferenceAPI = process.env.INFERENCE_API_URL || panoptikonAPI
