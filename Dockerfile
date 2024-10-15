@@ -56,8 +56,14 @@ ENV PANOPTIKON_API_URL=${PANOPTIKON_API_URL}
 RUN npm install --include=dev && \
     npx --yes next build
 
+# Embed the start script
+RUN echo '#!/bin/sh' > /start.sh && \
+    echo 'nginx -g "daemon off;" &' >> /start.sh && \
+    echo 'npx --yes next start -p 6339' >> /start.sh && \
+    chmod +x /start.sh
+
 # Only expose the Next.js port for external access
 EXPOSE 6339
 
-# Run Nginx in the background and Next.js in the foreground
-CMD ["sh", "-c", "nginx -g 'daemon off;' & npx --yes next start -p 6339"]
+# Run the start script to launch Nginx and Next.js
+CMD ["/start.sh"]
