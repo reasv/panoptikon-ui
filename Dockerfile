@@ -41,6 +41,12 @@ COPY . /app
 # Change ownership of app directory to the new user
 RUN chown -R appuser /app
 
+# Embed the start script as root
+RUN echo '#!/bin/sh' > /start.sh && \
+    echo 'nginx -g "daemon off;" &' >> /start.sh && \
+    echo 'npx --yes next start -p 6339' >> /start.sh && \
+    chmod +x /start.sh
+
 # Switch to the app user
 USER appuser
 
@@ -55,12 +61,6 @@ ENV PANOPTIKON_API_URL=${PANOPTIKON_API_URL}
 # Set up Node.js project and build Next.js application
 RUN npm install --include=dev && \
     npx --yes next build
-
-# Embed the start script
-RUN echo '#!/bin/sh' > /start.sh && \
-    echo 'nginx -g "daemon off;" &' >> /start.sh && \
-    echo 'npx --yes next start -p 6339' >> /start.sh && \
-    chmod +x /start.sh
 
 # Only expose the Next.js port for external access
 EXPOSE 6339
