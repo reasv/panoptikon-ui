@@ -3,7 +3,9 @@ FROM ubuntu:24.04
 
 # Set DEBIAN_FRONTEND to noninteractive to avoid timezone configuration prompts
 ENV DEBIAN_FRONTEND=noninteractive
-
+ARG RESTRICTED_MODE
+ARG INFERENCE_API_URL
+ARG PANOPTIKON_API_URL
 # Install curl, Node.js (version 20+), npm, and Nginx
 RUN apt-get update && \
     apt-get install -y curl nginx && \
@@ -51,9 +53,7 @@ RUN echo '#!/bin/sh' > /start.sh && \
 USER appuser
 
 # Define build arguments and environment variables
-ARG RESTRICTED_MODE
-ARG INFERENCE_API_URL
-ARG PANOPTIKON_API_URL
+
 ENV RESTRICTED_MODE=${RESTRICTED_MODE}
 ENV INFERENCE_API_URL=${INFERENCE_API_URL}
 ENV PANOPTIKON_API_URL=${PANOPTIKON_API_URL}
