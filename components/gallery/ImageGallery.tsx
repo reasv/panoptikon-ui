@@ -128,7 +128,7 @@ export function ImageGallery({
             window.removeEventListener('keydown', handleKeyDown);
         };
     }, []);
-    const [hidePinBoard, setHidePinBoard] = useGalleryHidePinBoard()
+    const hidePinBoard = useGalleryHidePinBoard()[0]
 
     return (
         <div className="flex flex-col border rounded p-2">
