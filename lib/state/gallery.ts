@@ -31,6 +31,15 @@ const useGalleryFullscreen = () =>
       history: "push",
     })
   )
+
+const useGalleryHidePinBoard = () =>
+  useQueryState(
+    "ghp",
+    parseAsBoolean.withDefault(false).withOptions({
+      clearOnDefault: false,
+      history: "push",
+    })
+  )
 const useGalleryPins = () =>
   useQueryState(
     "pins",
@@ -65,4 +74,5 @@ export {
   useGalleryPins,
   useGalleryPinBoardLayout,
   useGalleryFullscreen,
+  useGalleryHidePinBoard,
 }

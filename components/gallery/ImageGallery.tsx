@@ -9,7 +9,7 @@ import { ScrollBar } from "@/components/ui/scroll-area"
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { OpenDetailsButton } from "@/components/OpenFileDetails"
 import { useItemSelection } from "@/lib/state/itemSelection"
-import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail, useGalleryPins, useGalleryPinBoardLayout, useGalleryFullscreen } from "@/lib/state/gallery"
+import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail, useGalleryPins, useGalleryPinBoardLayout, useGalleryFullscreen, useGalleryHidePinBoard } from "@/lib/state/gallery"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -18,6 +18,7 @@ import { serializers } from '@/lib/state/searchQuery/serializers'
 import { VirtualGalleryHorizontalScroll } from './VirtualizedHorizontalScroll'
 import { PinButton } from './PinButton'
 import { PinBoard } from './GalleryPinBoard'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 
 function getNextIndex(length: number, index?: number | null,) {
     return ((index || 0) + 1) % length
@@ -127,6 +128,7 @@ export function ImageGallery({
             window.removeEventListener('keydown', handleKeyDown);
         };
     }, []);
+    const [hidePinBoard, setHidePinBoard] = useGalleryHidePinBoard()
 
     return (
         <div className="flex flex-col border rounded p-2">
@@ -145,10 +147,12 @@ export function ImageGallery({
                     </Link>
                 </div>
                 <div className="max-w-[33%] text-center">
-                    <FilePathComponent path={currentItem.path} />
-                    <p className="text-xs text-gray-500 truncate">
-                        {dateString}
-                    </p>
+                    {pins.length === 0 ? <>
+                        <FilePathComponent path={currentItem.path} />
+                        <p className="text-xs text-gray-500 truncate">
+                            {dateString}
+                        </p>
+                    </> : <PinboardTabs itemPath={currentItem.path} />}
                 </div>
                 <div className="flex items-center">
                     <Link
@@ -173,7 +177,7 @@ export function ImageGallery({
                     </Button>
                 </div>
             </div>}
-            {pins.length === 0 ? <GalleryImageLarge
+            {(pins.length === 0 || hidePinBoard) ? <GalleryImageLarge
                 item={currentItem}
                 prevImage={prevImage}
                 nextImage={nextImage}
@@ -181,6 +185,26 @@ export function ImageGallery({
             /> : <PinBoard thumbnailsOpen={thumbnailsOpen} />}
             {!fs && thumbnailsOpen ? (items.length < 15 ? <GalleryHorizontalScroll items={items} /> : <VirtualGalleryHorizontalScroll items={items} />) : null}
         </div>
+    )
+}
+
+export function PinboardTabs({ itemPath }: { itemPath: string }) {
+    const [hidePinBoard, setHidePinBoard] = useGalleryHidePinBoard()
+    return (
+        <Tabs
+            value={hidePinBoard ? "gallery" : "pins"}
+            onValueChange={(value) => setHidePinBoard(value !== "pins")}
+
+        >
+            <TabsList>
+                <TabsTrigger value="pins">Pinboard</TabsTrigger>
+                <TabsTrigger value="gallery">
+                    <span className="text-sm truncate cursor-pointer" style={{ direction: 'rtl', textAlign: 'left' }}>
+                        {itemPath}
+                    </span>
+                </TabsTrigger>
+            </TabsList>
+        </Tabs>
     )
 }
 
