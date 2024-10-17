@@ -40,15 +40,6 @@ const useGalleryHidePinBoard = () =>
       history: "push",
     })
   )
-const useGalleryPins = () =>
-  useQueryState(
-    "pins",
-    parseAsArrayOf(parseAsInteger).withDefault([]).withOptions({
-      clearOnDefault: true,
-      history: "push",
-    })
-  )
-
 const useGalleryPinBoardLayout = () =>
   useQueryState(
     "pinboard",
@@ -71,7 +62,6 @@ export {
   useGalleryIndex,
   useGalleryThumbnail,
   getGalleryOptionsSerializer,
-  useGalleryPins,
   useGalleryPinBoardLayout,
   useGalleryFullscreen,
   useGalleryHidePinBoard,

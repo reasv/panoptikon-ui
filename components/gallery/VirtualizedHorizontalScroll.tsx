@@ -9,7 +9,7 @@ import { useSearchParams } from 'next/navigation'
 import { BookmarkBtn } from "@/components/imageButtons"
 import { ScrollBar } from "@/components/ui/scroll-area"
 import { cn, getFileURL } from "@/lib/utils"
-import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryPins } from "@/lib/state/gallery"
+import { useGalleryIndex, getGalleryOptionsSerializer } from "@/lib/state/gallery"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { PinButton } from './PinButton'

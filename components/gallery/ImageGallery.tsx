@@ -9,7 +9,7 @@ import { ScrollBar } from "@/components/ui/scroll-area"
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { OpenDetailsButton } from "@/components/OpenFileDetails"
 import { useItemSelection } from "@/lib/state/itemSelection"
-import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail, useGalleryPins, useGalleryPinBoardLayout, useGalleryFullscreen, useGalleryHidePinBoard } from "@/lib/state/gallery"
+import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail, useGalleryPinBoardLayout, useGalleryFullscreen, useGalleryHidePinBoard } from "@/lib/state/gallery"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -106,13 +106,8 @@ export function ImageGallery({
 
     const currentItem = selectedItem ? selectedItem : items[index]
     const dateString = getLocale(new Date(currentItem.last_modified))
-    const [pins, setPins] = useGalleryPins()
-    const [savedLayout, setSavedLayout] = useGalleryPinBoardLayout()
-    useEffect(() => {
-        if (pins.length === 0) {
-            setSavedLayout(null)
-        }
-    }, [pins])
+    const pinboard = useGalleryPinBoardLayout()[0]
+
     const [fs, setFs] = useGalleryFullscreen()
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -147,7 +142,7 @@ export function ImageGallery({
                     </Link>
                 </div>
                 <div className="max-w-[33%] text-center">
-                    {pins.length === 0 ? <>
+                    {pinboard.length === 0 ? <>
                         <FilePathComponent path={currentItem.path} />
                         <p className="text-xs text-gray-500 truncate">
                             {dateString}
@@ -177,7 +172,7 @@ export function ImageGallery({
                     </Button>
                 </div>
             </div>}
-            {(pins.length === 0 || hidePinBoard) ? <GalleryImageLarge
+            {(pinboard.length === 0 || hidePinBoard) ? <GalleryImageLarge
                 item={currentItem}
                 prevImage={prevImage}
                 nextImage={nextImage}

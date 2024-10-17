@@ -2,7 +2,7 @@
 
 import React, { useMemo } from 'react'
 import { cn } from "@/lib/utils"
-import { useGalleryPins } from "@/lib/state/gallery"
+import { useGalleryPinBoardLayout } from "@/lib/state/gallery"
 
 import { Pin, PinOff } from 'lucide-react'
 
@@ -15,16 +15,19 @@ export function PinButton({
     showPins?: boolean
     hidePins?: boolean
 }) {
-    const [pins, setPins] = useGalleryPins()
-    const isPinned = useMemo(() => pins.includes(item_id), [pins, item_id])
+    const [savedLayout, setSavedLayout] = useGalleryPinBoardLayout()
+    const pins = useMemo(() => savedLayout.filter((_, i) => i % 5 === 0).map((id, index) => [id, index]), [savedLayout])
+    const isPinned = useMemo(() => savedLayout.filter((id, i) => i % 5 === 0 && item_id === id).length > 0, [savedLayout, item_id])
     const handlePinClick = () => {
-        setPins((prev) => {
-            if (prev.includes(item_id)) {
-                return prev.filter((id) => id !== item_id)
-            } else {
-                return [...prev, item_id]
-            }
-        })
+        const isPinnedIndex = pins.findIndex(([id]) => id === item_id)
+        if (isPinnedIndex !== -1) {
+            const index = pins[isPinnedIndex][1]
+            const newLayout = [...savedLayout]
+            newLayout.splice(index * 5, 5)
+            setSavedLayout(newLayout)
+        } else {
+            setSavedLayout([...savedLayout, item_id, 0, 0, 1, 1])
+        }
     }
     return <button
         title={
