@@ -58,8 +58,8 @@ export function PinBoard(
                     className="layout"
                     layouts={{ lg: layout }}
                     breakpoints={{ lg: 0, }}
-                    cols={{ lg: 12, }}
-                    rowHeight={150}
+                    cols={{ lg: 24, }}
+                    rowHeight={100}
                     onLayoutChange={(currentLayout) => onLayoutChange(currentLayout)}
                     draggableHandle=".drag-handle"
                     isResizable={true}
