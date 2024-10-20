@@ -341,6 +341,7 @@ export function HorizontalScrollElement({
                     // onClick={() => onClick()}
                     className="w-full h-full object-cover object-top rounded-md cursor-pointer"
                     fill
+                    unoptimized={true}
                     sizes="200px"
                 />
             </Link>

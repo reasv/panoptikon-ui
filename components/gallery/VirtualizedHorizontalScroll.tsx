@@ -125,6 +125,7 @@ function VirtualHorizontalScrollElement({
                             alt={item.path}
                             className="object-cover object-top rounded-md cursor-pointer"
                             fill
+                            unoptimized={true}
                             sizes="240px"
                         />
                     </div>
