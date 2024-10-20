@@ -30,6 +30,9 @@ const nextConfig = {
     return []
   },
   async rewrites() {
+    if (process.env.DISABLE_API_PROXY === "true") {
+      return []
+    }
     const panoptikonAPI = process.env.PANOPTIKON_API_URL || "http://127.0.0.1:6342"
     const inferenceAPI = process.env.INFERENCE_API_URL || panoptikonAPI
     const restrictedMode = process.env.RESTRICTED_MODE === "true"

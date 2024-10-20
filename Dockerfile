@@ -27,12 +27,7 @@ COPY . /app
 RUN chown -R appuser /app
 
 # Define build arguments and environment variables
-ARG RESTRICTED_MODE
-ARG INFERENCE_API_URL
-ARG PANOPTIKON_API_URL
-ENV RESTRICTED_MODE=${RESTRICTED_MODE}
-ENV INFERENCE_API_URL=${INFERENCE_API_URL}
-ENV PANOPTIKON_API_URL=${PANOPTIKON_API_URL}
+ENV DISABLE_API_PROXY=true
 
 # Install Node.js dependencies and build the Next.js application
 RUN npm install --include=dev && \
