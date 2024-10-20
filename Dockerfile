@@ -42,4 +42,4 @@ RUN npm install --include=dev && \
 EXPOSE 6339
 
 # Run the start script to launch Nginx and Next.js
-CMD ["npx --yes next start -p 6339"]
+CMD ["npx" "--yes" "next" "start" "-p" "6339"]
