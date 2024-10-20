@@ -12,21 +12,6 @@ RUN apt-get update && \
     npm install -g npm@latest && \
     rm -rf /var/lib/apt/lists/*
 
-# Create Nginx configuration template with a placeholder for PANOPTIKON_API_URL
-RUN echo 'events {}' > /etc/nginx/nginx.conf.template && \
-    echo 'http {' >> /etc/nginx/nginx.conf.template && \
-    echo '    server {' >> /etc/nginx/nginx.conf.template && \
-    echo '        listen 6342;' >> /etc/nginx/nginx.conf.template && \
-    echo '        location / {' >> /etc/nginx/nginx.conf.template && \
-    echo '            proxy_pass http://${PANOPTIKON_API_URL};' >> /etc/nginx/nginx.conf.template && \
-    echo '            proxy_set_header Host $host;' >> /etc/nginx/nginx.conf.template && \
-    echo '            proxy_set_header X-Real-IP $remote_addr;' >> /etc/nginx/nginx.conf.template && \
-    echo '            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;' >> /etc/nginx/nginx.conf.template && \
-    echo '            proxy_set_header X-Forwarded-Proto $scheme;' >> /etc/nginx/nginx.conf.template && \
-    echo '        }' >> /etc/nginx/nginx.conf.template && \
-    echo '    }' >> /etc/nginx/nginx.conf.template && \
-    echo '}' >> /etc/nginx/nginx.conf.template
-
 # Create the application directory and a non-root user
 RUN mkdir /app && \
     adduser --disabled-password --gecos '' appuser && \
@@ -40,13 +25,6 @@ COPY . /app
 
 # Change ownership of the application directory to the non-root user
 RUN chown -R appuser /app
-
-# Embed the start script as root (before switching to appuser)
-RUN echo '#!/bin/sh' > /start.sh && \
-    echo 'envsubst "\$PANOPTIKON_API_URL" < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf' >> /start.sh && \
-    echo 'nginx &' >> /start.sh && \
-    echo 'npx --yes next start -p 6339' >> /start.sh && \
-    chmod +x /start.sh
 
 # Define build arguments and environment variables
 ARG RESTRICTED_MODE
@@ -64,4 +42,4 @@ RUN npm install --include=dev && \
 EXPOSE 6339
 
 # Run the start script to launch Nginx and Next.js
-CMD ["/start.sh"]
+CMD ["npx --yes next start -p 6339"]
