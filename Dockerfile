@@ -36,5 +36,4 @@ RUN npm install --include=dev && \
 # Only expose the Next.js port for external access
 EXPOSE 6339
 
-# Run the start script to launch Nginx and Next.js
 CMD ["npx", "--yes", "next", "start", "-p", "6339"]
