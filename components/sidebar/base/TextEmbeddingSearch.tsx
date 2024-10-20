@@ -37,6 +37,7 @@ export function TextEmbeddingSearch({
     const models = [...(
         data?.setters
             .filter((setter) => setter[0] === "text-embedding")
+            .filter(setter => !setter[1].startsWith("tclip/"))
             .map((setter) => ({ value: setter[1], label: setter[1] })) || [])
     ]
     const onOptionSelected = (option: string | null) => {

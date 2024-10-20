@@ -26,6 +26,7 @@ export function ItemSimilarityWrapper() {
         const models = [...(
             data?.setters
                 .filter((setter) => setter[0] === (option === "L2" ? "text-embedding" : "clip"))
+                .filter(setter => !setter[1].startsWith("tclip/"))
                 .map((setter) => ({ value: setter[1], label: setter[1] })) || [])
         ]
         const model = models.length > 0 ? models[0].value : ""
@@ -39,6 +40,7 @@ export function ItemSimilarityWrapper() {
         const models = [...(
             data?.setters
                 .filter((setter) => setter[0] === (filter.distance_function === "L2" ? "text-embedding" : "clip"))
+                .filter(setter => !setter[1].startsWith("tclip/"))
                 .map((setter) => ({ value: setter[1], label: setter[1] })) || [])
         ]
         const model = models.length > 0 ? models[0].value : ""

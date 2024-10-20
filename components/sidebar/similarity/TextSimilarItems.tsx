@@ -16,7 +16,8 @@ export function TextEmbeddingsSimilarity() {
             query: dbs
         },
     })
-    const setters = data?.setters.filter((setter) => setter[0] === "text-embedding").map((setter) => setter[1]) || []
+    const setters = data?.setters.filter((setter) => setter[0] === "text-embedding")
+        .filter(setter => !setter[1].startsWith("tclip/")).map((setter) => setter[1]) || []
     const [filter, setFilter] = useSBTextSimilarity()
     const [srcFilter, setSrcFilter] = useSBTextSimilarityTextSrc()
     const { text } = useSBSimilarityQuery()

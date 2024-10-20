@@ -30,6 +30,7 @@ export function ItemSimilaritySearchOptions({
     const models = [...(
         data?.setters
             .filter((setter) => setter[0] === embeddingType)
+            .filter(setter => !setter[1].startsWith("tclip/"))
             .map((setter) => ({ value: setter[1], label: setter[1] })) || [])
     ]
     const onOptionSelected = (option: string | null) => {

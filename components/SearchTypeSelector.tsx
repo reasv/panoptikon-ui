@@ -36,7 +36,8 @@ export function SearchTypeSelection() {
     const tembModels = [...
         data?.setters
             .filter((setter) => setter[0] === "text-embedding")
-            .map((setter) => setter[1]) || []
+            .map((setter) => setter[1])
+            .filter(setter => !setter.startsWith("tclip/")) || []
     ]
     const [onIembEnableChange, iembIsLoading] = useEnableEmbeddingSearch({
         type: "image",
