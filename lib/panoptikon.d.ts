@@ -575,7 +575,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Get expiration times for all models in a cache
+         * @description Returns a mapping of `inference_id`s for all models in the cache to their expiration times.
+         */
+        get: operations["get_cache_expiration_api_inference_cache__cache_key__get"];
         put?: never;
         post?: never;
         /**
@@ -942,6 +946,13 @@ export interface components {
         BookmarkUsers: {
             /** Users */
             users: string[];
+        };
+        /** CacheKeyResponse */
+        CacheKeyResponse: {
+            /** Expirations */
+            expirations: {
+                [key: string]: string;
+            };
         };
         /** CacheListResponse */
         CacheListResponse: {
@@ -2996,6 +3007,11 @@ export interface components {
             included_folders?: string[];
             /** Excluded Folders */
             excluded_folders?: string[];
+            /**
+             * Preload Embedding Models
+             * @default false
+             */
+            preload_embedding_models: boolean;
         };
         /** TagFrequency */
         TagFrequency: {
@@ -4219,6 +4235,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatusResponse"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_cache_expiration_api_inference_cache__cache_key__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cache_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CacheKeyResponse"];
                 };
             };
             /** @description Not found */

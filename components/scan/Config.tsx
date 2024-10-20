@@ -170,6 +170,15 @@ export function Config() {
                         }))}
                     />
                     <SwitchFilter
+                        label="Embedding Model Preload"
+                        description="Keep any models with embeddings inside the database persistently loaded in memory"
+                        value={data.preload_embedding_models}
+                        onChange={(value) => changeConfig((currentConfig) => ({
+                            ...currentConfig,
+                            preload_embedding_models: value,
+                        }))}
+                    />
+                    <SwitchFilter
                         label="Enable Cron Job"
                         description="Enable the cron job to run the file scan and selected extraction jobs at regular intervals"
                         value={data.enable_cron_job}
