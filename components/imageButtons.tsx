@@ -280,32 +280,32 @@ export const FilePathComponent = ({ path }: { path: string }) => {
     const { toast } = useToast()
     const handleCopyToClipboard = (text: string) => {
         // This is necessary to prevent the browser from adding file:// to the path
-        const blob = new Blob([text], { type: 'text/plain' });
-        const data = [new ClipboardItem({ 'text/plain': blob })];
+        const blob = new Blob([text], { type: 'text/plain' })
+        const data = [new ClipboardItem({ 'text/plain': blob })]
         navigator.clipboard.write(data).then(() => {
             toast({
                 title: "Path copied to clipboard",
                 description: text,
                 duration: 2000,
-            });
+            })
         }).catch((err) => {
-            console.error('Failed to copy text: ', err);
+            console.error('Failed to copy text: ', err)
             toast({
                 title: "Failed to copy path to clipboard",
                 description: err.message,
                 variant: "destructive",
                 duration: 2000,
-            });
-        });
-    };
+            })
+        })
+    }
     return (
         <p
             title={path}
-            className="text-sm truncate cursor-pointer" // Added cursor-pointer for better UX
-            style={{ direction: 'rtl', textAlign: 'left' }}
-            onClick={() => handleCopyToClipboard(path)} // Copy path on click
+            className="text-sm truncate cursor-pointer"
+            style={{ direction: 'rtl', textAlign: 'left', unicodeBidi: 'plaintext' }}
+            onClick={() => handleCopyToClipboard(path)}
         >
             {path}
         </p>
-    );
-};
+    )
+}
