@@ -806,6 +806,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/cronjob/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Manually trigger a cronjob run
+         * @description Manually trigger the configured cronjob to run on the selected database.
+         */
+        post: operations["manual_trigger_cronjob_api_jobs_cronjob_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/": {
         parameters: {
             query?: never;
@@ -975,6 +995,11 @@ export interface components {
             /** Threshold */
             threshold?: number | null;
         };
+        /** CronJobResponse */
+        CronJobResponse: {
+            /** Detail */
+            detail: string;
+        };
         /** DBCreateResponse */
         DBCreateResponse: {
             /** Index Db */
@@ -992,7 +1017,7 @@ export interface components {
             /** Name of the setter that would produce the derived data */
             setter_name: string;
             /** Data types that the associated data must have */
-            data_types: string[];
+            data_types: ("items" | "text" | "tags")[] | string[];
         };
         /** EmbedArgs */
         EmbedArgs: {
@@ -1353,6 +1378,13 @@ export interface components {
             sha256: string[];
             /** Metadata */
             metadata?: Record<string, never> | null;
+        };
+        /** JobFilter */
+        JobFilter: {
+            /** Setter Names */
+            setter_names?: string[];
+            /** Pql Query */
+            pql_query: components["schemas"]["SimilarTo"] | components["schemas"]["InBookmarks"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasDataFrom"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["Match"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"];
         };
         /** JobModel */
         JobModel: {
@@ -3012,6 +3044,9 @@ export interface components {
              * @default false
              */
             preload_embedding_models: boolean;
+            /** Job Filters */
+            job_filters?: components["schemas"]["JobFilter"][];
+            filescan_filter?: components["schemas"]["Match"] | null;
         };
         /** TagFrequency */
         TagFrequency: {
@@ -4923,6 +4958,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SetterDataStats"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    manual_trigger_cronjob_api_jobs_cronjob_run_post: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CronJobResponse"];
                 };
             };
             /** @description Not found */
