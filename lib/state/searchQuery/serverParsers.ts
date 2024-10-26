@@ -26,7 +26,6 @@ import {
 
 import { createScopedSearchParamsCache } from "../nuqsScopedWrappers/scopedQueryParamsCache"
 import { queryFromState, sbSimilarityQueryFromState } from "./searchQuery"
-import { get } from "http"
 export type SearchParams = Record<string, string | string[] | undefined>
 
 const caches = {

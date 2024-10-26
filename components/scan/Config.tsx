@@ -107,6 +107,23 @@ export function Config() {
         }))
         setSelected({})
     }
+    const cronjobRunMut = $api.useMutation(
+        "post",
+        "/api/jobs/cronjob/run",
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries({
+                    queryKey: ["get", "/api/jobs/queue"],
+                })
+                toast({
+                    title: "Running Cron Job",
+                    description: "The jobs in the cron schedule have been queued",
+                })
+            },
+        })
+    const runCronJob = async () => {
+        cronjobRunMut.mutate({ params: { query: dbs } })
+    }
     return (
         <FilterContainer
             label="Scan Configuration"
@@ -217,6 +234,11 @@ export function Config() {
                             <Label className="text-base">Cron Data Extraction Schedule</Label>
                             <div className="text-gray-400">These jobs will be run with the cronjob after the file scan</div>
                         </div>
+                        <Button
+                            title="Run the cron job immediately"
+                            variant="outline"
+                            onClick={runCronJob}
+                        >Run Scheduled Jobs Now</Button>
                     </div>
                     <ScrollArea className="max-w-[97vw] whitespace-nowrap">
                         <DataTable
