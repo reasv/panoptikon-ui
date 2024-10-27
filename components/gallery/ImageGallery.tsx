@@ -346,7 +346,7 @@ export function HorizontalScrollElement({
                 />
             </Link>
             <BookmarkBtn sha256={item.sha256} />
-            <PinButton item_id={item.item_id} />
+            <PinButton sha256={item.sha256} />
         </figure>
     )
 }

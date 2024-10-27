@@ -6,20 +6,21 @@ import { $api } from '@/lib/api'
 import { useSelectedDBs } from '@/lib/state/database'
 
 export function SelectButton({
-    item_id,
+    sha256, // This is usually just the prefix of the sha256 hash
 }: {
-    item_id: number,
+    sha256: string,
 
 }) {
     const dbs = useSelectedDBs()[0]
     const [selected, setSelected] = useItemSelection((state) => [state.getSelected(), state.setItem])
-    const isSelected = useMemo(() => selected?.item_id === item_id, [selected, item_id])
+    // Match on the prefix of the sha256 hash
+    const isSelected = useMemo(() => selected?.sha256.startsWith(sha256), [selected, sha256])
     const { data } = $api.useQuery("get", "/api/items/item", {
         params: {
             query: {
                 ...dbs,
-                id: item_id,
-                id_type: "item_id"
+                id: sha256,
+                id_type: "sha256" // Supports prefix or full sha256 hash
             },
         }
     })
@@ -31,7 +32,7 @@ export function SelectButton({
                 file_id: file.id,
                 path: file.path,
                 sha256: data.item.sha256,
-                item_id,
+                item_id: data.item.id,
                 last_modified: file.last_modified,
                 type: data.item.type,
                 width: data.item.width,

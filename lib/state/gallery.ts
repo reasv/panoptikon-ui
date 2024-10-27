@@ -43,7 +43,7 @@ const useGalleryHidePinBoard = () =>
 const useGalleryPinBoardLayout = () =>
   useQueryState(
     "pinboard",
-    parseAsArrayOf(parseAsInteger).withDefault([]).withOptions({
+    parseAsArrayOf(parseAsString).withDefault([]).withOptions({
       clearOnDefault: true,
       history: "push",
     })

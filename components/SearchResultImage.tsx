@@ -95,7 +95,7 @@ export function SearchResultImage({
                 <OpenFile sha256={result.sha256} path={result.path} />
                 <OpenFolder sha256={result.sha256} path={result.path} />
                 <OpenDetailsButton item={result} variantButton />
-                {galleryOpen && (<PinButton item_id={result.item_id} />)}
+                {galleryOpen && (<PinButton sha256={result.sha256} />)}
             </div>
             <FilePathComponent path={result.path} />
             <p className="text-xs text-gray-500">

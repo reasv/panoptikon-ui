@@ -21,19 +21,22 @@ export function PinBoard(
 ) {
     const dbs = useSelectedDBs()[0]
     const [savedLayout, setSavedLayout] = useGalleryPinBoardLayout()
-    const [layout, pinnedFiles]: [ReactGridLayout.Layout[], [number, string, string][]] = useMemo(() => {
+    const [layout, pinnedFiles]: [ReactGridLayout.Layout[], [string, string, string][]] = useMemo(() => {
         const newLayout: ReactGridLayout.Layout[] = []
-        const pinned: [number, string, string][] = []
+        const pinned: [string, string, string][] = []
         for (let i = 0; i < savedLayout.length; i += 5) {
-            const [item_id, x, y, w, h] = savedLayout.slice(i, i + 5)
+            const [sha256, x, y, w, h] = savedLayout.slice(i, i + 5)
             newLayout.push({
-                i: item_id.toString(),
-                x, y, w, h
+                i: sha256,
+                x: parseInt(x),
+                y: parseInt(y),
+                w: parseInt(w),
+                h: parseInt(h),
             })
             pinned.push([
-                item_id,
-                getFileURL(dbs, "file", "item_id", item_id),
-                getFileURL(dbs, "thumbnail", "item_id", item_id)
+                sha256,
+                getFileURL(dbs, "file", "sha256", sha256),
+                getFileURL(dbs, "thumbnail", "sha256", sha256)
             ])
         }
         return [newLayout, pinned]
@@ -41,7 +44,7 @@ export function PinBoard(
 
     const onLayoutChange = (currentLayout: ReactGridLayout.Layout[]) => {
         const layoutToSave = currentLayout.map(layout => {
-            return [parseInt(layout.i), layout.x, layout.y, layout.w, layout.h]
+            return [layout.i, layout.x.toString(), layout.y.toString(), layout.w.toString(), layout.h.toString(),]
         })
         const flattenedLayout = layoutToSave.flat()
         setSavedLayout(flattenedLayout)
@@ -67,21 +70,21 @@ export function PinBoard(
                     compactType="vertical" // Compacts items vertically to keep them visible on screen
                     preventCollision={false}
                 >
-                    {pinnedFiles.map(([item_id, thumbnail, file]) => {
-                        const key = item_id.toString() // Unique key for react-grid-layout
+                    {pinnedFiles.map(([sha256, thumbnail, file]) => {
+                        const key = sha256 // Unique key for react-grid-layout
                         return (
                             <div key={key} className="relative bg-gray-800 border rounded shadow group">
                                 <div className="drag-handle cursor-move absolute top-0 left-0 w-full h-full">
                                     <Image
                                         src={thumbnail}
-                                        alt={`Item ID ${item_id}`}
+                                        alt={`Sha256 Hash ${sha256}`}
                                         fill
                                         className="rounded object-contain"
                                         unoptimized={true}
                                     />
                                 </div>
-                                <PinButton item_id={item_id} hidePins={true} />
-                                <SelectButton item_id={item_id} />
+                                <PinButton sha256={sha256} hidePins={true} />
+                                <SelectButton sha256={sha256} />
                             </div>
                         )
                     })}

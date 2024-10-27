@@ -7,26 +7,27 @@ import { useGalleryPinBoardLayout } from "@/lib/state/gallery"
 import { Pin, PinOff } from 'lucide-react'
 
 export function PinButton({
-    item_id,
+    sha256,
     showPins,
     hidePins,
 }: {
-    item_id: number,
+    sha256: string,
     showPins?: boolean
     hidePins?: boolean
 }) {
+    const prefixLength = 10 // The length of the prefix of the sha256 hash
     const [savedLayout, setSavedLayout] = useGalleryPinBoardLayout()
-    const pins = useMemo(() => savedLayout.filter((_, i) => i % 5 === 0).map((id, index) => [id, index]), [savedLayout])
-    const isPinned = useMemo(() => savedLayout.filter((id, i) => i % 5 === 0 && item_id === id).length > 0, [savedLayout, item_id])
+    const pins: [string, number][] = useMemo(() => savedLayout.filter((_, i) => i % 5 === 0).map((id, index) => [id, index]), [savedLayout])
+    const isPinned = useMemo(() => savedLayout.filter((id, i) => i % 5 === 0 && sha256.slice(0, prefixLength) === id.slice(0, prefixLength)).length > 0, [savedLayout, sha256])
     const handlePinClick = () => {
-        const isPinnedIndex = pins.findIndex(([id]) => id === item_id)
+        const isPinnedIndex = pins.findIndex(([id]) => id.slice(0, prefixLength) === sha256.slice(0, prefixLength))
         if (isPinnedIndex !== -1) {
             const index = pins[isPinnedIndex][1]
             const newLayout = [...savedLayout]
             newLayout.splice(index * 5, 5)
             setSavedLayout(newLayout)
         } else {
-            setSavedLayout([...savedLayout, item_id, 0, 0, 1, 1])
+            setSavedLayout([...savedLayout, sha256.slice(0, prefixLength), "0", "0", "1", "1"])
         }
     }
     return <button
