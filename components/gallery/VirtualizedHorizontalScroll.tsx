@@ -13,6 +13,7 @@ import { useGalleryIndex, getGalleryOptionsSerializer } from "@/lib/state/galler
 import { useSelectedDBs } from "@/lib/state/database"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { PinButton } from './PinButton'
+import { FindButton } from './FindButton'
 
 export function VirtualGalleryHorizontalScroll({
     items,
@@ -132,6 +133,7 @@ function VirtualHorizontalScrollElement({
                 </Link>
                 <BookmarkBtn sha256={item.sha256} />
                 <PinButton sha256={item.sha256} />
+                <FindButton sha256={item.sha256} path={item.path} />
             </figure>
         </div>
     )

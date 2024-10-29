@@ -19,6 +19,7 @@ import { VirtualGalleryHorizontalScroll } from './VirtualizedHorizontalScroll'
 import { PinButton } from './PinButton'
 import { PinBoard } from './GalleryPinBoard'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
+import { FindButton } from './FindButton'
 
 function getNextIndex(length: number, index?: number | null,) {
     return ((index || 0) + 1) % length
@@ -347,6 +348,10 @@ export function HorizontalScrollElement({
             </Link>
             <BookmarkBtn sha256={item.sha256} />
             <PinButton sha256={item.sha256} />
+            <FindButton
+                sha256={item.sha256}
+                path={item.path}
+            />
         </figure>
     )
 }
