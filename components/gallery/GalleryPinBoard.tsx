@@ -9,6 +9,7 @@ import "react-grid-layout/css/styles.css"
 import "react-resizable/css/styles.css"
 import { ScrollArea } from '../ui/scroll-area'
 import { SelectButton } from './SelectButton'
+import { FindButton } from './FindButton'
 
 const ResponsiveGridLayout = WidthProvider(Responsive)
 
@@ -85,6 +86,11 @@ export function PinBoard(
                                 </div>
                                 <PinButton sha256={sha256} hidePins={true} />
                                 <SelectButton sha256={sha256} />
+                                <FindButton
+                                    id={sha256}
+                                    id_type={"sha256"}
+                                    path={""}
+                                />
                             </div>
                         )
                     })}

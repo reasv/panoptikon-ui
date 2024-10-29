@@ -84,10 +84,12 @@ async function findFileIndex(
     return 0
 }
 export function FindButton({
-    item_id,
+    id,
+    id_type,
     path,
 }: {
-    item_id: number,
+    id: number | string,
+    id_type: "item_id" | "sha256",
     path: string
 }) {
     const { toast } = useToast()
@@ -98,7 +100,32 @@ export function FindButton({
     const [filter, setFilter] = useFileFilters()
     const dbs = useSelectedDBs()[0]
     const handleFindClick = async () => {
-        const folder = getFolderFromPath(path)
+        let file_path = path
+        let item_id: number = 0
+        if (id_type === "sha256" || file_path === "") {
+            const itemData = await fetchClient.GET("/api/items/item", {
+                params: {
+                    query: {
+                        ...dbs,
+                        id_type,
+                        id,
+                    }
+                }
+            })
+            if (!itemData.data) {
+                return
+            }
+            item_id = itemData.data!.item.id
+            if (file_path === "") {
+                if (itemData.data!.files.length === 0) {
+                    return
+                }
+                file_path = itemData.data!.files[0].path
+            }
+        } else {
+            item_id = id as number
+        }
+        const folder = getFolderFromPath(file_path)
         if (!folder) {
             return
         }
