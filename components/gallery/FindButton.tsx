@@ -8,6 +8,7 @@ import { useFileFilters, useOrderArgs, useQueryOptions, useResetSearchQueryState
 import { useSelectedDBs } from '@/lib/state/database'
 import { $api, fetchClient } from '@/lib/api'
 import { components } from '@/lib/panoptikon'
+import { OrderArgsType, orderByType } from '@/lib/state/searchQuery/searchQueryKeyMaps'
 
 function getFolderFromPath(fullPath: string): string {
     // Find the last occurrence of a separator, either '/' or '\'
@@ -23,14 +24,24 @@ function getQuery(
     folder: string,
     page: number,
     page_size: number,
+    order_by: orderByType,
+    order: OrderArgsType["order"],
     count: boolean,
+    check_path: boolean
 ): components["schemas"]["PQLQuery"] {
     return {
         page,
         page_size,
         results: !count,
         count,
-        check_path: true,
+        check_path,
+        order_by: [
+            {
+                order_by,
+                order,
+                priority: 0,
+            },
+        ],
         select: ["item_id"],
         entity: "file",
         query: {
@@ -52,36 +63,41 @@ function getQuery(
 async function findFileIndex(
     folder: string,
     item_id: number,
+    page_size: number,
+    order_by: orderByType,
+    order: OrderArgsType["order"],
     dbs: {
         index_db?: string | null
         user_data_db?: string | null
     }) {
     const params = { query: dbs }
     try {
-        const countQuery = await fetchClient.POST(
-            "/api/search/pql", {
-            params,
-            body: getQuery(folder, 1, 10, true),
-        })
-        const folderSize = countQuery.data?.count || 0
-        if (folderSize === 0) {
-            return 0
-        }
         const resultQuery = await fetchClient.POST(
             "/api/search/pql", {
             params,
-            body: getQuery(folder, 1, folderSize, false),
+            body: getQuery(
+                folder,
+                1,
+                -1,
+                order_by,
+                order,
+                false,
+                true,
+            ),
         })
         const result = resultQuery.data?.results || []
-        const index = result.findIndex((r: { item_id: number }) => r.item_id === item_id)
-        console.log("Found index", index)
-        if (index !== -1) {
-            return index
+        const indexInFolder = result.findIndex((r: { item_id: number }) => r.item_id === item_id)
+        console.log("Found index", indexInFolder)
+        if (indexInFolder === -1) {
+            return [0, 0]
         }
+        const page = Math.floor(indexInFolder / page_size) + 1
+        const index = indexInFolder % page_size
+        return [page, index]
     } catch (e) {
         console.error(e)
     }
-    return 0
+    return [0, 0]
 }
 export function FindButton({
     id,
@@ -130,10 +146,24 @@ export function FindButton({
             return
         }
         const page_size = orderArgs.page_size || 10
-        const indexInFolder = await findFileIndex(folder, item_id, dbs)
-        const page = Math.floor(indexInFolder / page_size) + 1
-        const index = indexInFolder % page_size
-        console.log("Navigating to folder", folder, "page", page, "index", index)
+        const order_by = [
+            "path",
+            "last_modified",
+            "size",
+            "type",
+            "duration",
+        ].includes(orderArgs.order_by) ? orderArgs.order_by : "last_modified"
+        const order = orderArgs.order
+
+        const [page, index] = await findFileIndex(
+            folder,
+            item_id,
+            page_size,
+            order_by as orderByType,
+            order,
+            dbs
+        )
+        console.log(`Navigating to folder ${folder}, page ${page}, index ${index}`)
         // Unset all search query parameters
         resetSearch()
         setFilter({
@@ -145,6 +175,8 @@ export function FindButton({
             e_path: true,
         }, { history: "push" })
         setOrderArgs({
+            order_by,
+            order,
             page,
             page_size,
         }, { history: "push" })
