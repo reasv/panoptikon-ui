@@ -234,7 +234,6 @@ export function GalleryImageLarge(
             prevImage()
         }
     }
-    const blurDataURL = useMemo(() => item.blurhash ? blurHashToDataURL(item.blurhash) : undefined, [item.blurhash])
     const searchLoading = useSearchLoading(state => state.loading)
     return (
         <div
@@ -254,8 +253,6 @@ export function GalleryImageLarge(
                     src={thumbnailURL}
                     alt={`${item.path}`}
                     fill
-                    placeholder={blurDataURL ? 'blur' : 'empty'}
-                    blurDataURL={blurDataURL}
                     className="object-contain"
                     unoptimized={true}
                 />
