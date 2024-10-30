@@ -73,7 +73,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode }:
             refetch()
         }
     }, [page])
-    const totalPages = Math.ceil((nResults || 1) / (pageSize)) || 1
+    const totalPages = pageSize > 0 ? (Math.ceil((nResults || 1) / (pageSize)) || 1) : 1
     const [qIndex, setIndex] = useGalleryIndex()
     const results = data?.results || []
     const [sidebarOpen, setSideBarOpen] = useSideBarOpen()
@@ -146,7 +146,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode }:
                     />
             }
             {
-                !fs && (nResults > pageSize) && (
+                !fs && (nResults > pageSize) && (pageSize > 0) && (
                     <PageSelect
                         totalPages={totalPages}
                         currentPage={page}
