@@ -899,7 +899,7 @@ export interface components {
         /** AndOperator */
         AndOperator: {
             /** And  */
-            and_: (components["schemas"]["SimilarTo"] | components["schemas"]["InBookmarks"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasDataFrom"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["Match"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"])[];
+            and_: (components["schemas"]["SimilarTo"] | components["schemas"]["InBookmarks"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["ProcessedBy"] | components["schemas"]["Match"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"])[];
         };
         /** Body_predict_api_inference_predict__group___inference_id__post */
         Body_predict_api_inference_predict__group___inference_id__post: {
@@ -1123,6 +1123,8 @@ export interface components {
             hashing_time: number;
             /** Thumbgen Time */
             thumbgen_time: number;
+            /** Blurhash Time */
+            blurhash_time: number;
         };
         /** FileSearchResponse */
         FileSearchResponse: {
@@ -1162,11 +1164,6 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
-        };
-        /** HasDataFrom */
-        HasDataFrom: {
-            /** Item must have item_data produced by the given setter name */
-            has_data_from: string;
         };
         /** HasUnprocessedData */
         HasUnprocessedData: {
@@ -1364,6 +1361,8 @@ export interface components {
             video_tracks: number | null;
             /** Subtitle Tracks */
             subtitle_tracks: number | null;
+            /** Blurhash */
+            blurhash: string | null;
             /** Time Added */
             time_added: string;
         };
@@ -1384,7 +1383,7 @@ export interface components {
             /** Setter Names */
             setter_names?: string[];
             /** Pql Query */
-            pql_query: components["schemas"]["SimilarTo"] | components["schemas"]["InBookmarks"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasDataFrom"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["Match"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"];
+            pql_query: components["schemas"]["SimilarTo"] | components["schemas"]["InBookmarks"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["ProcessedBy"] | components["schemas"]["Match"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"];
         };
         /** JobModel */
         JobModel: {
@@ -2019,6 +2018,8 @@ export interface components {
             video_tracks?: number | null;
             /** Subtitle Tracks */
             subtitle_tracks?: number | null;
+            /** Blurhash */
+            blurhash?: string | null;
             /** Data Id */
             data_id?: number | null;
             /** Language */
@@ -2076,6 +2077,8 @@ export interface components {
             video_tracks?: number | number[] | null;
             /** Subtitle Tracks */
             subtitle_tracks?: number | number[] | null;
+            /** Blurhash */
+            blurhash?: string | string[] | null;
             /** Data Id */
             data_id?: number | number[] | null;
             /** Language */
@@ -2107,7 +2110,7 @@ export interface components {
         /** NotOperator */
         NotOperator: {
             /** Not  */
-            not_: components["schemas"]["SimilarTo"] | components["schemas"]["InBookmarks"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasDataFrom"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["Match"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"];
+            not_: components["schemas"]["SimilarTo"] | components["schemas"]["InBookmarks"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["ProcessedBy"] | components["schemas"]["Match"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"];
         };
         /** OpenResponse */
         OpenResponse: {
@@ -2119,7 +2122,7 @@ export interface components {
         /** OrOperator */
         OrOperator: {
             /** Or  */
-            or_: (components["schemas"]["SimilarTo"] | components["schemas"]["InBookmarks"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasDataFrom"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["Match"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"])[];
+            or_: (components["schemas"]["SimilarTo"] | components["schemas"]["InBookmarks"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["ProcessedBy"] | components["schemas"]["Match"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"])[];
         };
         /** OrderArgs */
         OrderArgs: {
@@ -2127,7 +2130,7 @@ export interface components {
              * Order By
              * @default last_modified
              */
-            order_by: ("file_id" | "sha256" | "path" | "filename" | "last_modified") | ("item_id" | "sha256" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks") | ("data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id");
+            order_by: ("file_id" | "sha256" | "path" | "filename" | "last_modified") | ("item_id" | "sha256" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks" | "blurhash") | ("data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id");
             /** Order */
             order?: ("asc" | "desc") | null;
             /**
@@ -2144,7 +2147,7 @@ export interface components {
         /** PQLQuery */
         PQLQuery: {
             /** Query */
-            query?: components["schemas"]["SimilarTo"] | components["schemas"]["InBookmarks"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasDataFrom"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["Match"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"] | null;
+            query?: components["schemas"]["SimilarTo"] | components["schemas"]["InBookmarks"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["MatchTags"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["ProcessedBy"] | components["schemas"]["Match"] | components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"] | null;
             /**
              * Values to order results by
              * @description
@@ -2162,7 +2165,7 @@ export interface components {
              *     Columns belonging to text can only be selected if the entity is "text".
              *
              */
-            select?: (("file_id" | "sha256" | "path" | "filename" | "last_modified") | ("item_id" | "sha256" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks") | ("data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id"))[];
+            select?: (("file_id" | "sha256" | "path" | "filename" | "last_modified") | ("item_id" | "sha256" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks" | "blurhash") | ("data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id"))[];
             /**
              * Target Entity
              * @description
@@ -2194,7 +2197,7 @@ export interface components {
              *     You cannot partition by text columns if the entity is "file".
              *
              */
-            partition_by?: (("file_id" | "sha256" | "path" | "filename" | "last_modified") | ("item_id" | "sha256" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks") | ("data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id"))[] | null;
+            partition_by?: (("file_id" | "sha256" | "path" | "filename" | "last_modified") | ("item_id" | "sha256" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks" | "blurhash") | ("data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id"))[] | null;
             /**
              * Page
              * @default 1
@@ -2240,6 +2243,11 @@ export interface components {
              * @default false
              */
             check_path: boolean;
+        };
+        /** ProcessedBy */
+        ProcessedBy: {
+            /** This Item or Item Data must have been processed by this setter name and have data derived from it */
+            processed_by: string;
         };
         /** QueueCancelResponse */
         QueueCancelResponse: {
@@ -2317,6 +2325,8 @@ export interface components {
             video_tracks?: number | null;
             /** Subtitle Tracks */
             subtitle_tracks?: number | null;
+            /** Blurhash */
+            blurhash?: string | null;
             /** Data Id */
             data_id?: number | null;
             /** Language */
