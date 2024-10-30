@@ -302,7 +302,7 @@ export const FilePathComponent = ({ path }: { path: string }) => {
         <p
             title={path}
             className="text-sm truncate cursor-pointer"
-            style={{ direction: 'rtl', textAlign: 'left', unicodeBidi: 'plaintext' }}
+            style={{ direction: 'rtl', textAlign: 'left' }}
             onClick={() => handleCopyToClipboard(path)}
         >
             {path}
