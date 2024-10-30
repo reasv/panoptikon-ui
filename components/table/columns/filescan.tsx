@@ -111,4 +111,10 @@ export const fileScanColumns: ColumnDef<components["schemas"]["FileScanRecord"]>
         header: "Thumb Gen Time",
         cell: ({ row }) => prettyPrintDuration(row.getValue("thumbgen_time")),
     },
+    {
+        id: "blurhash_time",
+        accessorKey: "blurhash_time",
+        header: "Blurhash Gen Time",
+        cell: ({ row }) => prettyPrintDuration(row.getValue("blurhash_time")),
+    },
 ]

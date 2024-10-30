@@ -159,6 +159,7 @@ export function FileScanHistory() {
                     "metadata_time": false,
                     "hashing_time": false,
                     "thumbgen_time": false,
+                    "blurhash_time": false,
                 }}
             />
             <ScrollBar orientation="horizontal" />
