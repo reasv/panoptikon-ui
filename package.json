@@ -29,6 +29,7 @@
     "@tanstack/react-virtual": "^3.10.8",
     "@types/history": "^4.7.11",
     "babel-plugin-react-compiler": "^0.0.0-experimental-7d62301-20240822",
+    "blurhash": "^2.0.5",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "cmdk": "^1.0.0",
