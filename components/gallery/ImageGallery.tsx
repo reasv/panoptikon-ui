@@ -20,6 +20,7 @@ import { PinButton } from './PinButton'
 import { PinBoard } from './GalleryPinBoard'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { FindButton } from './FindButton'
+import { blurHashToDataURL } from '@/lib/state/blurHashDataURL'
 
 function getNextIndex(length: number, index?: number | null,) {
     return ((index || 0) + 1) % length
@@ -232,7 +233,7 @@ export function GalleryImageLarge(
             prevImage()
         }
     }
-
+    const blurDataURL = useMemo(() => item.blurhash ? blurHashToDataURL(item.blurhash) : undefined, [item.blurhash])
     return (
         <div
             className={cn("relative flex-grow flex justify-center items-center overflow-hidden cursor-pointer ",
@@ -251,6 +252,8 @@ export function GalleryImageLarge(
                     src={thumbnailURL}
                     alt={`${item.path}`}
                     fill
+                    placeholder={blurDataURL ? 'blur' : 'empty'}
+                    blurDataURL={blurDataURL}
                     className="object-contain"
                     unoptimized={true}
                 />
@@ -329,6 +332,7 @@ export function HorizontalScrollElement({
         setIndex(ownIndex % nItems)
         setSelected(item)
     }
+    const blurDataURL = useMemo(() => item.blurhash ? blurHashToDataURL(item.blurhash) : undefined, [item.blurhash])
     return (
         <figure
             key={item.file_id}
@@ -342,6 +346,8 @@ export function HorizontalScrollElement({
                     // onClick={() => onClick()}
                     className="w-full h-full object-cover object-top rounded-md cursor-pointer"
                     fill
+                    placeholder={blurDataURL ? 'blur' : 'empty'}
+                    blurDataURL={blurDataURL}
                     unoptimized={true}
                     sizes="200px"
                 />

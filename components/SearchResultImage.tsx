@@ -7,6 +7,7 @@ import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { useSearchParams } from 'next/navigation';
 import { getGalleryOptionsSerializer, useGalleryIndex } from '@/lib/state/gallery';
 import { PinButton } from './gallery/PinButton';
+import { blurHashToDataURL } from '@/lib/state/blurHashDataURL';
 
 export function SearchResultImage({
     result,
@@ -54,7 +55,7 @@ export function SearchResultImage({
             onImageClick(index)
         }
     }, [onImageClick, index])
-
+    const blurDataURL = useMemo(() => result.blurhash ? blurHashToDataURL(result.blurhash) : undefined, [result.blurhash])
     return (
         <div className={cn("border rounded p-2", className)}>
             <div className={cn("overflow-hidden relative w-full pb-full mb-2",
@@ -74,6 +75,8 @@ export function SearchResultImage({
                         src={thumbnailUrl}
                         alt={`Result ${result.path}`}
                         fill
+                        placeholder={blurDataURL ? 'blur' : 'empty'}
+                        blurDataURL={blurDataURL}
                         className={cn(
                             "object-cover object-top",
                             showLoadingSpinner ? "" : "group-hover:object-contain group-hover:object-center",

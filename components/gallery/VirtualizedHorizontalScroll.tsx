@@ -14,6 +14,7 @@ import { useSelectedDBs } from "@/lib/state/database"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { PinButton } from './PinButton'
 import { FindButton } from './FindButton'
+import { blurHashToDataURL } from '@/lib/state/blurHashDataURL'
 
 export function VirtualGalleryHorizontalScroll({
     items,
@@ -103,7 +104,7 @@ function VirtualHorizontalScrollElement({
         setIndex(ownIndex % nItems)
         setSelected(item)
     }
-
+    const blurDataURL = useMemo(() => item.blurhash ? blurHashToDataURL(item.blurhash) : undefined, [item.blurhash])
 
     return (
         <div
@@ -126,6 +127,8 @@ function VirtualHorizontalScrollElement({
                             alt={item.path}
                             className="object-cover object-top rounded-md cursor-pointer"
                             fill
+                            placeholder={blurDataURL ? 'blur' : 'empty'}
+                            blurDataURL={blurDataURL}
                             unoptimized={true}
                             sizes="240px"
                         />
