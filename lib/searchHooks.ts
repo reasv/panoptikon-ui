@@ -76,7 +76,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   useEffect(() => {
     let timer: NodeJS.Timeout
     if (isFetching) {
-      timer = setTimeout(() => setLoading(true), 1000)
+      timer = setTimeout(() => setLoading(true), 400)
     } else {
       setLoading(false)
     }
