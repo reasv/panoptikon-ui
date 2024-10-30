@@ -1,7 +1,7 @@
 import { keepPreviousData } from "@tanstack/react-query"
 import { $api } from "./api"
 import { useSelectedDBs } from "./state/database"
-import { useInstantSearch } from "./state/zust"
+import { useInstantSearch, useSearchLoading } from "./state/zust"
 import { SearchQueryArgs } from "@/app/search/queryFns"
 import {
   useQueryOptions,
@@ -11,6 +11,7 @@ import {
 import { components } from "./panoptikon"
 import { getSearchPageURL } from "./state/searchQuery/serializers"
 import { usePartitionBy } from "./state/partitionBy"
+import { useEffect } from "react"
 
 export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const isClient = typeof window !== "undefined"
@@ -67,6 +68,20 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     await refetch()
     await countQuery.refetch()
   }
+  const [loading, setLoading] = useSearchLoading((state) => [
+    state.loading,
+    state.setLoading,
+  ])
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout
+    if (isFetching) {
+      timer = setTimeout(() => setLoading(true), 1000)
+    } else {
+      setLoading(false)
+    }
+    return () => clearTimeout(timer)
+  }, [isFetching])
 
   const nResults = countQuery.data?.count || 0
   return {

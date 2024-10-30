@@ -32,6 +32,16 @@ export const useBookmarkCustomNs = create<BookmarksCustom>((set) => ({
     set((state) => ({ namespaces: [...state.namespaces, ns] })),
 }))
 
+interface SearchLoading {
+  loading: boolean
+  setLoading: (loading: boolean) => void
+}
+
+export const useSearchLoading = create<SearchLoading>((set) => ({
+  loading: false,
+  setLoading: (loading: boolean) => set({ loading }),
+}))
+
 interface ItemDetailFiltersStateState {
   text_setters: string[]
   text_languages: string[]

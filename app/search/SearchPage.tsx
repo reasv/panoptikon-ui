@@ -1,6 +1,6 @@
 "use client"
 import { PageSelect } from "@/components/pageselect";
-import { useInstantSearch } from "@/lib/state/zust"
+import { useInstantSearch, useSearchLoading } from "@/lib/state/zust"
 import { Toggle } from "@/components/ui/toggle"
 import { Settings, RefreshCw, ScanEye } from "lucide-react"
 import { AnimatedNumber } from "@/components/ui/animatedNumber"
@@ -78,17 +78,6 @@ export function MultiSearchView({ initialQuery, isRestrictedMode }:
     const results = data?.results || []
     const [sidebarOpen, setSideBarOpen] = useSideBarOpen()
 
-    const [delayedFetching, setDelayedFetching] = useState(false)
-
-    useEffect(() => {
-        let timer: NodeJS.Timeout;
-        if (isFetching) {
-            timer = setTimeout(() => setDelayedFetching(true), 1000);
-        } else {
-            setDelayedFetching(false);
-        }
-        return () => clearTimeout(timer);
-    }, [isFetching])
     const [options, setOptions] = useQueryOptions()
     const dbs = useSelectedDBs()[0]
     const scanLink = useMemo(() => {
@@ -113,6 +102,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode }:
         }
     }, [selectedItem])
     const [fs, setFs] = useGalleryFullscreen()
+    const loading = useSearchLoading((state) => state.loading)
     return (
         <>
             <SearchErrorToast noFtsErrors={options.e_iss} isError={isError} error={error} />
@@ -152,7 +142,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode }:
                         results={results}
                         totalCount={nResults}
                         onImageClick={(index) => setIndex(index !== undefined ? index : null)}
-                        isLoading={delayedFetching}
+                        isLoading={loading}
                     />
             }
             {
