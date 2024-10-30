@@ -62,7 +62,7 @@ function getQuery(
 
 async function findFileIndex(
     folder: string,
-    item_id: number,
+    file_id: number,
     page_size: number,
     order_by: orderByType,
     order: OrderArgsType["order"],
@@ -86,7 +86,7 @@ async function findFileIndex(
             ),
         })
         const result = resultQuery.data?.results || []
-        const indexInFolder = result.findIndex((r: { item_id: number }) => r.item_id === item_id)
+        const indexInFolder = result.findIndex((r: { file_id: number }) => r.file_id === file_id)
         console.log("Found index", indexInFolder)
         if (indexInFolder === -1) {
             return [0, 0]
@@ -105,7 +105,7 @@ export function FindButton({
     path,
 }: {
     id: number | string,
-    id_type: "item_id" | "sha256",
+    id_type: "file_id" | "sha256",
     path: string
 }) {
     const { toast } = useToast()
@@ -117,7 +117,7 @@ export function FindButton({
     const dbs = useSelectedDBs()[0]
     const handleFindClick = async () => {
         let file_path = path
-        let item_id: number = 0
+        let file_id: number = 0
         if (id_type === "sha256" || file_path === "") {
             const itemData = await fetchClient.GET("/api/items/item", {
                 params: {
@@ -128,18 +128,21 @@ export function FindButton({
                     }
                 }
             })
-            if (!itemData.data) {
+            if (!itemData.data || itemData.data!.files.length === 0) {
                 return
             }
-            item_id = itemData.data!.item.id
             if (file_path === "") {
-                if (itemData.data!.files.length === 0) {
+                file_path = itemData.data!.files[0].path
+                file_id = itemData.data!.files[0].id
+            } else {
+                const file = itemData.data!.files.find((f) => f.path === file_path)
+                if (!file) {
                     return
                 }
-                file_path = itemData.data!.files[0].path
+                file_id = file.id
             }
         } else {
-            item_id = id as number
+            file_id = id as number
         }
         const folder = getFolderFromPath(file_path)
         if (!folder) {
@@ -157,7 +160,7 @@ export function FindButton({
 
         const [page, index] = await findFileIndex(
             folder,
-            item_id,
+            file_id,
             page_size,
             order_by as orderByType,
             order,
