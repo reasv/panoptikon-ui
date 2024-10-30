@@ -15,6 +15,7 @@ import { useItemSelection } from "@/lib/state/itemSelection"
 import { PinButton } from './PinButton'
 import { FindButton } from './FindButton'
 import { blurHashToDataURL } from '@/lib/state/blurHashDataURL'
+import { useSearchLoading } from '@/lib/state/zust'
 
 export function VirtualGalleryHorizontalScroll({
     items,
@@ -105,7 +106,7 @@ function VirtualHorizontalScrollElement({
         setSelected(item)
     }
     const blurDataURL = useMemo(() => item.blurhash ? blurHashToDataURL(item.blurhash) : undefined, [item.blurhash])
-
+    const searchLoading = useSearchLoading(state => state.loading)
     return (
         <div
             style={{
@@ -134,6 +135,16 @@ function VirtualHorizontalScrollElement({
                         />
                     </div>
                 </Link>
+                {searchLoading && (
+                    <div className="absolute inset-0 z-10 flex items-center rounded-md justify-center bg-white bg-opacity-50">
+                        <Image
+                            src="/spinner.svg"
+                            alt="Loading..."
+                            width={110}
+                            height={110}
+                        />
+                    </div>
+                )}
                 <BookmarkBtn sha256={item.sha256} />
                 <PinButton sha256={item.sha256} />
                 <FindButton

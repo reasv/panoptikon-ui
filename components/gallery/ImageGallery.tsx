@@ -21,6 +21,7 @@ import { PinBoard } from './GalleryPinBoard'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { FindButton } from './FindButton'
 import { blurHashToDataURL } from '@/lib/state/blurHashDataURL'
+import { useSearchLoading } from '@/lib/state/zust'
 
 function getNextIndex(length: number, index?: number | null,) {
     return ((index || 0) + 1) % length
@@ -234,6 +235,7 @@ export function GalleryImageLarge(
         }
     }
     const blurDataURL = useMemo(() => item.blurhash ? blurHashToDataURL(item.blurhash) : undefined, [item.blurhash])
+    const searchLoading = useSearchLoading(state => state.loading)
     return (
         <div
             className={cn("relative flex-grow flex justify-center items-center overflow-hidden cursor-pointer ",
@@ -257,6 +259,16 @@ export function GalleryImageLarge(
                     className="object-contain"
                     unoptimized={true}
                 />
+                {searchLoading && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center ">
+                        <Image
+                            src="/spinner.svg"
+                            alt="Loading..."
+                            width={250}
+                            height={250}
+                        />
+                    </div>
+                )}
             </a>
         </div>
     )
@@ -333,6 +345,7 @@ export function HorizontalScrollElement({
         setSelected(item)
     }
     const blurDataURL = useMemo(() => item.blurhash ? blurHashToDataURL(item.blurhash) : undefined, [item.blurhash])
+    const searchLoading = useSearchLoading(state => state.loading)
     return (
         <figure
             key={item.file_id}
@@ -352,6 +365,16 @@ export function HorizontalScrollElement({
                     sizes="200px"
                 />
             </Link>
+            {searchLoading && (
+                <div className="absolute inset-0 z-10 flex items-center rounded-md justify-center bg-white bg-opacity-50">
+                    <Image
+                        src="/spinner.svg"
+                        alt="Loading..."
+                        width={110}
+                        height={110}
+                    />
+                </div>
+            )}
             <BookmarkBtn sha256={item.sha256} />
             <PinButton sha256={item.sha256} />
             <FindButton
