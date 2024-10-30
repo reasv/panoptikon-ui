@@ -11,4 +11,5 @@ interface SearchResult {
   type: string
   width?: number | null
   height?: number | null
+  blurhash?: string
 }
