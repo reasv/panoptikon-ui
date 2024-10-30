@@ -392,7 +392,7 @@ export function queryFromState(
     page_size: state.OrderArgs.page_size,
     count: true,
     results: true,
-    check_path: true,
+    check_path: false,
   }
   return [query, { actual_order_by, available_filter_orders, force_order_by }]
 }
@@ -483,7 +483,7 @@ export function sbSimilarityQueryFromState(state: SimilaritySideBarComponents) {
     entity: "file",
     count: false,
     results: true,
-    check_path: true,
+    check_path: false,
   }
   const clip: (
     target: string,

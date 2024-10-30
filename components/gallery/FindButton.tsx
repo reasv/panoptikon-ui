@@ -82,7 +82,7 @@ async function findFileIndex(
                 order_by,
                 order,
                 false,
-                true,
+                false,
             ),
         })
         const result = resultQuery.data?.results || []
