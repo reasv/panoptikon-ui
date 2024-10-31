@@ -44,8 +44,14 @@ export function VirtualGalleryHorizontalScroll({
     }, [items, items.length, qIndex, virtualizer])
 
     return (
-        <ScrollAreaPrimitive.Root onWheel={onWheel} className="relative overflow-hidden w-full whitespace-nowrap rounded-md border">
-            <ScrollAreaPrimitive.Viewport ref={parentRef} className="h-full w-full rounded-[inherit]">
+        <ScrollAreaPrimitive.Root
+            onWheel={onWheel}
+            className="relative overflow-hidden w-full whitespace-nowrap rounded-md border"
+        >
+            <ScrollAreaPrimitive.Viewport
+                ref={parentRef}
+                className="h-full w-full rounded-[inherit]"
+            >
                 <div
                     className="flex h-[22rem]"
                     style={{
