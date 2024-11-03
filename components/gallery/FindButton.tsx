@@ -169,6 +169,17 @@ export function FindButton({
             order,
             dbs
         )
+        navigate(folder, page, index, order_by as orderByType, order, page_size)
+    }
+
+    const navigate = (
+        folder: string,
+        page: number,
+        index: number,
+        order_by: orderByType,
+        order: OrderArgsType["order"],
+        page_size: number,
+    ) => {
         console.log(`Navigating to folder ${folder}, page ${page}, index ${index}`)
         // Unset all search query parameters
         resetSearch()
