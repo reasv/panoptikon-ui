@@ -100,6 +100,14 @@ async function findFileIndex(
     }
     return [0, 0]
 }
+interface NavigationData {
+    folder: string
+    page: number
+    index: number
+    order_by: orderByType
+    order: OrderArgsType["order"]
+    page_size: number
+}
 export function FindButton({
     id,
     id_type,
@@ -118,7 +126,7 @@ export function FindButton({
     const [options, setOptions] = useQueryOptions()
     const [filter, setFilter] = useFileFilters()
     const dbs = useSelectedDBs()[0]
-    const handleFindClick = async () => {
+    const getNavigationData = async () => {
         let file_path = path
         let file_id: number = 0
         if (id_type === "sha256" || file_path === "") {
@@ -169,16 +177,17 @@ export function FindButton({
             order,
             dbs
         )
-        navigate(folder, page, index, order_by as orderByType, order, page_size)
+        return { folder, page, index, order_by, order, page_size } as NavigationData
     }
 
-    const navigate = (
-        folder: string,
-        page: number,
-        index: number,
-        order_by: orderByType,
-        order: OrderArgsType["order"],
-        page_size: number,
+    const navigate = ({
+        folder,
+        page,
+        index,
+        order_by,
+        order,
+        page_size,
+    }: NavigationData
     ) => {
         console.log(`Navigating to folder ${folder}, page ${page}, index ${index}`)
         // Unset all search query parameters
@@ -203,6 +212,19 @@ export function FindButton({
             description: `${folder}`,
         })
     }
+    const handleFindClick = async () => {
+        const data = await getNavigationData()
+        if (!data) {
+            toast({
+                title: "Error",
+                description: "Could not navigate to this file's folder",
+                variant: "destructive",
+            })
+            return
+        }
+        navigate(data)
+    }
+
     return buttonVariant ?
         <Button
             title="Navigate to this image's folder in Panoptikon"
