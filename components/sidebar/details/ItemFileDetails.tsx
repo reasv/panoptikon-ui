@@ -5,6 +5,7 @@ import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons";
 import { getFileURL, getLocale, prettyPrintBytes, prettyPrintVideoDuration } from "@/lib/utils";
 import { useSelectedDBs } from "@/lib/state/database";
+import { FindButton } from "@/components/gallery/FindButton";
 
 export function ItemFileDetails({
     item,
@@ -76,6 +77,7 @@ function ItemFileDetailsInternal({
                     <SingleFileItem
                         key={file.path}
                         item={item}
+                        file_id={file.id}
                         path={file.path}
                     />
                 ))}
@@ -86,9 +88,11 @@ function ItemFileDetailsInternal({
 
 function SingleFileItem({
     item,
+    file_id,
     path,
 }: {
     item: SearchResult,
+    file_id: number,
     path: string
 }) {
     return (
@@ -100,6 +104,12 @@ function SingleFileItem({
                 <div className="flex flex-row space-x-2">
                     <OpenFile sha256={item.sha256} path={path} buttonVariant />
                     <OpenFolder sha256={item.sha256} path={path} buttonVariant />
+                    <FindButton
+                        id={file_id}
+                        id_type="file_id"
+                        path={path}
+                        buttonVariant
+                    />
                 </div>
             </div>
         </div>

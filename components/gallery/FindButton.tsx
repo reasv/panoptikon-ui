@@ -9,6 +9,7 @@ import { useSelectedDBs } from '@/lib/state/database'
 import { $api, fetchClient } from '@/lib/api'
 import { components } from '@/lib/panoptikon'
 import { OrderArgsType, orderByType } from '@/lib/state/searchQuery/searchQueryKeyMaps'
+import { Button } from '../ui/button'
 
 function getFolderFromPath(fullPath: string): string {
     // Find the last occurrence of a separator, either '/' or '\'
@@ -103,10 +104,12 @@ export function FindButton({
     id,
     id_type,
     path,
+    buttonVariant,
 }: {
     id: number | string,
     id_type: "file_id" | "sha256",
-    path: string
+    path: string,
+    buttonVariant?: boolean
 }) {
     const { toast } = useToast()
     const setIndex = useGalleryIndex()[1]
@@ -189,11 +192,22 @@ export function FindButton({
             description: `${folder}`,
         })
     }
-    return <button
-        title={"Navigate to this image's folder in Panoptikon"}
-        className={"hover:scale-105 absolute bottom-2 left-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"}
-        onClick={handleFindClick}
-    >
-        <FolderSearch className="w-6 h-6 text-gray-800" />
-    </button>
+    return buttonVariant ?
+        <Button
+            title="Navigate to this image's folder in Panoptikon"
+            onClick={handleFindClick}
+            variant="ghost"
+            size="icon"
+        >
+            <FolderSearch
+                className="w-4 h-4"
+            />
+        </Button>
+        : <button
+            title={"Navigate to this image's folder in Panoptikon"}
+            className={"hover:scale-105 absolute bottom-2 left-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"}
+            onClick={handleFindClick}
+        >
+            <FolderSearch className="w-6 h-6 text-gray-800" />
+        </button>
 }
