@@ -1,15 +1,17 @@
 'use client'
 
-import React from 'react'
+import React, { useEffect } from 'react'
 import { FolderSearch } from 'lucide-react'
 import { useToast } from '../ui/use-toast'
-import { useGalleryIndex } from '@/lib/state/gallery'
+import { getGalleryOptionsSerializer, useGalleryIndex } from '@/lib/state/gallery'
 import { useFileFilters, useOrderArgs, useQueryOptions, useResetSearchQueryState } from '@/lib/state/searchQuery/clientHooks'
-import { useSelectedDBs } from '@/lib/state/database'
+import { selectedDBsSerializer, useSelectedDBs } from '@/lib/state/database'
 import { $api, fetchClient } from '@/lib/api'
 import { components } from '@/lib/panoptikon'
 import { OrderArgsType, orderByType } from '@/lib/state/searchQuery/searchQueryKeyMaps'
 import { Button } from '../ui/button'
+import { partitionBySerializer, usePartitionBy } from '@/lib/state/partitionBy'
+import { serializers } from '@/lib/state/searchQuery/serializers'
 
 function getFolderFromPath(fullPath: string): string {
     // Find the last occurrence of a separator, either '/' or '\'
@@ -127,6 +129,7 @@ export function FindButton({
     const [filter, setFilter] = useFileFilters()
     const dbs = useSelectedDBs()[0]
     const getNavigationData = async () => {
+        console.log("Getting navigation data")
         let file_path = path
         let file_id: number = 0
         if (id_type === "sha256" || file_path === "") {
@@ -179,6 +182,36 @@ export function FindButton({
         )
         return { folder, page, index, order_by, order, page_size } as NavigationData
     }
+    const [partitionBy] = usePartitionBy()
+
+    const buildLink = ({
+        folder,
+        page,
+        index,
+        order_by,
+        order,
+        page_size,
+    }: NavigationData) => {
+        let fullURL = selectedDBsSerializer({
+            index_db: dbs.index_db,
+            user_data_db: dbs.user_data_db,
+        })
+        fullURL = partitionBySerializer(fullURL, {
+            partition_by: partitionBy.partition_by
+        })
+        fullURL = serializers.orderArgs(fullURL, {
+            order,
+            order_by,
+            page,
+            page_size,
+        })
+        fullURL = serializers.queryOptions(fullURL, { e_path: true })
+        fullURL = serializers.fileFilters(fullURL, {
+            paths: [folder],
+        })
+        fullURL = getGalleryOptionsSerializer()(fullURL, { gi: index })
+        return fullURL
+    }
 
     const navigate = ({
         folder,
@@ -224,11 +257,61 @@ export function FindButton({
         }
         navigate(data)
     }
+    const [link, setLink] = React.useState<string | null>(null)
+    // Reset the link when the id or path changes
+    useEffect(() => {
+        setLink(null)
+    }, [id, id_type, path])
 
+    const handleHover = async () => {
+        const data = await getNavigationData()
+        if (!data) {
+            toast({
+                title: "Error",
+                description: "Could not navigate to this file's folder",
+                variant: "destructive",
+            })
+            return
+        }
+        const link = buildLink(data)
+        setLink(link)
+    }
+    return (
+        link ? <a
+            href={link}
+            target="_blank"
+            onClick={(e) => {
+                e.preventDefault()
+                handleFindClick()
+            }} >
+            <ButtonElement
+                buttonVariant={buttonVariant}
+                handleClick={handleFindClick}
+                handleHover={() => { }}
+            />
+        </a> :
+            <ButtonElement
+                buttonVariant={buttonVariant}
+                handleClick={handleFindClick}
+                handleHover={handleHover}
+            />
+    )
+}
+
+function ButtonElement({
+    buttonVariant,
+    handleClick,
+    handleHover,
+}: {
+    buttonVariant?: boolean,
+    handleClick: () => void,
+    handleHover: () => void
+}) {
     return buttonVariant ?
         <Button
             title="Navigate to this image's folder in Panoptikon"
-            onClick={handleFindClick}
+            onClick={handleClick}
+            onMouseEnter={handleHover}
             variant="ghost"
             size="icon"
         >
@@ -239,7 +322,8 @@ export function FindButton({
         : <button
             title={"Navigate to this image's folder in Panoptikon"}
             className={"hover:scale-105 absolute bottom-2 left-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"}
-            onClick={handleFindClick}
+            onClick={handleClick}
+            onMouseEnter={handleHover}
         >
             <FolderSearch className="w-6 h-6 text-gray-800" />
         </button>
