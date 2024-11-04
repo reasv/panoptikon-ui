@@ -10,7 +10,13 @@ import "react-resizable/css/styles.css"
 import { ScrollArea } from '../ui/scroll-area'
 import { SelectButton } from './SelectButton'
 import { FindButton } from './FindButton'
-
+import {
+    ContextMenu,
+    ContextMenuContent,
+    ContextMenuItem,
+    ContextMenuTrigger,
+} from "@/components/ui/context-menu"
+import { PinBoardCtx } from './PinBoardContextMenu'
 const ResponsiveGridLayout = WidthProvider(Responsive)
 
 export function PinBoard(
@@ -36,8 +42,9 @@ export function PinBoard(
             })
             pinned.push([
                 sha256,
+
+                getFileURL(dbs, "thumbnail", "sha256", sha256),
                 getFileURL(dbs, "file", "sha256", sha256),
-                getFileURL(dbs, "thumbnail", "sha256", sha256)
             ])
         }
         return [newLayout, pinned]
@@ -75,15 +82,25 @@ export function PinBoard(
                         const key = sha256 // Unique key for react-grid-layout
                         return (
                             <div key={key} className="relative bg-gray-800 border rounded shadow group">
-                                <div className="drag-handle cursor-move absolute top-0 left-0 w-full h-full">
-                                    <Image
-                                        src={thumbnail}
-                                        alt={`Sha256 Hash ${sha256}`}
-                                        fill
-                                        className="rounded object-contain"
-                                        unoptimized={true}
+                                <ContextMenu>
+                                    <ContextMenuTrigger>
+                                        <div className="drag-handle cursor-move absolute top-0 left-0 w-full h-full">
+                                            <Image
+                                                src={thumbnail}
+                                                alt={`Sha256 Hash ${sha256}`}
+                                                fill
+                                                className="rounded object-contain"
+                                                unoptimized={true}
+                                            />
+                                        </div>
+                                    </ContextMenuTrigger>
+                                    <PinBoardCtx
+                                        sha256={sha256}
+                                        file_url={file}
+                                        onLayoutChange={onLayoutChange}
+                                        layout={layout}
                                     />
-                                </div>
+                                </ContextMenu>
                                 <PinButton sha256={sha256} hidePins={true} />
                                 <SelectButton sha256={sha256} />
                                 <FindButton
