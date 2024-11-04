@@ -88,6 +88,8 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     data: {
       results: (data?.results as SearchResult[]) || [],
       count: nResults,
+      result_metrics: data?.result_metrics || undefined,
+      count_metrics: countQuery.data?.count_metrics || undefined,
     },
     error,
     isError,

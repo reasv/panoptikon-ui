@@ -1132,6 +1132,8 @@ export interface components {
             count: number;
             /** Results */
             results: components["schemas"]["SearchResult"][];
+            count_metrics: components["schemas"]["SearchMetrics"];
+            result_metrics: components["schemas"]["SearchMetrics"];
         };
         /** FileSearchResult */
         FileSearchResult: {
@@ -2290,6 +2292,27 @@ export interface components {
             count: number;
             /** Results */
             results: components["schemas"]["FileSearchResult"][];
+        };
+        /** SearchMetrics */
+        SearchMetrics: {
+            /**
+             * Build time
+             * @description Time taken to process the query into an SQLAlchemy Core statement
+             * @default 0
+             */
+            build: number;
+            /**
+             * Compile time
+             * @description Time taken to compile the SQLAlchemy Core statement into an SQL string
+             * @default 0
+             */
+            compile: number;
+            /**
+             * Execution time
+             * @description Time taken to execute the SQL query
+             * @default 0
+             */
+            execute: number;
         };
         /** SearchResult */
         SearchResult: {

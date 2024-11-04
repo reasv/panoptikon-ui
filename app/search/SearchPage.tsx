@@ -28,6 +28,7 @@ import { ScanDrawer } from "@/components/scan/ScanDrawer"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import * as ScrollAreaPrimitive from '@radix-ui/react-scroll-area'
 import { useVirtualizer } from "@tanstack/react-virtual"
+import { components } from "@/lib/panoptikon"
 
 export function SearchPageContent({ initialQuery, isRestrictedMode }:
     { initialQuery: SearchQueryArgs, isRestrictedMode: boolean }) {
@@ -144,6 +145,8 @@ export function MultiSearchView({ initialQuery, isRestrictedMode }:
                     <ResultGrid
                         results={results}
                         totalCount={nResults}
+                        resultMetrics={data?.result_metrics}
+                        countMetrics={data?.count_metrics}
                         onImageClick={(index) => setIndex(index !== undefined ? index : null)}
                         isLoading={loading}
                     />
@@ -175,21 +178,26 @@ export function MultiSearchView({ initialQuery, isRestrictedMode }:
 export function ResultGrid({
     results,
     totalCount,
+    resultMetrics,
+    countMetrics,
     onImageClick,
     isLoading,
 }: {
     results: SearchResult[],
+    resultMetrics?: components["schemas"]["SearchMetrics"],
+    countMetrics?: components["schemas"]["SearchMetrics"],
     totalCount: number,
     onImageClick?: (index?: number) => void,
     isLoading?: boolean,
 }) {
     const [dbs, __] = useSelectedDBs()
     const [sidebarOpen, _] = useSideBarOpen()
-
+    const executionSummary = `Results: ${resultMetrics?.execute} DB, ${resultMetrics?.build} Build, ${resultMetrics?.compile} Compile`
+        + `\nCount: ${countMetrics?.execute} DB, ${countMetrics?.build} Build, ${countMetrics?.compile} Compile`
     return (
         <div className="border rounded p-2">
             <h2 className="text-xl font-bold p-4 flex items-center justify-left">
-                <span><AnimatedNumber value={totalCount} /> {totalCount === 1 ? "Result" : "Results"}</span>
+                <span title={executionSummary}><AnimatedNumber value={totalCount} /> {totalCount === 1 ? "Result" : "Results"} in {resultMetrics?.execute}s</span>
             </h2>
             <ScrollArea className="overflow-y-auto">
                 <div className={cn('grid gap-4 max-h-[calc(100vh-225px)] grid-cols-1 md:grid-cols-2',
