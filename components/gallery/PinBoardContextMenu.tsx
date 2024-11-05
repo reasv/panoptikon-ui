@@ -180,7 +180,7 @@ function buildRowLayout(
                 x: currentX,
                 y: currentY,
                 w: columnCounts[i],
-                h: Math.round(columnCounts[i] * item.height / item.width),
+                h: findOptimalHeight(columnCounts[i], rowHeight, columnWidth, item.width, item.height),
             })
             currentX += columnCounts[i]
         }
@@ -189,4 +189,29 @@ function buildRowLayout(
         layout.push(...layoutRow)
     }
     return layout
+}
+
+function findOptimalHeight(
+    w: number,
+    rowHeight: number,
+    columnWidth: number,
+    itemWidth: number,
+    itemHeight: number,
+) {
+    const h = Math.round(w * itemHeight / itemWidth)
+    const realWidth = w * columnWidth
+    const itemAspectRatio = itemWidth / itemHeight
+    let smallestAspectRatioDifference = Infinity
+    let bestHeight = h
+    for (let i = -3; i < 3; i++) {
+        const newHeight = h + i
+        const realHeight = newHeight * rowHeight // Try different heights
+        const realAspectRatio = realWidth / realHeight
+        const aspectRatioDifference = Math.abs(realAspectRatio - itemAspectRatio)
+        if (aspectRatioDifference < smallestAspectRatioDifference) {
+            smallestAspectRatioDifference = aspectRatioDifference
+            bestHeight = newHeight
+        }
+    }
+    return bestHeight
 }
