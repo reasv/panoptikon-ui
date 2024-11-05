@@ -27,7 +27,7 @@ export function PinButton({
             newLayout.splice(index * 5, 5)
             setSavedLayout(newLayout)
         } else {
-            setSavedLayout([...savedLayout, sha256.slice(0, prefixLength), "0", "0", "1", "1"])
+            setSavedLayout([...savedLayout, sha256.slice(0, prefixLength), "0", "0", "2", "2"])
         }
     }
     return <button
