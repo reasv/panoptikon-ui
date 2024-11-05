@@ -105,6 +105,7 @@ export function PinBoard(
                                         pinboardRef={scrollAreaRef}
                                         columns={columns}
                                         rowHeight={rowHeight}
+                                        dbs={dbs}
                                     />
                                 </ContextMenu>
                                 <PinButton sha256={sha256} hidePins={true} />
