@@ -59,8 +59,8 @@ export function PinBoard(
     }
     const [fs, setFs] = useGalleryFullscreen()
     const scrollAreaRef = useRef<HTMLDivElement>(null);
-    const columns = 24
-    const rowHeight = 100
+    const columns = 36
+    const rowHeight = 50
     return (
         <ScrollArea ref={scrollAreaRef} className="overflow-y-auto">
             <div
