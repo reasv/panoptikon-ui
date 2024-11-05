@@ -144,6 +144,7 @@ async function getLayoutBuildData(
 }
 
 function sortLayout(layout: ReactGridLayout.Layout[]): ReactGridLayout.Layout[] {
+    console.log("Sorting layout")
     // Copy and sort layout by `y` coordinate
     const heightSorted = [...layout].sort((a, b) => a.y - b.y);
     const sortedLayout: ReactGridLayout.Layout[] = [];
@@ -158,7 +159,7 @@ function sortLayout(layout: ReactGridLayout.Layout[]): ReactGridLayout.Layout[] 
         let i = startIdx;
         for (; i < heightSorted.length; i++) {
             const item = heightSorted[i];
-            if (item.y >= centerY) break;
+            if (item.y > centerY) break;
             currentRow.push(item);
         }
 
@@ -167,7 +168,7 @@ function sortLayout(layout: ReactGridLayout.Layout[]): ReactGridLayout.Layout[] 
         sortedLayout.push(...currentRow);
         startIdx = i;
     }
-
+    console.log("Sorted layout")
     return sortedLayout;
 }
 
