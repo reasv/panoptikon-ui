@@ -1,7 +1,6 @@
-import { $api, fetchClient } from "@/lib/api";
+import { fetchClient } from "@/lib/api";
 import { ContextMenuContent, ContextMenuItem } from "../ui/context-menu";
 import { components } from "@/lib/panoptikon";
-import build from "next/dist/build";
 import { useEffect, useRef } from "react";
 
 export function PinBoardCtx({
@@ -48,10 +47,32 @@ export function PinBoardCtx({
         const itemsPerRow = Math.ceil(layout.length / rows)
         changeLayout(itemsPerRow, true)
     }
+    async function changeItemSize(increase: number) {
+        if (!layoutBuildData.current) {
+            const buildData = await getLayoutBuildData({ layout, dbs, columns, rowHeight, pinboardRef })
+            layoutBuildData.current = buildData
+        }
+        const buildData = layoutBuildData.current
+        const newLayout = layout.map(l => {
+            if (l.i === sha256) {
+                return {
+                    ...l,
+                    w: l.w + increase,
+                    h: findOptimalHeight(l.w + increase, rowHeight, buildData.columnWidth, buildData.metadata[l.i]?.item.width || 1, buildData.metadata[l.i]?.item.height || 1),
+                }
+            }
+            return l
+        })
+        onLayoutChange(newLayout)
+    }
 
     return (
         <ContextMenuContent>
             <ContextMenuItem onClick={() => openURL()}>Open in New Tab</ContextMenuItem>
+            <ContextMenuItem onClick={() => changeItemSize(1)}>+1 Size</ContextMenuItem>
+            <ContextMenuItem onClick={() => changeItemSize(-1)}>-1 Size</ContextMenuItem>
+            <ContextMenuItem onClick={() => changeItemSize(4)}>+4 Size</ContextMenuItem>
+            <ContextMenuItem onClick={() => changeItemSize(-4)}>-4 Size</ContextMenuItem>
             <ContextMenuItem onClick={() => changeLayout(3)}>Layout 3 Items/Row</ContextMenuItem>
             <ContextMenuItem onClick={() => changeLayout(4)}>Layout 4 Items/Row</ContextMenuItem>
             <ContextMenuItem onClick={() => changeLayout(5)}>Layout 5 Items/Row</ContextMenuItem>
