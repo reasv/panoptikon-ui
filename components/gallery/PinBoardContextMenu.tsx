@@ -34,14 +34,19 @@ export function PinBoardCtx({
         layoutBuildData.current = null
     }, [layout, dbs, columns, rowHeight])
 
-    async function changeLayout(itemsPerRow: number) {
+    async function changeLayout(itemsPerRow: number, restrictToVisible = false) {
         if (!layoutBuildData.current) {
             const buildData = await getLayoutBuildData({ layout, dbs, columns, rowHeight, pinboardRef })
             layoutBuildData.current = buildData
         }
         const buildData = layoutBuildData.current
-        const newLayout = buildLayout(buildData, itemsPerRow)
+        const newLayout = buildLayout(buildData, itemsPerRow, restrictToVisible)
         onLayoutChange(newLayout)
+    }
+
+    function layoutFixedRows(rows: number) {
+        const itemsPerRow = Math.ceil(layout.length / rows)
+        changeLayout(itemsPerRow, true)
     }
 
     return (
@@ -51,6 +56,10 @@ export function PinBoardCtx({
             <ContextMenuItem onClick={() => changeLayout(4)}>Layout 4 Items/Row</ContextMenuItem>
             <ContextMenuItem onClick={() => changeLayout(5)}>Layout 5 Items/Row</ContextMenuItem>
             <ContextMenuItem onClick={() => changeLayout(6)}>Layout 6 Items/Row</ContextMenuItem>
+            <ContextMenuItem onClick={() => layoutFixedRows(1)}>Layout 1 Row</ContextMenuItem>
+            <ContextMenuItem onClick={() => layoutFixedRows(2)}>Layout 2 Rows</ContextMenuItem>
+            <ContextMenuItem onClick={() => layoutFixedRows(3)}>Layout 3 Rows</ContextMenuItem>
+            <ContextMenuItem onClick={() => layoutFixedRows(4)}>Layout 4 Rows</ContextMenuItem>
         </ContextMenuContent>
     )
 }
@@ -119,7 +128,7 @@ async function getLayoutBuildData(
     return { metadata, columnWidth, rowHeight, columns, visibleRows, sortedLayout }
 }
 
-function buildLayout(buildData: LayoutBuildData, itemsPerRow: number): ReactGridLayout.Layout[] {
+function buildLayout(buildData: LayoutBuildData, itemsPerRow: number, restrictToVisible: boolean): ReactGridLayout.Layout[] {
     return buildRowLayout(
         itemsPerRow,
         buildData.sortedLayout.map(l => ({
@@ -131,6 +140,7 @@ function buildLayout(buildData: LayoutBuildData, itemsPerRow: number): ReactGrid
         buildData.columnWidth,
         buildData.columns,
         buildData.visibleRows,
+        restrictToVisible,
     )
 }
 
@@ -141,6 +151,7 @@ function buildRowLayout(
     columnWidth: number,
     columns: number,
     visibleRows: number,
+    restrictToVisible = false,
 ): ReactGridLayout.Layout[] {
     // Split the items into rows
     const rows: { sha256: string, width: number, height: number }[][] = []
@@ -155,6 +166,8 @@ function buildRowLayout(
     }
     // Add the last row
     rows.push(currentRow)
+    // Max height per row for all rows to fit in the visible area
+    let heightPerRow = Math.round(visibleRows / rows.length)
     // Split the rows into columns, giving proportionally more columns to items with a higher width to height ratio
     // The total width of the row and the actual widths of the items are not taken into account
     const layout: ReactGridLayout.Layout[] = []
@@ -175,12 +188,16 @@ function buildRowLayout(
         const layoutRow: ReactGridLayout.Layout[] = []
         for (let i = 0; i < row.length; i++) {
             const item = row[i]
+            let h = findOptimalHeight(columnCounts[i], rowHeight, columnWidth, item.width, item.height)
+            if (restrictToVisible) {
+                h = Math.min(h, heightPerRow)
+            }
             layoutRow.push({
                 i: item.sha256,
                 x: currentX,
                 y: currentY,
                 w: columnCounts[i],
-                h: findOptimalHeight(columnCounts[i], rowHeight, columnWidth, item.width, item.height),
+                h,
             })
             currentX += columnCounts[i]
         }
