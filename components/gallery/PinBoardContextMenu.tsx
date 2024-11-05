@@ -118,14 +118,36 @@ async function getLayoutBuildData(
     const metadata = await fetchMetadata(sha256s, dbs)
     const columnWidth = pinboardRef.current?.clientWidth ? pinboardRef.current.clientWidth / columns : 1
     const visibleRows = Math.ceil(pinboardRef.current?.clientHeight ? pinboardRef.current.clientHeight / rowHeight : 1)
-    // Sorting the layout by y value then x value, so that the layout is built from top to bottom, left to right
-    const sortedLayout = layout.sort((a, b) => {
-        if (a.y === b.y) {
-            return a.x - b.x
-        }
-        return a.y - b.y
-    })
+    const sortedLayout = sortLayout(layout)
     return { metadata, columnWidth, rowHeight, columns, visibleRows, sortedLayout }
+}
+
+function sortLayout(layout: ReactGridLayout.Layout[]): ReactGridLayout.Layout[] {
+    // Copy and sort layout by `y` coordinate
+    const heightSorted = [...layout].sort((a, b) => a.y - b.y);
+    const sortedLayout: ReactGridLayout.Layout[] = [];
+    let startIdx = 0;
+
+    while (sortedLayout.length < layout.length) {
+        const lowestYItem = heightSorted[startIdx];
+        const centerY = lowestYItem.y + Math.floor(lowestYItem.h / 2);
+        const currentRow: ReactGridLayout.Layout[] = [];
+
+        // Collect items that are within the same logical row
+        let i = startIdx;
+        for (; i < heightSorted.length; i++) {
+            const item = heightSorted[i];
+            if (item.y >= centerY) break;
+            currentRow.push(item);
+        }
+
+        // Sort items in the current row by `x` coordinate
+        currentRow.sort((a, b) => a.x - b.x);
+        sortedLayout.push(...currentRow);
+        startIdx = i;
+    }
+
+    return sortedLayout;
 }
 
 function buildLayout(buildData: LayoutBuildData, itemsPerRow: number, restrictToVisible: boolean): ReactGridLayout.Layout[] {
