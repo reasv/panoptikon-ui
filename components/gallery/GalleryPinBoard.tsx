@@ -3,7 +3,7 @@ import { cn, getFileURL } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useGalleryFullscreen, useGalleryPinBoardLayout } from '@/lib/state/gallery'
 import { PinButton } from './PinButton'
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import ReactGridLayout, { Responsive, WidthProvider } from "react-grid-layout"
 import "react-grid-layout/css/styles.css"
 import "react-resizable/css/styles.css"
@@ -58,8 +58,11 @@ export function PinBoard(
         setSavedLayout(flattenedLayout)
     }
     const [fs, setFs] = useGalleryFullscreen()
+    const scrollAreaRef = useRef<HTMLDivElement>(null);
+    const columns = 24
+    const rowHeight = 100
     return (
-        <ScrollArea className="overflow-y-auto">
+        <ScrollArea ref={scrollAreaRef} className="overflow-y-auto">
             <div
                 className={cn("relative flex-grow",
                     thumbnailsOpen ? "h-[calc(100vh-570px)]" : "h-[calc(100vh-215px)]", fs ? "h-[97vh]" : ""
@@ -69,8 +72,8 @@ export function PinBoard(
                     className="layout"
                     layouts={{ lg: layout }}
                     breakpoints={{ lg: 0, }}
-                    cols={{ lg: 24, }}
-                    rowHeight={100}
+                    cols={{ lg: columns, }}
+                    rowHeight={rowHeight}
                     onLayoutChange={(currentLayout) => onLayoutChange(currentLayout)}
                     draggableHandle=".drag-handle"
                     isResizable={true}
@@ -99,6 +102,9 @@ export function PinBoard(
                                         file_url={file}
                                         onLayoutChange={onLayoutChange}
                                         layout={layout}
+                                        pinboardRef={scrollAreaRef}
+                                        columns={columns}
+                                        rowHeight={rowHeight}
                                     />
                                 </ContextMenu>
                                 <PinButton sha256={sha256} hidePins={true} />
