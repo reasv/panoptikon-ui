@@ -5,10 +5,12 @@ import { components } from '@/lib/panoptikon'
 
 export function PlayButton({
     isPlaying,
+    isShown,
     setPlaying,
     stopVideo,
 }: {
     isPlaying: boolean,
+    isShown: boolean,
     setPlaying: (isPlaying: boolean) => void
     stopVideo: () => void
 }) {
@@ -26,12 +28,12 @@ export function PlayButton({
                 <Play className="w-6 h-6 text-gray-800 fill-gray-800" />
             }
         </button>
-        <button
+        {isShown && <button
             title={"Stop Video"}
-            className={"hover:scale-105 absolute bottom-2 right-14 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"}
+            className={"hover:scale-105 absolute bottom-14 right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"}
             onClick={() => stopVideo()}
         >
             <Square className="w-6 h-6 text-gray-800 fill-gray-800" />
-        </button>
+        </button>}
     </>
 }

@@ -160,6 +160,7 @@ function PinBoardPin({
     }
     const stopVideo = () => {
         setShowVideo(false)
+        setVideoIsPlaying(false)
     }
     return (
         <>
@@ -203,6 +204,7 @@ function PinBoardPin({
                 files={data?.files}
             />
             {isPlayable && <PlayButton
+                isShown={showVideo}
                 isPlaying={showVideo && videoIsPlaying}
                 setPlaying={setPlaying}
                 stopVideo={stopVideo}
