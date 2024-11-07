@@ -140,6 +140,7 @@ function PinBoardPin({
     const isPlayable = data?.item?.type === "video/mp4" || data?.item?.type === "video/webm"
     const [showVideo, setShowVideo] = React.useState(false)
     const [videoIsPlaying, setVideoIsPlaying] = React.useState(false)
+    const [videoIsMuted, setVideoIsMuted] = React.useState(false)
     const videoRef = React.useRef<HTMLVideoElement>(null)
     const setPlaying = (state: boolean) => {
         if (!showVideo) {
@@ -161,6 +162,13 @@ function PinBoardPin({
     const stopVideo = () => {
         setShowVideo(false)
         setVideoIsPlaying(false)
+        setVideoIsMuted(false)
+    }
+    const setMuted = (state: boolean) => {
+        if (videoRef.current) {
+            videoRef.current.muted = state
+            setVideoIsMuted(state)
+        }
     }
     return (
         <>
@@ -208,6 +216,8 @@ function PinBoardPin({
                 isPlaying={showVideo && videoIsPlaying}
                 setPlaying={setPlaying}
                 stopVideo={stopVideo}
+                isMuted={videoIsMuted}
+                setMuted={setMuted}
             />}
             <FindButton
                 id={data?.files[0]?.id || sha256}
