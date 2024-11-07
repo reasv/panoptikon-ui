@@ -91,21 +91,21 @@ export function PinBoardCtx({
             <ContextMenuSub>
                 <ContextMenuSubTrigger inset>Resize Item</ContextMenuSubTrigger>
                 <ContextMenuSubContent className="w-48">
-                    <ContextMenuItem onClick={() => setItemSize(2)}>2 Columns Wide</ContextMenuItem>
-                    <ContextMenuItem onClick={() => setItemSize(4)}>4 Columns Wide</ContextMenuItem>
-                    <ContextMenuItem onClick={() => setItemSize(6)}>6 Columns Wide</ContextMenuItem>
-                    <ContextMenuItem onClick={() => setItemSize(12)}>12 Columns Wide</ContextMenuItem>
-                    <ContextMenuItem onClick={() => setItemSize(16)}>16 Columns Wide</ContextMenuItem>
-                    <ContextMenuItem onClick={() => setItemSize(24)}>24 Columns Wide</ContextMenuItem>
-                    <ContextMenuItem onClick={() => setItemSize(36)}>36 Columns Wide</ContextMenuItem>
+                    <ContextMenuItem onClick={() => setItemSize(2)}>Width 2/36 (1/18)</ContextMenuItem>
+                    <ContextMenuItem onClick={() => setItemSize(4)}>Width 4/36 (1/9)</ContextMenuItem>
+                    <ContextMenuItem onClick={() => setItemSize(6)}>Width 6/36 (1/6)</ContextMenuItem>
+                    <ContextMenuItem onClick={() => setItemSize(9)}>Width 9/36 (1/4)</ContextMenuItem>
+                    <ContextMenuItem onClick={() => setItemSize(12)}>Width 12/36 (1/3)</ContextMenuItem>
+                    <ContextMenuItem onClick={() => setItemSize(24)}>Width 24/36 (2/3)</ContextMenuItem>
+                    <ContextMenuItem onClick={() => setItemSize(36)}>Width 36/36 (Full)</ContextMenuItem>
                     <ContextMenuSeparator />
-                    <ContextMenuItem onClick={() => changeItemSize(1)}>+1 Size</ContextMenuItem>
-                    <ContextMenuItem onClick={() => changeItemSize(4)}>+4 Size</ContextMenuItem>
-                    <ContextMenuItem onClick={() => changeItemSize(6)}>+6 Size</ContextMenuItem>
+                    <ContextMenuItem onClick={() => changeItemSize(1)}>+1/36 Width</ContextMenuItem>
+                    <ContextMenuItem onClick={() => changeItemSize(4)}>+4/36 Width</ContextMenuItem>
+                    <ContextMenuItem onClick={() => changeItemSize(6)}>+6/36 Width</ContextMenuItem>
                     <ContextMenuSeparator />
-                    <ContextMenuItem onClick={() => changeItemSize(-1)}>-1 Size</ContextMenuItem>
-                    <ContextMenuItem onClick={() => changeItemSize(-4)}>-4 Size</ContextMenuItem>
-                    <ContextMenuItem onClick={() => changeItemSize(-6)}>-6 Size</ContextMenuItem>
+                    <ContextMenuItem onClick={() => changeItemSize(-1)}>-1/36 Width</ContextMenuItem>
+                    <ContextMenuItem onClick={() => changeItemSize(-4)}>-4/36 Width</ContextMenuItem>
+                    <ContextMenuItem onClick={() => changeItemSize(-6)}>-6/36 Width</ContextMenuItem>
                 </ContextMenuSubContent>
             </ContextMenuSub>
             <ContextMenuSeparator />
