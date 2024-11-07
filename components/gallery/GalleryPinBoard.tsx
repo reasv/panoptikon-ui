@@ -16,6 +16,8 @@ import {
 } from "@/components/ui/context-menu"
 import { PinBoardCtx } from './PinBoardContextMenu'
 import { $api } from '@/lib/api'
+import { PlayButton } from './PlayButton'
+import React from 'react'
 const ResponsiveGridLayout = WidthProvider(Responsive)
 
 export function PinBoard(
@@ -135,18 +137,29 @@ function PinBoardPin({
             },
         }
     })
+    const isPlayable = data?.item?.type === "video/mp4" || data?.item?.type === "video/webm"
+    const [showVideo, setShowVideo] = React.useState(false)
     return (
         <>
             <ContextMenu>
                 <ContextMenuTrigger>
                     <div className="drag-handle cursor-move absolute top-0 left-0 w-full h-full">
-                        <Image
-                            src={thumbnail}
-                            alt={`Sha256 Hash ${sha256}`}
-                            fill
-                            className="rounded object-contain"
-                            unoptimized={true}
-                        />
+                        {isPlayable && showVideo ?
+                            <video
+                                autoPlay
+                                loop
+                                className="rounded object-contain"
+                                style={{ width: "100%", height: "100%" }}
+                                src={file}
+                            />
+                            :
+                            <Image
+                                src={thumbnail}
+                                alt={`Sha256 Hash ${sha256}`}
+                                fill
+                                className="rounded object-contain"
+                                unoptimized={true}
+                            />}
                     </div>
                 </ContextMenuTrigger>
                 <PinBoardCtx
@@ -166,10 +179,14 @@ function PinBoardPin({
                 item={data?.item}
                 files={data?.files}
             />
+            {isPlayable && <PlayButton
+                isPlaying={showVideo}
+                setPlaying={setShowVideo}
+            />}
             <FindButton
-                id={sha256}
-                id_type={"sha256"}
-                path={""}
+                id={data?.files[0]?.id || sha256}
+                id_type={data?.files[0] ? "file_id" : "sha256"}
+                path={data?.files[0]?.path || ""}
             />
         </>
     )
