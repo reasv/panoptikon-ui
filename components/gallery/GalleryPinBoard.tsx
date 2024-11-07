@@ -171,6 +171,12 @@ function PinBoardPin({
             setVideoIsMuted(state)
         }
     }
+    const setControls = (state: boolean) => {
+        setShowControls(state)
+        if (videoRef.current) {
+            setVideoIsMuted(videoRef.current.muted)
+        }
+    }
     return (
         <>
             <ContextMenu>
@@ -221,7 +227,7 @@ function PinBoardPin({
                 isMuted={videoIsMuted}
                 setMuted={setMuted}
                 showControls={showControls}
-                setShowControls={setShowControls}
+                setShowControls={setControls}
             />}
             <FindButton
                 id={data?.files[0]?.id || sha256}
