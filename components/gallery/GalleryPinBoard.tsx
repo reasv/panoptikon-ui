@@ -18,6 +18,7 @@ import { PinBoardCtx } from './PinBoardContextMenu'
 import { $api } from '@/lib/api'
 import { MediaControls } from './PlayButton'
 import React from 'react'
+import { useVideoPlayerState } from '@/lib/videoPlayerState'
 const ResponsiveGridLayout = WidthProvider(Responsive)
 
 export function PinBoard(
@@ -138,51 +139,16 @@ function PinBoardPin({
         }
     })
     const isPlayable = data?.item?.type === "video/mp4" || data?.item?.type === "video/webm"
-    const [showVideo, setShowVideo] = React.useState(false)
-    const [videoIsPlaying, setVideoIsPlaying] = React.useState(false)
-    const [videoIsMuted, setVideoIsMuted] = React.useState(false)
-    const [showControls, setShowControls] = React.useState(false)
     const videoRef = React.useRef<HTMLVideoElement>(null)
-    const setPlaying = (state: boolean) => {
-        if (!showVideo) {
-            // If the video is not playing, show the video
-            setShowVideo(true)
-            setVideoIsPlaying(true)
-            return
-        }
-        if (videoRef.current) {
-            if (state) {
-                videoRef.current.play()
-                setVideoIsPlaying(true)
-            } else {
-                videoRef.current.pause()
-                setVideoIsPlaying(false)
-            }
-        }
-    }
-    const stopVideo = () => {
-        setShowVideo(false)
-        setVideoIsPlaying(false)
-    }
-    const setMuted = (state: boolean) => {
-        if (videoRef.current) {
-            videoRef.current.muted = state
-            setVideoIsMuted(state)
-        }
-    }
-    const setControls = (state: boolean) => {
-        setShowControls(state)
-        if (videoRef.current) {
-            setVideoIsMuted(videoRef.current.muted)
-        }
-    }
+    const videoState = useVideoPlayerState({ videoRef })
+
     useEffect(() => {
         if (data?.item?.type === "video/mp4" || data?.item?.type === "video/webm") {
             // Autoplay short videos
             if (data?.item.duration && data?.item.duration <= 10) {
-                setShowVideo(true)
-                setVideoIsPlaying(true)
-                setVideoIsMuted(true)
+                videoState.setShowVideo(true)
+                videoState.setVideoIsPlaying(true)
+                videoState.setVideoIsMuted(true)
             }
         }
     }, [data])
@@ -191,13 +157,13 @@ function PinBoardPin({
             <ContextMenu>
                 <ContextMenuTrigger>
                     <div className="drag-handle cursor-move absolute top-0 left-0 w-full h-full">
-                        {isPlayable && showVideo ?
+                        {isPlayable && videoState.showVideo ?
                             <video
                                 ref={videoRef}
                                 autoPlay
                                 loop
-                                muted={videoIsMuted}
-                                controls={showControls}
+                                muted={videoState.videoIsMuted}
+                                controls={videoState.showControls}
                                 className="rounded object-contain"
                                 style={{ width: "100%", height: "100%" }}
                                 src={file}
@@ -230,14 +196,14 @@ function PinBoardPin({
                 files={data?.files}
             />
             {isPlayable && <MediaControls
-                isShown={showVideo}
-                isPlaying={showVideo && videoIsPlaying}
-                setPlaying={setPlaying}
-                stopVideo={stopVideo}
-                isMuted={videoIsMuted}
-                setMuted={setMuted}
-                showControls={showControls}
-                setShowControls={setControls}
+                isShown={videoState.showVideo}
+                isPlaying={videoState.showVideo && videoState.videoIsPlaying}
+                setPlaying={videoState.setPlaying}
+                stopVideo={videoState.stopVideo}
+                isMuted={videoState.videoIsMuted}
+                setMuted={videoState.setMuted}
+                showControls={videoState.showControls}
+                setShowControls={videoState.setControls}
             />}
             <FindButton
                 id={data?.files[0]?.id || sha256}

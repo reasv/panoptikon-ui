@@ -24,6 +24,7 @@ import { blurHashToDataURL } from '@/lib/state/blurHashDataURL'
 import { useSearchLoading } from '@/lib/state/zust'
 import { MediaControls } from './PlayButton'
 import React from 'react'
+import { useVideoPlayerState } from '@/lib/videoPlayerState'
 
 function getNextIndex(length: number, index?: number | null,) {
     return ((index || 0) + 1) % length
@@ -237,46 +238,10 @@ export function GalleryImageLarge(
         }
     }
     const searchLoading = useSearchLoading(state => state.loading)
-    const [showVideo, setShowVideo] = React.useState(false)
-    const [videoIsPlaying, setVideoIsPlaying] = React.useState(false)
-    const [videoIsMuted, setVideoIsMuted] = React.useState(false)
-    const [showControls, setShowControls] = React.useState(false)
-    const videoRef = React.useRef<HTMLVideoElement>(null)
-    const setPlaying = (state: boolean) => {
-        if (!showVideo) {
-            // If the video is not playing, show the video
-            setShowVideo(true)
-            setVideoIsPlaying(true)
-            return
-        }
-        if (videoRef.current) {
-            if (state) {
-                videoRef.current.play()
-                setVideoIsPlaying(true)
-            } else {
-                videoRef.current.pause()
-                setVideoIsPlaying(false)
-            }
-        }
-    }
-    const stopVideo = () => {
-        setShowVideo(false)
-        setVideoIsPlaying(false)
-    }
-    const setMuted = (state: boolean) => {
-        if (videoRef.current) {
-            videoRef.current.muted = state
-            setVideoIsMuted(state)
-        }
-    }
-    const setControls = (state: boolean) => {
-        setShowControls(state)
-        if (videoRef.current) {
-            setVideoIsMuted(videoRef.current.muted)
-            setVideoIsPlaying(!videoRef.current.paused)
-        }
-    }
+
     const isPlayable = item.type === "video/mp4" || item.type === "video/webm"
+    const videoRef = useRef<HTMLVideoElement>(null)
+    const videoState = useVideoPlayerState({ videoRef })
     return (
         <div
             className={cn("relative flex-grow flex justify-center items-center overflow-hidden group",
@@ -287,17 +252,17 @@ export function GalleryImageLarge(
                 onClick={handleImageClick} // Attach click handler to the entire area
                 className='cursor-pointer'
             >
-                {isPlayable && showVideo ?
+                {isPlayable && videoState.showVideo ?
                     <div className="absolute inset-0 flex justify-center items-center">
                         <video
                             ref={videoRef}
                             autoPlay
                             loop
-                            muted={videoIsMuted}
-                            controls={showControls}
+                            muted={videoState.videoIsMuted}
+                            controls={videoState.showControls}
                             className="rounded object-contain max-h-full h-full"
                             src={fileURL}
-                            onClick={(e) => showControls && e.stopPropagation()}
+                            onClick={(e) => videoState.showControls && e.stopPropagation()}
                         />
                     </div>
                     :
@@ -329,15 +294,15 @@ export function GalleryImageLarge(
                 )}
             </div>
             {isPlayable && <MediaControls
-                isShown={showVideo}
-                isPlaying={showVideo && videoIsPlaying}
-                setPlaying={setPlaying}
-                stopVideo={stopVideo}
-                isMuted={videoIsMuted}
-                setMuted={setMuted}
-                showControls={showControls}
-                setShowControls={setControls}
-                hidePlayButton={showVideo && showControls}
+                isShown={videoState.showVideo}
+                isPlaying={videoState.showVideo && videoState.videoIsPlaying}
+                setPlaying={videoState.setPlaying}
+                stopVideo={videoState.stopVideo}
+                isMuted={videoState.videoIsMuted}
+                setMuted={videoState.setMuted}
+                showControls={videoState.showControls}
+                setShowControls={videoState.setControls}
+                hidePlayButton={videoState.showVideo && videoState.showControls}
             />}
         </div>
     )
