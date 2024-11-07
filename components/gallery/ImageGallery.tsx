@@ -273,6 +273,7 @@ export function GalleryImageLarge(
         setShowControls(state)
         if (videoRef.current) {
             setVideoIsMuted(videoRef.current.muted)
+            setVideoIsPlaying(!videoRef.current.paused)
         }
     }
     const isPlayable = item.type === "video/mp4" || item.type === "video/webm"
