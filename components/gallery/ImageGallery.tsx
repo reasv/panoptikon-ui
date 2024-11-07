@@ -22,6 +22,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { FindButton } from './FindButton'
 import { blurHashToDataURL } from '@/lib/state/blurHashDataURL'
 import { useSearchLoading } from '@/lib/state/zust'
+import { MediaControls } from './PlayButton'
+import React from 'react'
 
 function getNextIndex(length: number, index?: number | null,) {
     return ((index || 0) + 1) % length
@@ -235,27 +237,85 @@ export function GalleryImageLarge(
         }
     }
     const searchLoading = useSearchLoading(state => state.loading)
+    const [showVideo, setShowVideo] = React.useState(false)
+    const [videoIsPlaying, setVideoIsPlaying] = React.useState(false)
+    const [videoIsMuted, setVideoIsMuted] = React.useState(false)
+    const [showControls, setShowControls] = React.useState(false)
+    const videoRef = React.useRef<HTMLVideoElement>(null)
+    const setPlaying = (state: boolean) => {
+        if (!showVideo) {
+            // If the video is not playing, show the video
+            setShowVideo(true)
+            setVideoIsPlaying(true)
+            return
+        }
+        if (videoRef.current) {
+            if (state) {
+                videoRef.current.play()
+                setVideoIsPlaying(true)
+            } else {
+                videoRef.current.pause()
+                setVideoIsPlaying(false)
+            }
+        }
+    }
+    const stopVideo = () => {
+        setShowVideo(false)
+        setVideoIsPlaying(false)
+    }
+    const setMuted = (state: boolean) => {
+        if (videoRef.current) {
+            videoRef.current.muted = state
+            setVideoIsMuted(state)
+        }
+    }
+    const setControls = (state: boolean) => {
+        setShowControls(state)
+        if (videoRef.current) {
+            setVideoIsMuted(videoRef.current.muted)
+        }
+    }
+    const isPlayable = item.type === "video/mp4" || item.type === "video/webm"
     return (
         <div
-            className={cn("relative flex-grow flex justify-center items-center overflow-hidden cursor-pointer ",
+            className={cn("relative flex-grow flex justify-center items-center overflow-hidden group",
                 thumbnailsOpen ? "h-[calc(100vh-570px)]" : "h-[calc(100vh-215px)]" // Set height based on whether thumbnails
             )}
-            onClick={handleImageClick} // Attach click handler to the entire area
         >
-            <a
-                href={fileURL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="absolute inset-0"
-                onClick={(e) => e.preventDefault()}
+            <div
+                onClick={handleImageClick} // Attach click handler to the entire area
+                className='cursor-pointer'
             >
-                <Image
-                    src={thumbnailURL}
-                    alt={`${item.path}`}
-                    fill
-                    className="object-contain"
-                    unoptimized={true}
-                />
+                {isPlayable && showVideo ?
+                    <div className="absolute inset-0 flex justify-center items-center">
+                        <video
+                            ref={videoRef}
+                            autoPlay
+                            loop
+                            muted={videoIsMuted}
+                            controls={showControls}
+                            className="rounded object-contain max-h-full h-full"
+                            src={fileURL}
+                            onClick={(e) => showControls && e.stopPropagation()}
+                        />
+                    </div>
+                    :
+                    <a
+                        href={fileURL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="absolute inset-0"
+                        onClick={(e) => e.preventDefault()}
+                    >
+                        <Image
+                            src={thumbnailURL}
+                            alt={`${item.path}`}
+                            fill
+                            className="object-contain"
+                            unoptimized={true}
+                        />
+
+                    </a>}
                 {searchLoading && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center ">
                         <Image
@@ -266,7 +326,17 @@ export function GalleryImageLarge(
                         />
                     </div>
                 )}
-            </a>
+            </div>
+            {isPlayable && <MediaControls
+                isShown={showVideo}
+                isPlaying={showVideo && videoIsPlaying}
+                setPlaying={setPlaying}
+                stopVideo={stopVideo}
+                isMuted={videoIsMuted}
+                setMuted={setMuted}
+                showControls={showControls}
+                setShowControls={setControls}
+            />}
         </div>
     )
 }
