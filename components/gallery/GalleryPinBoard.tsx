@@ -15,6 +15,7 @@ import {
     ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { PinBoardCtx } from './PinBoardContextMenu'
+import { $api } from '@/lib/api'
 const ResponsiveGridLayout = WidthProvider(Responsive)
 
 export function PinBoard(
@@ -125,6 +126,15 @@ function PinBoardPin({
         user_data_db: string | null
     }
 }) {
+    const { data } = $api.useQuery("get", "/api/items/item", {
+        params: {
+            query: {
+                ...dbs,
+                id: sha256,
+                id_type: "sha256" // Supports prefix or full sha256 hash
+            },
+        }
+    })
     return (
         <>
             <ContextMenu>
@@ -151,7 +161,11 @@ function PinBoardPin({
                 />
             </ContextMenu>
             <PinButton sha256={sha256} hidePins={true} />
-            <SelectButton sha256={sha256} />
+            <SelectButton
+                sha256={sha256}
+                item={data?.item}
+                files={data?.files}
+            />
             <FindButton
                 id={sha256}
                 id_type={"sha256"}

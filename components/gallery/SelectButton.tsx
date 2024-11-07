@@ -2,41 +2,34 @@ import React, { useMemo } from 'react'
 import { cn } from "@/lib/utils"
 import { Square, SquareCheck } from 'lucide-react'
 import { useItemSelection } from '@/lib/state/itemSelection'
-import { $api } from '@/lib/api'
-import { useSelectedDBs } from '@/lib/state/database'
+import { components } from '@/lib/panoptikon'
 
 export function SelectButton({
     sha256, // This is usually just the prefix of the sha256 hash
+    item,
+    files,
 }: {
     sha256: string,
-
+    item?: components["schemas"]["ItemRecord"],
+    files?: components["schemas"]["FileRecord"][]
 }) {
-    const dbs = useSelectedDBs()[0]
     const [selected, setSelected] = useItemSelection((state) => [state.getSelected(), state.setItem])
     // Match on the prefix of the sha256 hash
     const isSelected = useMemo(() => selected?.sha256.startsWith(sha256), [selected, sha256])
-    const { data } = $api.useQuery("get", "/api/items/item", {
-        params: {
-            query: {
-                ...dbs,
-                id: sha256,
-                id_type: "sha256" // Supports prefix or full sha256 hash
-            },
-        }
-    })
+
     const handlePinClick = () => {
-        if (!isSelected && data) {
-            if (data.files.length === 0) return
-            const file = data.files[0]
+        if (!isSelected && item && files) {
+            if (files.length === 0) return
+            const file = files[0]
             setSelected({
                 file_id: file.id,
                 path: file.path,
-                sha256: data.item.sha256,
-                item_id: data.item.id,
+                sha256: item.sha256,
+                item_id: item.id,
                 last_modified: file.last_modified,
-                type: data.item.type,
-                width: data.item.width,
-                height: data.item.height,
+                type: item.type,
+                width: item.width,
+                height: item.height,
             })
         }
     }
