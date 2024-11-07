@@ -139,6 +139,28 @@ function PinBoardPin({
     })
     const isPlayable = data?.item?.type === "video/mp4" || data?.item?.type === "video/webm"
     const [showVideo, setShowVideo] = React.useState(false)
+    const [videoIsPlaying, setVideoIsPlaying] = React.useState(false)
+    const videoRef = React.useRef<HTMLVideoElement>(null)
+    const setPlaying = (state: boolean) => {
+        if (!showVideo) {
+            // If the video is not playing, show the video
+            setShowVideo(true)
+            setVideoIsPlaying(true)
+            return
+        }
+        if (videoRef.current) {
+            if (state) {
+                videoRef.current.play()
+                setVideoIsPlaying(true)
+            } else {
+                videoRef.current.pause()
+                setVideoIsPlaying(false)
+            }
+        }
+    }
+    const stopVideo = () => {
+        setShowVideo(false)
+    }
     return (
         <>
             <ContextMenu>
@@ -146,6 +168,7 @@ function PinBoardPin({
                     <div className="drag-handle cursor-move absolute top-0 left-0 w-full h-full">
                         {isPlayable && showVideo ?
                             <video
+                                ref={videoRef}
                                 autoPlay
                                 loop
                                 className="rounded object-contain"
@@ -180,8 +203,9 @@ function PinBoardPin({
                 files={data?.files}
             />
             {isPlayable && <PlayButton
-                isPlaying={showVideo}
-                setPlaying={setShowVideo}
+                isPlaying={showVideo && videoIsPlaying}
+                setPlaying={setPlaying}
+                stopVideo={stopVideo}
             />}
             <FindButton
                 id={data?.files[0]?.id || sha256}
