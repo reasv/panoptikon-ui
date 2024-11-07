@@ -25,7 +25,7 @@ export function MediaControls({
             title={
                 isPlaying ? "Pause video" : "Play video"
             }
-            className={`hover:scale-105 absolute right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${showControls ? "bottom-[12.5rem]" : "bottom-2"}`}
+            className={`hover:scale-105 absolute right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${showControls && isShown ? "bottom-[12.5rem]" : "bottom-2"}`}
             onClick={() => setPlaying(!isPlaying)}
         >
             {isPlaying ?
