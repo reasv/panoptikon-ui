@@ -336,7 +336,7 @@ export function GalleryImageLarge(
                 setMuted={setMuted}
                 showControls={showControls}
                 setShowControls={setControls}
-                noPlayButtonShift
+                hidePlayButton={showVideo && showControls}
             />}
         </div>
     )

@@ -10,7 +10,7 @@ export function MediaControls({
     setPlaying,
     stopVideo,
     setShowControls,
-    noPlayButtonShift,
+    hidePlayButton,
 }: {
     isPlaying: boolean,
     isShown: boolean,
@@ -20,14 +20,14 @@ export function MediaControls({
     setPlaying: (isPlaying: boolean) => void
     stopVideo: () => void
     setShowControls: (showControls: boolean) => void
-    noPlayButtonShift?: boolean
+    hidePlayButton?: boolean
 }) {
     return <>
-        {<button
+        {!hidePlayButton && <button
             title={
                 isPlaying ? "Pause video" : "Play video"
             }
-            className={`hover:scale-105 absolute right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${showControls && isShown && !noPlayButtonShift ? "bottom-[12.5rem]" : "bottom-2"}`}
+            className={`hover:scale-105 absolute right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${showControls && isShown ? "bottom-[12.5rem]" : "bottom-2"}`}
             onClick={() => setPlaying(!isPlaying)}
         >
             {isPlaying ?
