@@ -2,6 +2,7 @@ import { fetchClient } from "@/lib/api";
 import { ContextMenuContent, ContextMenuItem } from "../ui/context-menu";
 import { components } from "@/lib/panoptikon";
 import { useEffect, useRef } from "react";
+import { useGalleryFullscreen } from "@/lib/state/gallery";
 
 export function PinBoardCtx({
     sha256,
@@ -65,10 +66,11 @@ export function PinBoardCtx({
         })
         onLayoutChange(newLayout)
     }
-
+    const [fs, setFs] = useGalleryFullscreen()
     return (
         <ContextMenuContent>
             <ContextMenuItem onClick={() => openURL()}>Open in New Tab</ContextMenuItem>
+            <ContextMenuItem onClick={() => setFs(!fs)}>{fs ? "Restore Pinboard Size" : "Maximize Pinboard"}</ContextMenuItem>
             <ContextMenuItem onClick={() => changeItemSize(1)}>+1 Size</ContextMenuItem>
             <ContextMenuItem onClick={() => changeItemSize(-1)}>-1 Size</ContextMenuItem>
             <ContextMenuItem onClick={() => changeItemSize(4)}>+4 Size</ContextMenuItem>
