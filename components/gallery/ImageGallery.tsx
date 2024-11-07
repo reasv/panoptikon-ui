@@ -37,19 +37,22 @@ function getPrevIndex(length: number, index?: number | null,) {
 export function ImageGallery({
     items,
     totalPages,
+    setPage,
 }: {
     items: SearchResult[]
     totalPages: number
+    setPage: (page: number) => Promise<void>
 }) {
     const [qIndex, setIndex] = useGalleryIndex()
-    const [page, setPage] = useSearchPage()
+    const [page] = useSearchPage()
     const pageSize = usePageSize()[0]
     const index = (qIndex || 0) % items.length
     const nextImage = () => {
         if (index === (items.length - 1)) {
             if (page < totalPages) {
-                setPage(page + 1)
-                setIndex(0)
+                setPage(page + 1).then(() => {
+                    setIndex(0)
+                })
             }
             return
         }
@@ -58,8 +61,9 @@ export function ImageGallery({
     const prevImage = () => {
         if (index === 0) {
             if (page > 1) {
-                setPage(page - 1)
-                setIndex(Math.max(pageSize - 1, 0))
+                setPage(page - 1).then(() => {
+                    setIndex(Math.max(pageSize - 1, 0))
+                })
             }
             return
         }

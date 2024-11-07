@@ -1,4 +1,8 @@
-import { keepPreviousData, QueryClient } from "@tanstack/react-query"
+import {
+  keepPreviousData,
+  QueryClient,
+  useQueryClient,
+} from "@tanstack/react-query"
 import { $api, fetchClient } from "./api"
 import { useSelectedDBs } from "./state/database"
 import { useInstantSearch, useSearchLoading } from "./state/zust"
@@ -84,6 +88,32 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     }
     return () => clearTimeout(timer)
   }, [isFetching])
+  const queryClient = useQueryClient()
+  const prefetchSearch = async (searchRequest: SearchQueryArgs) => {
+    const timer = setTimeout(() => setLoading(true), 400)
+    await queryClient.prefetchQuery({
+      queryKey: ["post", "/api/search/pql", searchRequest],
+      queryFn: () => fetchSearch(searchRequest),
+    })
+    clearTimeout(timer)
+    setLoading(false)
+  }
+  const setPagePrefetch = async (newPage: number) => {
+    const searchRequest = {
+      params: {
+        query: dbs,
+      },
+      body: {
+        ...searchQuery,
+        page: newPage,
+        results: true,
+        count: false,
+        partition_by: partitionBy.partition_by,
+      },
+    }
+    await prefetchSearch(searchRequest)
+    setPage(newPage)
+  }
 
   const nResults = countQuery.data?.count || 0
   return {
@@ -100,7 +130,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     nResults,
     page,
     pageSize,
-    setPage,
+    setPage: setPagePrefetch,
     getPageURL: getSearchPageURL,
     searchEnabled,
   }

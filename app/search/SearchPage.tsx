@@ -139,6 +139,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode }:
                     <ImageGallery
                         items={results}
                         totalPages={totalPages}
+                        setPage={setPage}
                     />
                     :
                     // (results.length <= 20 ?
