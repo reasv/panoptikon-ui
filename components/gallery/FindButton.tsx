@@ -286,7 +286,7 @@ export function FindButton({
             }} >
             <ButtonElement
                 buttonVariant={buttonVariant}
-                handleClick={handleFindClick}
+                handleClick={() => { }}
                 handleHover={() => { }}
             />
         </a> :
