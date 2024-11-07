@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react'
-import { Square, SquareCheck } from 'lucide-react'
+import { Square, SquareCheckBig } from 'lucide-react'
 import { useItemSelection } from '@/lib/state/itemSelection'
 import { components } from '@/lib/panoptikon'
 
@@ -40,7 +40,7 @@ export function SelectButton({
         onClick={handlePinClick}
     >
         {isSelected ? (
-            <SquareCheck className="w-6 h-6 text-gray-800 fill-gray-800" />
+            <SquareCheckBig className="w-6 h-6 text-gray-800 " />
 
         ) : (
             <Square className="w-6 h-6 text-gray-800" />
