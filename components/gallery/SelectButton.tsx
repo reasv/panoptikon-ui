@@ -1,5 +1,4 @@
 import React, { useMemo } from 'react'
-import { cn } from "@/lib/utils"
 import { Square, SquareCheck } from 'lucide-react'
 import { useItemSelection } from '@/lib/state/itemSelection'
 import { components } from '@/lib/panoptikon'
@@ -37,10 +36,7 @@ export function SelectButton({
         title={
             isSelected ? "This image is selected" : "Select this image"
         }
-        className={
-            cn("hover:scale-105 absolute top-2 right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300")
-            // isSelected ? 'opacity-100' : 'opacity-0')
-        }
+        className={"hover:scale-105 absolute top-2 right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"}
         onClick={handlePinClick}
     >
         {isSelected ? (
