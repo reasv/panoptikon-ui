@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/context-menu"
 import { PinBoardCtx } from './PinBoardContextMenu'
 import { $api } from '@/lib/api'
-import { PlayButton } from './PlayButton'
+import { MediaControls } from './PlayButton'
 import React from 'react'
 const ResponsiveGridLayout = WidthProvider(Responsive)
 
@@ -141,6 +141,7 @@ function PinBoardPin({
     const [showVideo, setShowVideo] = React.useState(false)
     const [videoIsPlaying, setVideoIsPlaying] = React.useState(false)
     const [videoIsMuted, setVideoIsMuted] = React.useState(false)
+    const [showControls, setShowControls] = React.useState(false)
     const videoRef = React.useRef<HTMLVideoElement>(null)
     const setPlaying = (state: boolean) => {
         if (!showVideo) {
@@ -180,6 +181,7 @@ function PinBoardPin({
                                 ref={videoRef}
                                 autoPlay
                                 loop
+                                controls={showControls}
                                 className="rounded object-contain"
                                 style={{ width: "100%", height: "100%" }}
                                 src={file}
@@ -211,13 +213,15 @@ function PinBoardPin({
                 item={data?.item}
                 files={data?.files}
             />
-            {isPlayable && <PlayButton
+            {isPlayable && <MediaControls
                 isShown={showVideo}
                 isPlaying={showVideo && videoIsPlaying}
                 setPlaying={setPlaying}
                 stopVideo={stopVideo}
                 isMuted={videoIsMuted}
                 setMuted={setMuted}
+                showControls={showControls}
+                setShowControls={setShowControls}
             />}
             <FindButton
                 id={data?.files[0]?.id || sha256}
