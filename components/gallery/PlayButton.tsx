@@ -1,5 +1,5 @@
 import React from 'react'
-import { Play, Pause, Square, VolumeOff, Volume2, Settings, MonitorCog } from 'lucide-react'
+import { Play, Pause, VolumeOff, Volume2, X, TvMinimalPlay, TvMinimal } from 'lucide-react'
 
 export function MediaControls({
     isPlaying,
@@ -46,11 +46,11 @@ export function MediaControls({
             }
         </button>}
         {isShown && <button
-            title={"Stop Video"}
+            title={"Close Video"}
             className={"hover:scale-105 absolute right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bottom-[6.5rem] "}
             onClick={() => stopVideo()}
         >
-            <Square className="w-6 h-6 text-gray-800 fill-gray-800" />
+            <X className="w-6 h-6 text-gray-800 fill-gray-800" />
         </button>}
 
         {isShown && <button
@@ -59,9 +59,9 @@ export function MediaControls({
             onClick={() => setShowControls(!showControls)}
         >
             {showControls ?
-                <MonitorCog className="w-6 h-6 text-gray-800" />
+                <TvMinimal className="w-6 h-6 text-gray-800" />
                 :
-                <Settings className="w-6 h-6 text-gray-800" />
+                <TvMinimalPlay className="w-6 h-6 text-gray-800" />
             }
         </button>}
     </>
