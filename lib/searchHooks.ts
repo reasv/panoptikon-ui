@@ -1,5 +1,5 @@
-import { keepPreviousData } from "@tanstack/react-query"
-import { $api } from "./api"
+import { keepPreviousData, QueryClient } from "@tanstack/react-query"
+import { $api, fetchClient } from "./api"
 import { useSelectedDBs } from "./state/database"
 import { useInstantSearch, useSearchLoading } from "./state/zust"
 import { SearchQueryArgs } from "@/app/search/queryFns"
@@ -7,11 +7,13 @@ import {
   useQueryOptions,
   useSearchPage,
   useSearchQuery,
+  useSearchQueryState,
 } from "./state/searchQuery/clientHooks"
 import { components } from "./panoptikon"
 import { getSearchPageURL } from "./state/searchQuery/serializers"
 import { usePartitionBy } from "./state/partitionBy"
 import { useEffect } from "react"
+import { queryFromState } from "./state/searchQuery/searchQuery"
 
 export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const isClient = typeof window !== "undefined"
@@ -102,4 +104,60 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     getPageURL: getSearchPageURL,
     searchEnabled,
   }
+}
+
+export async function fetchSearch(args: SearchQueryArgs) {
+  try {
+    const { data, error } = await fetchClient.POST("/api/search/pql", {
+      params: args.params,
+      body: args.body,
+    })
+    if (!data || error) {
+      console.error(error)
+      console.log("Error fetching search results")
+      throw error
+    }
+    return data
+  } catch (error) {
+    console.error(error)
+    console.log("Error fetching search results")
+    throw error
+  }
+}
+
+export function usePrefetchSearch() {
+  const queryClient = new QueryClient()
+  const searchQueryState = useSearchQueryState()
+  const dbs = useSelectedDBs()[0]
+  const [partitionBy] = usePartitionBy()
+  const [loading, setLoading] = useSearchLoading((state) => [
+    state.loading,
+    state.setLoading,
+  ])
+  const prefetchSearch = async (searchRequest: SearchQueryArgs) => {
+    const timer = setTimeout(() => setLoading(true), 400)
+    await queryClient.prefetchQuery({
+      queryKey: ["post", "/api/search/pql", searchRequest],
+      queryFn: () => fetchSearch(searchRequest),
+    })
+    clearTimeout(timer)
+    setLoading(false)
+  }
+  const prefetchSearchPage = async (page: number) => {
+    const searchQuery = queryFromState(searchQueryState)[0]
+    const searchRequest = {
+      params: {
+        query: dbs,
+      },
+      body: {
+        ...searchQuery,
+        results: true,
+        count: false,
+        partition_by: partitionBy.partition_by as any,
+        page,
+      },
+    }
+    await prefetchSearch(searchRequest)
+  }
+  return prefetchSearchPage
 }
