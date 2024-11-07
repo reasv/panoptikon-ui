@@ -1,5 +1,5 @@
 import { fetchClient } from "@/lib/api";
-import { ContextMenuContent, ContextMenuItem } from "../ui/context-menu";
+import { ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger } from "../ui/context-menu";
 import { components } from "@/lib/panoptikon";
 import { useEffect, useRef } from "react";
 import { useGalleryFullscreen } from "@/lib/state/gallery";
@@ -66,19 +66,58 @@ export function PinBoardCtx({
         })
         onLayoutChange(newLayout)
     }
+    async function setItemSize(size: number) {
+        if (!layoutBuildData.current) {
+            const buildData = await getLayoutBuildData({ layout, dbs, columns, rowHeight, pinboardRef })
+            layoutBuildData.current = buildData
+        }
+        const buildData = layoutBuildData.current
+        const newLayout = layout.map(l => {
+            if (l.i === sha256) {
+                return {
+                    ...l,
+                    w: size,
+                    h: findOptimalHeight(size, rowHeight, buildData.columnWidth, buildData.metadata[l.i]?.item.width || 1, buildData.metadata[l.i]?.item.height || 1),
+                }
+            }
+            return l
+        })
+        onLayoutChange(newLayout)
+    }
     const [fs, setFs] = useGalleryFullscreen()
     return (
         <ContextMenuContent>
             <ContextMenuItem onClick={() => openURL()}>Open in New Tab</ContextMenuItem>
-            <ContextMenuItem onClick={() => setFs(!fs)}>{fs ? "Restore Pinboard Size" : "Maximize Pinboard"}</ContextMenuItem>
-            <ContextMenuItem onClick={() => changeItemSize(1)}>+1 Size</ContextMenuItem>
-            <ContextMenuItem onClick={() => changeItemSize(-1)}>-1 Size</ContextMenuItem>
-            <ContextMenuItem onClick={() => changeItemSize(4)}>+4 Size</ContextMenuItem>
-            <ContextMenuItem onClick={() => changeItemSize(-4)}>-4 Size</ContextMenuItem>
+            <ContextMenuSub>
+                <ContextMenuSubTrigger inset>Resize Item</ContextMenuSubTrigger>
+                <ContextMenuSubContent className="w-48">
+                    <ContextMenuItem onClick={() => setItemSize(2)}>2 Columns Wide</ContextMenuItem>
+                    <ContextMenuItem onClick={() => setItemSize(4)}>4 Columns Wide</ContextMenuItem>
+                    <ContextMenuItem onClick={() => setItemSize(6)}>6 Columns Wide</ContextMenuItem>
+                    <ContextMenuItem onClick={() => setItemSize(12)}>12 Columns Wide</ContextMenuItem>
+                    <ContextMenuItem onClick={() => setItemSize(16)}>16 Columns Wide</ContextMenuItem>
+                    <ContextMenuItem onClick={() => setItemSize(24)}>24 Columns Wide</ContextMenuItem>
+                    <ContextMenuItem onClick={() => setItemSize(36)}>36 Columns Wide</ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem onClick={() => changeItemSize(1)}>+1 Size</ContextMenuItem>
+                    <ContextMenuItem onClick={() => changeItemSize(4)}>+4 Size</ContextMenuItem>
+                    <ContextMenuItem onClick={() => changeItemSize(6)}>+6 Size</ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem onClick={() => changeItemSize(-1)}>-1 Size</ContextMenuItem>
+                    <ContextMenuItem onClick={() => changeItemSize(-4)}>-4 Size</ContextMenuItem>
+                    <ContextMenuItem onClick={() => changeItemSize(-6)}>-6 Size</ContextMenuItem>
+                </ContextMenuSubContent>
+            </ContextMenuSub>
+            <ContextMenuSeparator />
+            <ContextMenuItem onClick={() => setFs(!fs)}>
+                {fs ? "Restore Pinboard Size" : "Maximize Pinboard"}
+            </ContextMenuItem>
+            <ContextMenuSeparator />
             <ContextMenuItem onClick={() => changeLayout(3)}>Layout 3 Items/Row</ContextMenuItem>
             <ContextMenuItem onClick={() => changeLayout(4)}>Layout 4 Items/Row</ContextMenuItem>
             <ContextMenuItem onClick={() => changeLayout(5)}>Layout 5 Items/Row</ContextMenuItem>
             <ContextMenuItem onClick={() => changeLayout(6)}>Layout 6 Items/Row</ContextMenuItem>
+            <ContextMenuSeparator />
             <ContextMenuItem onClick={() => layoutFixedRows(1)}>Layout 1 Row</ContextMenuItem>
             <ContextMenuItem onClick={() => layoutFixedRows(2)}>Layout 2 Rows</ContextMenuItem>
             <ContextMenuItem onClick={() => layoutFixedRows(3)}>Layout 3 Rows</ContextMenuItem>
