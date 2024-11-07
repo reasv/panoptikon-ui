@@ -3,7 +3,7 @@ import { cn, getFileURL } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useGalleryFullscreen, useGalleryPinBoardLayout } from '@/lib/state/gallery'
 import { PinButton } from './PinButton'
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import ReactGridLayout, { Responsive, WidthProvider } from "react-grid-layout"
 import "react-grid-layout/css/styles.css"
 import "react-resizable/css/styles.css"
@@ -163,7 +163,6 @@ function PinBoardPin({
     const stopVideo = () => {
         setShowVideo(false)
         setVideoIsPlaying(false)
-        setVideoIsMuted(false)
     }
     const setMuted = (state: boolean) => {
         if (videoRef.current) {
@@ -177,6 +176,16 @@ function PinBoardPin({
             setVideoIsMuted(videoRef.current.muted)
         }
     }
+    useEffect(() => {
+        if (data?.item?.type === "video/mp4" || data?.item?.type === "video/webm") {
+            // Autoplay short videos
+            if (data?.item.duration && data?.item.duration <= 10) {
+                setShowVideo(true)
+                setVideoIsPlaying(true)
+                setVideoIsMuted(true)
+            }
+        }
+    }, [data])
     return (
         <>
             <ContextMenu>
@@ -187,6 +196,7 @@ function PinBoardPin({
                                 ref={videoRef}
                                 autoPlay
                                 loop
+                                muted={videoIsMuted}
                                 controls={showControls}
                                 className="rounded object-contain"
                                 style={{ width: "100%", height: "100%" }}
