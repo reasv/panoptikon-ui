@@ -12,8 +12,6 @@ import { SelectButton } from './SelectButton'
 import { FindButton } from './FindButton'
 import {
     ContextMenu,
-    ContextMenuContent,
-    ContextMenuItem,
     ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { PinBoardCtx } from './PinBoardContextMenu'
@@ -81,45 +79,84 @@ export function PinBoard(
                     compactType="vertical" // Compacts items vertically to keep them visible on screen
                     preventCollision={false}
                 >
-                    {pinnedFiles.map(([sha256, thumbnail, file]) => {
-                        const key = sha256 // Unique key for react-grid-layout
-                        return (
-                            <div key={key} className="relative bg-gray-800 border rounded shadow group">
-                                <ContextMenu>
-                                    <ContextMenuTrigger>
-                                        <div className="drag-handle cursor-move absolute top-0 left-0 w-full h-full">
-                                            <Image
-                                                src={thumbnail}
-                                                alt={`Sha256 Hash ${sha256}`}
-                                                fill
-                                                className="rounded object-contain"
-                                                unoptimized={true}
-                                            />
-                                        </div>
-                                    </ContextMenuTrigger>
-                                    <PinBoardCtx
-                                        sha256={sha256}
-                                        file_url={file}
-                                        onLayoutChange={onLayoutChange}
-                                        layout={layout}
-                                        pinboardRef={scrollAreaRef}
-                                        columns={columns}
-                                        rowHeight={rowHeight}
-                                        dbs={dbs}
-                                    />
-                                </ContextMenu>
-                                <PinButton sha256={sha256} hidePins={true} />
-                                <SelectButton sha256={sha256} />
-                                <FindButton
-                                    id={sha256}
-                                    id_type={"sha256"}
-                                    path={""}
-                                />
-                            </div>
-                        )
-                    })}
+                    {pinnedFiles.map(([sha256, thumbnail, file]) => (
+                        <div key={sha256} className="relative bg-gray-800 border rounded shadow group">
+                            <PinBoardPin
+                                key={sha256}
+                                sha256={sha256}
+                                thumbnail={thumbnail}
+                                file={file}
+                                onLayoutChange={onLayoutChange}
+                                layout={layout}
+                                scrollAreaRef={scrollAreaRef}
+                                columns={columns}
+                                rowHeight={rowHeight}
+                                dbs={dbs}
+                            />
+                        </div>
+                    ))}
                 </ResponsiveGridLayout>
             </div>
         </ScrollArea>
+    )
+}
+
+function PinBoardPin({
+    sha256,
+    thumbnail,
+    file,
+    onLayoutChange,
+    layout,
+    scrollAreaRef,
+    columns,
+    rowHeight,
+    dbs,
+}: {
+    sha256: string
+    thumbnail: string
+    file: string
+    onLayoutChange: (currentLayout: ReactGridLayout.Layout[]) => void
+    layout: ReactGridLayout.Layout[]
+    scrollAreaRef: React.RefObject<HTMLDivElement>
+    columns: number
+    rowHeight: number
+    dbs: {
+        index_db: string | null
+        user_data_db: string | null
+    }
+}) {
+    return (
+        <>
+            <ContextMenu>
+                <ContextMenuTrigger>
+                    <div className="drag-handle cursor-move absolute top-0 left-0 w-full h-full">
+                        <Image
+                            src={thumbnail}
+                            alt={`Sha256 Hash ${sha256}`}
+                            fill
+                            className="rounded object-contain"
+                            unoptimized={true}
+                        />
+                    </div>
+                </ContextMenuTrigger>
+                <PinBoardCtx
+                    sha256={sha256}
+                    file_url={file}
+                    onLayoutChange={onLayoutChange}
+                    layout={layout}
+                    pinboardRef={scrollAreaRef}
+                    columns={columns}
+                    rowHeight={rowHeight}
+                    dbs={dbs}
+                />
+            </ContextMenu>
+            <PinButton sha256={sha256} hidePins={true} />
+            <SelectButton sha256={sha256} />
+            <FindButton
+                id={sha256}
+                id_type={"sha256"}
+                path={""}
+            />
+        </>
     )
 }
