@@ -10,7 +10,7 @@ import { Suspense } from 'react';
 export default async function ScanPageRoot({
     searchParams,
 }: {
-    searchParams: { [key: string]: string | string[] | undefined };
+    searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 }) {
     const queryClient = new QueryClient()
 
