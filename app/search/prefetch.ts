@@ -3,7 +3,6 @@ import { selectedDBsServer } from "@/lib/state/databaseServer"
 import { fetchDB, fetchNs, fetchSearch, fetchStats } from "./queryFns"
 import { getSearchQueryCache } from "@/lib/state/searchQuery/serverParsers"
 import { partitionByParamsCache } from "@/lib/state/partitionByServer"
-import { PartitionBy } from "@/lib/state/partitionBy"
 import { prefetchClientConfig } from "@/lib/useClientConfig"
 
 export const prefetchSearchPage = async (

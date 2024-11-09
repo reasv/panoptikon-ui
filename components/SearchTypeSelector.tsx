@@ -74,22 +74,28 @@ export function SearchTypeSelection() {
         {
             label: "File Path",
             value: "path",
+            available: true,
         },
         {
             label: "Full Text",
             value: "fts",
+            available: true,
         },
         {
             label: "Semantic Image Search",
             value: "iemb",
             icon: iembIsLoading ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : undefined,
+            available: iembModels.length > 0,
         },
         {
             label: "Semantic Text Search",
             value: "temb",
             icon: tembIsLoading ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : undefined,
+            available: tembModels.length > 0,
         },
     ]
+    const availableOptions = allOptions.filter((option) => option.available).map((option) => ({ ...option, available: undefined }))
+
     const selectedOptions = useMemo(() => {
         let selected = []
         if (options.at_e_path) {
@@ -108,7 +114,7 @@ export function SearchTypeSelection() {
     }, [options])
     const [open, setOpen] = useState(false)
     return <MultiBoxResponsive
-        options={allOptions}
+        options={availableOptions}
         currentValues={selectedOptions}
         onSelectionChange={onSelectionChange}
         placeholder="Select an option"
