@@ -359,6 +359,8 @@ export const FilePathComponent = ({ path }: { path: string }) => {
             })
         })
     }
+    // Remove leading / if it exists
+    const displayPath = path[0] === '/' ? path.slice(1) : path
     return (
         <p
             title={path}
@@ -366,7 +368,7 @@ export const FilePathComponent = ({ path }: { path: string }) => {
             style={{ direction: 'rtl', textAlign: 'left' }}
             onClick={() => handleCopyToClipboard(path)}
         >
-            {path}
+            {displayPath}
         </p>
     )
 }
