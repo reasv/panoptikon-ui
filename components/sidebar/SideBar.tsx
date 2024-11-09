@@ -1,7 +1,7 @@
 import { SidebarClose } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useMediaQuery } from "@/hooks/use-media-query"
-import { Drawer, DrawerContent } from "../ui/drawer"
+import { Drawer, DrawerContent, DrawerTitle } from "../ui/drawer"
 import { ScrollArea } from "../ui/scroll-area"
 import { SearchOptions } from "./AdvancedSearchOptions"
 import { DirectionAwareTabs } from "@/components/ui/direction-aware-tabs"
@@ -66,6 +66,7 @@ export function SideBar() {
     }
     return (
         <Drawer open={sidebarOpen} onOpenChange={setSideBarOpen}>
+            <DrawerTitle title="Options" />
             <DrawerContent>
                 <ScrollArea className="h-svh w-full">
                     <SideBarContent />

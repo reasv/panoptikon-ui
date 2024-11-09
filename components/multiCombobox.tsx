@@ -16,6 +16,7 @@ import {
 import {
     Drawer,
     DrawerContent,
+    DrawerTitle,
     DrawerTrigger,
 } from "@/components/ui/drawer"
 import {
@@ -123,6 +124,7 @@ export function MultiBoxResponsive({
                     </Button>
                 }
             </DrawerTrigger>
+            <DrawerTitle title="Options" />
             <DrawerContent>
                 <div className="mt-4 border-t">
                     <OptionList removeOption={onRemoveOption} defaultValue={resetValue} selectedValues={currentValues} options={options} toggleValue={onOptionToggle} />

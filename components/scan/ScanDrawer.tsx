@@ -10,7 +10,7 @@ import { FolderLists } from "@/components/scan/FolderLists"
 import { Button } from "@/components/ui/button"
 import { SidebarClose } from "lucide-react"
 import { useScanDrawerOpen } from "@/lib/state/scanDrawer"
-import { Drawer, DrawerContent } from "@/components/ui/drawer"
+import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 
 export function ScanInternal() {
     return <>
@@ -33,6 +33,7 @@ export function ScanDrawer() {
     }
     return (
         <Drawer open={open} onOpenChange={setOpen}>
+            <DrawerTitle title="Scan" />
             <DrawerContent>
                 <ScrollArea className="h-svh w-full">
                     <Button onClick={() => setOpen(false)} title="Back to Search" variant="ghost" size="icon">

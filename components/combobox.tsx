@@ -16,6 +16,7 @@ import {
 import {
     Drawer,
     DrawerContent,
+    DrawerTitle,
     DrawerTrigger,
 } from "@/components/ui/drawer"
 import {
@@ -71,6 +72,7 @@ export function ComboBoxResponsive({
                     <span className="truncate">{buttonLabel}</span>
                 </Button>
             </DrawerTrigger>
+            <DrawerTitle title="Options" />
             <DrawerContent>
                 <div className="mt-4 border-t">
                     <OptionList resetValue={resetValue} currentValue={currentValue} options={options} setOpen={setOpen} onChangeValue={onChangeValue} />
