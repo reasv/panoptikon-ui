@@ -169,7 +169,11 @@ function OptionList({
             <CommandInput placeholder="Filter..." />
             <CommandList>
                 <ScrollAreaPrimitive.Root type="auto" className="relative">
-                    <ScrollAreaPrimitive.Viewport className="max-h-[300px]">
+                    <ScrollAreaPrimitive.Viewport
+                        onWheel={(e) => {
+                            e.stopPropagation()
+                        }}
+                        className="max-h-[300px]">
                         <CommandEmpty>No results found.</CommandEmpty>
                         <CommandGroup>
                             {options.map((option) => (
