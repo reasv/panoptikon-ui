@@ -6,6 +6,7 @@ import { FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButto
 import { getFileURL, getLocale, prettyPrintBytes, prettyPrintVideoDuration } from "@/lib/utils";
 import { useSelectedDBs } from "@/lib/state/database";
 import { FindButton } from "@/components/gallery/FindButton";
+import { useClientConfig } from "@/lib/useClientConfig";
 
 export function ItemFileDetails({
     item,
@@ -95,6 +96,8 @@ function SingleFileItem({
     file_id: number,
     path: string
 }) {
+    const clientConfig = useClientConfig()
+    const disableOpenFileButton = clientConfig?.data?.disableBackendOpen || false
     return (
         <div className="border rounded-lg p-4 mt-4">
             <div className="flex flex-col space-y-2">
@@ -103,7 +106,7 @@ function SingleFileItem({
                 </div>
                 <div className="flex flex-row space-x-2">
                     <OpenFile sha256={item.sha256} path={path} buttonVariant />
-                    <OpenFolder sha256={item.sha256} path={path} buttonVariant />
+                    {!disableOpenFileButton && <OpenFolder sha256={item.sha256} path={path} buttonVariant />}
                     <FindButton
                         id={file_id}
                         id_type="file_id"
