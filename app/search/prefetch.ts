@@ -4,6 +4,7 @@ import { fetchDB, fetchNs, fetchSearch, fetchStats } from "./queryFns"
 import { getSearchQueryCache } from "@/lib/state/searchQuery/serverParsers"
 import { partitionByParamsCache } from "@/lib/state/partitionByServer"
 import { PartitionBy } from "@/lib/state/partitionBy"
+import { prefetchClientConfig } from "@/lib/useClientConfig"
 
 export const prefetchSearchPage = async (
   queryClient: QueryClient,
@@ -68,5 +69,6 @@ export const prefetchSearchPage = async (
     queryKey: ["get", "/api/db", null],
     queryFn: () => fetchDB(),
   })
+  await prefetchClientConfig(queryClient)
   return searchRequest
 }
