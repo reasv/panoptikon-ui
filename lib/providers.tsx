@@ -1,6 +1,7 @@
 "use client"
 import { ReactNode } from "react";
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
+import { NuqsAdapter } from 'nuqs/adapters/next/app'
 import {
     isServer,
     QueryClient,
@@ -41,9 +42,11 @@ export default function Providers({ children }: Readonly<{ children: ReactNode }
     //       render if it suspends and there is no boundary
     const queryClient = getQueryClient()
     return (
-        <QueryClientProvider client={queryClient}>
-            {children}
-            <ReactQueryDevtools initialIsOpen={false} />
-        </QueryClientProvider>
+        <NuqsAdapter>
+            <QueryClientProvider client={queryClient}>
+                {children}
+                <ReactQueryDevtools initialIsOpen={false} />
+            </QueryClientProvider>
+        </NuqsAdapter>
     )
 }

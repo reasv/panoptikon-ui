@@ -1,87 +1,16 @@
-import { createSerializer, Parser } from "nuqs"
+import { createSerializer, Options } from "nuqs"
 import { ParserBuilder } from "nuqs/server"
+import { getScopedUrlKeys } from "./getScopedQueryStates"
 
-type KeyMapValue<Type> = Parser<Type> & {
-  defaultValue?: Type
+interface ScopedSearializerOptions extends Pick<Options, "clearOnDefault"> {
+  separator?: string
 }
-type Base = string | URLSearchParams | URL
-
-type UseQueryStatesKeysMap<Map = any> = {
-  [Key in keyof Map]: KeyMapValue<Map[Key]>
-}
-
-type ExtractParserType<Parser> = Parser extends ParserBuilder<any>
-  ? ReturnType<Parser["parseServerSide"]>
-  : never
-type Values<Parsers extends Record<string, ParserBuilder<any>>> = Partial<{
-  [K in keyof Parsers]?: ExtractParserType<Parsers[K]>
-}>
 
 export function createScopedSerializer<
   Parsers extends Record<string, ParserBuilder<any>>
->(
-  namespace: string,
-  parsers: Parsers,
-  separator: string = "."
-): {
-  (values: Values<Parsers>): string
-  (base: Base, values: Values<Parsers>): string
-} {
-  // A function to scope the keys in the values map
-  const scopeValues = (values: Values<Parsers>) => {
-    const scopedValues: Partial<Values<Parsers>> = {}
-    for (const key in values) {
-      if (values.hasOwnProperty(key)) {
-        const scopedKey =
-          `${namespace}${separator}${key}` as keyof Values<Parsers>
-        scopedValues[scopedKey] = values[key] as Values<Parsers>[keyof Parsers]
-      }
-    }
-
-    // Filter out null values (this resolves the type issue)
-    Object.keys(scopedValues).forEach((key) => {
-      if (scopedValues[key as keyof Values<Parsers>] === null) {
-        delete scopedValues[key as keyof Values<Parsers>]
-      }
-    })
-
-    return scopedValues as Values<Parsers>
-  }
-
-  const scopeParsers = (parsers: Parsers) => {
-    const scopedParsers: Partial<Parsers> = {} as Parsers
-    for (const key in parsers) {
-      if (parsers.hasOwnProperty(key)) {
-        const scopedKey = `${namespace}${separator}${key}` as keyof Parsers
-        scopedParsers[scopedKey] = parsers[key]
-      }
-    }
-    return scopedParsers as Parsers
-  }
-
-  // Get the original serializer
-  const serialize = createSerializer(scopeParsers(parsers))
-
-  // Wrapper function that handles scoping of keys before calling the original serializer
-  return (
-    ...args: [Base | Partial<Values<Parsers>>, Partial<Values<Parsers>>?]
-  ): string => {
-    // Check if the first argument is the base or values
-    if (args.length === 1) {
-      const [values] = args
-      // Serialize with scoped keys, but remove null values
-      const scopedValues = scopeValues(values as Values<Parsers>) as Parameters<
-        typeof serialize
-      >[1]
-      return serialize(scopedValues)
-    } else if (args.length === 2) {
-      const [base, values] = args
-      const scopedValues = scopeValues(values as Values<Parsers>) as Parameters<
-        typeof serialize
-      >[1]
-      // Serialize with scoped keys and base, but remove null values
-      return serialize(base as Base, scopedValues)
-    }
-    throw new Error("Invalid arguments passed to createScopedSerializer")
-  }
+>(namespace: string, parsers: Parsers, options: ScopedSearializerOptions = {}) {
+  return createSerializer(parsers, {
+    urlKeys: getScopedUrlKeys(parsers, namespace, options.separator || "."),
+    ...options,
+  })
 }

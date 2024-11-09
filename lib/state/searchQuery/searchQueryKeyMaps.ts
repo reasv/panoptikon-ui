@@ -1,6 +1,4 @@
 import { components } from "@/lib/panoptikon"
-import { distance } from "framer-motion"
-import { Target } from "lucide-react"
 import * as def from "nuqs/server"
 
 export type OrderArgsType = {
