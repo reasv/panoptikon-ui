@@ -108,7 +108,7 @@ export const BookmarkBtn = (
                     buttonVariant={buttonVariant}
                 />
             </ContextMenuTrigger>
-            <ContextMenuContent>
+            <ContextMenuContent className="z-50 border rounded-lg">
                 <FileBookmarksSetter
                     sha256={sha256}
                     onlySelectors
