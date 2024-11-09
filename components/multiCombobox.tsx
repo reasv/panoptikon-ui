@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { Button } from "@/components/ui/button"
@@ -25,6 +26,7 @@ import {
     PopoverTrigger,
 } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
+import { ScrollBar } from "./ui/scroll-area"
 
 export type Option = {
     value: string
@@ -113,7 +115,9 @@ export function MultiBoxResponsive({
                         </Button>
                     }
                 </PopoverTrigger>
-                <PopoverContent className={cn("max-w-[50vw] w-full p-0", popoverClassName)} align="start">
+                <PopoverContent
+                    className={cn("max-w-[50vw] w-full p-0", popoverClassName)}
+                    align="start">
                     <OptionList removeOption={onRemoveOption} defaultValue={resetValue} selectedValues={currentValues} options={options} toggleValue={onOptionToggle} />
                 </PopoverContent>
             </Popover>
@@ -141,7 +145,6 @@ export function MultiBoxResponsive({
         </Drawer>
     )
 }
-
 function OptionList({
     selectedValues,
     toggleValue,
@@ -165,35 +168,41 @@ function OptionList({
         <Command>
             <CommandInput placeholder="Filter..." />
             <CommandList>
-                <CommandEmpty>No results found.</CommandEmpty>
-                <CommandGroup>
-                    {options.map((option) => (
-                        <CommandItem
-                            title={option.label}
-                            key={option.value}
-                            value={option.value}
-                            onSelect={(value) => {
-                                toggleValue(value)
-                            }}
-                        >
-                            {option.icon ||
-                                <Check
-                                    className={cn(
-                                        "mr-2 h-4 w-4",
-                                        isSelected(option.value) ? "opacity-100" : "opacity-0"
-                                    )}
-                                />}
-                            {option.removable && removeOption && (
-                                <Button className="ml-1 mr-4 h-5 w-5 hover:outline" onClick={(e) => {
-                                    e.stopPropagation()
-                                    removeOption(option.value)
-                                }} title="Remove custom value" variant="ghost" size="icon">
-                                    <Delete className="h-4 w-4 rotate-180" />
-                                </Button>)}
-                            <span className="truncate">{option.label}</span>
-                        </CommandItem>
-                    ))}
-                </CommandGroup>
+                <ScrollAreaPrimitive.Root type="auto" className="relative">
+                    <ScrollAreaPrimitive.Viewport className="max-h-[300px]">
+                        <CommandEmpty>No results found.</CommandEmpty>
+                        <CommandGroup>
+                            {options.map((option) => (
+                                <CommandItem
+                                    title={option.label}
+                                    key={option.value}
+                                    value={option.value}
+                                    onSelect={(value) => {
+                                        toggleValue(value)
+                                    }}
+                                >
+                                    {option.icon ||
+                                        <Check
+                                            className={cn(
+                                                "mr-2 h-4 w-4",
+                                                isSelected(option.value) ? "opacity-100" : "opacity-0"
+                                            )}
+                                        />}
+                                    {option.removable && removeOption && (
+                                        <Button className="ml-1 mr-4 h-5 w-5 hover:outline" onClick={(e) => {
+                                            e.stopPropagation()
+                                            removeOption(option.value)
+                                        }} title="Remove custom value" variant="ghost" size="icon">
+                                            <Delete className="h-4 w-4 rotate-180" />
+                                        </Button>)}
+                                    <span className="truncate">{option.label}</span>
+                                </CommandItem>
+                            ))}
+                        </CommandGroup>
+                    </ScrollAreaPrimitive.Viewport>
+                    <ScrollBar />
+                    <ScrollAreaPrimitive.Corner />
+                </ScrollAreaPrimitive.Root>
             </CommandList>
         </Command>
     )
