@@ -6,9 +6,10 @@ import { useToast } from "@/components/ui/use-toast"
 import { File, FolderOpen, BookmarkPlus, BookmarkMinus, BookmarkX } from "lucide-react"
 import { Button } from "./ui/button";
 import { Toggle } from "./ui/toggle";
-import { cn } from "@/lib/utils";
+import { cn, getFileURL } from "@/lib/utils";
 import { useSelectedDBs } from "@/lib/state/database";
 import { useAlwaysShowBookmarkBtn } from "@/lib/state/alwaysShowBookmarks";
+import { useClientConfig } from "@/lib/useClientConfig";
 export const BookmarkBtn = (
     {
         sha256,
@@ -158,7 +159,19 @@ export const OpenFile = (
         "/api/open/file/{sha256}",
     );
     const { toast } = useToast()
+
+    const clientConfig = useClientConfig()
+    const openFileInBrowser = () => {
+        const url = getFileURL(query, "file", "sha256", sha256)
+        window.open(url, "_blank")
+    }
+
+    const disableOpenFileButton = clientConfig?.data?.disableBackendOpen || false
     const handleClick = () => {
+        if (disableOpenFileButton) {
+            openFileInBrowser()
+            return
+        }
         mutate({ params: { path: { sha256 }, query: { ...query, path: path } } }, {
             onError: (error: any) => {
                 toast({
@@ -177,12 +190,12 @@ export const OpenFile = (
             }
         })
     }
-
+    const buttonTitle = disableOpenFileButton ? "Open file in new tab" : "Open file with your system's default application"
     return (
         <>
             {buttonVariant ?
                 <Button
-                    title="Open file with your system's default application"
+                    title={buttonTitle}
                     onClick={() => handleClick()}
                     variant="ghost"
                     size="icon"
@@ -194,7 +207,7 @@ export const OpenFile = (
                 :
                 <button
                     onClick={() => handleClick()}
-                    title="Open file with your system's default application"
+                    title={buttonTitle}
                     className="hover:scale-105 absolute bottom-3 left-1 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
                 >
                     <svg

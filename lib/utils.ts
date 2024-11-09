@@ -48,3 +48,7 @@ export function getLocale(date: Date) {
     minute: "2-digit",
   })
 }
+
+export function envVariableIsTrue(envVariable: string | undefined): boolean {
+  return envVariable?.toLowerCase() === "true" || envVariable === "1"
+}

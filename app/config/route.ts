@@ -1,4 +1,5 @@
 // app/config/route.ts
+import { envVariableIsTrue } from "@/lib/utils"
 import { NextResponse } from "next/server"
 export interface ClientConfig {
   disableBackendOpen: boolean
@@ -7,11 +8,9 @@ export interface ClientConfig {
 export async function GET() {
   const config: ClientConfig = {
     disableBackendOpen:
-      process.env.DISABLE_BACKEND_OPEN?.toLowerCase() === "true" ||
-      process.env.DISABLE_BACKEND_OPEN === "1",
-    restrictedMode:
-      process.env.RESTRICTED_MODE?.toLowerCase() === "true" ||
-      process.env.RESTRICTED_MODE === "1",
+      envVariableIsTrue(process.env.DISABLE_BACKEND_OPEN_BTN) ||
+      envVariableIsTrue(process.env.RESTRICTED_MODE),
+    restrictedMode: envVariableIsTrue(process.env.RESTRICTED_MODE),
   }
   return NextResponse.json(config)
 }
