@@ -29,6 +29,7 @@
     "@tanstack/react-table": "^8.20.5",
     "@tanstack/react-virtual": "^3.10.9",
     "@types/history": "^4.7.11",
+    "@uidotdev/usehooks": "^2.4.1",
     "babel-plugin-react-compiler": "^19.0.0-beta-63b359f-20241101",
     "blurhash": "^2.0.5",
     "class-variance-authority": "^0.7.0",

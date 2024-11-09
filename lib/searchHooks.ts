@@ -18,11 +18,14 @@ import { getSearchPageURL } from "./state/searchQuery/serializers"
 import { usePartitionBy } from "./state/partitionBy"
 import { useEffect } from "react"
 import { queryFromState } from "./state/searchQuery/searchQuery"
+import { useThrottle } from "@uidotdev/usehooks"
 
 export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const isClient = typeof window !== "undefined"
+  const searchQueryState = useSearchQuery()
+  const throttledSearchQueryState = useThrottle(searchQueryState, 250)
   const searchQuery = isClient
-    ? useSearchQuery()
+    ? throttledSearchQueryState
     : (initialQuery.body as Required<components["schemas"]["PQLQuery"]>)
   const dbs = isClient ? useSelectedDBs()[0] : initialQuery.params.query
   const [page, setPage] = useSearchPage()
@@ -39,6 +42,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
       },
       body: {
         ...searchQuery,
+        page,
         results: true,
         count: false,
         partition_by: partitionBy.partition_by,
