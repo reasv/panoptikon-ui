@@ -24,8 +24,10 @@ const ResponsiveGridLayout = WidthProvider(Responsive)
 export function PinBoard(
     {
         thumbnailsOpen,
+        showPagination = true
     }: {
         thumbnailsOpen: boolean
+        showPagination?: boolean
     }
 ) {
     const dbs = useSelectedDBs()[0]
@@ -66,9 +68,13 @@ export function PinBoard(
     return (
         <ScrollArea ref={scrollAreaRef} className="overflow-y-auto">
             <div
-                className={cn("relative flex-grow",
-                    thumbnailsOpen ? "h-[calc(100vh-570px)]" : "h-[calc(100vh-215px)]", fs ? "h-[97vh]" : ""
-                )}
+                className={`relative flex-grow ${fs ? "h-[97vh]" : (
+                    showPagination ?
+                        (thumbnailsOpen ? "h-[calc(100vh-567px)]" : "h-[calc(100vh-213px)]")
+                        :
+                        (thumbnailsOpen ? "h-[calc(100vh-505px)]" : "h-[calc(100vh-151px)]")
+                )
+                    }`}
             >
                 <ResponsiveGridLayout
                     className="layout"

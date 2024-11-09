@@ -106,6 +106,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode }:
     }, [selectedItem])
     const [fs, setFs] = useGalleryFullscreen()
     const loading = useSearchLoading((state) => state.loading)
+    const showPagination = !fs && (nResults > pageSize) && (pageSize > 0)
     return (
         <>
             <SearchErrorToast noFtsErrors={options.e_iss} isError={isError} error={error} />
@@ -150,6 +151,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode }:
                         countMetrics={data?.count_metrics}
                         onImageClick={(index) => setIndex(index !== undefined ? index : null)}
                         isLoading={loading}
+                        showPagination={showPagination}
                     />
                 // :
                 // <VirtualResultGrid
@@ -163,7 +165,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode }:
 
             }
             {
-                !fs && (nResults > pageSize) && (pageSize > 0) && (
+                showPagination && (
                     <PageSelect
                         totalPages={totalPages}
                         currentPage={page}
@@ -183,6 +185,7 @@ export function ResultGrid({
     countMetrics,
     onImageClick,
     isLoading,
+    showPagination = true,
 }: {
     results: SearchResult[],
     resultMetrics?: components["schemas"]["SearchMetrics"],
@@ -190,6 +193,7 @@ export function ResultGrid({
     totalCount: number,
     onImageClick?: (index?: number) => void,
     isLoading?: boolean,
+    showPagination?: boolean,
 }) {
     const [dbs, __] = useSelectedDBs()
     const [sidebarOpen, _] = useSideBarOpen()
@@ -201,10 +205,13 @@ export function ResultGrid({
                 <span title={executionSummary}><AnimatedNumber value={totalCount} /> {totalCount === 1 ? "Result" : "Results"} in {resultMetrics?.execute}s</span>
             </h2>
             <ScrollArea className="overflow-y-auto">
-                <div className={cn('grid gap-4 max-h-[calc(100vh-225px)] grid-cols-1 md:grid-cols-2',
+                <div className={cn('grid gap-4 grid-cols-1 md:grid-cols-2',
                     sidebarOpen ?
                         ('lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4 4xl:grid-cols-5') :
-                        ('lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'))}>
+                        ('lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'),
+                    showPagination ? 'max-h-[calc(100vh-225px)]' : 'max-h-[calc(100vh-163px)]'
+
+                )}>
                     {results.map((result, index) => (
                         <SearchResultImage
                             key={result.file_id}

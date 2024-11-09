@@ -187,7 +187,11 @@ export function ImageGallery({
                 prevImage={prevImage}
                 nextImage={nextImage}
                 thumbnailsOpen={thumbnailsOpen}
-            /> : <PinBoard thumbnailsOpen={thumbnailsOpen} />}
+                showPagination={totalPages > 1}
+            /> : <PinBoard
+                thumbnailsOpen={thumbnailsOpen}
+                showPagination={totalPages > 1}
+            />}
             {!fs && thumbnailsOpen ? (items.length < 15 ? <GalleryHorizontalScroll items={items} /> : <VirtualGalleryHorizontalScroll items={items} />) : null}
         </div>
     )
@@ -219,11 +223,13 @@ export function GalleryImageLarge(
         thumbnailsOpen,
         prevImage,
         nextImage,
+        showPagination
     }: {
         item: SearchResult,
         prevImage: () => void,
         nextImage: () => void,
         thumbnailsOpen: boolean
+        showPagination: boolean
     }
 ) {
     const [dbs, ___] = useSelectedDBs()
@@ -249,7 +255,9 @@ export function GalleryImageLarge(
     return (
         <div
             className={cn("relative flex-grow flex justify-center items-center overflow-hidden group",
-                thumbnailsOpen ? "h-[calc(100vh-570px)]" : "h-[calc(100vh-215px)]" // Set height based on whether thumbnails
+                showPagination ? // Set height to fill the remaining space
+                    (thumbnailsOpen ? "h-[calc(100vh-567px)]" : "h-[calc(100vh-213px)]") // Set height based on whether thumbnails are open
+                    : (thumbnailsOpen ? "h-[calc(100vh-505px)]" : "h-[calc(100vh-151px)]")
             )}
         >
             <div
