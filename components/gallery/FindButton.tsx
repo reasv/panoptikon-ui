@@ -12,6 +12,7 @@ import { OrderArgsType, orderByType } from '@/lib/state/searchQuery/searchQueryK
 import { Button } from '../ui/button'
 import { partitionBySerializer, usePartitionBy } from '@/lib/state/partitionBy'
 import { serializers } from '@/lib/state/searchQuery/serializers'
+import { cn } from '@/lib/utils'
 
 function getFolderFromPath(fullPath: string): string {
     // Find the last occurrence of a separator, either '/' or '\'
@@ -115,11 +116,13 @@ export function FindButton({
     id_type,
     path,
     buttonVariant,
+    buttonClassName,
 }: {
     id: number | string,
     id_type: "file_id" | "sha256",
     path: string,
     buttonVariant?: boolean
+    buttonClassName?: string
 }) {
     const { toast } = useToast()
     const setIndex = useGalleryIndex()[1]
@@ -286,12 +289,14 @@ export function FindButton({
             }} >
             <ButtonElement
                 buttonVariant={buttonVariant}
+                buttonClassName={buttonClassName}
                 handleClick={() => { }}
                 handleHover={() => { }}
             />
         </a> :
             <ButtonElement
                 buttonVariant={buttonVariant}
+                buttonClassName={buttonClassName}
                 handleClick={handleFindClick}
                 handleHover={handleHover}
             />
@@ -302,8 +307,10 @@ function ButtonElement({
     buttonVariant,
     handleClick,
     handleHover,
+    buttonClassName,
 }: {
     buttonVariant?: boolean,
+    buttonClassName?: string,
     handleClick: () => void,
     handleHover: () => void
 }) {
@@ -314,6 +321,7 @@ function ButtonElement({
             onMouseEnter={handleHover}
             variant="ghost"
             size="icon"
+            className={buttonClassName}
         >
             <FolderSearch
                 className="w-4 h-4"
@@ -321,7 +329,7 @@ function ButtonElement({
         </Button>
         : <button
             title={"Navigate to this image's folder in Panoptikon"}
-            className={"hover:scale-105 absolute bottom-2 left-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"}
+            className={cn("hover:scale-105 absolute bottom-2 left-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300", buttonClassName)}
             onClick={handleClick}
             onMouseEnter={handleHover}
         >

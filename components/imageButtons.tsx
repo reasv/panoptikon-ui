@@ -10,6 +10,7 @@ import { cn, getFileURL } from "@/lib/utils";
 import { useSelectedDBs } from "@/lib/state/database";
 import { useAlwaysShowBookmarkBtn } from "@/lib/state/alwaysShowBookmarks";
 import { useClientConfig } from "@/lib/useClientConfig";
+import { FindButton } from "./gallery/FindButton";
 export const BookmarkBtn = (
     {
         sha256,
@@ -258,6 +259,19 @@ export const OpenFolder = (
                 })
             }
         })
+    }
+    const clientConfig = useClientConfig()
+    const disableOpenFileButton = clientConfig?.data?.disableBackendOpen || false
+    if (disableOpenFileButton) {
+        return (
+            <FindButton
+                id={sha256}
+                id_type="sha256"
+                path={path || ""}
+                buttonVariant={buttonVariant}
+                buttonClassName={!buttonVariant ? "bottom-3 left-12" : undefined}
+            />
+        )
     }
     return (
         buttonVariant ?
