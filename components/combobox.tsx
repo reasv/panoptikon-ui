@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { Button } from "@/components/ui/button"
@@ -25,6 +26,7 @@ import {
     PopoverTrigger,
 } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
+import { ScrollBar } from "./ui/scroll-area"
 
 export type Option = {
     value: string
@@ -105,27 +107,33 @@ function OptionList({
         <Command>
             <CommandInput placeholder="Filter..." />
             <CommandList>
-                <CommandEmpty>No results found.</CommandEmpty>
-                <CommandGroup>
-                    {options.map((option) => (
-                        <CommandItem
-                            key={option.value}
-                            value={option.value}
-                            onSelect={(value) => {
-                                onChangeValue(value === resetValue ? null : value)
-                                setOpen(false)
-                            }}
-                        >
-                            <Check
-                                className={cn(
-                                    "mr-2 h-4 w-4",
-                                    isSelected(option.value) ? "opacity-100" : "opacity-0"
-                                )}
-                            />
-                            {option.label}
-                        </CommandItem>
-                    ))}
-                </CommandGroup>
+                <ScrollAreaPrimitive.Root type="auto" className="relative">
+                    <ScrollAreaPrimitive.Viewport className="max-h-[300px]">
+                        <CommandEmpty>No results found.</CommandEmpty>
+                        <CommandGroup>
+                            {options.map((option) => (
+                                <CommandItem
+                                    key={option.value}
+                                    value={option.value}
+                                    onSelect={(value) => {
+                                        onChangeValue(value === resetValue ? null : value)
+                                        setOpen(false)
+                                    }}
+                                >
+                                    <Check
+                                        className={cn(
+                                            "mr-2 h-4 w-4",
+                                            isSelected(option.value) ? "opacity-100" : "opacity-0"
+                                        )}
+                                    />
+                                    {option.label}
+                                </CommandItem>
+                            ))}
+                        </CommandGroup>
+                    </ScrollAreaPrimitive.Viewport>
+                    <ScrollBar />
+                    <ScrollAreaPrimitive.Corner />
+                </ScrollAreaPrimitive.Root>
             </CommandList>
         </Command>
     )
