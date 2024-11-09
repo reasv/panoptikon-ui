@@ -11,8 +11,8 @@ import { useSelectedDBs } from "@/lib/state/database"
 import { useAlwaysShowBookmarkBtn } from "@/lib/state/alwaysShowBookmarks"
 import { useClientConfig } from "@/lib/useClientConfig"
 import { FindButton } from "./gallery/FindButton"
-import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@radix-ui/react-context-menu"
 import { FileBookmarksSetter } from "./sidebar/details/FileBookmarks"
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "./ui/context-menu"
 export const BookmarkBtn = (
     {
         sha256,
