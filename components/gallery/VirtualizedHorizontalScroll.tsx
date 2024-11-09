@@ -22,6 +22,7 @@ export function VirtualGalleryHorizontalScroll({
 }: {
     items: SearchResult[]
 }) {
+    "use no memo"
     const parentRef = useRef<HTMLDivElement>(null)
 
     const virtualizer = useVirtualizer({
