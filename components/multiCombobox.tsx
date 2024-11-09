@@ -47,6 +47,7 @@ export function MultiBoxResponsive({
     isOpen,
     onOpenChange,
     forceDrawer,
+    omitWrapper,
 }: {
     options: Option[],
     resetValue?: string,
@@ -61,6 +62,7 @@ export function MultiBoxResponsive({
     isOpen?: boolean
     onOpenChange?: (isOpen: boolean) => void
     forceDrawer?: boolean
+    omitWrapper?: boolean
 }) {
     const [open, setOpen] = React.useState(false)
     const isDesktop = useMediaQuery("(min-width: 1024px)")
@@ -90,6 +92,12 @@ export function MultiBoxResponsive({
         } else {
             onSelectionChange([...currentValues, value])
         }
+    }
+
+    if (omitWrapper) {
+        return (
+            <OptionList removeOption={onRemoveOption} defaultValue={resetValue} selectedValues={currentValues} options={options} toggleValue={onOptionToggle} />
+        )
     }
 
     if (isDesktop && !forceDrawer) {

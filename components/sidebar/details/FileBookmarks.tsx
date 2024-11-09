@@ -6,7 +6,6 @@ import { Plus } from "lucide-react";
 import { Button } from "../../ui/button";
 import { MultiBoxResponsive } from "../../multiCombobox";
 import { FilterContainer } from "../base/FilterContainer";
-import { components } from "@/lib/panoptikon";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/components/ui/use-toast";
 import { useSelectedDBs } from "@/lib/state/database";
@@ -23,19 +22,21 @@ export function FileBookmarks({
             storageKey="file-bookmarks-open"
             unMountOnCollapse
         >
-            <FileBookmarksSetter item={item} />
+            <FileBookmarksSetter sha256={item.sha256} />
         </FilterContainer>
     )
 }
 
-function FileBookmarksSetter(
+export function FileBookmarksSetter(
     {
-        item,
+        onlySelectors = false,
+        sha256,
     }: {
-        item: SearchResult
+        sha256: string
+        onlySelectors?: boolean
     }
 ) {
-    const [dbs, ___] = useSelectedDBs()
+    const [dbs] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/bookmarks/ns", {
         params: {
             query: dbs
@@ -44,7 +45,7 @@ function FileBookmarksSetter(
     const bookmarkQuery = {
         params: {
             path: {
-                sha256: item.sha256
+                sha256
             },
             query: dbs
         }
@@ -68,7 +69,7 @@ function FileBookmarksSetter(
             "/api/bookmarks/item/{sha256}",
             bookmarkQuery
         ])
-        const params = { path: { namespace: ns, sha256: item.sha256 }, query: dbs }
+        const params = { path: { namespace: ns, sha256 }, query: dbs }
         keys.push(
             [
                 "get",
@@ -114,7 +115,7 @@ function FileBookmarksSetter(
             })
         }
         const params = {
-            path: { namespace: ns, sha256: item.sha256 },
+            path: { namespace: ns, sha256 },
             query: dbs
         }
         if (deleted) {
@@ -152,6 +153,17 @@ function FileBookmarksSetter(
         const toRemove = currentBookmarks.filter(o => !option.includes(o))
         toAdd.forEach(addBookmark)
         toRemove.forEach(removeBookmark)
+    }
+    if (onlySelectors) {
+        return <MultiBoxResponsive
+            options={mergedNamespaces.map((ns) => ({ value: ns, label: ns })) || []}
+            currentValues={currentBookmarks}
+            onSelectionChange={onSelectOptions}
+            placeholder="Not Bookmarked"
+            maxDisplayed={10}
+            buttonClassName="max-w-[310px] sm:max-w-[505px] md:max-w-[620px] lg:max-w-[350px] xl:max-w-[270px] 3xl:max-w-[300px] 4xl:max-w-[292px] 5xl:max-w-[370px]"
+            omitWrapper
+        />
     }
     return (
         <>
