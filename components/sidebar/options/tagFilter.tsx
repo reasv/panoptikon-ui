@@ -139,7 +139,10 @@ function splitTags(tags: string): string[] {
 function joinTags(tags: string[]): string {
     return tags.join(" ")
 }
-
+function compareArrays(arr1: string[], arr2: string[]): boolean {
+    return arr1.length === arr2.length &&
+        arr1.every(item => arr2.includes(item));
+}
 export function TagListInput({
     label,
     description,
@@ -156,23 +159,15 @@ export function TagListInput({
 
     // Track initial mount
     const isInitialMount = useRef(true);
-    const hasLoadedTags = useRef(false);
-
 
     useEffect(() => {
         if (isInitialMount.current) {
             isInitialMount.current = false;
         } else {
-            onChange(splitTags(value));
+            if (!compareArrays(tags, splitTags(value)))
+                onChange(splitTags(value));
         }
     }, [value]);
-
-    useEffect(() => {
-        if (!hasLoadedTags.current && tags.length > 0) {
-            setValue(joinTags(tags));
-            hasLoadedTags.current = true;
-        }
-    }, [tags]);
 
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
