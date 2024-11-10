@@ -169,6 +169,11 @@ export function TagListInput({
         }
     }, [value]);
 
+    useEffect(() => {
+        if (!compareArrays(splitTags(value), tags))
+            setValue(joinTags(tags));
+    }, [tags]);
+
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
             <div className="flex flex-row items-center justify-between">
