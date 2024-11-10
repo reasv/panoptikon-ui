@@ -52,6 +52,8 @@ interface ItemDetailFiltersStateState {
   tag_namespaces: string[]
   tag_min_confidence: number
   tags_max_per_ns_setter: number
+  metadata_setters: string[]
+  metadata_min_confidence: number
 }
 interface ItemDetailFiltersState extends ItemDetailFiltersStateState {
   setTextSetters: (setters: string[]) => void
@@ -64,6 +66,8 @@ interface ItemDetailFiltersState extends ItemDetailFiltersStateState {
   setTagNamespaces: (namespaces: string[]) => void
   setTagMinConfidence: (confidence: number) => void
   setTagsMaxPerNsSetter: (max: number) => void
+  setMetadataSetters: (setters: string[]) => void
+  setMetadataMinConfidence: (confidence: number) => void
 }
 const itemFilterStorageOptions = {
   name: "detailFilters",
@@ -79,6 +83,8 @@ export const initialDetailFilters = {
   tag_namespaces: [],
   tag_min_confidence: 0,
   tags_max_per_ns_setter: 10,
+  metadata_setters: [],
+  metadata_min_confidence: 0,
 }
 
 export const useDetailsPane = create(
@@ -101,6 +107,10 @@ export const useDetailsPane = create(
       setMinLanguageConfidence: (confidence: number) =>
         set({ min_language_confidence: confidence }),
       setTextMaxLength: (length: number) => set({ text_max_length: length }),
+      setMetadataSetters: (setters: string[]) =>
+        set({ metadata_setters: setters }),
+      setMetadataMinConfidence: (confidence: number) =>
+        set({ metadata_min_confidence: confidence }),
     }),
     itemFilterStorageOptions
   )

@@ -13,6 +13,7 @@ import { FileBookmarks } from "./FileBookmarks"
 import { ItemFileDetails } from "./ItemFileDetails"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { useSelectedDBs } from "@/lib/state/database"
+import { useMemo } from "react"
 
 export function ItemDetails() {
     const selected = useItemSelection((state) => state.getSelected())
@@ -21,6 +22,7 @@ export function ItemDetails() {
             {selected && <ItemFileDetails item={selected} />}
             <ExtractedText item={selected} />
             <ItemTagDetails item={selected} />
+            <ExtractedMetadata item={selected} />
             <ResetFilters />
             {selected && <FileBookmarks item={selected} />}
         </div>
@@ -458,4 +460,151 @@ function TagLabel({
             <Progress className="h-1" value={confidence * 100} />
         </div>
     );
+}
+
+function ExtractedMetadata({
+    item,
+}: {
+    item: SearchResult | null
+}) {
+    const [dbs, ___] = useSelectedDBs()
+    const { data } = $api.useQuery("get", "/api/search/stats", { params: { query: dbs, } })
+
+    const textSetters = ["*", ...data?.setters.filter((s) => s[0] === "text").map((s) => s[1]) || []]
+    const setterOptions = textSetters.map((setter) => ({ value: setter, label: setter === "*" ? "All Text Sources" : setter }))
+    const selectedSetters = useDetailsPane((state) => state.metadata_setters)
+    const setSelectedSetters = useDetailsPane((state) => state.setMetadataSetters)
+    const setMinConfidence = useDetailsPane((state) => state.setMetadataMinConfidence)
+    const minConfidence = useDetailsPane((state) => state.metadata_min_confidence)
+    return (
+        <FilterContainer
+            storageKey="extractedMetadetailOpen"
+            label={<span>Extracted Metadata</span>}
+            description={
+                <span>Metadata extracted by models</span>
+            }
+            unMountOnCollapse
+        >
+            <FilterContainer
+                storageKey="extractedMetadetailFilterOpen"
+                label={<span>Metadata Filters</span>}
+                description={
+                    <span>Filter the displayed metadata</span>
+                }
+            >
+                <div className="flex flex-row items-center space-x-2 mt-4 w-full justify-left">
+                    <MultiBoxResponsive
+                        options={setterOptions}
+                        currentValues={selectedSetters}
+                        onSelectionChange={setSelectedSetters}
+                        placeholder="Select Sources"
+                        resetValue="*"
+                        maxDisplayed={4}
+                        buttonClassName="max-w-[350px]"
+                    />
+                </div>
+                <ConfidenceFilter
+                    label={<span>Confidence Threshold</span>}
+                    confidence={minConfidence}
+                    setConfidence={setMinConfidence}
+                    description={<span>Minimum confidence for the metadata text</span>}
+                />
+            </FilterContainer>
+            <div className="mt-4">
+                {item && (
+                    <MetadataList
+                        item={item}
+                        selectedSetters={selectedSetters}
+                        minConfidence={minConfidence}
+                    />)}
+            </div>
+        </FilterContainer>
+    )
+}
+
+function MetadataList(
+    {
+        item,
+        selectedSetters,
+        minConfidence,
+    }: {
+        item: SearchResult,
+        selectedSetters: string[],
+        minConfidence: number,
+    }
+) {
+    const [dbs, ___] = useSelectedDBs()
+    const { data } = $api.useQuery("get", "/api/items/item/text", {
+        params: {
+            query: {
+                setters: selectedSetters,
+                id: item.sha256,
+                languages: ["metadata"],
+                id_type: "sha256",
+                ...dbs
+            }
+        }
+    },
+        {
+            placeholderData: keepPreviousData
+        }
+    )
+    const text = (
+        data?.text.filter((t) => minConfidence > 0 ? (t.confidence || 0) >= minConfidence : true)
+    ) || []
+    return (
+        <div className="mt-4">
+            {text.map((t, i) => (
+                <MetadataCard key={`${t.setter_name}-${i}`} text={t} />
+            ))}
+        </div>
+    )
+}
+function MetadataCard(
+    {
+        text,
+    }: {
+        text: components["schemas"]["ExtractedText"]
+    }
+) {
+    const metadata: [string, string, string | null][] = useMemo(() => {
+        let meta_obj: { [key: string]: string }
+        try {
+            meta_obj = JSON.parse(text.text.replace(/'/g, '"'))
+        } catch (e) {
+            return [["Error", "Error parsing metadata", null]]
+        }
+        // return a list of key value pairs
+        return Object.entries(meta_obj).map(([key, value]) => {
+            return [snakeCaseToTitleCase(key), value as string, getHostName(value as string)]
+        })
+    }, [text])
+    return (
+        <div className="border rounded-lg p-4 mt-4">
+            <div className="flex flex-row items-center justify-between">
+                <div className="space-y-0.5">
+                    <div className="text-base font-medium">{text.setter_name} <span className="text-gray-400"> (Confidence {text.confidence})</span></div>
+                    {metadata.map(([key, value, hostname], i) => {
+                        if (hostname) {
+                            return <div key={i} className="text-gray-400 select-text ">
+                                <b>{key}</b>: <a href={value} target="_blank" rel="noreferrer"> {hostname}</a>
+                            </div>
+                        }
+                        return <div key={i} className="text-gray-400 select-text ">{key}: {value}</div>
+                    })}
+                </div>
+            </div>
+        </div>
+    )
+}
+
+function snakeCaseToTitleCase(str: string) {
+    return str.split('_').map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+}
+function getHostName(str: string) {
+    try {
+        return new URL(str).hostname
+    } catch (e) {
+        return null
+    }
 }

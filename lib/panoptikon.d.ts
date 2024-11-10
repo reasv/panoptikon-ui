@@ -3626,6 +3626,7 @@ export interface operations {
         parameters: {
             query: {
                 setters?: string[];
+                languages?: string[];
                 /** @description Text will be truncated to this length, if set. The `length` field will contain the original length. */
                 truncate_length?: number | null;
                 /** @description An item identifier (sha256 hash, file ID, path, item ID, or data ID for associated data) */
