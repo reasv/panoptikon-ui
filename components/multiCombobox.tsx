@@ -50,6 +50,7 @@ export function MultiBoxResponsive({
     onOpenChange,
     forceDrawer,
     omitWrapper,
+    omitSearchBar,
 }: {
     options: Option[],
     resetValue?: string,
@@ -65,6 +66,7 @@ export function MultiBoxResponsive({
     onOpenChange?: (isOpen: boolean) => void
     forceDrawer?: boolean
     omitWrapper?: boolean
+    omitSearchBar?: boolean
 }) {
     const [open, setOpen] = React.useState(false)
     const isDesktop = useMediaQuery("(min-width: 1024px)")
@@ -118,7 +120,14 @@ export function MultiBoxResponsive({
                 <PopoverContent
                     className={cn("max-w-[50vw] w-full p-0", popoverClassName)}
                     align="start">
-                    <OptionList removeOption={onRemoveOption} defaultValue={resetValue} selectedValues={currentValues} options={options} toggleValue={onOptionToggle} />
+                    <OptionList
+                        removeOption={onRemoveOption}
+                        defaultValue={resetValue}
+                        selectedValues={currentValues}
+                        options={options}
+                        toggleValue={onOptionToggle}
+                        omitSearchBar={omitSearchBar}
+                    />
                 </PopoverContent>
             </Popover>
         )
@@ -139,7 +148,14 @@ export function MultiBoxResponsive({
             <DrawerTitle title="Options" />
             <DrawerContent>
                 <div className="mt-4 border-t">
-                    <OptionList removeOption={onRemoveOption} defaultValue={resetValue} selectedValues={currentValues} options={options} toggleValue={onOptionToggle} />
+                    <OptionList
+                        removeOption={onRemoveOption}
+                        defaultValue={resetValue}
+                        selectedValues={currentValues}
+                        options={options}
+                        toggleValue={onOptionToggle}
+                        omitSearchBar={omitSearchBar}
+                    />
                 </div>
             </DrawerContent>
         </Drawer>
@@ -151,12 +167,14 @@ function OptionList({
     options,
     defaultValue,
     removeOption,
+    omitSearchBar,
 }: {
     toggleValue: (value: string) => void,
     options: Option[],
     selectedValues: string[],
     defaultValue?: string
     removeOption?: (value: string) => void
+    omitSearchBar?: boolean
 }) {
     const isSelected = (value: string) => {
         if (selectedValues.length === 0 && defaultValue) {
@@ -166,7 +184,7 @@ function OptionList({
     }
     return (
         <Command>
-            <CommandInput placeholder="Filter..." />
+            {!omitSearchBar && <CommandInput placeholder="Filter..." />}
             <CommandList>
                 <ScrollAreaPrimitive.Root type="auto" className="relative">
                     <ScrollAreaPrimitive.Viewport

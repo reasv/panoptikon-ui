@@ -121,6 +121,7 @@ export function SearchTypeSelection() {
         maxDisplayed={1}
         isOpen={open}
         onOpenChange={setOpen}
+        omitSearchBar={true}
         button={
             <Toggle
                 pressed={true}
