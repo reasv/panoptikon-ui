@@ -100,7 +100,14 @@ export function MultiBoxResponsive({
 
     if (omitWrapper) {
         return (
-            <OptionList removeOption={onRemoveOption} defaultValue={resetValue} selectedValues={currentValues} options={options} toggleValue={onOptionToggle} />
+            <OptionList
+                removeOption={onRemoveOption}
+                defaultValue={resetValue}
+                selectedValues={currentValues}
+                options={options}
+                toggleValue={onOptionToggle}
+                omitSearchBar={omitSearchBar}
+            />
         )
     }
 

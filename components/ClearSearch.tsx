@@ -1,10 +1,10 @@
 import { Delete } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
-import { Button } from './ui/button'
 import { useEmbedArgs, useOrderArgs, useResetSearchQueryState } from "@/lib/state/searchQuery/clientHooks"
 import { Toggle } from "./ui/toggle"
-import { ContextMenu, ContextMenuCheckboxItem, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuTrigger } from "./ui/context-menu"
+import { ContextMenu, ContextMenuCheckboxItem, ContextMenuContent, ContextMenuTrigger } from "./ui/context-menu"
 import { useSearchClearSettings } from "@/lib/state/clearSearchOptions"
+import { MultiBoxResponsive } from "./multiCombobox"
 
 export function ClearSearch() {
     const { toast } = useToast()
@@ -35,6 +35,50 @@ export function ClearSearch() {
             duration: 3000
         })
     }
+    const allOptions = [
+        {
+            label: "Clear Page Size",
+            value: "page_size",
+        },
+        {
+            label: "Clear Order By Options",
+            value: "order_by",
+        },
+        {
+            label: "Search Types",
+            value: "search_types",
+        },
+        {
+            label: "Clear Model Cache Settings",
+            value: "model_cache",
+        },
+
+    ]
+    const selectedOptions: string[] = [
+        ...(clearSettings.pageSize ? [] : ["page_size"])
+    ].concat(
+        [...
+            clearSettings.orderBy ? [] : ["order_by"]
+        ])
+        .concat([...
+            clearSettings.modelCache ? [] : ["model_cache"]
+        ])
+        .concat([...
+            clearSettings.searchTypes ? [] : ["search_types"]
+        ])
+
+    const onSelectionChange = (selectedOptions: string[]) => {
+        const newSettings = {
+            page_size: selectedOptions.includes("page_size"),
+            orderBy: selectedOptions.includes("order_by"),
+            modelCache: selectedOptions.includes("model_cache"),
+            searchTypes: selectedOptions.includes("search_types")
+        }
+        clearSettings.setPageSize(newSettings.page_size)
+        clearSettings.setOrderBy(newSettings.orderBy)
+        clearSettings.setModelCache(newSettings.modelCache)
+        clearSettings.setSearchTypes(newSettings.searchTypes)
+    }
     return (
         <ContextMenu>
             <ContextMenuTrigger>
@@ -48,24 +92,15 @@ export function ClearSearch() {
                 </Toggle>
             </ContextMenuTrigger>
             <ContextMenuContent className="w-64">
-                <ContextMenuCheckboxItem
-                    checked={clearSettings.pageSize}
-                    onClick={() => clearSettings.setPageSize(!clearSettings.pageSize)}
-                >
-                    Clear Page Size
-                </ContextMenuCheckboxItem>
-                <ContextMenuCheckboxItem
-                    checked={clearSettings.orderBy}
-                    onClick={() => clearSettings.setOrderBy(!clearSettings.orderBy)}
-                >
-                    Clear Order By Options
-                </ContextMenuCheckboxItem>
-                <ContextMenuCheckboxItem
-                    checked={clearSettings.modelCache}
-                    onClick={() => clearSettings.setModelCache(!clearSettings.modelCache)}
-                >
-                    Clear Model Cache Settings
-                </ContextMenuCheckboxItem>
+                <MultiBoxResponsive
+                    options={allOptions}
+                    currentValues={selectedOptions}
+                    onSelectionChange={onSelectionChange}
+                    placeholder="Select an option"
+                    maxDisplayed={1}
+                    omitSearchBar={true}
+                    omitWrapper={true}
+                />
             </ContextMenuContent>
         </ContextMenu>
     )
