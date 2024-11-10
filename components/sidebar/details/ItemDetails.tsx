@@ -588,7 +588,7 @@ function MetadataCard(
         <div className="border rounded-lg p-4 mt-4">
             <div className="flex flex-row items-center justify-between">
                 <div className="space-y-0.5">
-                    <div className="text-base font-medium">{text.setter_name} <span className="text-gray-400"> (Confidence {text.confidence})</span></div>
+                    <div className="text-base font-medium">{text.setter_name} <span className="text-gray-400"> (Confidence {text.confidence?.toFixed(2)})</span></div>
                     {metadata.map(([key, value, hostname], i) => {
                         if (hostname) {
                             return <div key={i} className="text-gray-400 select-text ">
