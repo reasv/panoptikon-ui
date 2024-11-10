@@ -365,7 +365,6 @@ export const useResetSearchQueryState = () => {
     useATSemanticText()[1],
     useATSemanticTextSrc()[1],
     useATSemanticImage()[1],
-    useEmbedArgs()[1],
     useSemanticTextSource()[1],
     useItemSimilaritySearch()[1],
     useItemSimilarityTextSource()[1],
