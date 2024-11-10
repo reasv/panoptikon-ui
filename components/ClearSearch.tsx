@@ -1,19 +1,26 @@
 import { Delete } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
-import { useEmbedArgs, useOrderArgs, useResetSearchQueryState } from "@/lib/state/searchQuery/clientHooks"
+import { useATSemanticImage, useATSemanticText, useEmbedArgs, useOrderArgs, useQueryOptions, useResetSearchQueryState } from "@/lib/state/searchQuery/clientHooks"
 import { Toggle } from "./ui/toggle"
-import { ContextMenu, ContextMenuCheckboxItem, ContextMenuContent, ContextMenuTrigger } from "./ui/context-menu"
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "./ui/context-menu"
 import { useSearchClearSettings } from "@/lib/state/clearSearchOptions"
 import { MultiBoxResponsive } from "./multiCombobox"
+import { useMemo } from "react"
 
 export function ClearSearch() {
     const { toast } = useToast()
     const reset = useResetSearchQueryState()
     const [embedArgs, setEmbedArgs] = useEmbedArgs()
     const [orderArgs, setOrderArgs] = useOrderArgs()
+    const [options, setOptions] = useQueryOptions()
+    const [tembFilter, setTembFilter] = useATSemanticText()
+    const [iembFilter, setIembFilter] = useATSemanticImage()
     const clearSettings = useSearchClearSettings((state) => state)
     const clearSearchQuery = () => {
         const oldOrderArgs = orderArgs
+        const oldOptions = options
+        const oldTemFilter = tembFilter
+        const oldIembFilter = iembFilter
         reset()
         if (clearSettings.modelCache) {
             setEmbedArgs(null)
@@ -28,6 +35,25 @@ export function ClearSearch() {
             setOrderArgs({
                 page_size: oldOrderArgs.page_size
             })
+        }
+        if (!clearSettings.searchTypes) {
+            setOptions({
+                at_e_path: oldOptions.at_e_path,
+                at_e_txt: oldOptions.at_e_txt,
+                at_e_si: oldOptions.at_e_si,
+                at_e_st: oldOptions.at_e_st
+            })
+            if (oldOptions.at_e_si) {
+                setIembFilter({
+                    model: oldIembFilter.model,
+
+                })
+            }
+            if (oldOptions.at_e_st) {
+                setTembFilter({
+                    model: oldTemFilter.model,
+                })
+            }
         }
         toast({
             title: "Cleared Query",
@@ -54,18 +80,22 @@ export function ClearSearch() {
         },
 
     ]
-    const selectedOptions: string[] = [
-        ...(clearSettings.pageSize ? [] : ["page_size"])
-    ].concat(
-        [...
-            clearSettings.orderBy ? [] : ["order_by"]
-        ])
-        .concat([...
-            clearSettings.modelCache ? [] : ["model_cache"]
-        ])
-        .concat([...
-            clearSettings.searchTypes ? [] : ["search_types"]
-        ])
+    const selectedOptions: string[] = useMemo(() => {
+        let selected = []
+        if (clearSettings.pageSize) {
+            selected.push("page_size")
+        }
+        if (clearSettings.orderBy) {
+            selected.push("order_by")
+        }
+        if (clearSettings.searchTypes) {
+            selected.push("search_types")
+        }
+        if (clearSettings.modelCache) {
+            selected.push("model_cache")
+        }
+        return selected
+    }, [clearSettings.modelCache, clearSettings.orderBy, clearSettings.pageSize, clearSettings.searchTypes])
 
     const onSelectionChange = (selectedOptions: string[]) => {
         const newSettings = {
