@@ -576,7 +576,12 @@ function MetadataCard(
         }
         // return a list of key value pairs
         return Object.entries(meta_obj).map(([key, value]) => {
-            return [snakeCaseToTitleCase(key), value as string, getHostName(value as string)]
+            const hostname = getHostName(value as string)
+            if (hostname && key.toLowerCase().endsWith("_url")) {
+                // Remove the _url suffix
+                key = key.slice(0, -4)
+            }
+            return [snakeCaseToTitleCase(key), value as string, hostname]
         })
     }, [text])
     return (
