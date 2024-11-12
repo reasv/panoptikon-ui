@@ -23,9 +23,9 @@ import { useThrottle } from "@uidotdev/usehooks"
 export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const isClient = typeof window !== "undefined"
   const searchQueryState = useSearchQuery()
-  const throttledSearchQueryState = useThrottle(searchQueryState, 250)
+  // const throttledSearchQueryState = useThrottle(searchQueryState, 250)
   const searchQuery = isClient
-    ? throttledSearchQueryState
+    ? searchQueryState
     : (initialQuery.body as Required<components["schemas"]["PQLQuery"]>)
   const dbs = isClient ? useSelectedDBs()[0] : initialQuery.params.query
   const [page, setPage] = useSearchPage()
