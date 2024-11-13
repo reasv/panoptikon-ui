@@ -70,6 +70,9 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
             if (row.getValue("completed")) {
                 return prettyPrintDate(row.getValue("end_time"))
             }
+            if (row.getValue("status") === -1) {
+                return `(Stopped) ${prettyPrintDate(row.getValue("end_time"))}`
+            }
             const totalProcessed: number = (row.getValue("image_files") as number) + (row.getValue("video_files") as number) + (row.getValue("other_files") as number)
             const remaining = row.getValue("total_remaining") as number
             return `ETA: ${estimateEta(row.getValue("start_time"),
@@ -116,16 +119,46 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
     {
 
         accessorKey: "type",
-        header: "Type",
+        header: ({ column }) => {
+            return (
+                <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                >
+                    Type
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            )
+        },
     },
     {
         accessorKey: "setter",
-        header: "Model",
+        header: ({ column }) => {
+            return (
+                <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                >
+                    Model
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            )
+        },
     },
     {
         id: "saved_data",
         accessorKey: "items_in_db",
-        header: "Saved Data",
+        header: ({ column }) => {
+            return (
+                <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                >
+                    Saved Data
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            )
+        },
     },
     {
         accessorKey: "batch_size",
@@ -138,7 +171,17 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
     {
         id: "data_load_time",
         accessorKey: "data_load_time",
-        header: "Data Load Time",
+        header: ({ column }) => {
+            return (
+                <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                >
+                    Data Load Time
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            )
+        },
         cell: ({ row }) => prettyPrintDuration(
             row.getValue("data_load_time")
         ),
@@ -146,7 +189,17 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
     {
         id: "inference_time",
         accessorKey: "inference_time",
-        header: "Inference Time",
+        header: ({ column }) => {
+            return (
+                <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                >
+                    Inference Time
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            )
+        },
         cell: ({ row }) => prettyPrintDuration(
             row.getValue("inference_time")
         ),
@@ -166,7 +219,17 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
     {
         id: "data_segments",
         accessorKey: "total_segments",
-        header: "Data Segments",
+        header: ({ column }) => {
+            return (
+                <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                >
+                    Data Segments
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            )
+        },
     },
     {
         accessorKey: "errors",
@@ -183,5 +246,25 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
     {
         accessorKey: "failed",
         header: "Failed",
+    },
+    {
+        id: "status",
+        accessorKey: "status",
+        header: ({ column }) => {
+            return (
+                <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                >
+                    Status
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            )
+        },
+        cell: ({ row }) =>
+            row.getValue("completed") ? "Completed" :
+                row.getValue("failed") ? "Failed" :
+                    row.getValue("status") === -1 ? "Stopped" :
+                        "Processing",
     }
 ]

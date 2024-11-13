@@ -118,6 +118,7 @@ export function DataExtractionHistory() {
                     "total_remaining": false,
                     "completed": false,
                     "failed": false,
+                    "status": false,
                 }}
             />
             <ScrollBar orientation="horizontal" />
