@@ -264,7 +264,7 @@ export function FindButton({
     // Reset the link when the id or path changes
     useEffect(() => {
         setLink(null)
-    }, [id, id_type, path])
+    }, [id, id_type, path, orderArgs.page_size, orderArgs.order_by, orderArgs.order, dbs.index_db, dbs.user_data_db])
 
     const handleHover = async () => {
         const data = await getNavigationData()
