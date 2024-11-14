@@ -31,6 +31,8 @@ export function OrderBy() {
             { value: "size", label: "Size" },
             { value: "type", label: "Type" },
             { value: "duration", label: "Duration" },
+            { value: "random", label: "Random Order" },
+            { value: "time_added", label: "Time Added" },
         ]
     const orderOptionsMap = orderByData.meta.force_order_by ? availableFilterOrderOptions : [
         ...orderOptions,

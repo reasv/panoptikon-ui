@@ -1463,6 +1463,8 @@ export interface components {
             failed: number;
             /** Completed */
             completed: number;
+            /** Status */
+            status: number;
         };
         /** Match */
         Match: {
@@ -2132,7 +2134,7 @@ export interface components {
              * Order By
              * @default last_modified
              */
-            order_by: ("file_id" | "sha256" | "path" | "filename" | "last_modified") | ("item_id" | "sha256" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks" | "blurhash") | ("data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id");
+            order_by: ("file_id" | "sha256" | "path" | "filename" | "last_modified") | ("item_id" | "sha256" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks" | "blurhash") | ("data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id") | "random";
             /** Order */
             order?: ("asc" | "desc") | null;
             /**
