@@ -56,6 +56,13 @@ export function SearchResultImage({
         }
     }, [onImageClick, index])
     const blurDataURL = useMemo(() => result.blurhash ? blurHashToDataURL(result.blurhash) : undefined, [result.blurhash])
+    const handleDragStart = (event: React.DragEvent<HTMLImageElement>): void => {
+        if (!fileUrl) return;
+        console.log('dragging', fileUrl);
+        event.dataTransfer.effectAllowed = 'copy';
+        event.dataTransfer.setData('text/plain', fileUrl);
+        event.dataTransfer.setData('text/uri-list', fileUrl);
+    };
     return (
         <div className={cn("border rounded p-2", className)}>
             <div className={cn("overflow-hidden relative w-full pb-full mb-2",
@@ -77,6 +84,8 @@ export function SearchResultImage({
                         fill
                         placeholder={blurDataURL ? 'blur' : 'empty'}
                         blurDataURL={blurDataURL}
+                        draggable={true}
+                        onDragStart={handleDragStart}
                         className={cn(
                             "object-cover object-top",
                             showLoadingSpinner ? "" : "group-hover:object-contain group-hover:object-center",

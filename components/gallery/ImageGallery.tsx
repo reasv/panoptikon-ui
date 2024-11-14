@@ -252,6 +252,13 @@ export function GalleryImageLarge(
     const isPlayable = item.type === "video/mp4" || item.type === "video/webm"
     const videoRef = useRef<HTMLVideoElement>(null)
     const videoState = useVideoPlayerState({ videoRef })
+    const handleDragStart = (event: React.DragEvent<HTMLImageElement>): void => {
+        if (!fileURL) return;
+        console.log('dragging', fileURL);
+        event.dataTransfer.effectAllowed = 'copy';
+        event.dataTransfer.setData('text/plain', fileURL);
+        event.dataTransfer.setData('text/uri-list', fileURL);
+    };
     return (
         <div
             className={cn("relative flex-grow flex justify-center items-center overflow-hidden group",
@@ -288,6 +295,8 @@ export function GalleryImageLarge(
                         <Image
                             src={thumbnailURL}
                             alt={`${item.path}`}
+                            draggable={true}
+                            onDragStart={handleDragStart}
                             fill
                             className="object-contain"
                             unoptimized={true}
