@@ -43,12 +43,22 @@ const applyOptionsToMap = <T extends Record<string, any>>(
 export const orderParamsKeyMap = (p: typeof def) =>
   applyOptionsToMap({
     order_by: p
-      .parseAsStringEnum<orderByType>([
+      .parseAsStringEnum<OrderArgsType["order_by"]>([
         "last_modified",
         "path",
         "time_added",
         "size",
         "type",
+        "duration",
+        "random",
+        "bookmark_time",
+        "match_at",
+        "match_text",
+        "match_path",
+        "match_tags_confidence",
+        "search_semantic_text",
+        "search_semantic_image",
+        "search_item_similarity",
       ])
       .withDefault("last_modified"),
     order: p.parseAsStringEnum<orderType>(["asc", "desc"]),
