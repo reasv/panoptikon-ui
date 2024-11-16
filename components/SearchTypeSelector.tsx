@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { useATSemanticImage, useATSemanticText, useEmbedArgs, useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
 import { MultiBoxResponsive } from "./multiCombobox"
-import { GlassWater, LoaderCircle, ScanSearch } from "lucide-react"
+import { LoaderCircle, ScanSearch, ArrowRight } from "lucide-react"
 import { Toggle } from "./ui/toggle"
 import { useSelectedDBs } from "@/lib/state/database"
 import { $api } from "@/lib/api"
@@ -55,6 +55,14 @@ export function SearchTypeSelection() {
         models: tembModels
     })
     const onSelectionChange = (selectedOptions: string[]) => {
+        if (selectedOptions.filter((option) => option === "tag_mode").length > 0) {
+            setOptions({
+                at_query: "",
+                tag_mode: true,
+                e_tags: true,
+            })
+            return
+        }
         setOptions({
             at_e_path: selectedOptions.includes("path"),
             at_e_txt: selectedOptions.includes("fts"),
@@ -69,6 +77,7 @@ export function SearchTypeSelection() {
             onIembEnableChange(iembEnabled)
         }
     }
+    const tagModels = data?.setters.filter((setter) => setter[0] === "tags").map((setter) => setter[1]) || []
 
     const allOptions = [
         {
@@ -92,6 +101,12 @@ export function SearchTypeSelection() {
             value: "temb",
             icon: tembIsLoading ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : undefined,
             available: tembModels.length > 0,
+        },
+        {
+            label: "Switch to Exact Tags",
+            value: "tag_mode",
+            // icon: <ArrowRight className="mr-2 h-4 w-4" />,
+            available: tagModels.length > 0,
         },
     ]
     const availableOptions = allOptions.filter((option) => option.available).map((option) => ({ ...option, available: undefined }))

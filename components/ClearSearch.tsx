@@ -41,7 +41,7 @@ export function ClearSearch() {
                 at_e_path: oldOptions.at_e_path,
                 at_e_txt: oldOptions.at_e_txt,
                 at_e_si: oldOptions.at_e_si,
-                at_e_st: oldOptions.at_e_st
+                at_e_st: oldOptions.at_e_st,
             })
             if (oldOptions.at_e_si) {
                 setIembFilter({
@@ -52,6 +52,14 @@ export function ClearSearch() {
             if (oldOptions.at_e_st) {
                 setTembFilter({
                     model: oldTemFilter.model,
+                })
+            }
+            // Tag Search Mode
+            if (oldOptions.tag_mode) {
+                setOptions({
+                    at_query: "",
+                    tag_mode: true,
+                    e_tags: true,
                 })
             }
         }
