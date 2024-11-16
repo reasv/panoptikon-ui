@@ -5,8 +5,12 @@ import { create } from "zustand"
 interface LastSelectedModels {
   imageEmbedding: string | null
   textEmbedding: string | null
-  setLastSelectedModel: (type: "image" | "text", model: string) => void
-  getLastSelectedModel: (type: "image" | "text") => string | null
+  audioEmbedding: string | null
+  setLastSelectedModel: (
+    type: "image" | "text" | "audio",
+    model: string
+  ) => void
+  getLastSelectedModel: (type: "image" | "text" | "audio") => string | null
 }
 const storage = {
   name: "lastSelectedModels",
@@ -17,21 +21,35 @@ export const useLastModelSelection = create(
     (set, get) => ({
       imageEmbedding: null,
       textEmbedding: null,
-      setLastSelectedModel: (type: "image" | "text", model: string) => {
+      audioEmbedding: null,
+      setLastSelectedModel: (
+        type: "image" | "text" | "audio",
+        model: string
+      ) => {
         if (type === "image") {
           set((state) => ({
             imageEmbedding: model,
             textEmbedding: state.textEmbedding,
           }))
-        } else {
+        } else if (type === "text") {
           set((state) => ({
             imageEmbedding: state.imageEmbedding,
             textEmbedding: model,
           }))
+        } else {
+          set((state) => ({
+            imageEmbedding: state.imageEmbedding,
+            textEmbedding: state.textEmbedding,
+            audioEmbedding: model,
+          }))
         }
       },
-      getLastSelectedModel: (type: "image" | "text") =>
-        type === "image" ? get().imageEmbedding : get().textEmbedding,
+      getLastSelectedModel: (type: "image" | "text" | "audio") =>
+        type === "image"
+          ? get().imageEmbedding
+          : type === "text"
+          ? get().textEmbedding
+          : get().audioEmbedding,
     }),
     storage
   )

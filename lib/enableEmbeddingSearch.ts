@@ -16,7 +16,7 @@ export function useEnableEmbeddingSearch({
   model: string
   setModel: (value: string) => void
   models: string[]
-  type: "image" | "text"
+  type: "image" | "text" | "audio"
 }) {
   const [getLastModel, setLastModel] = useLastModelSelection((state) => [
     state.getLastSelectedModel,
@@ -72,7 +72,7 @@ export function useEnableEmbeddingSearch({
         toast({
           title: "Enabled",
           description: `Semantic ${
-            type === "image" ? "Image" : "Text"
+            type === "image" ? "Image" : type === "text" ? "Text" : "Audio"
           } Search is now enabled`,
         })
         return
@@ -102,7 +102,7 @@ export function useEnableEmbeddingSearch({
             toast({
               title: "Model Loaded",
               description: `Semantic ${
-                type === "image" ? "Image" : "Text"
+                type === "image" ? "Image" : type === "text" ? "Text" : "Audio"
               } Search is now enabled`,
             })
           },
@@ -119,7 +119,7 @@ export function useEnableEmbeddingSearch({
       toast({
         title: "Disabled",
         description: `Semantic ${
-          type === "image" ? "Image" : "Text"
+          type === "image" ? "Image" : type === "text" ? "Text" : "Audio"
         } Search is now disabled`,
       })
       setModel("")

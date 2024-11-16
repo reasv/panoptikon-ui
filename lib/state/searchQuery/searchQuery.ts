@@ -227,7 +227,11 @@ export function queryFromState(
   }
   // Flexible search
   let at_order_by = state.OrderArgs.order_by === "match_at"
-  if (state.SearchQueryOptions.at_e_st || state.SearchQueryOptions.at_e_si) {
+  if (
+    state.SearchQueryOptions.at_e_st ||
+    state.SearchQueryOptions.at_e_si ||
+    state.SearchQueryOptions.at_e_sa
+  ) {
     at_order_by = true // Must always sort by this since it's semantic search
     available_filter_orders = ["match_at"]
     force_order_by = true
@@ -247,6 +251,9 @@ export function queryFromState(
       n_at_enabled++
     }
     if (state.SearchQueryOptions.at_e_si) {
+      n_at_enabled++
+    }
+    if (state.SearchQueryOptions.at_e_sa) {
       n_at_enabled++
     }
     const at_filter: components["schemas"]["OrOperator"] = { or_: [] }
@@ -312,6 +319,21 @@ export function queryFromState(
       state.ATSemanticImage.model.length > 0
     ) {
       at_filter.or_.push(searchSemanticImage)
+    }
+    const searchSemanticAudio: components["schemas"]["SemanticImageSearch"] = {
+      ...sortArgs,
+      rrf: at_order_by ? state.ATSemanticAudioRRF : undefined,
+      image_embeddings: {
+        ...state.ATSemanticAudio,
+        query: state.SearchQueryOptions.at_query,
+        embed: state.EmbedArgs,
+      },
+    }
+    if (
+      state.SearchQueryOptions.at_e_sa &&
+      state.ATSemanticAudio.model.length > 0
+    ) {
+      at_filter.or_.push(searchSemanticAudio)
     }
     const searchSemanticText: components["schemas"]["SemanticTextSearch"] = {
       ...sortArgs,

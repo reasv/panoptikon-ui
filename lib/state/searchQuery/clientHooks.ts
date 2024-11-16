@@ -30,6 +30,8 @@ import {
   rrfKeyMapSemanticImage,
   rrfKeyMapSemanticText,
   pageSizeKey,
+  rrfKeyMapSemanticAudio,
+  ATSemanticAudio,
 } from "./searchQueryKeyMaps"
 import { useScopedQueryStates } from "../nuqsScopedWrappers/scopedQueryStates"
 import {
@@ -233,6 +235,16 @@ export function useATSemanticImage(): [
   )
   return [state, useResetPage(set, useQueryOptions()[0].at_e_si)] as const
 }
+export function useATSemanticAudio(): [
+  ATSemanticAudio,
+  SetFn<ATSemanticAudio>
+] {
+  const [state, set] = useScopedQueryStates(
+    "at.sa",
+    semanticImageSearchKeyMap(def as any)
+  )
+  return [state, useResetPage(set, useQueryOptions()[0].at_e_sa)] as const
+}
 
 export function useATTextRRF(): [
   KeymapComponents["ATTextRRF"],
@@ -273,6 +285,17 @@ export function useATSemanticImageRRF(): [
     rrfKeyMapSemanticImage(def as any)
   )
   return [state, useResetPage(set, useQueryOptions()[0].at_e_si)] as const
+}
+
+export function useATSemanticAudioRRF(): [
+  KeymapComponents["ATSemanticAudioRRF"],
+  SetFn<KeymapComponents["ATSemanticAudioRRF"]>
+] {
+  const [state, set] = useScopedQueryStates(
+    "at.sa.rrf",
+    rrfKeyMapSemanticAudio(def as any)
+  )
+  return [state, useResetPage(set, useQueryOptions()[0].at_e_sa)] as const
 }
 
 export function useItemSimilaritySearch(): [
@@ -333,6 +356,8 @@ export const useSearchQueryState = () => {
     ATSourceText: useATSemanticTextSrc()[0],
     ATSemanticImage: useATSemanticImage()[0],
     ATSemanticImageRRF: useATSemanticImageRRF()[0],
+    ATSemanticAudio: useATSemanticAudio()[0],
+    ATSemanticAudioRRF: useATSemanticAudioRRF()[0],
     ItemSimilarity: useItemSimilaritySearch()[0],
     ItemSimilarityTextSource: useItemSimilarityTextSource()[0],
   }

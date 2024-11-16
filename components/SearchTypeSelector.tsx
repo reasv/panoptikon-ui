@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { useATSemanticImage, useATSemanticText, useEmbedArgs, useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
+import { useATSemanticAudio, useATSemanticImage, useATSemanticText, useEmbedArgs, useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
 import { MultiBoxResponsive } from "./multiCombobox"
 import { LoaderCircle, ScanSearch, ArrowRight } from "lucide-react"
 import { Toggle } from "./ui/toggle"
@@ -30,6 +30,14 @@ export function SearchTypeSelection() {
     const iembModels = [...
         data?.setters
             .filter((setter) => setter[0] === "clip")
+            .filter((setter) => !setter[1].startsWith("clap"))
+            .map((setter) => setter[1]) || []
+    ]
+    const [aembFilter, setAembFilter] = useATSemanticAudio()
+    const aembModels = [...
+        data?.setters
+            .filter((setter) => setter[0] === "clip")
+            .filter((setter) => setter[1].startsWith("clap"))
             .map((setter) => setter[1]) || []
     ]
     const [tembFilter, setTembFilter] = useATSemanticText()
@@ -45,6 +53,14 @@ export function SearchTypeSelection() {
         model: iembFilter.model,
         setModel: (value: string) => setIembFilter({ model: value }),
         models: iembModels
+    })
+
+    const [onAembEnableChange, aembIsLoading] = useEnableEmbeddingSearch({
+        type: "audio",
+        setEnable: (value: boolean) => setOptions({ at_e_sa: value }),
+        model: aembFilter.model,
+        setModel: (value: string) => setAembFilter({ model: value }),
+        models: aembModels
     })
 
     const [onTembEnableChange, tembIsLoading] = useEnableEmbeddingSearch({
@@ -69,12 +85,16 @@ export function SearchTypeSelection() {
         })
         const tembEnabled = selectedOptions.includes("temb")
         const iembEnabled = selectedOptions.includes("iemb")
+        const aembEnabled = selectedOptions.includes("aemb")
         // if the selected options are different from the current options, update the state
         if (tembEnabled !== options.at_e_st) {
             onTembEnableChange(tembEnabled)
         }
         if (iembEnabled !== options.at_e_si) {
             onIembEnableChange(iembEnabled)
+        }
+        if (aembEnabled !== options.at_e_sa) {
+            onAembEnableChange(aembEnabled)
         }
     }
     const tagModels = data?.setters.filter((setter) => setter[0] === "tags").map((setter) => setter[1]) || []
@@ -95,6 +115,12 @@ export function SearchTypeSelection() {
             value: "iemb",
             icon: iembIsLoading ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : undefined,
             available: iembModels.length > 0,
+        },
+        {
+            label: "Semantic Audio Search",
+            value: "aemb",
+            icon: aembIsLoading ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : undefined,
+            available: aembModels.length > 0,
         },
         {
             label: "Semantic Text Search",
@@ -124,6 +150,9 @@ export function SearchTypeSelection() {
         }
         if (options.at_e_st) {
             selected.push("temb")
+        }
+        if (options.at_e_sa) {
+            selected.push("aemb")
         }
         return selected
     }, [options])

@@ -2,12 +2,10 @@ import { $api } from "@/lib/api"
 import { Label } from "../../ui/label"
 import { Switch } from "../../ui/switch"
 import { useSelectedDBs } from "@/lib/state/database"
-import { SetFn, useEmbedArgs } from "@/lib/state/searchQuery/clientHooks"
+import { SetFn } from "@/lib/state/searchQuery/clientHooks"
 import { KeymapComponents } from "@/lib/state/searchQuery/searchQueryKeyMaps"
 import { ComboBoxResponsive } from "@/components/combobox"
 import { SrcTextFilter } from "./SrcTextFilter"
-import { useState } from "react"
-import { splitByFirstSlash } from "@/components/SearchTypeSelector"
 import { LoaderCircle } from "lucide-react"
 import { useEnableEmbeddingSearch } from "@/lib/enableEmbeddingSearch"
 
@@ -59,6 +57,9 @@ export function TextEmbeddingSearch({
         setModel: (value: string) => setFilter({ model: value }),
         models: models.map((model) => model.value)
     })
+    if (models.length === 0) {
+        return null
+    }
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
             <div className="flex flex-row items-center justify-between">

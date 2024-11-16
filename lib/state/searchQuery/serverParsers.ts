@@ -22,6 +22,7 @@ import {
   similaritySBPageArgsKeyMap,
   rrfKeyMapSemanticText,
   rrfKeyMapSemanticImage,
+  rrfKeyMapSemanticAudio,
 } from "./searchQueryKeyMaps"
 
 import { createScopedSearchParamsCache } from "../nuqsScopedWrappers/scopedQueryParamsCache"
@@ -106,6 +107,14 @@ const scopedCaches = {
   atSemanticImage: createScopedSearchParamsCache(
     "at.si",
     semanticImageSearchKeyMap(def as any)
+  ),
+  atSemanticAudio: createScopedSearchParamsCache(
+    "at.sa",
+    semanticImageSearchKeyMap(def as any)
+  ),
+  atSemanticAudioRRF: createScopedSearchParamsCache(
+    "at.sa.rrf",
+    rrfKeyMapSemanticAudio(def as any)
   ),
   itemSimilarity: createScopedSearchParamsCache(
     "iss",
@@ -201,6 +210,18 @@ export function getATSemanticImageCache(
   return scopedCaches.atSemanticImage.parse(params)
 }
 
+export function getATSemanticAudioCache(
+  params: SearchParams
+): KeymapComponents["ATSemanticAudio"] {
+  return scopedCaches.atSemanticAudio.parse(params)
+}
+
+export function getATSemanticAudioRRFCache(
+  params: SearchParams
+): KeymapComponents["ATSemanticAudioRRF"] {
+  return scopedCaches.atSemanticAudioRRF.parse(params)
+}
+
 export function getFullQueryCache(params: SearchParams): KeymapComponents {
   return {
     MatchText: getMatchTextCache(params),
@@ -225,6 +246,8 @@ export function getFullQueryCache(params: SearchParams): KeymapComponents {
     ATSourceText: getATSemanticTextSourceCache(params),
     ItemSimilarity: getItemSimilaritySearchCache(params),
     ItemSimilarityTextSource: getItemSimilarityTextSourceCache(params),
+    ATSemanticAudio: getATSemanticAudioCache(params),
+    ATSemanticAudioRRF: getATSemanticAudioRRFCache(params),
   }
 }
 

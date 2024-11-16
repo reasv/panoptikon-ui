@@ -1,6 +1,6 @@
 import { Delete } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
-import { useATSemanticImage, useATSemanticText, useEmbedArgs, useOrderArgs, useQueryOptions, useResetSearchQueryState } from "@/lib/state/searchQuery/clientHooks"
+import { useATSemanticAudio, useATSemanticImage, useATSemanticText, useEmbedArgs, useOrderArgs, useQueryOptions, useResetSearchQueryState } from "@/lib/state/searchQuery/clientHooks"
 import { Toggle } from "./ui/toggle"
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "./ui/context-menu"
 import { useSearchClearSettings } from "@/lib/state/clearSearchOptions"
@@ -15,12 +15,14 @@ export function ClearSearch() {
     const [options, setOptions] = useQueryOptions()
     const [tembFilter, setTembFilter] = useATSemanticText()
     const [iembFilter, setIembFilter] = useATSemanticImage()
+    const [aembFilter, setAembFilter] = useATSemanticAudio()
     const clearSettings = useSearchClearSettings((state) => state)
     const clearSearchQuery = () => {
         const oldOrderArgs = orderArgs
         const oldOptions = options
         const oldTemFilter = tembFilter
         const oldIembFilter = iembFilter
+        const oldAembFilter = aembFilter
         reset()
         if (clearSettings.modelCache) {
             setEmbedArgs(null)
@@ -42,11 +44,17 @@ export function ClearSearch() {
                 at_e_txt: oldOptions.at_e_txt,
                 at_e_si: oldOptions.at_e_si,
                 at_e_st: oldOptions.at_e_st,
+                at_e_sa: oldOptions.at_e_sa,
             })
             if (oldOptions.at_e_si) {
                 setIembFilter({
                     model: oldIembFilter.model,
 
+                })
+            }
+            if (oldOptions.at_e_sa) {
+                setAembFilter({
+                    model: oldAembFilter.model,
                 })
             }
             if (oldOptions.at_e_st) {

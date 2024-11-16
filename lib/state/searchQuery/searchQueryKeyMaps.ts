@@ -90,7 +90,7 @@ export const tagFiltersKeyMap = (p: typeof def) =>
 export const embedArgsKeyMap = (p: typeof def) =>
   applyOptionsToMap({
     cache_key: p.parseAsString.withDefault("search"),
-    lru_size: p.parseAsInteger.withDefault(2),
+    lru_size: p.parseAsInteger.withDefault(3),
     ttl_seconds: p.parseAsInteger.withDefault(600),
   })
 export const fileFiltersKeyMap = (p: typeof def) =>
@@ -211,6 +211,12 @@ export const rrfKeyMapSemanticImage = (p: typeof def) =>
     weight: p.parseAsFloat.withDefault(0.7),
   })
 
+export const rrfKeyMapSemanticAudio = (p: typeof def) =>
+  applyOptionsToMap({
+    k: p.parseAsInteger.withDefault(10),
+    weight: p.parseAsFloat.withDefault(0.6),
+  })
+
 export const queryOptionsKeyMap = (p: typeof def) =>
   applyOptionsToMap({
     e_tags: p.parseAsBoolean.withDefault(false),
@@ -225,6 +231,7 @@ export const queryOptionsKeyMap = (p: typeof def) =>
     at_e_txt: p.parseAsBoolean.withDefault(true),
     at_e_st: p.parseAsBoolean.withDefault(false),
     at_e_si: p.parseAsBoolean.withDefault(false),
+    at_e_sa: p.parseAsBoolean.withDefault(false),
     at_query: p.parseAsString.withDefault(""),
     at_fts5: p.parseAsBoolean.withDefault(false),
     e_iss: p.parseAsBoolean.withDefault(false),
@@ -245,6 +252,7 @@ export interface SearchQueryOptions {
   at_e_txt: boolean
   at_e_st: boolean
   at_e_si: boolean
+  at_e_sa: boolean
   at_query: string
   at_fts5: boolean
   e_iss: boolean
@@ -268,6 +276,12 @@ export type ATSemanticText = Required<
   >
 >
 export type ATSemanticImage = Required<
+  Omit<
+    components["schemas"]["SemanticImageArgs"],
+    "query" | "embed" | "src_text"
+  >
+>
+export type ATSemanticAudio = Required<
   Omit<
     components["schemas"]["SemanticImageArgs"],
     "query" | "embed" | "src_text"
@@ -331,6 +345,8 @@ export type KeymapComponents = {
   ATSemanticTextRRF: Required<components["schemas"]["RRF"]>
   ATSemanticImage: ATSemanticImage
   ATSemanticImageRRF: Required<components["schemas"]["RRF"]>
+  ATSemanticAudio: ATSemanticAudio
+  ATSemanticAudioRRF: Required<components["schemas"]["RRF"]>
   ATSourceText: ATSourceText
 }
 

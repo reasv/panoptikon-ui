@@ -1,7 +1,7 @@
 import { Label } from "../../ui/label"
 import { Input } from "../../ui/input"
 import { FilterContainer } from "../base/FilterContainer"
-import { useATMatchText, useATMatchPath, useQueryOptions, useATSemanticImage, useATSemanticText, useATSemanticTextSrc, useATPathRRF, useATTextRRF, useATSemanticTextRRF, useATSemanticImageRRF } from "@/lib/state/searchQuery/clientHooks"
+import { useATMatchText, useATMatchPath, useQueryOptions, useATSemanticImage, useATSemanticText, useATSemanticTextSrc, useATPathRRF, useATTextRRF, useATSemanticTextRRF, useATSemanticImageRRF, useATSemanticAudio, useATSemanticAudioRRF } from "@/lib/state/searchQuery/clientHooks"
 import { PathFilter } from "../base/PathTextFilter"
 import { TextFilter } from "../base/TextFilter"
 import { ImageEmbeddingSearch } from "../base/ImageEmbeddingsSearch"
@@ -42,6 +42,7 @@ export function AnyTextFilter() {
             <AnyTextPathFilter />
             <AnyTextETFilter />
             <AnyTextImageEmbeddingSearch />
+            <AnyTextAudioEmbeddingSearch />
             <AnyTextSemanticTextSearch />
         </FilterContainer>
     )
@@ -101,6 +102,27 @@ function AnyTextImageEmbeddingSearch() {
             children={
                 <RRFParams
                     storageKey="si_rrf"
+                    rrf={rrf}
+                    setRrf={setRRF}
+                />
+            }
+        />
+    )
+}
+function AnyTextAudioEmbeddingSearch() {
+    const [filter, setFilter] = useATSemanticAudio()
+    const [rrf, setRRF] = useATSemanticAudioRRF()
+    const [options, setOptions] = useQueryOptions()
+    return (
+        <ImageEmbeddingSearch
+            enable={options.at_e_sa}
+            setEnable={(value) => setOptions({ at_e_sa: value })}
+            filter={filter}
+            setFilter={setFilter}
+            clap={true}
+            children={
+                <RRFParams
+                    storageKey="sa_rrf"
                     rrf={rrf}
                     setRrf={setRRF}
                 />

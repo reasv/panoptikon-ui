@@ -1,14 +1,11 @@
 import { Label } from "../../ui/label"
 import { Switch } from "../../ui/switch"
 import { ComboBoxResponsive } from "../../combobox"
-import { SetFn, useEmbedArgs } from "@/lib/state/searchQuery/clientHooks"
+import { SetFn } from "@/lib/state/searchQuery/clientHooks"
 import { KeymapComponents } from "@/lib/state/searchQuery/searchQueryKeyMaps"
 import { useSelectedDBs } from "@/lib/state/database"
 import { $api } from "@/lib/api"
-import { splitByFirstSlash } from "@/components/SearchTypeSelector"
-import { useState } from "react"
 import { LoaderCircle } from "lucide-react"
-import { useToast } from "@/components/ui/use-toast"
 import { useEnableEmbeddingSearch } from "@/lib/enableEmbeddingSearch"
 
 export function ImageEmbeddingSearch({
@@ -17,12 +14,14 @@ export function ImageEmbeddingSearch({
     filter,
     setFilter,
     children,
+    clap,
 }: {
     enable: boolean,
     setEnable: (value: boolean) => void,
     filter: KeymapComponents["ATSemanticImage"],
     setFilter: SetFn<KeymapComponents["ATSemanticImage"]>
-    children?: React.ReactNode
+    children?: React.ReactNode,
+    clap?: boolean
 }) {
     const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/search/stats", {
@@ -45,24 +44,28 @@ export function ImageEmbeddingSearch({
     const models = [...(
         data?.setters
             .filter((setter) => setter[0] === "clip")
+            .filter((setter) => clap ? setter[1].startsWith("clap") : !setter[1].startsWith("clap"))
             .map((setter) => ({ value: setter[1], label: setter[1] })) || [])
     ]
     const [onEnableChange, isLoading] = useEnableEmbeddingSearch({
-        type: "image",
+        type: clap ? "audio" : "image",
         setEnable,
         model: filter.model,
         setModel: (value: string) => setFilter({ model: value }),
         models: models.map((model) => model.value)
     })
+    if (models.length === 0) {
+        return null
+    }
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
             <div className="flex flex-row items-center justify-between">
                 <div className="space-y-0.5">
                     <Label className="text-base">
-                        Semantic Image Search
+                        Semantic {clap ? "Audio" : "Image"} Search
                     </Label>
                     <div className="text-gray-400">
-                        Searches the semantic content of images
+                        Searches the semantic content of {clap ? "audio" : "images"}
                     </div>
                 </div>
                 {isLoading ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />

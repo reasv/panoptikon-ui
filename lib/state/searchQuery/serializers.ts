@@ -18,6 +18,7 @@ import {
   rrfKeyMapSemanticImage,
   rrfKeyMapSemanticText,
   similaritySBPageArgsKeyMap,
+  rrfKeyMapSemanticAudio,
 } from "./searchQueryKeyMaps"
 import { createScopedSerializer } from "../nuqsScopedWrappers/scopedSerializer"
 import { ReadonlyURLSearchParams } from "next/navigation"
@@ -71,6 +72,14 @@ export const serializers = {
   atSemanticImage: createScopedSerializer(
     "at.si",
     semanticImageSearchKeyMap(def)
+  ),
+  atSemanticAudio: createScopedSerializer(
+    "at.sa",
+    semanticImageSearchKeyMap(def)
+  ),
+  atSemanticAudioRRF: createScopedSerializer(
+    "at.sa.rrf",
+    rrfKeyMapSemanticAudio(def)
   ),
 }
 
