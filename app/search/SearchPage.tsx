@@ -7,7 +7,7 @@ import { AnimatedNumber } from "@/components/ui/animatedNumber"
 import { InstantSearchLock } from "@/components/InstantSearchLock"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/use-toast"
-import { SearchBar } from "@/components/searchBar"
+import { SearchBar, TagSearchBar } from "@/components/searchBar"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { SearchQueryArgs } from "./queryFns"
 import { SearchErrorToast } from "@/components/searchErrorToaster"
@@ -127,7 +127,10 @@ export function MultiSearchView({ initialQuery, isRestrictedMode }:
                             <ScanEye className="h-4 w-4" />
                         </Button>
                     </Link>}
-                    {options.e_iss ? <ImageSimilarityHeader /> : <SearchBar onSubmit={onRefresh} />}
+                    {
+                        options.tag_mode ? <TagSearchBar onSubmit={onRefresh} /> :
+                            options.e_iss ? <ImageSimilarityHeader /> : <SearchBar onSubmit={onRefresh} />
+                    }
                     <InstantSearchLock />
                     <Toggle title="Refresh search results" onClick={onRefresh} pressed={false}>
                         <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
@@ -143,7 +146,6 @@ export function MultiSearchView({ initialQuery, isRestrictedMode }:
                         setPage={setPage}
                     />
                     :
-                    // (results.length <= 20 ?
                     <ResultGrid
                         results={results}
                         totalCount={nResults}
@@ -153,16 +155,6 @@ export function MultiSearchView({ initialQuery, isRestrictedMode }:
                         isLoading={loading}
                         showPagination={showPagination}
                     />
-                // :
-                // <VirtualResultGrid
-
-                //     results={results}
-                //     totalCount={nResults}
-                //     onImageClick={(index) => setIndex(index !== undefined ? index : null)}
-                //     isLoading={loading}
-                // />
-                // )
-
             }
             {
                 showPagination && (

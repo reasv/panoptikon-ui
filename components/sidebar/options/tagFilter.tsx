@@ -21,6 +21,12 @@ export function TagFilter() {
         console.log(tagFilter, newTagFilter)
         setTagFilter(newTagFilter)
     }
+    function onEnableTagSearchMode(value: boolean) {
+        setOptions({ e_tags: value, tag_mode: value })
+        if (value) {
+            setOptions({ at_query: "" })
+        }
+    }
     return (
         <FilterContainer
             storageKey="TagFilter" // Add a storageKey prop to make the localStorage key unique
@@ -34,6 +40,12 @@ export function TagFilter() {
                 description="Enable or disable the tag filter"
                 value={options.e_tags}
                 onChange={(value) => setOptions({ e_tags: value })}
+            />
+            <SwitchFilter
+                label="Tag Search Mode"
+                description="Replaces the top search bar with a tag search bar"
+                value={options.tag_mode}
+                onChange={(value) => onEnableTagSearchMode(value)}
             />
             <TagFilterSettings
                 tagFilter={tagFilter}
@@ -71,25 +83,25 @@ export function TagFilterSettings({
 
     return (
         <>
-            <TagListInput
+            <TagInputBox
                 label="Positive Tags"
                 description="Results must match all of these tags"
                 tags={tagFilter.pos_match_all}
                 onChange={(tags) => setTagFilter({ pos_match_all: tagSetStateValue(tags) })}
             />
-            <TagListInput
+            <TagInputBox
                 label="Negative Tags"
                 description="Results must *not* match *any* of these tags"
                 tags={tagFilter.neg_match_any}
                 onChange={(tags) => setTagFilter({ neg_match_any: tagSetStateValue(tags) })}
             />
-            <TagListInput
+            <TagInputBox
                 label="Match-Any Tags"
                 description="Results must match at least one of these tags"
                 tags={tagFilter.pos_match_any}
                 onChange={(tags) => setTagFilter({ pos_match_any: tagSetStateValue(tags) })}
             />
-            <TagListInput
+            <TagInputBox
                 label="Negative Match-All Tags"
                 description="Results must *not* match *all* of these tags"
                 tags={tagFilter.neg_match_all}
@@ -143,17 +155,49 @@ function compareArrays(arr1: string[], arr2: string[]): boolean {
     return arr1.length === arr2.length &&
         arr1.every(item => arr2.includes(item));
 }
+
+function TagInputBox(
+    {
+        label,
+        description,
+        tags,
+        onChange
+    }:
+        {
+            label: ReactNode
+            description?: ReactNode
+            tags: string[]
+            onChange: (tags: string[]) => void
+        }
+) {
+    return <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
+        <div className="flex flex-row items-center justify-between">
+            <div className="space-y-0.5">
+                <Label className="text-base">
+                    {label}
+                </Label>
+                <div className="text-gray-400">
+                    {description}
+                </div>
+            </div>
+        </div>
+        <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
+            <TagListInput
+                tags={tags}
+                onChange={onChange}
+            />
+        </div>
+    </div>
+}
 export function TagListInput({
-    label,
-    description,
     tags,
-    onChange
+    onChange,
+    onSubmit,
 }:
     {
-        label: ReactNode
-        description?: ReactNode
         tags: string[]
         onChange: (tags: string[]) => void
+        onSubmit?: () => void
     }) {
     const [value, setValue] = useState<string>(joinTags(tags));
 
@@ -175,26 +219,13 @@ export function TagListInput({
     }, [tags]);
 
     return (
-        <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
-            <div className="flex flex-row items-center justify-between">
-                <div className="space-y-0.5">
-                    <Label className="text-base">
-                        {label}
-                    </Label>
-                    <div className="text-gray-400">
-                        {description}
-                    </div>
-                </div>
-            </div>
-            <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
-                <TagAutoComplete
-                    placeholder="tag_1 tag_2 tag_3..."
-                    value={value}
-                    onChange={setValue}
-                    inputClassName="flex-grow"
-                    className="flex-grow"
-                />
-            </div>
-        </div>
+        <TagAutoComplete
+            placeholder="tag_1 tag_2 tag_3..."
+            value={value}
+            onChange={setValue}
+            inputClassName="flex-grow"
+            className="flex-grow"
+            onSubmit={onSubmit}
+        />
     )
 }

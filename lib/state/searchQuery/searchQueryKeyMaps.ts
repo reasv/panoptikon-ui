@@ -228,6 +228,7 @@ export const queryOptionsKeyMap = (p: typeof def) =>
     at_query: p.parseAsString.withDefault(""),
     at_fts5: p.parseAsBoolean.withDefault(false),
     e_iss: p.parseAsBoolean.withDefault(false),
+    tag_mode: p.parseAsBoolean.withDefault(false),
     s_enable: p.parseAsBoolean.withDefault(true),
   })
 
@@ -247,6 +248,7 @@ export interface SearchQueryOptions {
   at_query: string
   at_fts5: boolean
   e_iss: boolean
+  tag_mode: boolean
   s_enable: boolean
 }
 type NonNullableProps<T> = {
