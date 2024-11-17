@@ -192,12 +192,14 @@ function TagInputBox(
 export function TagListInput({
     tags,
     onChange,
+    placeholder = "tag_1 tag_2 tag_3...",
     onSubmit,
 }:
     {
         tags: string[]
         onChange: (tags: string[]) => void
         onSubmit?: () => void
+        placeholder?: string
     }) {
     const [value, setValue] = useState<string>(joinTags(tags));
 
@@ -220,7 +222,7 @@ export function TagListInput({
 
     return (
         <TagAutoComplete
-            placeholder="tag_1 tag_2 tag_3..."
+            placeholder={placeholder}
             value={value}
             onChange={setValue}
             inputClassName="flex-grow"
