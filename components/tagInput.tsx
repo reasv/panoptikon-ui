@@ -1,168 +1,8 @@
 "use client"
-import { Input } from "@/components/ui/input"
 import { $api } from "@/lib/api"
 import { useSelectedDBs } from "@/lib/state/database"
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
 import { cn } from "@/lib/utils"
 import { useMemo, useState } from "react"
-function getCurrentTag(inputString: string): string | null {
-    // Handle the case where the input is empty or ends with a space or comma
-    if (!inputString || inputString.endsWith(" ") || inputString.endsWith(",") || inputString.endsWith('"')) {
-        return null;
-    }
-
-    // Find the position of the last space or comma
-    const lastDelimiterIndex = Math.max(inputString.lastIndexOf(" "), inputString.lastIndexOf(","), inputString.lastIndexOf('"'));
-
-    // Extract the current tag based on the last delimiter position
-    const currentTag = inputString.slice(lastDelimiterIndex + 1);
-
-    // If the current tag contains any space or comma (which shouldn't happen but let's be safe), return null
-    if (currentTag.includes(" ") || currentTag.includes(",")) {
-        return null;
-    }
-    // Return the current tag
-    return currentTag;
-}
-
-function replaceCurrentTag(inputString: string, newTag: string): string {
-    // Get the current tag using the previous function
-    const currentTag = getCurrentTag(inputString);
-
-    // If there's no current tag, return the input string as is
-    if (currentTag === null) {
-        return inputString;
-    }
-
-    // Find the position of the last delimiter (space or comma) before the current tag
-    const lastDelimiterIndex = Math.max(inputString.lastIndexOf(" "), inputString.lastIndexOf(","));
-
-    // Extract the part of the string before the current tag
-    const stringBeforeTag = inputString.slice(0, lastDelimiterIndex + 1);
-
-    // Return the combined string: before the tag + new tag + space
-    return stringBeforeTag + newTag + " ";
-}
-
-export function TagCompletionInput({
-    value,
-    onChange,
-    placeholder,
-    inputClassName,
-    popoverClassName,
-    onSubmit,
-}: {
-    value: string,
-    onChange: (value: string) => void,
-    onSubmit?: () => void,
-    placeholder: string,
-    inputClassName?: string
-    popoverClassName?: string
-}) {
-    const dbs = useSelectedDBs()[0]
-    const currentTag = useMemo(() => {
-        return getCurrentTag(value);
-    }, [value])
-
-    const { data } = $api.useQuery("get", "/api/search/tags", {
-        params: {
-            query: {
-                ...dbs,
-                limit: 10,
-                name: currentTag || "",
-            },
-        }
-    }, {
-        enabled: !!currentTag
-    })
-
-    const [focus, setFocus] = useState(false)
-    const [selectedIndex, setSelectedIndex] = useState(0);
-
-    const addTag = (currentString: string, tag: string) => {
-        const newString = replaceCurrentTag(currentString, tag);
-        onChange(newString);
-    }
-
-    const handleKeyDown = (e:
-        React.KeyboardEvent<HTMLInputElement>
-    ) => {
-        if (data && data.tags.length > 0) {
-            if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                setSelectedIndex((prevIndex) => (prevIndex + 1) % data.tags.length);
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                setSelectedIndex((prevIndex) => (prevIndex - 1 + data.tags.length) % data.tags.length);
-            } else if (e.key === 'Enter' || e.key === 'Tab') {
-                e.preventDefault();
-                // Ensure the selectedIndex is within bounds before accessing the array
-                const validIndex = selectedIndex % data.tags.length;
-                const selectedTag = data.tags[validIndex][1];
-                addTag(value, selectedTag);
-                setSelectedIndex(0);
-            }
-        } else {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                if (onSubmit) {
-                    onSubmit()
-                }
-            }
-        }
-    };
-    const onTextInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setFocus(true);
-    }
-    const onTextInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const match_string = e.target.value
-        onChange(match_string)
-    }
-    const validIndex = data ? selectedIndex % data.tags.length : 0
-    return (
-        <Popover open={focus} onOpenChange={(open) => setFocus(open)}>
-            <PopoverTrigger asChild>
-                <Input
-                    type="text"
-                    placeholder={placeholder}
-                    value={value}
-                    onChange={onTextInputChange}
-                    onFocus={() => setFocus(true)}
-                    onBlur={() => setFocus(false)}
-                    onClick={() => setFocus(true)}
-                    onInput={onTextInput}
-                    onKeyDown={handleKeyDown}
-                    className={cn("flex-grow", inputClassName)}
-                />
-            </PopoverTrigger>
-            <PopoverContent
-                onOpenAutoFocus={(e) => e.preventDefault()}
-                className={cn("w-[200px] p-0", popoverClassName)} align="start">
-                {value.length > 0 &&
-                    <div
-                        className={cn("p-1 text-sm cursor-pointer hover:bg-accent")}>
-                        <span>{currentTag ? `Results for '${currentTag}'` : "Start typing a tag..."}</span>
-                    </div>
-                }
-                {
-                    data && data.tags.map((tag, index) => (
-                        <div
-                            key={`${tag}`}
-                            onClick={() =>
-                                addTag(value, tag[1])
-                            }
-                            className={cn("p-2 cursor-pointer hover:bg-accent",
-                                index === validIndex && "bg-accent text-white")}>
-                            <span>{tag[1]}</span>
-                        </div>
-                    ))
-                }
-            </PopoverContent>
-        </Popover>
-    )
-}
-
-
 import {
     CommandGroup,
     CommandItem,
@@ -171,6 +11,60 @@ import {
 } from "./ui/commandTrim"
 import { Command as CommandPrimitive } from "cmdk"
 import { useRef, useCallback, type KeyboardEvent } from "react"
+
+export const TAG_PREFIXES = ["-", "*", "~"]
+
+function getCurrentTag(inputString: string, includePrefix: boolean = false): string | null {
+    // Handle the case where the input is empty or ends with a space or comma
+    if (!inputString || inputString.endsWith(" ") || inputString.endsWith(",") || inputString.endsWith('"')) {
+        return null
+    }
+    // If the input string ends with a tag prefix, return null
+    if (TAG_PREFIXES.some((prefix) => inputString.endsWith(prefix))) {
+        return null
+    }
+
+    // Find the position of the last space or comma
+    const lastDelimiterIndex = Math.max(inputString.lastIndexOf(" "), inputString.lastIndexOf(","), inputString.lastIndexOf('"'))
+
+    // Extract the current tag based on the last delimiter position
+    const currentTag = inputString.slice(lastDelimiterIndex + 1)
+
+    // If the current tag contains any space or comma (which shouldn't happen but let's be safe), return null
+    if (currentTag.includes(" ") || currentTag.includes(",")) {
+        return null
+    }
+
+    if (!includePrefix && TAG_PREFIXES.some((prefix) => currentTag.startsWith(prefix))) {
+        return currentTag.slice(1)
+    }
+    // Return the current tag
+    return currentTag
+}
+
+function replaceCurrentTag(inputString: string, newTag: string): string {
+    // Get the current tag using the previous function
+    const currentTag = getCurrentTag(inputString, true)
+
+    // If there's no current tag, return the input string as is
+    if (currentTag === null) {
+        return inputString
+    }
+
+    // Find the position of the last delimiter (space or comma) before the current tag
+    const lastDelimiterIndex = Math.max(inputString.lastIndexOf(" "), inputString.lastIndexOf(","))
+
+    // Extract the part of the string before the current tag
+    const stringBeforeTag = inputString.slice(0, lastDelimiterIndex + 1)
+
+    // If the current tag starts with a tag prefix, add the prefix to the new tag
+    if (TAG_PREFIXES.some((prefix) => currentTag.startsWith(prefix))) {
+        newTag = currentTag[0] + newTag
+    }
+
+    // Return the combined string: before the tag + new tag + space
+    return stringBeforeTag + newTag + " "
+}
 
 export type Option = Record<"value" | "label", string> & Record<string, string>
 
@@ -201,7 +95,7 @@ export const TagAutoComplete = ({
     const dbs = useSelectedDBs()[0]
 
     const currentTag = useMemo(() => {
-        return getCurrentTag(value);
+        return getCurrentTag(value)
     }, [value])
 
     const { data, isLoading } = $api.useQuery("get", "/api/search/tags", {
@@ -216,8 +110,8 @@ export const TagAutoComplete = ({
         enabled: !!currentTag
     })
     const addTag = (currentString: string, tag: string) => {
-        const newString = replaceCurrentTag(currentString, tag);
-        onChange(newString);
+        const newString = replaceCurrentTag(currentString, tag)
+        onChange(newString)
     }
 
     const handleKeyDown = useCallback(
@@ -253,7 +147,7 @@ export const TagAutoComplete = ({
 
     const handleSelectOption = useCallback(
         (selectedTag: string) => {
-            addTag(value, selectedTag);
+            addTag(value, selectedTag)
 
             // // This is a hack to prevent the input from being focused after the user selects an option
             // // We can call this hack: "The next tick"s
@@ -333,3 +227,123 @@ export const TagAutoComplete = ({
         </CommandPrimitive>
     )
 }
+
+// import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
+// import { Input } from "@/components/ui/input"
+// export function TagCompletionInput({
+//     value,
+//     onChange,
+//     placeholder,
+//     inputClassName,
+//     popoverClassName,
+//     onSubmit,
+// }: {
+//     value: string,
+//     onChange: (value: string) => void,
+//     onSubmit?: () => void,
+//     placeholder: string,
+//     inputClassName?: string
+//     popoverClassName?: string
+// }) {
+//     const dbs = useSelectedDBs()[0]
+//     const currentTag = useMemo(() => {
+//         return getCurrentTag(value)
+//     }, [value])
+
+//     const { data } = $api.useQuery("get", "/api/search/tags", {
+//         params: {
+//             query: {
+//                 ...dbs,
+//                 limit: 10,
+//                 name: currentTag || "",
+//             },
+//         }
+//     }, {
+//         enabled: !!currentTag
+//     })
+
+//     const [focus, setFocus] = useState(false)
+//     const [selectedIndex, setSelectedIndex] = useState(0)
+
+//     const addTag = (currentString: string, tag: string) => {
+//         const newString = replaceCurrentTag(currentString, tag)
+//         onChange(newString)
+//     }
+
+//     const handleKeyDown = (e:
+//         React.KeyboardEvent<HTMLInputElement>
+//     ) => {
+//         if (data && data.tags.length > 0) {
+//             if (e.key === 'ArrowDown') {
+//                 e.preventDefault()
+//                 setSelectedIndex((prevIndex) => (prevIndex + 1) % data.tags.length)
+//             } else if (e.key === 'ArrowUp') {
+//                 e.preventDefault()
+//                 setSelectedIndex((prevIndex) => (prevIndex - 1 + data.tags.length) % data.tags.length)
+//             } else if (e.key === 'Enter' || e.key === 'Tab') {
+//                 e.preventDefault()
+//                 // Ensure the selectedIndex is within bounds before accessing the array
+//                 const validIndex = selectedIndex % data.tags.length
+//                 const selectedTag = data.tags[validIndex][1]
+//                 addTag(value, selectedTag)
+//                 setSelectedIndex(0)
+//             }
+//         } else {
+//             if (e.key === 'Enter') {
+//                 e.preventDefault()
+//                 if (onSubmit) {
+//                     onSubmit()
+//                 }
+//             }
+//         }
+//     }
+//     const onTextInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+//         setFocus(true)
+//     }
+//     const onTextInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+//         const match_string = e.target.value
+//         onChange(match_string)
+//     }
+//     const validIndex = data ? selectedIndex % data.tags.length : 0
+//     return (
+//         <Popover open={focus} onOpenChange={(open) => setFocus(open)}>
+//             <PopoverTrigger asChild>
+//                 <Input
+//                     type="text"
+//                     placeholder={placeholder}
+//                     value={value}
+//                     onChange={onTextInputChange}
+//                     onFocus={() => setFocus(true)}
+//                     onBlur={() => setFocus(false)}
+//                     onClick={() => setFocus(true)}
+//                     onInput={onTextInput}
+//                     onKeyDown={handleKeyDown}
+//                     className={cn("flex-grow", inputClassName)}
+//                 />
+//             </PopoverTrigger>
+//             <PopoverContent
+//                 onOpenAutoFocus={(e) => e.preventDefault()}
+//                 className={cn("w-[200px] p-0", popoverClassName)} align="start">
+//                 {value.length > 0 &&
+//                     <div
+//                         className={cn("p-1 text-sm cursor-pointer hover:bg-accent")}>
+//                         <span>{currentTag ? `Results for '${currentTag}'` : "Start typing a tag..."}</span>
+//                     </div>
+//                 }
+//                 {
+//                     data && data.tags.map((tag, index) => (
+//                         <div
+//                             key={`${tag}`}
+//                             onClick={() =>
+//                                 addTag(value, tag[1])
+//                             }
+//                             className={cn("p-2 cursor-pointer hover:bg-accent",
+//                                 index === validIndex && "bg-accent text-white")}>
+//                             <span>{tag[1]}</span>
+//                         </div>
+//                     ))
+//                 }
+//             </PopoverContent>
+//         </Popover>
+//     )
+// }
