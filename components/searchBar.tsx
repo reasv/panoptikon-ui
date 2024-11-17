@@ -90,12 +90,12 @@ export function TagSearchBar({
     }
     const [allTags, setAllTags] = useState<string[]>(combineTags(tagFilter))
     function setTags(tags: string[]) {
-        const pos_match_all = tags.filter((tag) => !TAG_PREFIXES.includes(tag[0])).filter((tag) => tag.length > 0)
+        const pos_match_all = tags.filter((tag) => !TAG_PREFIXES.includes(tag[0]))
+            .filter((tag) => tag.length > 0)
         const neg_match_any = tags.filter((tag) => tag[0] === "-")
             .map((tag) => tag.slice(1)).filter((tag) => tag.length > 0)
         const neg_match_all = tags.filter((tag) => tag[0] === "~")
             .map((tag) => tag.slice(1)).filter((tag) => tag.length > 0)
-
         const pos_match_any = tags.filter((tag) => tag[0] === "*")
             .map((tag) => tag.slice(1)).filter((tag) => tag.length > 0)
 
