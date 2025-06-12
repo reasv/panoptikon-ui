@@ -13,6 +13,8 @@ import { useClientConfig } from "@/lib/useClientConfig"
 import { FindButton } from "./gallery/FindButton"
 import { FileBookmarksSetter } from "./sidebar/details/FileBookmarks"
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "./ui/context-menu"
+import { useRelayOpen } from "@/hooks/relayOpen"
+
 export const BookmarkBtn = (
     {
         sha256,
@@ -202,7 +204,12 @@ export const OpenFile = (
     }
 
     const disableOpenFileButton = clientConfig?.data?.disableBackendOpen || false
+    const relayOpenMutation = useRelayOpen()
     const handleClick = () => {
+        if (relayOpenMutation) {
+            relayOpenMutation.mutate({ verb: "file", path, sha256 })
+            return
+        }
         if (disableOpenFileButton) {
             openFileInBrowser()
             return
@@ -275,7 +282,13 @@ export const OpenFolder = (
     )
 
     const { toast } = useToast()
+    const relayOpenMutation = useRelayOpen()
+
     const handleClick = () => {
+        if (relayOpenMutation) {
+            relayOpenMutation.mutate({ verb: "folder", path, sha256 })
+            return
+        }
         mutate({ params: { path: { sha256 }, query: { ...query, path: path } } }, {
             onError: (error: any) => {
                 toast({
