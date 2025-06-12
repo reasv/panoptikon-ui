@@ -1,4 +1,3 @@
-
 import { useMatchPath, useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
 import { TextSearchInput } from "@/components/TextSearchInput"
 import { PathFilter } from "../base/PathTextFilter"

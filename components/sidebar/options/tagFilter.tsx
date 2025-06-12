@@ -5,11 +5,10 @@ import { FilterContainer } from "../base/FilterContainer";
 import { ConfidenceFilter } from "./confidenceFilter";
 import { useSelectedDBs } from "@/lib/state/database";
 import { ReactNode, useEffect, useRef, useState } from "react";
-import { components } from "@/lib/panoptikon";
 import { TagAutoComplete } from "@/components/tagInput";
 import { Nullable, useQueryOptions, useMatchTags } from "@/lib/state/searchQuery/clientHooks";
 import { SwitchFilter } from "../base/SwitchFilter";
-import { KeymapComponents, MatchTagsArgs } from "@/lib/state/searchQuery/searchQueryKeyMaps";
+import { KeymapComponents } from "@/lib/state/searchQuery/searchQueryKeyMaps";
 
 type TagFilterUpdate = Nullable<Partial<KeymapComponents["MatchTags"]>>
 type TagFilterType = Required<KeymapComponents["MatchTags"]>
