@@ -114,6 +114,13 @@ function VirtualHorizontalScrollElement({
     }
     const blurDataURL = useMemo(() => item.blurhash ? blurHashToDataURL(item.blurhash) : undefined, [item.blurhash])
     const searchLoading = useSearchLoading(state => state.loading)
+    const handleDragStart = (event: React.DragEvent<HTMLImageElement | HTMLAnchorElement | HTMLDivElement>): void => {
+        if (!item) return;
+        console.log('dragging', item.sha256);
+        event.dataTransfer.effectAllowed = 'copy';
+        event.dataTransfer.setData('text/plain', item.sha256);
+        event.dataTransfer.setData('text/uri-list', getFileURL(dbs, "file", "sha256", item.sha256));
+    }
     return (
         <div
             style={{
@@ -127,6 +134,8 @@ function VirtualHorizontalScrollElement({
                     "w-[240px] h-80 relative rounded-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none cursor-pointer group",
                     isSelected ? "scale-105 ring-2 ring-blue-500" : "scale-100"
                 )}
+                onDragStart={handleDragStart}
+                draggable={true}
             >
                 <Link href={imageLink} onClick={onClick}>
                     <div className="w-full h-full relative">

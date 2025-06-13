@@ -58,9 +58,9 @@ export function SearchResultImage({
     const blurDataURL = useMemo(() => result.blurhash ? blurHashToDataURL(result.blurhash) : undefined, [result.blurhash])
     const handleDragStart = (event: React.DragEvent<HTMLImageElement | HTMLAnchorElement | HTMLDivElement>): void => {
         if (!fileUrl) return;
-        console.log('dragging', fileUrl);
+        console.log('dragging', result.sha256);
         event.dataTransfer.effectAllowed = 'copy';
-        event.dataTransfer.setData('text/plain', fileUrl);
+        event.dataTransfer.setData('text/plain', result.sha256);
         event.dataTransfer.setData('text/uri-list', fileUrl);
     }
     return (

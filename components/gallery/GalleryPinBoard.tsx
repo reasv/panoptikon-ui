@@ -37,6 +37,7 @@ export function PinBoard(
         const pinned: [string, string, string][] = []
         for (let i = 0; i < savedLayout.length; i += 5) {
             const [sha256, x, y, w, h] = savedLayout.slice(i, i + 5)
+
             newLayout.push({
                 i: sha256,
                 x: parseInt(x),
@@ -44,6 +45,14 @@ export function PinBoard(
                 w: parseInt(w),
                 h: parseInt(h),
             })
+            if (sha256 === "__preview") {
+                pinned.push([
+                    sha256,
+                    "/logo.svg", // Placeholder for the preview box
+                    "/logo.svg", // Placeholder for the preview box
+                ])
+                continue
+            }
             pinned.push([
                 sha256,
 
@@ -55,7 +64,7 @@ export function PinBoard(
     }, [savedLayout])
 
     const onLayoutChange = (currentLayout: ReactGridLayout.Layout[]) => {
-        const layoutToSave = currentLayout.map(layout => {
+        const layoutToSave = currentLayout.filter((e) => e.i !== "__preview").map(layout => {
             return [layout.i, layout.x.toString(), layout.y.toString(), layout.w.toString(), layout.h.toString(),]
         })
         const flattenedLayout = layoutToSave.flat()
@@ -65,6 +74,7 @@ export function PinBoard(
     const scrollAreaRef = useRef<HTMLDivElement>(null);
     const columns = 36
     const rowHeight = 50
+    const pinItem = usePinItem()
     return (
         <ScrollArea ref={scrollAreaRef} className="overflow-y-auto">
             <div
@@ -86,23 +96,40 @@ export function PinBoard(
                     draggableHandle=".drag-handle"
                     isResizable={true}
                     isDraggable={true}
+                    isDroppable={true}
+                    droppingItem={{ i: '__preview', w: 10, h: 10 }} // size of the grey preview box
                     compactType="vertical" // Compacts items vertically to keep them visible on screen
                     preventCollision={false}
+                    onDrop={(layout, layoutItem, e) => {
+                        const event = e as unknown as React.DragEvent<HTMLDivElement>
+                        if (event.dataTransfer && event.dataTransfer.getData("text/plain")) {
+                            const sha256 = event.dataTransfer.getData("text/plain")
+                            pinItem.pinItem(sha256, {
+                                x: layoutItem.x,
+                                y: layoutItem.y,
+                                w: layoutItem.w,
+                                h: layoutItem.h
+                            })
+                        }
+                    }}
                 >
                     {pinnedFiles.map(([sha256, thumbnail, file]) => (
                         <div key={sha256} className="relative bg-gray-800 border rounded shadow group">
-                            <PinBoardPin
-                                key={sha256}
-                                sha256={sha256}
-                                thumbnail={thumbnail}
-                                file={file}
-                                onLayoutChange={onLayoutChange}
-                                layout={layout}
-                                scrollAreaRef={scrollAreaRef}
-                                columns={columns}
-                                rowHeight={rowHeight}
-                                dbs={dbs}
-                            />
+                            {sha256 === "__preview" ?
+                                <div className="drag-handle cursor-move absolute top-0 left-0 w-full h-full" />
+                                :
+                                <PinBoardPin
+                                    key={sha256}
+                                    sha256={sha256}
+                                    thumbnail={thumbnail}
+                                    file={file}
+                                    onLayoutChange={onLayoutChange}
+                                    layout={layout}
+                                    scrollAreaRef={scrollAreaRef}
+                                    columns={columns}
+                                    rowHeight={rowHeight}
+                                    dbs={dbs}
+                                />}
                         </div>
                     ))}
                 </ResponsiveGridLayout>
@@ -218,4 +245,18 @@ function PinBoardPin({
             />
         </>
     )
+}
+
+export function usePinItem() {
+    const prefixLength = 10 // The length of the prefix of the sha256 hash
+    const [savedLayout, setSavedLayout] = useGalleryPinBoardLayout()
+    const pinItem = (sha256: string, pos?: { x: number, y: number, w: number, h: number }) => {
+        // If position is provided, use it, otherwise default to 0, 0, 2, 2
+        if (!pos) {
+            pos = { x: 0, y: 0, w: 2, h: 2 }
+        }
+        setSavedLayout([...savedLayout, sha256.slice(0, prefixLength), pos.x.toString(), pos.y.toString(), pos.w.toString(), pos.h.toString()])
+
+    }
+    return { pinItem }
 }
