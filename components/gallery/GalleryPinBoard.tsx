@@ -111,7 +111,27 @@ export function PinBoard(
                                 w: layoutItem.w,
                                 h: layoutItem.h
                             })
+                            return
                         }
+                        if (event.dataTransfer && event.dataTransfer.files.length > 0) {
+                            const file = event.dataTransfer.files[0]
+
+                            file.arrayBuffer().then(async (arrayBuffer) => {
+                                const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+                                // Convert to hex for display
+                                const sha256 = [...new Uint8Array(hashBuffer)]
+                                    .map(b => b.toString(16).padStart(2, '0'))
+                                    .join('');
+                                pinItem.pinItem(sha256, {
+                                    x: layoutItem.x,
+                                    y: layoutItem.y,
+                                    w: layoutItem.w,
+                                    h: layoutItem.h
+                                })
+
+                            })
+                        }
+
                     }}
                 >
                     {pinnedFiles.map(([i, sha256, thumbnail, file]) => (
