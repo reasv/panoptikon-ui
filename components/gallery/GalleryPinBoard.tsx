@@ -32,14 +32,14 @@ export function PinBoard(
 ) {
     const dbs = useSelectedDBs()[0]
     const [savedLayout, setSavedLayout] = useGalleryPinBoardLayout()
-    const [layout, pinnedFiles]: [ReactGridLayout.Layout[], [string, string, string][]] = useMemo(() => {
+    const [layout, pinnedFiles]: [ReactGridLayout.Layout[], [string, string, string, string][]] = useMemo(() => {
         const newLayout: ReactGridLayout.Layout[] = []
-        const pinned: [string, string, string][] = []
+        const pinned: [string, string, string, string][] = []
         for (let i = 0; i < savedLayout.length; i += 5) {
             const [sha256, x, y, w, h] = savedLayout.slice(i, i + 5)
-
+            const index = `${i}-${sha256}`
             newLayout.push({
-                i: sha256,
+                i: index,
                 x: parseInt(x),
                 y: parseInt(y),
                 w: parseInt(w),
@@ -47,6 +47,7 @@ export function PinBoard(
             })
             if (sha256 === "__preview") {
                 pinned.push([
+                    index,
                     sha256,
                     "/logo.svg", // Placeholder for the preview box
                     "/logo.svg", // Placeholder for the preview box
@@ -54,8 +55,8 @@ export function PinBoard(
                 continue
             }
             pinned.push([
+                index,
                 sha256,
-
                 getFileURL(dbs, "thumbnail", "sha256", sha256),
                 getFileURL(dbs, "file", "sha256", sha256),
             ])
@@ -65,7 +66,7 @@ export function PinBoard(
 
     const onLayoutChange = (currentLayout: ReactGridLayout.Layout[]) => {
         const layoutToSave = currentLayout.filter((e) => e.i !== "__preview").map(layout => {
-            return [layout.i, layout.x.toString(), layout.y.toString(), layout.w.toString(), layout.h.toString(),]
+            return [layout.i.split("-")[1], layout.x.toString(), layout.y.toString(), layout.w.toString(), layout.h.toString(),]
         })
         const flattenedLayout = layoutToSave.flat()
         setSavedLayout(flattenedLayout)
@@ -113,13 +114,13 @@ export function PinBoard(
                         }
                     }}
                 >
-                    {pinnedFiles.map(([sha256, thumbnail, file]) => (
-                        <div key={sha256} className="relative bg-gray-800 border rounded shadow group">
+                    {pinnedFiles.map(([i, sha256, thumbnail, file]) => (
+                        <div key={i} className="relative bg-gray-800 border rounded shadow group">
                             {sha256 === "__preview" ?
-                                <div className="drag-handle cursor-move absolute top-0 left-0 w-full h-full" />
+                                <div key={i} className="drag-handle cursor-move absolute top-0 left-0 w-full h-full" />
                                 :
                                 <PinBoardPin
-                                    key={sha256}
+                                    key={i}
                                     sha256={sha256}
                                     thumbnail={thumbnail}
                                     file={file}
