@@ -52,3 +52,11 @@ export function getLocale(date: Date) {
 export function envVariableIsTrue(envVariable: string | undefined): boolean {
   return envVariable?.toLowerCase() === "true" || envVariable === "1"
 }
+
+export function envVariableIntegerParse(
+  envVariable: string | undefined,
+  defaultValue: number = 0
+): number {
+  const parsed = parseInt(envVariable || "", 10)
+  return isNaN(parsed) ? defaultValue : parsed
+}
