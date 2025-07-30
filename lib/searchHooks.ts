@@ -19,13 +19,18 @@ import { usePartitionBy } from "./state/partitionBy"
 import { useEffect } from "react"
 import { queryFromState } from "./state/searchQuery/searchQuery"
 import { useThrottle } from "@uidotdev/usehooks"
+import { useClientConfig } from "./useClientConfig"
 
 export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const isClient = typeof window !== "undefined"
   const searchQueryState = useSearchQuery()
-  const throttledSearchQueryState = useThrottle(searchQueryState, 500)
+  const { data: clientConfig } = useClientConfig()
+  const throttleMs = clientConfig?.searchThrottleMs || 500
+  const throttledSearchQueryState = useThrottle(searchQueryState, throttleMs)
+  const clientSearchQuery =
+    throttleMs > 0 ? throttledSearchQueryState : searchQueryState
   const searchQuery = isClient
-    ? throttledSearchQueryState
+    ? clientSearchQuery
     : (initialQuery.body as Required<components["schemas"]["PQLQuery"]>)
   const dbs = isClient ? useSelectedDBs()[0] : initialQuery.params.query
   const [page, setPage] = useSearchPage()
