@@ -76,7 +76,11 @@ export function ImageGallery({
 
     const [selectedItem, setSelectedItem] = useItemSelection((state) => [state.getSelected(), state.setItem])
     useEffect(() => {
-        setSelectedItem(items[index])
+        // items[index] can be undefined while results and the gallery index
+        // are transiently out of sync (setItem would throw on undefined)
+        if (items[index]) {
+            setSelectedItem(items[index])
+        }
     }, [index, items])
 
     const params = useSearchParams()

@@ -92,14 +92,20 @@ export function MultiSearchView({ initialQuery, isRestrictedMode }:
     const [scanOpen, setScanOpen] = useScanDrawerOpen()
 
     const selectedItem = useItemSelection((state) => state.getSelected())
+    // Keeps the gallery index pointing at the selected item. Deliberately keyed
+    // on selection changes only: a results transition must not move the index
+    // (e.g. a CLIP-similarity click sets the index to the clicked item — snapping
+    // back to the old selection's position would override it). Compares by
+    // file_id, the same identity itemEquals uses when the gallery writes the
+    // selection, so the two effects can never disagree and ping-pong.
     useEffect(() => {
         if (qIndex === null) {
             return
         }
         const index = (qIndex || 0) % results.length
-        if (selectedItem && results[index] && selectedItem.item_id !== results[index].item_id) {
-            const newIndex = results.findIndex((item) => item.item_id === selectedItem.item_id)
-            if (newIndex !== -1) {
+        if (selectedItem && results[index] && selectedItem.file_id !== results[index].file_id) {
+            const newIndex = results.findIndex((item) => item.file_id === selectedItem.file_id)
+            if (newIndex !== -1 && newIndex !== index) {
                 setIndex(newIndex)
             }
         }

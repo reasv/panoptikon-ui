@@ -18,39 +18,51 @@ import { getSearchPageURL } from "./state/searchQuery/serializers"
 import { usePartitionBy } from "./state/partitionBy"
 import { useEffect } from "react"
 import { queryFromState } from "./state/searchQuery/searchQuery"
-import { useThrottle } from "@uidotdev/usehooks"
+import { useThrottledValue } from "./useThrottledValue"
 import { useClientConfig } from "./useClientConfig"
 
 export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const isClient = typeof window !== "undefined"
   const searchQueryState = useSearchQuery()
   const { data: clientConfig } = useClientConfig()
-  const throttleMs = clientConfig?.searchThrottleMs || 500
-  const throttledSearchQueryState = useThrottle(searchQueryState, throttleMs)
-  const clientSearchQuery =
-    throttleMs > 0 ? throttledSearchQueryState : searchQueryState
+  // ?? rather than ||: an explicit SEARCH_THROTTLE_MS=0 disables throttling
+  const throttleMs = clientConfig?.searchThrottleMs ?? 500
   const searchQuery = isClient
-    ? clientSearchQuery
+    ? searchQueryState
     : (initialQuery.body as Required<components["schemas"]["PQLQuery"]>)
   const dbs = isClient ? useSelectedDBs()[0] : initialQuery.params.query
   const [page, setPage] = useSearchPage()
-  const pageSize = searchQuery.page_size
   const searchEnabled = useQueryOptions()[0].s_enable
   const instantSearch = useInstantSearch((state) => state.enabled)
   const [partitionBy] = usePartitionBy()
+  // The request is throttled as a single unit — filters, page, partitioning
+  // and database selection together — so a partially-updated "hybrid" query
+  // (e.g. new page + stale filters) can never reach the backend. The throttle
+  // fires on the leading edge, so an isolated change (a click, a toggle, a
+  // page turn) still queries instantly; only rapid successions (typing,
+  // slider drags) are coalesced.
+  const liveRequest = {
+    dbs,
+    body: {
+      ...searchQuery,
+      page,
+      partition_by: partitionBy.partition_by,
+    },
+  }
+  const throttledRequest = useThrottledValue(liveRequest, throttleMs)
+  const request = throttleMs > 0 ? throttledRequest : liveRequest
+  const pageSize = request.body.page_size
   const { data, error, isError, refetch, isFetching } = $api.useQuery(
     "post",
     "/api/search/pql",
     {
       params: {
-        query: dbs,
+        query: request.dbs,
       },
       body: {
-        ...searchQuery,
-        page,
+        ...request.body,
         results: true,
         count: false,
-        partition_by: partitionBy.partition_by,
       },
     },
     {
@@ -63,14 +75,13 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     "/api/search/pql",
     {
       params: {
-        query: dbs,
+        query: request.dbs,
       },
       body: {
-        ...searchQuery,
+        ...request.body,
         page: 1,
         results: false,
         count: true,
-        partition_by: partitionBy.partition_by,
       },
     },
     {
@@ -83,10 +94,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     await refetch()
     await countQuery.refetch()
   }
-  const [loading, setLoading] = useSearchLoading((state) => [
-    state.loading,
-    state.setLoading,
-  ])
+  const setLoading = useSearchLoading((state) => state.setLoading)
 
   useEffect(() => {
     let timer: NodeJS.Timeout
@@ -108,16 +116,17 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     setLoading(false)
   }
   const setPagePrefetch = async (newPage: number) => {
+    // Built from the live request: after setPage the throttle propagates the
+    // live content on its leading edge, so this is the key the query will use
     const searchRequest = {
       params: {
-        query: dbs,
+        query: liveRequest.dbs,
       },
       body: {
-        ...searchQuery,
+        ...liveRequest.body,
         page: newPage,
         results: true,
         count: false,
-        partition_by: partitionBy.partition_by,
       },
     }
     await prefetchSearch(searchRequest)
@@ -169,10 +178,7 @@ export function usePrefetchSearch() {
   const searchQueryState = useSearchQueryState()
   const dbs = useSelectedDBs()[0]
   const [partitionBy] = usePartitionBy()
-  const [loading, setLoading] = useSearchLoading((state) => [
-    state.loading,
-    state.setLoading,
-  ])
+  const setLoading = useSearchLoading((state) => state.setLoading)
   const prefetchSearch = async (searchRequest: SearchQueryArgs) => {
     const timer = setTimeout(() => setLoading(true), 400)
     await queryClient.prefetchQuery({
