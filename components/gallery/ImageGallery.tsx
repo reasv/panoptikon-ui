@@ -203,12 +203,12 @@ export function PinboardTabs({ itemPath }: { itemPath: string }) {
         <Tabs
             value={hidePinBoard ? "gallery" : "pins"}
             onValueChange={(value) => setHidePinBoard(value !== "pins")}
-
+            className="w-full"
         >
-            <TabsList>
-                <TabsTrigger value="pins">Pinboard</TabsTrigger>
-                <TabsTrigger value="gallery">
-                    <span className="text-sm truncate cursor-pointer" style={{ direction: 'rtl', textAlign: 'left' }}>
+            <TabsList className="flex w-full">
+                <TabsTrigger value="pins" className="shrink-0">Pinboard</TabsTrigger>
+                <TabsTrigger value="gallery" className="flex-1 min-w-0">
+                    <span title={itemPath} className="w-full min-w-0 text-sm truncate cursor-pointer" style={{ direction: 'rtl', textAlign: 'left' }}>
                         {itemPath}
                     </span>
                 </TabsTrigger>
