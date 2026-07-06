@@ -4,6 +4,15 @@ import { Button } from "@/components/ui/button"
 import { ArrowUpDown } from "lucide-react"
 import { components } from "@/lib/panoptikon"
 
+// File scan rows are now inserted when the scan starts, so a running scan has
+// no meaningful end_time yet (null or a placeholder predating start_time)
+function scanIsInProgress(startTime: string, endTime: string | null): boolean {
+    if (!endTime) return true
+    const endMs = new Date(endTime).getTime()
+    if (isNaN(endMs)) return true
+    return endMs < new Date(startTime).getTime()
+}
+
 export const fileScanColumns: ColumnDef<components["schemas"]["FileScanRecord"]>[] = [
     {
         id: "id",
@@ -40,13 +49,19 @@ export const fileScanColumns: ColumnDef<components["schemas"]["FileScanRecord"]>
                 </Button>
             )
         },
-        cell: ({ row }) => prettyPrintDate(row.getValue("end_time")),
+        cell: ({ row }) =>
+            scanIsInProgress(row.getValue("start_time"), row.getValue("end_time"))
+                ? "In progress"
+                : prettyPrintDate(row.getValue("end_time")),
     },
     {
         id: "duration",
         accessorKey: "duration",
         header: "Duration",
-        cell: ({ row }) => prettyPrintDurationBetweenDates(row.getValue("start_time"), row.getValue("end_time")),
+        cell: ({ row }) =>
+            scanIsInProgress(row.getValue("start_time"), row.getValue("end_time"))
+                ? prettyPrintDurationBetweenDates(row.getValue("start_time"), new Date().toISOString())
+                : prettyPrintDurationBetweenDates(row.getValue("start_time"), row.getValue("end_time")),
     },
     {
         id: "path",
