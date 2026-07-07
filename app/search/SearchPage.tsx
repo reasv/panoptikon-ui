@@ -113,6 +113,9 @@ export function MultiSearchView({ initialQuery, isRestrictedMode }:
     const [fs, setFs] = useGalleryFullscreen()
     const loading = useSearchLoading((state) => state.loading)
     const showPagination = !fs && (nResults > pageSize) && (pageSize > 0)
+    // Survives the grid unmounting while the gallery is open, so the grid can
+    // restore its exact scroll position when the gallery closes
+    const gridScrollOffsetRef = useRef(0)
     return (
         <>
             <SearchErrorToast noFtsErrors={options.e_iss} isError={isError} error={error} />
@@ -160,6 +163,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode }:
                         onImageClick={(index) => setIndex(index !== undefined ? index : null)}
                         isLoading={loading}
                         showPagination={showPagination}
+                        savedScrollOffsetRef={gridScrollOffsetRef}
                     />
             }
             {
@@ -176,39 +180,48 @@ export function MultiSearchView({ initialQuery, isRestrictedMode }:
     )
 }
 
-// md, lg, xl, 2xl, 4xl — the Tailwind breakpoints used by the result grid rows
+// md, lg, xl, 2xl, 4xl, 5xl — the Tailwind breakpoints used by the result grid rows
 const GRID_BREAKPOINTS = [
     '(min-width: 768px)',
     '(min-width: 1024px)',
     '(min-width: 1280px)',
     '(min-width: 1536px)',
     '(min-width: 2200px)',
+    '(min-width: 3000px)',
 ]
 
 /**
- * The number of grid columns currently applied by CSS. Must mirror the responsive
+ * The grid layout currently applied by CSS. columns must mirror the responsive
  * grid-cols-* classes on the result grid rows exactly — the CSS media queries are
  * what actually lay out the columns; this value only slices results into rows.
  * Uses matchMedia (the same engine that applies the classes) rather than reading
  * window.innerWidth in a resize handler, which can observe a stale width.
+ * rowEstimate tracks the card height, which is fixed per breakpoint: the image
+ * container (h-96 / 4xl:h-[30rem] / 5xl:h-[38rem]) plus text lines, paddings,
+ * borders and the row's pb-4. Accurate estimates matter: scrollToIndex navigates
+ * by estimated offsets for rows that haven't been measured yet.
  */
-function useGridColumns(sidebarOpen: boolean): number {
-    // 0 means "not evaluated yet" (SSR and the very first client render) —
+function useResultGridLayout(sidebarOpen: boolean): { columns: number, rowEstimate: number } {
+    // columns 0 means "not evaluated yet" (SSR and the very first client render) —
     // consumers must not lay out or scroll until this becomes a real count
-    const [columns, setColumns] = useState(0)
+    const [layout, setLayout] = useState({ columns: 0, rowEstimate: 470 })
     useLayoutEffect(() => {
         const queries = GRID_BREAKPOINTS.map((q) => window.matchMedia(q))
         const update = () => {
-            const [md, lg, xl, xxl, xxxxl] = queries.map((q) => q.matches)
-            setColumns(sidebarOpen
+            const [md, lg, xl, xxl, xxxxl, xxxxxl] = queries.map((q) => q.matches)
+            const columns = sidebarOpen
                 ? (xxxxl ? 5 : xxl ? 4 : xl ? 3 : lg ? 1 : md ? 2 : 1)
-                : (xxl ? 5 : xl ? 4 : lg ? 3 : md ? 2 : 1))
+                : (xxl ? 5 : xl ? 4 : lg ? 3 : md ? 2 : 1)
+            const rowEstimate = xxxxxl ? 694 : xxxxl ? 566 : 470
+            setLayout((prev) =>
+                prev.columns === columns && prev.rowEstimate === rowEstimate
+                    ? prev : { columns, rowEstimate })
         }
         update()
         queries.forEach((q) => q.addEventListener('change', update))
         return () => queries.forEach((q) => q.removeEventListener('change', update))
     }, [sidebarOpen])
-    return columns
+    return layout
 }
 
 export function ResultGrid({
@@ -219,6 +232,7 @@ export function ResultGrid({
     onImageClick,
     isLoading,
     showPagination = true,
+    savedScrollOffsetRef,
 }: {
     results: SearchResult[],
     resultMetrics?: components["schemas"]["SearchMetrics"],
@@ -227,6 +241,7 @@ export function ResultGrid({
     onImageClick?: (index?: number) => void,
     isLoading?: boolean,
     showPagination?: boolean,
+    savedScrollOffsetRef?: React.MutableRefObject<number>,
 }) {
     // TanStack Virtual v3 triggers re-renders by mutating internal state,
     // which the React Compiler's memoization breaks — same as the gallery view.
@@ -234,15 +249,25 @@ export function ResultGrid({
     const [dbs, __] = useSelectedDBs()
     const parentRef = useRef<HTMLDivElement>(null)
     const [sidebarOpen] = useSideBarOpen()
-    const columns = useGridColumns(sidebarOpen)
+    const { columns, rowEstimate } = useResultGridLayout(sidebarOpen)
     const rowCount = columns > 0 ? Math.ceil(results.length / columns) : 0
 
     const virtualizer = useVirtualizer({
         count: rowCount,
         getScrollElement: () => parentRef.current,
-        estimateSize: () => 470,
+        estimateSize: () => rowEstimate,
         overscan: 3,
     })
+
+    // Record the scroll position continuously so it survives this component
+    // unmounting while the gallery is open
+    useEffect(() => {
+        const element = parentRef.current
+        if (!element || !savedScrollOffsetRef) return
+        const onScroll = () => { savedScrollOffsetRef.current = element.scrollTop }
+        element.addEventListener('scroll', onScroll, { passive: true })
+        return () => element.removeEventListener('scroll', onScroll)
+    }, [savedScrollOffsetRef])
 
     // When the column count changes, rows recompose and the same pixel offset lands
     // on entirely different results: re-anchor the scroll to the item that was at the
@@ -265,22 +290,50 @@ export function ResultGrid({
         }
     })
 
-    // When returning from the gallery, scroll the grid to the item that was open
+    // When returning from the gallery: restore the exact scroll position from
+    // before it opened — a quick look at one item must not shift the grid at all.
+    // Then, as an invariant, the item selected in the gallery must be visible:
+    // align 'auto' scrolls nothing when it already is, and scrolls the minimal
+    // amount (nearest edge) when the gallery selection moved elsewhere or a
+    // resize reflowed the grid while it was closed.
     const selected = useItemSelection((state) => state.getSelected())
     const restoredScroll = useRef(false)
     useEffect(() => {
         if (restoredScroll.current || rowCount === 0) return
         restoredScroll.current = true
+        const savedOffset = savedScrollOffsetRef?.current ?? 0
+        if (savedOffset > 0) {
+            virtualizer.scrollToOffset(savedOffset)
+        }
         if (!selected) return
         const index = results.findIndex((item) => item.item_id === selected.item_id)
-        if (index > 0) {
-            const row = Math.floor(index / columns)
-            // First call lands on estimated row heights; once the target rows have
-            // mounted and been measured, align again for the exact position
-            virtualizer.scrollToIndex(row, { align: 'center' })
-            requestAnimationFrame(() => virtualizer.scrollToIndex(row, { align: 'center' }))
+        if (index < 0) return
+        const row = Math.floor(index / columns)
+        // The visibility decision must use real DOM geometry: the virtualizer's own
+        // align 'auto' reads its cached viewport rect, which is still zero-sized
+        // right after mount (its ResizeObserver hasn't delivered yet) and turns
+        // "ensure visible" into a bogus scroll. Row offsets are measurement-based
+        // and safe to take from the virtualizer.
+        const ensureVisible = () => {
+            const element = parentRef.current
+            if (!element) return
+            const offsetForRow = virtualizer.getOffsetForIndex(row, 'start')
+            if (!offsetForRow) return
+            const rowStart = offsetForRow[0]
+            const rowEnd = rowStart + (virtualizer.measurementsCache[row]?.size ?? rowEstimate)
+            if (rowStart < element.scrollTop) {
+                element.scrollTop = rowStart
+            } else if (rowEnd > element.scrollTop + element.clientHeight) {
+                element.scrollTop = rowEnd - element.clientHeight
+            }
         }
-    }, [rowCount, columns, results, selected, virtualizer])
+        // Wait a frame so the restored offset has been applied, then once more
+        // after the target rows have mounted and been measured
+        requestAnimationFrame(() => {
+            ensureVisible()
+            requestAnimationFrame(ensureVisible)
+        })
+    }, [rowCount, columns, results, selected, virtualizer, savedScrollOffsetRef, rowEstimate])
 
     const executionSummary = `Results: ${resultMetrics?.execute} DB, ${resultMetrics?.build} Build, ${resultMetrics?.compile} Compile`
         + `\nCount: ${countMetrics?.execute} DB, ${countMetrics?.build} Build, ${countMetrics?.compile} Compile`
