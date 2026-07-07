@@ -103,6 +103,18 @@ export function PinBoard(
         })
     }
 
+    // Append an identical copy of the pin's 5-string record (sha256, x, y, w,
+    // packed h+crop). The offset embedded in the layout key locates the source
+    // record; compactType="vertical" then nudges the copy off the original.
+    const onDuplicatePin = (key: string) => {
+        setSavedLayout((prev) => {
+            const offset = parseInt(key.split("-")[0])
+            const record = prev.slice(offset, offset + 5)
+            if (record.length < 5) return prev
+            return [...prev, ...record]
+        })
+    }
+
     const onItemCropChange = (key: string, crop: CropRect | null) => {
         setSavedLayout((prev) => {
             const next = [...prev]
@@ -208,6 +220,7 @@ export function PinBoard(
                                     boxResizing={cropKey === i && cropResizing}
                                     onCropModeToggle={() => setCropKey((k) => k === i ? null : i)}
                                     onCropChange={(crop) => onItemCropChange(i, crop)}
+                                    onDuplicate={() => onDuplicatePin(i)}
                                     scrollAreaRef={scrollAreaRef}
                                     columns={columns}
                                     rowHeight={rowHeight}
@@ -234,6 +247,7 @@ function PinBoardPin({
     boxResizing,
     onCropModeToggle,
     onCropChange,
+    onDuplicate,
     scrollAreaRef,
     columns,
     rowHeight,
@@ -251,6 +265,7 @@ function PinBoardPin({
     boxResizing: boolean
     onCropModeToggle: () => void
     onCropChange: (crop: CropRect | null) => void
+    onDuplicate: () => void
     scrollAreaRef: React.RefObject<HTMLDivElement>
     columns: number
     rowHeight: number
@@ -364,13 +379,14 @@ function PinBoardPin({
                     hasCrop={!!crop}
                     onToggleCrop={onCropModeToggle}
                     onClearCrop={() => onCropChange(null)}
+                    onDuplicate={onDuplicate}
                     pinboardRef={scrollAreaRef}
                     columns={columns}
                     rowHeight={rowHeight}
                     dbs={dbs}
                 />
             </ContextMenu>
-            <PinButton sha256={sha256} hidePins={true} />
+            <PinButton sha256={sha256} layoutKey={layoutKey} hidePins={true} />
             <button
                 title={cropMode ? "Finish cropping" : "Crop this image"}
                 className={cn(

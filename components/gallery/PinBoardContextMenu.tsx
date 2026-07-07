@@ -22,6 +22,7 @@ export function PinBoardCtx({
     hasCrop,
     onToggleCrop,
     onClearCrop,
+    onDuplicate,
     pinboardRef,
     dbs,
     columns,
@@ -37,6 +38,7 @@ export function PinBoardCtx({
     hasCrop: boolean,
     onToggleCrop: () => void,
     onClearCrop: () => void,
+    onDuplicate: () => void,
     pinboardRef: React.RefObject<HTMLDivElement>,
     columns: number,
     rowHeight: number,
@@ -109,6 +111,7 @@ export function PinBoardCtx({
     return (
         <ContextMenuContent>
             <ContextMenuItem onClick={() => openURL()}>Open in New Tab</ContextMenuItem>
+            <ContextMenuItem onClick={onDuplicate}>Duplicate</ContextMenuItem>
             <ContextMenuItem onClick={onToggleCrop}>
                 {cropMode ? "Finish Cropping" : "Crop Image"}
             </ContextMenuItem>
