@@ -116,6 +116,11 @@ export function PinBoardCtx({
         })
         onLayoutChange(newLayout)
     }
+    // One-time horizontal "gravity": slide every item to the left/right/center
+    // of its row without resizing. Pure x repacking, so no build data needed.
+    function shiftLayout(mode: ShiftMode) {
+        onLayoutChange(shiftLayoutHorizontally(layout, mode, columns))
+    }
     const [fs, setFs] = useGalleryFullscreen()
     return (
         <ContextMenuContent>
@@ -168,6 +173,15 @@ export function PinBoardCtx({
             <ContextMenuItem onClick={() => layoutFixedRows(2)}>Layout 2 Rows</ContextMenuItem>
             <ContextMenuItem onClick={() => layoutFixedRows(3)}>Layout 3 Rows</ContextMenuItem>
             <ContextMenuItem onClick={() => layoutFixedRows(4)}>Layout 4 Rows</ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuSub>
+                <ContextMenuSubTrigger inset>Shift Layout</ContextMenuSubTrigger>
+                <ContextMenuSubContent className="w-48">
+                    <ContextMenuItem onClick={() => shiftLayout("left")}>Shift Left</ContextMenuItem>
+                    <ContextMenuItem onClick={() => shiftLayout("center")}>Center</ContextMenuItem>
+                    <ContextMenuItem onClick={() => shiftLayout("right")}>Shift Right</ContextMenuItem>
+                </ContextMenuSubContent>
+            </ContextMenuSub>
         </ContextMenuContent>
     )
 }
@@ -296,6 +310,51 @@ function sortLayout(layout: ReactGridLayout.Layout[]): ReactGridLayout.Layout[] 
         startIdx = i;
     }
     return sortedLayout;
+}
+
+export type ShiftMode = "left" | "right" | "center"
+
+// Repack every item horizontally against one edge of its row (or centered),
+// preserving each item's row, width and height — only `x` changes. Rows are
+// the same y-overlap groups sortLayout uses. Within a row items keep their
+// left-to-right order and are packed flush with no gaps, like horizontal
+// gravity applied once.
+function shiftLayoutHorizontally(
+    layout: ReactGridLayout.Layout[],
+    mode: ShiftMode,
+    columns: number,
+): ReactGridLayout.Layout[] {
+    const heightSorted = [...layout].sort((a, b) => a.y - b.y)
+    const result: ReactGridLayout.Layout[] = []
+    let startIdx = 0
+
+    while (result.length < layout.length) {
+        const lowestYItem = heightSorted[startIdx]
+        const centerY = lowestYItem.y + Math.floor(lowestYItem.h / 2)
+        const currentRow: ReactGridLayout.Layout[] = []
+
+        let i = startIdx
+        for (; i < heightSorted.length; i++) {
+            if (heightSorted[i].y > centerY) break
+            currentRow.push(heightSorted[i])
+        }
+        startIdx = i
+
+        currentRow.sort((a, b) => a.x - b.x)
+        const rowWidth = currentRow.reduce((acc, l) => acc + l.w, 0)
+        // Left edge of the packed row; clamp so an over-wide row still starts
+        // at column 0 rather than going negative
+        let x = mode === "left"
+            ? 0
+            : mode === "right"
+                ? Math.max(0, columns - rowWidth)
+                : Math.max(0, Math.floor((columns - rowWidth) / 2))
+        for (const item of currentRow) {
+            result.push({ ...item, x })
+            x += item.w
+        }
+    }
+    return result
 }
 
 function buildLayout(buildData: LayoutBuildData, itemsPerRow: number, restrictToVisible: boolean): ReactGridLayout.Layout[] {
