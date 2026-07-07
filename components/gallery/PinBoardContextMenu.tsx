@@ -157,20 +157,40 @@ async function fetchMetadata(keys: string[], dbs: { index_db: string | null, use
     const uniqueShas = Array.from(new Set(
         keys.map(keyToSha256).filter(sha => sha && sha !== "__preview")
     ))
-    const results = await Promise.all(uniqueShas.map(sha256 =>
-        fetchClient.GET("/api/items/item", {
-            params: {
-                query: {
-                    ...dbs,
-                    id: sha256,
-                    id_type: "sha256",
+    // A failed lookup silently degrades the item to a 1:1 square, so retry
+    // once before giving up on it
+    async function fetchItem(sha256: string) {
+        for (let attempt = 0; ; attempt++) {
+            const response = await fetchClient.GET("/api/items/item", {
+                params: {
+                    query: {
+                        ...dbs,
+                        id: sha256,
+                        id_type: "sha256",
+                    }
                 }
-            }
-        }).then(response => [sha256, response.data] as const)
-    ));
+            })
+            if (response.data || attempt >= 1) return [sha256, response.data] as const
+        }
+    }
+    const results = await Promise.all(uniqueShas.map(fetchItem));
     const bySha = Object.fromEntries(results);
 
     return Object.fromEntries(keys.map(key => [key, bySha[keyToSha256(key)]]));
+}
+
+// react-grid-layout defaults; the pinboard grid doesn't override margin or
+// containerPadding, so cells are 10px apart and the container has 10px padding
+const GRID_MARGIN = 10
+const GRID_PADDING = 10
+
+// Pixel size of an item spanning w columns / h rows, including the margins
+// between the cells it spans
+function pixelWidth(w: number, columnWidth: number): number {
+    return w * columnWidth + (w - 1) * GRID_MARGIN
+}
+function pixelHeight(h: number, rowHeight: number): number {
+    return h * rowHeight + (h - 1) * GRID_MARGIN
 }
 
 interface LayoutBuildData {
@@ -184,7 +204,7 @@ interface LayoutBuildData {
     columnWidth: number,
     rowHeight: number,
     columns: number,
-    visibleRows: number,
+    containerHeight: number,
     sortedLayout: ReactGridLayout.Layout[],
 }
 
@@ -221,14 +241,16 @@ async function getLayoutBuildData(
 ): Promise<LayoutBuildData> {
     const keys = layout.map(l => l.i)
     const metadata = await fetchMetadata(keys, dbs)
-    const columnWidth = pinboardRef.current?.clientWidth ? pinboardRef.current.clientWidth / columns : 1
-    const visibleRows = Math.ceil(pinboardRef.current?.clientHeight ? pinboardRef.current.clientHeight / rowHeight : 1)
+    const clientWidth = pinboardRef.current?.clientWidth || 1
+    const containerHeight = pinboardRef.current?.clientHeight || 1
+    // Exact pixel width of one column: the container width minus its padding
+    // and the margins between columns, split evenly
+    const columnWidth = Math.max(1, (clientWidth - 2 * GRID_PADDING - (columns - 1) * GRID_MARGIN) / columns)
     const sortedLayout = sortLayout(layout)
-    return { metadata, crops, columnWidth, rowHeight, columns, visibleRows, sortedLayout }
+    return { metadata, crops, columnWidth, rowHeight, columns, containerHeight, sortedLayout }
 }
 
 function sortLayout(layout: ReactGridLayout.Layout[]): ReactGridLayout.Layout[] {
-    console.log("Sorting layout")
     // Copy and sort layout by `y` coordinate
     const heightSorted = [...layout].sort((a, b) => a.y - b.y);
     const sortedLayout: ReactGridLayout.Layout[] = [];
@@ -252,7 +274,6 @@ function sortLayout(layout: ReactGridLayout.Layout[]): ReactGridLayout.Layout[] 
         sortedLayout.push(...currentRow);
         startIdx = i;
     }
-    console.log("Sorted layout")
     return sortedLayout;
 }
 
@@ -270,7 +291,7 @@ function buildLayout(buildData: LayoutBuildData, itemsPerRow: number, restrictTo
         buildData.rowHeight,
         buildData.columnWidth,
         buildData.columns,
-        buildData.visibleRows,
+        buildData.containerHeight,
         restrictToVisible,
     )
 }
@@ -281,50 +302,54 @@ function buildRowLayout(
     rowHeight: number,
     columnWidth: number,
     columns: number,
-    visibleRows: number,
+    containerHeight: number,
     restrictToVisible = false,
 ): ReactGridLayout.Layout[] {
+    if (items.length === 0) return []
     // Split the items into rows
     const rows: { sha256: string, width: number, height: number }[][] = []
-    let currentRow: { sha256: string, width: number, height: number }[] = []
-    for (const item of items) {
-        if (currentRow.length < itemsPerRow) {
-            currentRow.push(item)
-        } else {
-            rows.push(currentRow)
-            currentRow = [item]
-        }
+    for (let i = 0; i < items.length; i += itemsPerRow) {
+        rows.push(items.slice(i, i + itemsPerRow))
     }
-    // Add the last row
-    rows.push(currentRow)
-    // Max height per row for all rows to fit in the visible area
-    let heightPerRow = Math.round(visibleRows / rows.length)
-    // Split the rows into columns, giving proportionally more columns to items with a higher width to height ratio
-    // The total width of the row and the actual widths of the items are not taken into account
+    // Total grid rows that fit in the container: h grid rows occupy
+    // h*rowHeight + (h-1)*margin px, plus the container's own padding
+    const totalRowBudget = Math.max(rows.length, Math.floor(
+        (containerHeight - 2 * GRID_PADDING + GRID_MARGIN) / (rowHeight + GRID_MARGIN)
+    ))
+    const baseRowBudget = Math.floor(totalRowBudget / rows.length)
     const layout: ReactGridLayout.Layout[] = []
     let currentY = 0
-    let currentX = 0
-    for (const row of rows) {
-        // Calculate the width to height ratio of each item
+    rows.forEach((row, rowIndex) => {
+        // Leftover budget rows go to the first rows, one each
+        const heightBudget = baseRowBudget + (rowIndex < totalRowBudget % rows.length ? 1 : 0)
         const ratios = row.map(item => item.width / item.height)
-        // Calculate the total width to height ratio of the row
         const totalRatio = ratios.reduce((acc, curr) => acc + curr, 0)
-        // Calculate the number of columns for each item
-        const columnCounts = ratios.map(ratio => Math.round((ratio / totalRatio) * columns))
-        const remainingColumns = columns - columnCounts.reduce((acc, curr) => acc + curr, 0)
-        // Add the remaining columns to the items with the highest width to height ratio
-        const maxRatioIndex = ratios.indexOf(Math.max(...ratios))
-        columnCounts[maxRatioIndex] += remainingColumns
-        // Use the total number of columns to calculate the number of columns that are actually used
-        const layoutRow: ReactGridLayout.Layout[] = []
+        // Height of the row if it spans all columns with every item at its true aspect
+        const naturalHeight =
+            (pixelWidth(columns, columnWidth) - (row.length - 1) * GRID_MARGIN) / totalRatio
+        let targetHeight = naturalHeight
+        if (restrictToVisible) {
+            const budgetPx = pixelHeight(heightBudget, rowHeight)
+            // Too tall to fit at full width: shrink the whole row (narrower
+            // boxes at the same aspect) instead of clamping heights, which
+            // would letterbox the items
+            if (naturalHeight > budgetPx) targetHeight = budgetPx
+        }
+        // Ideal (fractional) column count per item at the target height
+        const idealColumns = ratios.map(ratio =>
+            (ratio * targetHeight + GRID_MARGIN) / (columnWidth + GRID_MARGIN)
+        )
+        const columnCounts = apportionColumns(idealColumns, columns)
+        const usedColumns = columnCounts.reduce((acc, curr) => acc + curr, 0)
+        // Center rows that don't span the full width
+        let currentX = Math.floor((columns - usedColumns) / 2)
+        const heights: number[] = []
         for (let i = 0; i < row.length; i++) {
-            const item = row[i]
-            let h = findOptimalHeight(columnCounts[i], rowHeight, columnWidth, item.width, item.height)
-            if (restrictToVisible) {
-                h = Math.min(h, heightPerRow)
-            }
-            layoutRow.push({
-                i: item.sha256,
+            let h = findOptimalHeight(columnCounts[i], rowHeight, columnWidth, row[i].width, row[i].height)
+            if (restrictToVisible) h = Math.min(h, heightBudget)
+            heights.push(h)
+            layout.push({
+                i: row[i].sha256,
                 x: currentX,
                 y: currentY,
                 w: columnCounts[i],
@@ -332,11 +357,39 @@ function buildRowLayout(
             })
             currentX += columnCounts[i]
         }
-        currentY += Math.max(...layoutRow.map(l => l.h))
-        currentX = 0
-        layout.push(...layoutRow)
-    }
+        currentY += Math.max(...heights)
+    })
     return layout
+}
+
+// Round fractional column shares to integers with largest-remainder
+// apportionment, so rounding error is spread out instead of dumped on one
+// item. Every item gets at least 1 column and the total stays <= maxColumns.
+function apportionColumns(ideal: number[], maxColumns: number): number[] {
+    const total = Math.min(maxColumns, Math.max(
+        ideal.length,
+        Math.round(ideal.reduce((acc, curr) => acc + curr, 0)),
+    ))
+    const counts = ideal.map(v => Math.max(1, Math.floor(v)))
+    let used = counts.reduce((acc, curr) => acc + curr, 0)
+    const byRemainder = ideal
+        .map((v, i) => ({ i, frac: v - Math.floor(v) }))
+        .sort((a, b) => b.frac - a.frac)
+    for (let k = 0; used < total; k = (k + 1) % byRemainder.length, used++) {
+        counts[byRemainder[k].i]++
+    }
+    // The 1-column minimum can push the total over the cap; take columns back
+    // from the widest items until it fits
+    while (used > total) {
+        let widest = -1
+        for (let i = 0; i < counts.length; i++) {
+            if (counts[i] > 1 && (widest < 0 || counts[i] > counts[widest])) widest = i
+        }
+        if (widest < 0) break
+        counts[widest]--
+        used--
+    }
+    return counts
 }
 
 function findOptimalHeight(
@@ -346,20 +399,7 @@ function findOptimalHeight(
     itemWidth: number,
     itemHeight: number,
 ) {
-    const h = Math.round(w * itemHeight / itemWidth)
-    const realWidth = w * columnWidth
-    const itemAspectRatio = itemWidth / itemHeight
-    let smallestAspectRatioDifference = Infinity
-    let bestHeight = h
-    for (let i = -3; i < 3; i++) {
-        const newHeight = h + i
-        const realHeight = newHeight * rowHeight // Try different heights
-        const realAspectRatio = realWidth / realHeight
-        const aspectRatioDifference = Math.abs(realAspectRatio - itemAspectRatio)
-        if (aspectRatioDifference < smallestAspectRatioDifference) {
-            smallestAspectRatioDifference = aspectRatioDifference
-            bestHeight = newHeight
-        }
-    }
-    return bestHeight
+    // Grid rows whose pixel height best matches the item's aspect at this width
+    const idealPx = pixelWidth(w, columnWidth) * itemHeight / itemWidth
+    return Math.max(1, Math.round((idealPx + GRID_MARGIN) / (rowHeight + GRID_MARGIN)))
 }
