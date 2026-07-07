@@ -193,7 +193,9 @@ const GRID_BREAKPOINTS = [
  * window.innerWidth in a resize handler, which can observe a stale width.
  */
 function useGridColumns(sidebarOpen: boolean): number {
-    const [columns, setColumns] = useState(1)
+    // 0 means "not evaluated yet" (SSR and the very first client render) —
+    // consumers must not lay out or scroll until this becomes a real count
+    const [columns, setColumns] = useState(0)
     useLayoutEffect(() => {
         const queries = GRID_BREAKPOINTS.map((q) => window.matchMedia(q))
         const update = () => {
@@ -233,7 +235,7 @@ export function ResultGrid({
     const parentRef = useRef<HTMLDivElement>(null)
     const [sidebarOpen] = useSideBarOpen()
     const columns = useGridColumns(sidebarOpen)
-    const rowCount = Math.ceil(results.length / columns)
+    const rowCount = columns > 0 ? Math.ceil(results.length / columns) : 0
 
     const virtualizer = useVirtualizer({
         count: rowCount,
@@ -272,7 +274,11 @@ export function ResultGrid({
         if (!selected) return
         const index = results.findIndex((item) => item.item_id === selected.item_id)
         if (index > 0) {
-            virtualizer.scrollToIndex(Math.floor(index / columns), { align: 'center' })
+            const row = Math.floor(index / columns)
+            // First call lands on estimated row heights; once the target rows have
+            // mounted and been measured, align again for the exact position
+            virtualizer.scrollToIndex(row, { align: 'center' })
+            requestAnimationFrame(() => virtualizer.scrollToIndex(row, { align: 'center' }))
         }
     }, [rowCount, columns, results, selected, virtualizer])
 
