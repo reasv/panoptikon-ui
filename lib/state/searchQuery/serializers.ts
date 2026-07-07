@@ -22,6 +22,7 @@ import {
 } from "./searchQueryKeyMaps"
 import { createScopedSerializer } from "../nuqsScopedWrappers/scopedSerializer"
 import { ReadonlyURLSearchParams } from "next/navigation"
+import { GRID_SCROLL_ANCHOR_KEY } from "../gridScroll"
 
 export const serializers = {
   embedArgs: createSerializer(embedArgsKeyMap(def)),
@@ -88,6 +89,8 @@ export const getSearchPageURL = (
   newPage: number
 ) => {
   const queryParams = new URLSearchParams(base)
+  // A new page starts at the top — don't carry the scroll anchor across pages
+  queryParams.delete(GRID_SCROLL_ANCHOR_KEY)
   return serializers.orderArgs(queryParams, {
     page: newPage,
   })

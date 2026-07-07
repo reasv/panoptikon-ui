@@ -29,6 +29,7 @@ import { ScanDrawer } from "@/components/scan/ScanDrawer"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { components } from "@/lib/panoptikon"
+import { useGridScrollAnchor } from "@/lib/state/gridScroll"
 
 export function SearchPageContent({ initialQuery, isRestrictedMode }:
     { initialQuery: SearchQueryArgs, isRestrictedMode: boolean }) {
@@ -269,6 +270,41 @@ export function ResultGrid({
         return () => element.removeEventListener('scroll', onScroll)
     }, [savedScrollOffsetRef])
 
+    // URL scroll anchor: the first item of the topmost visible row, so the
+    // position survives refreshes and can be shared (see useGridScrollAnchor)
+    const [scrollAnchor, setScrollAnchor] = useGridScrollAnchor()
+    // Distinguishes our own anchor writes (which echo back through nuqs and
+    // must be ignored) from external changes — back/forward navigation and
+    // query-change resets — which have to move the actual scroll position
+    const lastWrittenAnchor = useRef<number | null>(null)
+
+    // Persist the anchor only once scrolling pauses — never during a scroll,
+    // so the URL write can't cost scroll frames (and browsers rate-limit
+    // history.replaceState). While the top row is still (partially) visible
+    // the param is removed entirely: short result sets and barely-scrolled
+    // views keep a clean URL and today's behaviour.
+    useEffect(() => {
+        const element = parentRef.current
+        if (!element || columns <= 0) return
+        let timer: ReturnType<typeof setTimeout> | undefined
+        const onScrollStop = () => {
+            const startRow = virtualizer.range?.startIndex ?? 0
+            const anchor = startRow > 0 ? startRow * columns : null
+            if (anchor === lastWrittenAnchor.current) return
+            lastWrittenAnchor.current = anchor
+            setScrollAnchor(anchor)
+        }
+        const onScroll = () => {
+            clearTimeout(timer)
+            timer = setTimeout(onScrollStop, 350)
+        }
+        element.addEventListener('scroll', onScroll, { passive: true })
+        return () => {
+            clearTimeout(timer)
+            element.removeEventListener('scroll', onScroll)
+        }
+    }, [columns, virtualizer, setScrollAnchor])
+
     // When the column count changes, rows recompose and the same pixel offset lands
     // on entirely different results: re-anchor the scroll to the item that was at the
     // top. Row heights don't depend on the column count, so existing row measurements
@@ -301,9 +337,31 @@ export function ResultGrid({
     useEffect(() => {
         if (restoredScroll.current || rowCount === 0) return
         restoredScroll.current = true
+        // From here on the current URL anchor is accounted for: the external-
+        // change effect below must only react to values arriving later
+        lastWrittenAnchor.current = scrollAnchor
         const savedOffset = savedScrollOffsetRef?.current ?? 0
         if (savedOffset > 0) {
+            // Returning from the gallery: the exact pixel restore wins — the
+            // URL anchor is just a coarser record of the same position
             virtualizer.scrollToOffset(savedOffset)
+        } else if (scrollAnchor !== null && scrollAnchor > 0) {
+            if (scrollAnchor < results.length) {
+                const anchorRow = Math.floor(scrollAnchor / columns)
+                virtualizer.scrollToIndex(anchorRow, { align: 'start' })
+                // Unmeasured rows above the target make the first scroll land on
+                // estimated offsets — re-assert once the rows around the target
+                // have mounted and been measured
+                requestAnimationFrame(() => requestAnimationFrame(() => {
+                    virtualizer.scrollToIndex(anchorRow, { align: 'start' })
+                }))
+            } else {
+                // Stale anchor (e.g. a shared link into a result set that no
+                // longer reaches that far) — drop it rather than landing
+                // somewhere arbitrary
+                lastWrittenAnchor.current = null
+                setScrollAnchor(null)
+            }
         }
         if (!selected) return
         const index = results.findIndex((item) => item.item_id === selected.item_id)
@@ -333,7 +391,25 @@ export function ResultGrid({
             ensureVisible()
             requestAnimationFrame(ensureVisible)
         })
-    }, [rowCount, columns, results, selected, virtualizer, savedScrollOffsetRef, rowEstimate])
+    }, [rowCount, columns, results, selected, virtualizer, savedScrollOffsetRef, rowEstimate, scrollAnchor, setScrollAnchor])
+
+    // Anchor values we didn't write ourselves arrive from history navigation
+    // (back/forward restoring the entry's anchor) or from a query change
+    // clearing it: move the grid to match. Our own scroll-stop writes echo
+    // back as scrollAnchor === lastWrittenAnchor and are ignored, so plain
+    // scrolling never re-enters here.
+    useEffect(() => {
+        if (!restoredScroll.current) return
+        if (scrollAnchor === lastWrittenAnchor.current) return
+        lastWrittenAnchor.current = scrollAnchor
+        if (columns <= 0 || rowCount === 0) return
+        if (scrollAnchor === null || scrollAnchor <= 0) {
+            virtualizer.scrollToOffset(0)
+        } else {
+            const clamped = Math.min(scrollAnchor, results.length - 1)
+            virtualizer.scrollToIndex(Math.floor(clamped / columns), { align: 'start' })
+        }
+    }, [scrollAnchor, columns, rowCount, results.length, virtualizer])
 
     const executionSummary = `Results: ${resultMetrics?.execute} DB, ${resultMetrics?.build} Build, ${resultMetrics?.compile} Compile`
         + `\nCount: ${countMetrics?.execute} DB, ${countMetrics?.build} Build, ${countMetrics?.compile} Compile`

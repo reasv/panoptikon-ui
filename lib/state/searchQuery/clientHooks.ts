@@ -40,6 +40,7 @@ import {
   sbSimilarityQueryFromState,
 } from "./searchQuery"
 import { useGalleryIndex } from "../gallery"
+import { useGridScrollAnchor } from "../gridScroll"
 
 export type Nullable<T> = {
   [K in keyof T]: T[K] | null
@@ -58,11 +59,19 @@ export function useResetPage<T>(
 ): SetFn<T> {
   const [page, setPage] = useSearchPage()
   const [gi, setGi] = useGalleryIndex()
+  const setAnchor = useGridScrollAnchor()[1]
   const setState: SetFn<T> = (newOptions) => {
-    if (page > 1 && enabled) {
-      setPage(1)
-    } else {
-      if (enabled && gi && gi > 0) setGi(0)
+    if (enabled) {
+      // A changed query invalidates the grid scroll anchor along with the page
+      // and gallery index — restoring it into different results would drop the
+      // user somewhere arbitrary. Cleared in the same URL update as the query
+      // change, so the previous history entry keeps its anchor for Back.
+      setAnchor(null)
+      if (page > 1) {
+        setPage(1)
+      } else if (gi && gi > 0) {
+        setGi(0)
+      }
     }
     return setFunc(newOptions)
   }
@@ -99,8 +108,11 @@ export function usePageSize(): [number, SetFn<number>] {
 export function useSearchPage(): [number, SetFn<number>] {
   const [state, set] = useQueryState("page", pageKey(def as any))
   const [gi, setGi] = useGalleryIndex()
+  const setAnchor = useGridScrollAnchor()[1]
   const setState: SetFn<number> = (newOptions) => {
     if (gi && gi > 0) setGi(0)
+    // A new page starts at the top — drop the previous page's scroll anchor
+    setAnchor(null)
     return set(newOptions)
   }
   return [state, setState] as const
