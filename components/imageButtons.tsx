@@ -6,14 +6,13 @@ import { useToast } from "@/components/ui/use-toast"
 import { File, FolderOpen, BookmarkPlus, BookmarkX } from "lucide-react"
 import { Button } from "./ui/button"
 import { Toggle } from "./ui/toggle"
-import { cn, getFileURL } from "@/lib/utils"
+import { cn } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useAlwaysShowBookmarkBtn } from "@/lib/state/alwaysShowBookmarks"
-import { useClientConfig } from "@/lib/useClientConfig"
 import { FindButton } from "./gallery/FindButton"
 import { FileBookmarksSetter } from "./sidebar/details/FileBookmarks"
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "./ui/context-menu"
-import { useRelayOpen } from "@/hooks/relayOpen"
+import { useFileOpenActions } from "@/hooks/fileOpen"
 
 export const BookmarkBtn = (
     {
@@ -190,49 +189,9 @@ export const OpenFile = (
         buttonVariant?: boolean
     }
 ) => {
-    const query = useSelectedDBs()[0]
-    const { mutate } = $api.useMutation(
-        "post",
-        "/api/open/file/{sha256}",
-    )
-    const { toast } = useToast()
-
-    const clientConfig = useClientConfig()
-    const openFileInBrowser = () => {
-        const url = getFileURL(query, "file", "sha256", sha256)
-        window.open(url, "_blank")
-    }
-
-    const disableOpenFileButton = clientConfig?.data?.disableBackendOpen || false
-    const relayOpenMutation = useRelayOpen()
-    const handleClick = () => {
-        if (relayOpenMutation) {
-            relayOpenMutation.mutate({ verb: "file", path, sha256 })
-            return
-        }
-        if (disableOpenFileButton) {
-            openFileInBrowser()
-            return
-        }
-        mutate({ params: { path: { sha256 }, query: { ...query, path: path } } }, {
-            onError: (error: any) => {
-                toast({
-                    title: "Failed to open file",
-                    description: error.message,
-                    variant: "destructive",
-                    duration: 2000,
-                })
-            },
-            onSuccess: () => {
-                toast({
-                    title: "Opening file",
-                    description: "File is being opened with your system's default application",
-                    duration: 2000,
-                })
-            }
-        })
-    }
-    const buttonTitle = disableOpenFileButton ? "Open file in new tab" : "Open file with your system's default application"
+    const { openFile, disableBackendOpen } = useFileOpenActions({ sha256, path })
+    const handleClick = openFile
+    const buttonTitle = disableBackendOpen ? "Open file in new tab" : "Open file with your system's default application"
     return (
         <>
             {buttonVariant ?
@@ -275,41 +234,9 @@ export const OpenFolder = (
         buttonVariant?: boolean
     }
 ) => {
-    const query = useSelectedDBs()[0]
-    const { mutate } = $api.useMutation(
-        "post",
-        "/api/open/folder/{sha256}",
-    )
-
-    const { toast } = useToast()
-    const relayOpenMutation = useRelayOpen()
-
-    const handleClick = () => {
-        if (relayOpenMutation) {
-            relayOpenMutation.mutate({ verb: "folder", path, sha256 })
-            return
-        }
-        mutate({ params: { path: { sha256 }, query: { ...query, path: path } } }, {
-            onError: (error: any) => {
-                toast({
-                    title: "Failed to open folder",
-                    description: error.message,
-                    variant: "destructive",
-                    duration: 2000,
-                })
-            },
-            onSuccess: () => {
-                toast({
-                    title: "Opening folder",
-                    description: "Showing file in folder with your system's default file manager",
-                    duration: 2000,
-                })
-            }
-        })
-    }
-    const clientConfig = useClientConfig()
-    const disableOpenFileButton = clientConfig?.data?.disableBackendOpen || false
-    if (disableOpenFileButton) {
+    const { showInFolder, disableBackendOpen } = useFileOpenActions({ sha256, path })
+    const handleClick = showInFolder
+    if (disableBackendOpen) {
         return (
             <FindButton
                 id={sha256}

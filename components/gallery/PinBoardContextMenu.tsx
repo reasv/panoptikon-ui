@@ -4,6 +4,7 @@ import { components } from "@/lib/panoptikon";
 import { useEffect, useRef } from "react";
 import { useGalleryFullscreen } from "@/lib/state/gallery";
 import { CropRect } from "@/lib/pinboardCrop";
+import { useFileOpenActions } from "@/hooks/fileOpen";
 
 // Layout keys are `${recordIndex}-${sha256Prefix}` (the same image can be
 // pinned more than once); the sha256 part is what the API understands
@@ -50,6 +51,14 @@ export function PinBoardCtx({
     function openURL() {
         window.open(file_url, "_blank")
     }
+    // The pinboard stores the 10-char sha256 prefix; the open/folder endpoints
+    // accept a prefix as the sha256 id, same as the pin's own item lookup.
+    const { openFile, showInFolder, disableBackendOpen, relayEnabled } = useFileOpenActions({ sha256 })
+    // In restricted mode the File actions degrade to things this pin already
+    // offers: Open File becomes a new browser tab (== "Open in New Tab" below)
+    // and Show in Folder becomes the FindButton the pin already renders. Only
+    // a relay (real local open) makes the submenu worth showing there.
+    const showFileMenu = relayEnabled || !disableBackendOpen
     const layoutBuildData = useRef<LayoutBuildData | null>(null)
     useEffect(() => {
         layoutBuildData.current = null
@@ -111,6 +120,15 @@ export function PinBoardCtx({
     return (
         <ContextMenuContent>
             <ContextMenuItem onClick={() => openURL()}>Open in New Tab</ContextMenuItem>
+            {showFileMenu && (
+                <ContextMenuSub>
+                    <ContextMenuSubTrigger inset>File</ContextMenuSubTrigger>
+                    <ContextMenuSubContent className="w-48">
+                        <ContextMenuItem onClick={openFile}>Open File</ContextMenuItem>
+                        <ContextMenuItem onClick={showInFolder}>Show File in Folder</ContextMenuItem>
+                    </ContextMenuSubContent>
+                </ContextMenuSub>
+            )}
             <ContextMenuItem onClick={onDuplicate}>Duplicate</ContextMenuItem>
             <ContextMenuItem onClick={onToggleCrop}>
                 {cropMode ? "Finish Cropping" : "Crop Image"}
