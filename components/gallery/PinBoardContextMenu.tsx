@@ -3,21 +3,40 @@ import { ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuS
 import { components } from "@/lib/panoptikon";
 import { useEffect, useRef } from "react";
 import { useGalleryFullscreen } from "@/lib/state/gallery";
+import { CropRect } from "@/lib/pinboardCrop";
+
+// Layout keys are `${recordIndex}-${sha256Prefix}` (the same image can be
+// pinned more than once); the sha256 part is what the API understands
+function keyToSha256(key: string): string {
+    return key.split("-")[1]
+}
 
 export function PinBoardCtx({
+    layoutKey,
     sha256,
     file_url,
     onLayoutChange,
     layout,
+    crops,
+    cropMode,
+    hasCrop,
+    onToggleCrop,
+    onClearCrop,
     pinboardRef,
     dbs,
     columns,
     rowHeight,
 }: {
+    layoutKey: string
     sha256: string
     file_url: string
     onLayoutChange: (layout: ReactGridLayout.Layout[]) => void
     layout: ReactGridLayout.Layout[],
+    crops: Record<string, CropRect | null>,
+    cropMode: boolean,
+    hasCrop: boolean,
+    onToggleCrop: () => void,
+    onClearCrop: () => void,
     pinboardRef: React.RefObject<HTMLDivElement>,
     columns: number,
     rowHeight: number,
@@ -32,11 +51,11 @@ export function PinBoardCtx({
     const layoutBuildData = useRef<LayoutBuildData | null>(null)
     useEffect(() => {
         layoutBuildData.current = null
-    }, [layout, dbs, columns, rowHeight])
+    }, [layout, crops, dbs, columns, rowHeight])
 
     async function changeLayout(itemsPerRow: number, restrictToVisible = false) {
         if (!layoutBuildData.current) {
-            const buildData = await getLayoutBuildData({ layout, dbs, columns, rowHeight, pinboardRef })
+            const buildData = await getLayoutBuildData({ layout, crops, dbs, columns, rowHeight, pinboardRef })
             layoutBuildData.current = buildData
         }
         const buildData = layoutBuildData.current
@@ -50,16 +69,17 @@ export function PinBoardCtx({
     }
     async function changeItemSize(increase: number) {
         if (!layoutBuildData.current) {
-            const buildData = await getLayoutBuildData({ layout, dbs, columns, rowHeight, pinboardRef })
+            const buildData = await getLayoutBuildData({ layout, crops, dbs, columns, rowHeight, pinboardRef })
             layoutBuildData.current = buildData
         }
         const buildData = layoutBuildData.current
         const newLayout = layout.map(l => {
-            if (l.i === sha256) {
+            if (l.i === layoutKey) {
+                const [w, h] = croppedDimensions(buildData, l.i)
                 return {
                     ...l,
                     w: l.w + increase,
-                    h: findOptimalHeight(l.w + increase, rowHeight, buildData.columnWidth, buildData.metadata[l.i]?.item.width || 1, buildData.metadata[l.i]?.item.height || 1),
+                    h: findOptimalHeight(l.w + increase, rowHeight, buildData.columnWidth, w, h),
                 }
             }
             return l
@@ -68,16 +88,17 @@ export function PinBoardCtx({
     }
     async function setItemSize(size: number) {
         if (!layoutBuildData.current) {
-            const buildData = await getLayoutBuildData({ layout, dbs, columns, rowHeight, pinboardRef })
+            const buildData = await getLayoutBuildData({ layout, crops, dbs, columns, rowHeight, pinboardRef })
             layoutBuildData.current = buildData
         }
         const buildData = layoutBuildData.current
         const newLayout = layout.map(l => {
-            if (l.i === sha256) {
+            if (l.i === layoutKey) {
+                const [w, h] = croppedDimensions(buildData, l.i)
                 return {
                     ...l,
                     w: size,
-                    h: findOptimalHeight(size, rowHeight, buildData.columnWidth, buildData.metadata[l.i]?.item.width || 1, buildData.metadata[l.i]?.item.height || 1),
+                    h: findOptimalHeight(size, rowHeight, buildData.columnWidth, w, h),
                 }
             }
             return l
@@ -88,6 +109,10 @@ export function PinBoardCtx({
     return (
         <ContextMenuContent>
             <ContextMenuItem onClick={() => openURL()}>Open in New Tab</ContextMenuItem>
+            <ContextMenuItem onClick={onToggleCrop}>
+                {cropMode ? "Finish Cropping" : "Crop Image"}
+            </ContextMenuItem>
+            {hasCrop && <ContextMenuItem onClick={onClearCrop}>Clear Crop</ContextMenuItem>}
             <ContextMenuSub>
                 <ContextMenuSubTrigger inset>Resize Item</ContextMenuSubTrigger>
                 <ContextMenuSubContent className="w-48">
@@ -126,8 +151,13 @@ export function PinBoardCtx({
     )
 }
 
-async function fetchMetadata(sha256s: string[], dbs: { index_db: string | null, user_data_db: string | null }) {
-    const fetchPromises = sha256s.map(sha256 =>
+// Takes layout keys (`${index}-${sha256}`), fetches each unique sha256 once,
+// and returns metadata keyed by the original layout key
+async function fetchMetadata(keys: string[], dbs: { index_db: string | null, user_data_db: string | null }) {
+    const uniqueShas = Array.from(new Set(
+        keys.map(keyToSha256).filter(sha => sha && sha !== "__preview")
+    ))
+    const results = await Promise.all(uniqueShas.map(sha256 =>
         fetchClient.GET("/api/items/item", {
             params: {
                 query: {
@@ -136,12 +166,11 @@ async function fetchMetadata(sha256s: string[], dbs: { index_db: string | null, 
                     id_type: "sha256",
                 }
             }
-        }).then(response => ({ [sha256]: response.data }))
-    );
+        }).then(response => [sha256, response.data] as const)
+    ));
+    const bySha = Object.fromEntries(results);
 
-    const results = await Promise.all(fetchPromises);
-
-    return results.reduce((acc, curr) => ({ ...acc, ...curr }), {});
+    return Object.fromEntries(keys.map(key => [key, bySha[keyToSha256(key)]]));
 }
 
 interface LayoutBuildData {
@@ -151,6 +180,7 @@ interface LayoutBuildData {
             files: components["schemas"]["FileRecord"][];
         } | undefined
     },
+    crops: Record<string, CropRect | null>,
     columnWidth: number,
     rowHeight: number,
     columns: number,
@@ -158,15 +188,28 @@ interface LayoutBuildData {
     sortedLayout: ReactGridLayout.Layout[],
 }
 
+// Effective source dimensions of an item: the image size scaled by its
+// crop rect, so cropped items keep the aspect of what's actually shown
+function croppedDimensions(buildData: LayoutBuildData, key: string): [number, number] {
+    const item = buildData.metadata[key]?.item
+    const crop = buildData.crops[key]
+    return [
+        (item?.width || 1) * (crop?.w ?? 1),
+        (item?.height || 1) * (crop?.h ?? 1),
+    ]
+}
+
 async function getLayoutBuildData(
     {
         layout,
+        crops,
         dbs,
         columns,
         rowHeight,
         pinboardRef,
     }: {
         layout: ReactGridLayout.Layout[],
+        crops: Record<string, CropRect | null>,
         dbs: {
             index_db: string | null,
             user_data_db: string | null,
@@ -176,12 +219,12 @@ async function getLayoutBuildData(
         pinboardRef: React.RefObject<HTMLDivElement>,
     }
 ): Promise<LayoutBuildData> {
-    const sha256s = layout.map(l => l.i)
-    const metadata = await fetchMetadata(sha256s, dbs)
+    const keys = layout.map(l => l.i)
+    const metadata = await fetchMetadata(keys, dbs)
     const columnWidth = pinboardRef.current?.clientWidth ? pinboardRef.current.clientWidth / columns : 1
     const visibleRows = Math.ceil(pinboardRef.current?.clientHeight ? pinboardRef.current.clientHeight / rowHeight : 1)
     const sortedLayout = sortLayout(layout)
-    return { metadata, columnWidth, rowHeight, columns, visibleRows, sortedLayout }
+    return { metadata, crops, columnWidth, rowHeight, columns, visibleRows, sortedLayout }
 }
 
 function sortLayout(layout: ReactGridLayout.Layout[]): ReactGridLayout.Layout[] {
@@ -216,11 +259,14 @@ function sortLayout(layout: ReactGridLayout.Layout[]): ReactGridLayout.Layout[] 
 function buildLayout(buildData: LayoutBuildData, itemsPerRow: number, restrictToVisible: boolean): ReactGridLayout.Layout[] {
     return buildRowLayout(
         itemsPerRow,
-        buildData.sortedLayout.map(l => ({
-            sha256: l.i,
-            width: buildData.metadata[l.i]?.item.width || 1,
-            height: buildData.metadata[l.i]?.item.height || 1,
-        })),
+        buildData.sortedLayout.map(l => {
+            const [width, height] = croppedDimensions(buildData, l.i)
+            return {
+                sha256: l.i,
+                width,
+                height,
+            }
+        }),
         buildData.rowHeight,
         buildData.columnWidth,
         buildData.columns,

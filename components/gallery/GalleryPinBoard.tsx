@@ -3,7 +3,7 @@ import { cn, getFileURL } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useGalleryFullscreen, useGalleryPinBoardLayout } from '@/lib/state/gallery'
 import { PinButton } from './PinButton'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactGridLayout, { Responsive, WidthProvider } from "react-grid-layout"
 import "react-grid-layout/css/styles.css"
 import "react-resizable/css/styles.css"
@@ -19,7 +19,13 @@ import { $api } from '@/lib/api'
 import { MediaControls } from './PlayButton'
 import React from 'react'
 import { useVideoPlayerState } from '@/lib/videoPlayerState'
+import { CropRect, packHField, parseHField } from '@/lib/pinboardCrop'
+import { CropView } from './CropView'
+import { Check, Crop } from 'lucide-react'
 const ResponsiveGridLayout = WidthProvider(Responsive)
+
+const ALL_RESIZE_HANDLES: ReactGridLayout.Layout["resizeHandles"] =
+    ["s", "w", "e", "n", "sw", "nw", "se", "ne"]
 
 export function PinBoard(
     {
@@ -32,18 +38,30 @@ export function PinBoard(
 ) {
     const dbs = useSelectedDBs()[0]
     const [savedLayout, setSavedLayout] = useGalleryPinBoardLayout()
-    const [layout, pinnedFiles]: [ReactGridLayout.Layout[], [string, string, string, string][]] = useMemo(() => {
+    // Key of the item currently in crop mode, if any
+    const [cropKey, setCropKey] = useState<string | null>(null)
+    // True while the crop-mode item's box is being resized via a grid handle
+    const [cropResizing, setCropResizing] = useState(false)
+    const [layout, pinnedFiles, crops]: [
+        ReactGridLayout.Layout[],
+        [string, string, string, string][],
+        Record<string, CropRect | null>,
+    ] = useMemo(() => {
         const newLayout: ReactGridLayout.Layout[] = []
         const pinned: [string, string, string, string][] = []
+        const cropsMap: Record<string, CropRect | null> = {}
         for (let i = 0; i < savedLayout.length; i += 5) {
-            const [sha256, x, y, w, h] = savedLayout.slice(i, i + 5)
+            const [sha256, x, y, w, hField] = savedLayout.slice(i, i + 5)
             const index = `${i}-${sha256}`
+            const { h, crop } = parseHField(hField)
+            cropsMap[index] = crop
             newLayout.push({
                 i: index,
                 x: parseInt(x),
                 y: parseInt(y),
                 w: parseInt(w),
-                h: parseInt(h),
+                h,
+                ...(index === cropKey ? { resizeHandles: ALL_RESIZE_HANDLES } : {}),
             })
             if (sha256 === "__preview") {
                 pinned.push([
@@ -61,16 +79,43 @@ export function PinBoard(
                 getFileURL(dbs, "file", "sha256", sha256),
             ])
         }
-        return [newLayout, pinned]
-    }, [savedLayout])
+        return [newLayout, pinned, cropsMap]
+    }, [savedLayout, cropKey, dbs])
 
     const onLayoutChange = (currentLayout: ReactGridLayout.Layout[]) => {
-        const layoutToSave = currentLayout.filter((e) => e.i !== "__preview").map(layout => {
-            return [layout.i.split("-")[1], layout.x.toString(), layout.y.toString(), layout.w.toString(), layout.h.toString(),]
+        // Functional update so crop suffixes stored in the h field survive
+        // box moves/resizes, and so crop commits landing in the same tick
+        // aren't clobbered
+        setSavedLayout((prev) => {
+            const prevCrops: Record<string, CropRect | null> = {}
+            for (let i = 0; i < prev.length; i += 5) {
+                prevCrops[`${i}-${prev[i]}`] = parseHField(prev[i + 4]).crop
+            }
+            return currentLayout.filter((e) => e.i !== "__preview").map(l => {
+                return [
+                    l.i.split("-")[1],
+                    l.x.toString(),
+                    l.y.toString(),
+                    l.w.toString(),
+                    packHField(l.h, prevCrops[l.i] ?? null),
+                ]
+            }).flat()
         })
-        const flattenedLayout = layoutToSave.flat()
-        setSavedLayout(flattenedLayout)
     }
+
+    const onItemCropChange = (key: string, crop: CropRect | null) => {
+        setSavedLayout((prev) => {
+            const next = [...prev]
+            for (let i = 0; i < prev.length; i += 5) {
+                if (`${i}-${prev[i]}` === key) {
+                    next[i + 4] = packHField(parseHField(prev[i + 4]).h, crop)
+                    break
+                }
+            }
+            return next
+        })
+    }
+
     const [fs, setFs] = useGalleryFullscreen()
     const scrollAreaRef = useRef<HTMLDivElement>(null);
     const columns = 36
@@ -101,6 +146,10 @@ export function PinBoard(
                     droppingItem={{ i: '__preview', w: 10, h: 10 }} // size of the grey preview box
                     compactType="vertical" // Compacts items vertically to keep them visible on screen
                     preventCollision={false}
+                    onResizeStart={(_currentLayout, oldItem) => {
+                        if (oldItem.i === cropKey) setCropResizing(true)
+                    }}
+                    onResizeStop={() => setCropResizing(false)}
                     onDrop={(layout, layoutItem, e) => {
                         const event = e as unknown as React.DragEvent<HTMLDivElement>
                         if (event.dataTransfer && event.dataTransfer.getData("text/plain")) {
@@ -135,17 +184,30 @@ export function PinBoard(
                     }}
                 >
                     {pinnedFiles.map(([i, sha256, thumbnail, file]) => (
-                        <div key={i} className="relative bg-gray-800 border rounded shadow group">
+                        <div
+                            key={i}
+                            className={cn(
+                                "relative bg-gray-800 border rounded shadow group",
+                                cropKey === i && "z-30 pinboard-crop-item",
+                            )}
+                        >
                             {sha256 === "__preview" ?
                                 <div key={i} className="drag-handle cursor-move absolute top-0 left-0 w-full h-full" />
                                 :
                                 <PinBoardPin
                                     key={i}
+                                    layoutKey={i}
                                     sha256={sha256}
                                     thumbnail={thumbnail}
                                     file={file}
                                     onLayoutChange={onLayoutChange}
                                     layout={layout}
+                                    crops={crops}
+                                    crop={crops[i] ?? null}
+                                    cropMode={cropKey === i}
+                                    boxResizing={cropKey === i && cropResizing}
+                                    onCropModeToggle={() => setCropKey((k) => k === i ? null : i)}
+                                    onCropChange={(crop) => onItemCropChange(i, crop)}
                                     scrollAreaRef={scrollAreaRef}
                                     columns={columns}
                                     rowHeight={rowHeight}
@@ -160,21 +222,35 @@ export function PinBoard(
 }
 
 function PinBoardPin({
+    layoutKey,
     sha256,
     thumbnail,
     file,
     onLayoutChange,
     layout,
+    crops,
+    crop,
+    cropMode,
+    boxResizing,
+    onCropModeToggle,
+    onCropChange,
     scrollAreaRef,
     columns,
     rowHeight,
     dbs,
 }: {
+    layoutKey: string
     sha256: string
     thumbnail: string
     file: string
     onLayoutChange: (currentLayout: ReactGridLayout.Layout[]) => void
     layout: ReactGridLayout.Layout[]
+    crops: Record<string, CropRect | null>
+    crop: CropRect | null
+    cropMode: boolean
+    boxResizing: boolean
+    onCropModeToggle: () => void
+    onCropChange: (crop: CropRect | null) => void
     scrollAreaRef: React.RefObject<HTMLDivElement>
     columns: number
     rowHeight: number
@@ -206,37 +282,88 @@ function PinBoardPin({
             }
         }
     }, [data])
+
+    useEffect(() => {
+        if (!cropMode) return
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === "Escape") onCropModeToggle()
+        }
+        window.addEventListener("keydown", onKeyDown)
+        return () => window.removeEventListener("keydown", onKeyDown)
+    }, [cropMode, onCropModeToggle])
+
+    const showVideo = isPlayable && videoState.showVideo
     return (
         <>
             <ContextMenu>
                 <ContextMenuTrigger>
-                    <div className="drag-handle cursor-move absolute top-0 left-0 w-full h-full">
-                        {isPlayable && videoState.showVideo ?
-                            <video
-                                ref={videoRef}
-                                autoPlay
-                                loop
-                                muted={videoState.videoIsMuted}
-                                controls={videoState.showControls}
-                                className="rounded object-contain"
-                                style={{ width: "100%", height: "100%" }}
-                                src={file}
+                    <div className={cn(
+                        "absolute top-0 left-0 w-full h-full",
+                        !cropMode && "drag-handle cursor-move",
+                    )}>
+                        {(cropMode || crop) ?
+                            <CropView
+                                crop={crop}
+                                cropMode={cropMode}
+                                boxResizing={boxResizing}
+                                naturalWidth={data?.item?.width}
+                                naturalHeight={data?.item?.height}
+                                onCropChange={onCropChange}
+                                ghostSrc={showVideo ? undefined : thumbnail}
+                                renderMedia={(style) => showVideo ?
+                                    <video
+                                        ref={videoRef}
+                                        autoPlay
+                                        loop
+                                        muted={videoState.videoIsMuted}
+                                        controls={videoState.showControls}
+                                        className="rounded"
+                                        style={style}
+                                        src={file}
+                                    />
+                                    :
+                                    <img
+                                        src={thumbnail}
+                                        alt={`Sha256 Hash ${sha256}`}
+                                        draggable={false}
+                                        className="rounded select-none"
+                                        style={style}
+                                    />
+                                }
                             />
                             :
-                            <Image
-                                src={thumbnail}
-                                alt={`Sha256 Hash ${sha256}`}
-                                fill
-                                className="rounded object-contain"
-                                unoptimized={true}
-                            />}
+                            showVideo ?
+                                <video
+                                    ref={videoRef}
+                                    autoPlay
+                                    loop
+                                    muted={videoState.videoIsMuted}
+                                    controls={videoState.showControls}
+                                    className="rounded object-contain"
+                                    style={{ width: "100%", height: "100%" }}
+                                    src={file}
+                                />
+                                :
+                                <Image
+                                    src={thumbnail}
+                                    alt={`Sha256 Hash ${sha256}`}
+                                    fill
+                                    className="rounded object-contain"
+                                    unoptimized={true}
+                                />}
                     </div>
                 </ContextMenuTrigger>
                 <PinBoardCtx
+                    layoutKey={layoutKey}
                     sha256={sha256}
                     file_url={file}
                     onLayoutChange={onLayoutChange}
                     layout={layout}
+                    crops={crops}
+                    cropMode={cropMode}
+                    hasCrop={!!crop}
+                    onToggleCrop={onCropModeToggle}
+                    onClearCrop={() => onCropChange(null)}
                     pinboardRef={scrollAreaRef}
                     columns={columns}
                     rowHeight={rowHeight}
@@ -244,6 +371,22 @@ function PinBoardPin({
                 />
             </ContextMenu>
             <PinButton sha256={sha256} hidePins={true} />
+            <button
+                title={cropMode ? "Finish cropping" : "Crop this image"}
+                className={cn(
+                    "hover:scale-105 absolute top-2 left-14 rounded-full p-2 transition-opacity duration-300",
+                    cropMode
+                        ? "opacity-100 bg-blue-200"
+                        : "opacity-0 group-hover:opacity-100 bg-white",
+                )}
+                onClick={onCropModeToggle}
+            >
+                {cropMode ? (
+                    <Check className="w-6 h-6 text-gray-800" />
+                ) : (
+                    <Crop className="w-6 h-6 text-gray-800" />
+                )}
+            </button>
             <SelectButton
                 sha256={sha256}
                 item={data?.item}

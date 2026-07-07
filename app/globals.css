@@ -67,3 +67,10 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Pinboard crop mode: make all 8 resize handles on the active item stand out */
+.pinboard-crop-item > .react-resizable-handle {
+  opacity: 1 !important;
+  filter: drop-shadow(0 0 3px rgb(59 130 246)) brightness(1.6);
+  z-index: 40;
+}
