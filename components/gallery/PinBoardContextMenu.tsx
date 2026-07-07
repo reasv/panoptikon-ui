@@ -2,7 +2,7 @@ import { fetchClient } from "@/lib/api";
 import { ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger } from "../ui/context-menu";
 import { components } from "@/lib/panoptikon";
 import { useEffect, useRef } from "react";
-import { useGalleryFullscreen } from "@/lib/state/gallery";
+import { useGalleryFullscreen, useGalleryPinGrid } from "@/lib/state/gallery";
 import { CropRect } from "@/lib/pinboardCrop";
 import { useFileOpenActions } from "@/hooks/fileOpen";
 
@@ -122,6 +122,7 @@ export function PinBoardCtx({
         onLayoutChange(shiftLayoutHorizontally(layout, mode, columns))
     }
     const [fs, setFs] = useGalleryFullscreen()
+    const [grid, setGrid] = useGalleryPinGrid()
     return (
         <ContextMenuContent>
             <ContextMenuItem onClick={() => openURL()}>Open in New Tab</ContextMenuItem>
@@ -162,6 +163,9 @@ export function PinBoardCtx({
             <ContextMenuSeparator />
             <ContextMenuItem onClick={() => setFs(!fs)}>
                 {fs ? "Restore Pinboard Size" : "Maximize Pinboard"}
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => setGrid(!grid)}>
+                {grid ? "Hide Grid" : "Show Grid"}
             </ContextMenuItem>
             <ContextMenuSeparator />
             <ContextMenuItem onClick={() => changeLayout(3)}>Layout 3 Items/Row</ContextMenuItem>

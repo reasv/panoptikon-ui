@@ -1,7 +1,7 @@
 import Image from 'next/image'
 import { cn, getFileURL } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
-import { useGalleryFullscreen, useGalleryPinBoardLayout } from '@/lib/state/gallery'
+import { useGalleryFullscreen, useGalleryPinBoardLayout, useGalleryPinGrid } from '@/lib/state/gallery'
 import { PinButton } from './PinButton'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactGridLayout, { Responsive, WidthProvider } from "react-grid-layout"
@@ -26,6 +26,51 @@ const ResponsiveGridLayout = WidthProvider(Responsive)
 
 const ALL_RESIZE_HANDLES: ReactGridLayout.Layout["resizeHandles"] =
     ["s", "w", "e", "n", "sw", "nw", "se", "ne"]
+
+// Faint overlay of react-grid-layout's cells, for eyeballing item sizes while
+// debugging layouts. Each cell's left/right and top/bottom edges are drawn at
+// their exact computed positions (the gaps between the paired lines are the
+// grid's 10px margins). Positions are placed explicitly rather than via a
+// repeating gradient, whose fractional column period would accumulate rounding
+// error across 36 columns and smear into overlapping/uneven lines.
+function GridOverlay({ width, height, columns, rowHeight }: {
+    width: number
+    height: number
+    columns: number
+    rowHeight: number
+}) {
+    const MARGIN = 10
+    const PADDING = 10
+    const columnWidth = (width - 2 * PADDING - (columns - 1) * MARGIN) / columns
+    if (!(columnWidth > 0) || height <= 0) return null
+
+    const xs: number[] = []
+    for (let i = 0; i < columns; i++) {
+        const left = PADDING + i * (columnWidth + MARGIN)
+        xs.push(left, left + columnWidth)
+    }
+    const ys: number[] = []
+    for (let top = PADDING; top < height; top += rowHeight + MARGIN) {
+        ys.push(top, top + rowHeight)
+    }
+
+    const stroke = "rgba(128,128,128,0.35)"
+    return (
+        <svg
+            className="absolute top-0 left-0 z-0 pointer-events-none"
+            width={width}
+            height={height}
+            shapeRendering="crispEdges"
+        >
+            {xs.map((x, i) => (
+                <line key={`v${i}`} x1={x} y1={0} x2={x} y2={height} stroke={stroke} strokeWidth={1} />
+            ))}
+            {ys.map((y, i) => (
+                <line key={`h${i}`} x1={0} y1={y} x2={width} y2={y} stroke={stroke} strokeWidth={1} />
+            ))}
+        </svg>
+    )
+}
 
 export function PinBoard(
     {
@@ -129,13 +174,36 @@ export function PinBoard(
     }
 
     const [fs, setFs] = useGalleryFullscreen()
+    const [showGrid] = useGalleryPinGrid()
     const scrollAreaRef = useRef<HTMLDivElement>(null);
     const columns = 36
     const rowHeight = 50
+    // Measure the grid area so the debug grid overlay can match react-grid-layout's
+    // column width (from the container width) and cover the full grid height,
+    // which grows past the viewport when an item extends below the fold. The
+    // grid content height comes from RGL's own root element rather than the
+    // fixed-height container, and we observe it so the overlay follows resizes.
+    const gridAreaRef = useRef<HTMLDivElement>(null)
+    const [gridAreaSize, setGridAreaSize] = useState({ width: 0, height: 0 })
+    useEffect(() => {
+        const el = gridAreaRef.current
+        if (!el) return
+        const grid = el.querySelector<HTMLElement>(".react-grid-layout")
+        const measure = () => setGridAreaSize({
+            width: el.clientWidth,
+            height: Math.max(el.clientHeight, grid?.offsetHeight ?? 0),
+        })
+        measure()
+        const ro = new ResizeObserver(measure)
+        ro.observe(el)
+        if (grid) ro.observe(grid)
+        return () => ro.disconnect()
+    }, [savedLayout])
     const pinItem = usePinItem()
     return (
         <ScrollArea ref={scrollAreaRef} className="overflow-y-auto">
             <div
+                ref={gridAreaRef}
                 className={`relative flex-grow ${fs ? "h-[97vh]" : (
                     showPagination ?
                         (thumbnailsOpen ? "h-[calc(100vh-567px)]" : "h-[calc(100vh-213px)]")
@@ -144,6 +212,14 @@ export function PinBoard(
                 )
                     }`}
             >
+                {showGrid && (
+                    <GridOverlay
+                        width={gridAreaSize.width}
+                        height={gridAreaSize.height}
+                        columns={columns}
+                        rowHeight={rowHeight}
+                    />
+                )}
                 <ResponsiveGridLayout
                     className="layout"
                     layouts={{ lg: layout }}

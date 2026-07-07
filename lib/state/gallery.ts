@@ -40,6 +40,14 @@ const useGalleryHidePinBoard = () =>
       history: "push",
     })
   )
+const useGalleryPinGrid = () =>
+  useQueryState(
+    "pg",
+    parseAsBoolean.withDefault(false).withOptions({
+      clearOnDefault: true,
+      history: "push",
+    })
+  )
 const useGalleryPinBoardLayout = () =>
   useQueryState(
     "pinboard",
@@ -65,4 +73,5 @@ export {
   useGalleryPinBoardLayout,
   useGalleryFullscreen,
   useGalleryHidePinBoard,
+  useGalleryPinGrid,
 }
