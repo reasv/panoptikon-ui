@@ -8,11 +8,12 @@ import { InstantSearchLock } from "@/components/InstantSearchLock"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/use-toast"
 import { SearchBar, TagSearchBar } from "@/components/searchBar"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { SearchQueryArgs } from "./queryFns"
 import { SearchErrorToast } from "@/components/searchErrorToaster"
 import { cn } from "@/lib/utils"
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
+import { ScrollBar } from "@/components/ui/scroll-area"
+import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { SideBar } from "@/components/sidebar/SideBar"
 import { SearchResultImage } from "@/components/SearchResultImage"
 import { useGalleryFullscreen, useGalleryIndex } from "@/lib/state/gallery"
@@ -26,7 +27,6 @@ import Link from "next/link"
 import { useScanDrawerOpen } from "@/lib/state/scanDrawer"
 import { ScanDrawer } from "@/components/scan/ScanDrawer"
 import { useItemSelection } from "@/lib/state/itemSelection"
-import * as ScrollAreaPrimitive from '@radix-ui/react-scroll-area'
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { components } from "@/lib/panoptikon"
 
@@ -176,6 +176,39 @@ export function MultiSearchView({ initialQuery, isRestrictedMode }:
     )
 }
 
+// md, lg, xl, 2xl, 4xl — the Tailwind breakpoints used by the result grid rows
+const GRID_BREAKPOINTS = [
+    '(min-width: 768px)',
+    '(min-width: 1024px)',
+    '(min-width: 1280px)',
+    '(min-width: 1536px)',
+    '(min-width: 2200px)',
+]
+
+/**
+ * The number of grid columns currently applied by CSS. Must mirror the responsive
+ * grid-cols-* classes on the result grid rows exactly — the CSS media queries are
+ * what actually lay out the columns; this value only slices results into rows.
+ * Uses matchMedia (the same engine that applies the classes) rather than reading
+ * window.innerWidth in a resize handler, which can observe a stale width.
+ */
+function useGridColumns(sidebarOpen: boolean): number {
+    const [columns, setColumns] = useState(1)
+    useLayoutEffect(() => {
+        const queries = GRID_BREAKPOINTS.map((q) => window.matchMedia(q))
+        const update = () => {
+            const [md, lg, xl, xxl, xxxxl] = queries.map((q) => q.matches)
+            setColumns(sidebarOpen
+                ? (xxxxl ? 5 : xxl ? 4 : xl ? 3 : lg ? 1 : md ? 2 : 1)
+                : (xxl ? 5 : xl ? 4 : lg ? 3 : md ? 2 : 1))
+        }
+        update()
+        queries.forEach((q) => q.addEventListener('change', update))
+        return () => queries.forEach((q) => q.removeEventListener('change', update))
+    }, [sidebarOpen])
+    return columns
+}
+
 export function ResultGrid({
     results,
     totalCount,
@@ -193,8 +226,56 @@ export function ResultGrid({
     isLoading?: boolean,
     showPagination?: boolean,
 }) {
+    // TanStack Virtual v3 triggers re-renders by mutating internal state,
+    // which the React Compiler's memoization breaks — same as the gallery view.
+    "use no memo"
     const [dbs, __] = useSelectedDBs()
-    const [sidebarOpen, _] = useSideBarOpen()
+    const parentRef = useRef<HTMLDivElement>(null)
+    const [sidebarOpen] = useSideBarOpen()
+    const columns = useGridColumns(sidebarOpen)
+    const rowCount = Math.ceil(results.length / columns)
+
+    const virtualizer = useVirtualizer({
+        count: rowCount,
+        getScrollElement: () => parentRef.current,
+        estimateSize: () => 470,
+        overscan: 3,
+    })
+
+    // When the column count changes, rows recompose and the same pixel offset lands
+    // on entirely different results: re-anchor the scroll to the item that was at the
+    // top. Row heights don't depend on the column count, so existing row measurements
+    // stay valid — don't reset them, or scrollToIndex would land on estimates instead.
+    const prevColumns = useRef(columns)
+    const anchorItem = useRef(0)
+    useEffect(() => {
+        if (prevColumns.current === columns) return
+        prevColumns.current = columns
+        if (anchorItem.current > 0) {
+            virtualizer.scrollToIndex(Math.floor(anchorItem.current / columns), { align: 'start' })
+        }
+    }, [columns, virtualizer])
+
+    // Track the first visible item while the layout is stable (runs on every commit)
+    useEffect(() => {
+        if (prevColumns.current === columns && virtualizer.range) {
+            anchorItem.current = virtualizer.range.startIndex * columns
+        }
+    })
+
+    // When returning from the gallery, scroll the grid to the item that was open
+    const selected = useItemSelection((state) => state.getSelected())
+    const restoredScroll = useRef(false)
+    useEffect(() => {
+        if (restoredScroll.current || rowCount === 0) return
+        restoredScroll.current = true
+        if (!selected) return
+        const index = results.findIndex((item) => item.item_id === selected.item_id)
+        if (index > 0) {
+            virtualizer.scrollToIndex(Math.floor(index / columns), { align: 'center' })
+        }
+    }, [rowCount, columns, results, selected, virtualizer])
+
     const executionSummary = `Results: ${resultMetrics?.execute} DB, ${resultMetrics?.build} Build, ${resultMetrics?.compile} Compile`
         + `\nCount: ${countMetrics?.execute} DB, ${countMetrics?.build} Build, ${countMetrics?.compile} Compile`
     return (
@@ -202,204 +283,54 @@ export function ResultGrid({
             <h2 className="text-xl font-bold p-4 flex items-center justify-left">
                 <span title={executionSummary}><AnimatedNumber value={totalCount} /> {totalCount === 1 ? "Result" : "Results"} in {resultMetrics?.execute}s</span>
             </h2>
-            <ScrollArea className="overflow-y-auto">
-                <div className={cn('grid gap-4 grid-cols-1 md:grid-cols-2',
-                    sidebarOpen ?
-                        ('lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4 4xl:grid-cols-5') :
-                        ('lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'),
-                    showPagination ? 'max-h-[calc(100vh-225px)]' : 'max-h-[calc(100vh-163px)]'
-
-                )}>
-                    {results.map((result, index) => (
-                        <SearchResultImage
-                            key={result.file_id}
-                            result={result}
-                            index={index}
-                            dbs={dbs}
-                            onImageClick={onImageClick}
-                            galleryLink
-                            nItems={results.length}
-                            showLoadingSpinner={isLoading}
-                        />
-                    ))}
-                </div>
-            </ScrollArea>
-        </div>
-    )
-}
-
-/**
- * Determines the number of columns and row height based on window width and sidebar state.
- * @param sidebarOpen - Indicates if the sidebar is open.
- * @returns An object containing the number of columns and the row height in pixels.
- */
-function useColumnsAndRowHeight(sidebarOpen: boolean): { columns: number, rowHeight: number } {
-    const [columns, setColumns] = useState(1)
-    const [rowHeight, setRowHeight] = useState(400)
-
-    useEffect(() => {
-        const update = () => {
-            const width = window.innerWidth
-            let newColumns = 1
-            let newRowHeight = 470
-
-            if (sidebarOpen) {
-                if (width >= 2200) { // 4xl
-                    newColumns = 5
-                    newRowHeight = 694 // h-[38rem] + padding/borders
-                } else if (width >= 1536) { // 2xl
-                    newColumns = 4
-                    newRowHeight = 470 // h-[30rem] + padding/borders
-                } else if (width >= 1280) { // xl
-                    newColumns = 3
-                    newRowHeight = 470 // h-96 + padding/borders
-                } else if (width >= 1024) { // lg
-                    newColumns = 1
-                    newRowHeight = 470 // h-96 without extra padding
-                } else if (width >= 768) { // md
-                    newColumns = 2
-                    newRowHeight = 470 // h-96 + padding/borders
-                } else {
-                    newColumns = 1
-                    newRowHeight = 470 // h-96 without extra padding
-                }
-            } else {
-                if (width >= 2200) { // 4xl
-                    newColumns = 5
-                    newRowHeight = 694
-                } else if (width >= 1536) { // 2xl
-                    newColumns = 5
-                    newRowHeight = 470
-                } else if (width >= 1280) { // xl
-                    newColumns = 4
-                    newRowHeight = 470
-                } else if (width >= 1024) { // lg
-                    newColumns = 3
-                    newRowHeight = 470
-                } else if (width >= 768) { // md
-                    newColumns = 2
-                    newRowHeight = 470
-                } else {
-                    newColumns = 1
-                    newRowHeight = 470
-                }
-            }
-
-            setColumns(newColumns)
-            setRowHeight(newRowHeight)
-        }
-
-        update()
-        window.addEventListener('resize', update)
-        return () => window.removeEventListener('resize', update)
-    }, [sidebarOpen])
-
-    return { columns, rowHeight }
-}
-
-interface VirtualResultGridProps {
-    results: SearchResult[];
-    totalCount: number;
-    onImageClick?: (index?: number) => void;
-    isLoading?: boolean;
-}
-
-/**
- * VirtualResultGrid component that virtualizes the rendering of a result grid.
- */
-export function VirtualResultGrid({
-    results,
-    totalCount,
-    onImageClick,
-    isLoading,
-}: VirtualResultGridProps) {
-    const [dbs] = useSelectedDBs();
-    const [sidebarOpen] = useSideBarOpen();
-    const parentRef = useRef<HTMLDivElement>(null);
-
-    // Determine the number of columns and row height based on window size and sidebar state
-    const { columns, rowHeight } = useColumnsAndRowHeight(sidebarOpen);
-
-    // Calculate the number of rows needed
-    const rowCount = Math.ceil(results.length / columns);
-
-    // Initialize the virtualizer
-    const virtualizer = useVirtualizer({
-        count: rowCount,
-        getScrollElement: () => parentRef.current,
-        estimateSize: () => rowHeight,
-        overscan: 5, // Adjust overscan as needed
-    });
-
-    // Get the virtual items (rows) to render
-    const virtualRows = virtualizer.getVirtualItems();
-
-    return (
-        <div className="border rounded p-2 " >
-            <h2 className="text-xl font-bold p-4 flex items-center justify-left">
-                <span>
-                    <AnimatedNumber value={totalCount} /> {totalCount === 1 ? 'Result' : 'Results'}
-                </span>
-            </h2>
-            <ScrollAreaPrimitive.Root
-                className="overflow-y-auto max-h-[calc(100vh-225px)] w-full whitespace-nowrap rounded-md border"
-            >
+            <ScrollAreaPrimitive.Root className="relative overflow-hidden">
                 <ScrollAreaPrimitive.Viewport
                     ref={parentRef}
-                    className="w-full h-full rounded-[inherit]"
+                    // [&>div]:!block overrides the `display: table` on the content wrapper
+                    // Radix injects — table layout also sizes to content, which breaks the
+                    // width measurement the column count is derived from
+                    className={cn('w-full rounded-[inherit] [&>div]:!block',
+                        showPagination ? 'max-h-[calc(100vh-225px)]' : 'max-h-[calc(100vh-163px)]'
+                    )}
                 >
                     <div
-                        style={{
-                            height: `${virtualizer.getTotalSize()}px`,
-                            width: '100%',
-                            position: 'relative',
-                        }}
+                        className="relative w-full"
+                        style={{ height: `${virtualizer.getTotalSize()}px` }}
                     >
-                        {virtualRows.map((virtualRow) => {
-                            const startIndex = virtualRow.index * columns;
-                            const endIndex = Math.min(startIndex + columns, results.length);
-                            const items = results.slice(startIndex, endIndex);
-
+                        {virtualizer.getVirtualItems().map((virtualRow) => {
+                            const startIndex = virtualRow.index * columns
+                            const rowItems = results.slice(startIndex, startIndex + columns)
                             return (
                                 <div
                                     key={virtualRow.key}
-                                    className="absolute w-full"
-                                    style={{
-                                        transform: `translateY(${virtualRow.start}px)`,
-                                        height: `${virtualRow.size}px`,
-                                    }}
+                                    data-index={virtualRow.index}
+                                    ref={virtualizer.measureElement}
+                                    className="absolute top-0 left-0 w-full"
+                                    style={{ transform: `translateY(${virtualRow.start}px)` }}
                                 >
                                     <div
-                                        className={cn('grid gap-4', {
-                                            'grid-cols-1 md:grid-cols-2': true, // Base and md
-                                            // Apply additional grid columns based on sidebar state
-                                            'lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4 4xl:grid-cols-5':
-                                                sidebarOpen,
-                                            'lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5':
-                                                !sidebarOpen,
-                                        })}
-                                        style={{
-                                            gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-                                        }}
+                                        // These responsive classes must stay in sync with useGridColumns
+                                        className={cn('grid gap-4 pb-4 grid-cols-1 md:grid-cols-2',
+                                            sidebarOpen ?
+                                                ('lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4 4xl:grid-cols-5') :
+                                                ('lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5')
+                                        )}
                                     >
-                                        {items.map((result, index) => {
-                                            const actualIndex = startIndex + index;
-                                            return (
-                                                <SearchResultImage
-                                                    key={result.file_id}
-                                                    result={result}
-                                                    index={actualIndex}
-                                                    dbs={dbs}
-                                                    onImageClick={onImageClick}
-                                                    galleryLink
-                                                    nItems={results.length}
-                                                    showLoadingSpinner={isLoading}
-                                                />
-                                            );
-                                        })}
+                                        {rowItems.map((result, indexInRow) => (
+                                            <SearchResultImage
+                                                key={result.file_id}
+                                                result={result}
+                                                index={startIndex + indexInRow}
+                                                dbs={dbs}
+                                                onImageClick={onImageClick}
+                                                galleryLink
+                                                nItems={results.length}
+                                                showLoadingSpinner={isLoading}
+                                            />
+                                        ))}
                                     </div>
                                 </div>
-                            );
+                            )
                         })}
                     </div>
                 </ScrollAreaPrimitive.Viewport>
@@ -407,5 +338,5 @@ export function VirtualResultGrid({
                 <ScrollAreaPrimitive.Corner />
             </ScrollAreaPrimitive.Root>
         </div>
-    );
+    )
 }
