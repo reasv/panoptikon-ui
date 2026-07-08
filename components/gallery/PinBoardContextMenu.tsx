@@ -121,6 +121,13 @@ export function PinBoardCtx({
     function shiftLayout(mode: ShiftMode) {
         onLayoutChange(shiftLayoutHorizontally(layout, mode, columns))
     }
+    // Mirror the arrangement (not the images) about the centre of the items'
+    // own bounding box, so the group stays put and items swap places. A
+    // grid-wide flip is this plus a Shift. Vertical is inherently swap-only:
+    // the grid re-compacts upward, so the mirrored rows just settle back.
+    function mirrorLayout(axis: MirrorAxis) {
+        onLayoutChange(mirrorLayoutArrangement(layout, axis))
+    }
     const [fs, setFs] = useGalleryFullscreen()
     const [grid, setGrid] = useGalleryPinGrid()
     return (
@@ -184,6 +191,9 @@ export function PinBoardCtx({
                     <ContextMenuItem onClick={() => shiftLayout("left")}>Shift Left</ContextMenuItem>
                     <ContextMenuItem onClick={() => shiftLayout("center")}>Center</ContextMenuItem>
                     <ContextMenuItem onClick={() => shiftLayout("right")}>Shift Right</ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem onClick={() => mirrorLayout("horizontal")}>Mirror Horizontally</ContextMenuItem>
+                    <ContextMenuItem onClick={() => mirrorLayout("vertical")}>Mirror Vertically</ContextMenuItem>
                 </ContextMenuSubContent>
             </ContextMenuSub>
         </ContextMenuContent>
@@ -359,6 +369,30 @@ function shiftLayoutHorizontally(
         }
     }
     return result
+}
+
+export type MirrorAxis = "horizontal" | "vertical"
+
+// Mirror the arrangement about the centre of the items' bounding box: an item
+// spanning [start, start + size] on the mirrored axis moves to
+// [min + max - (start + size), ...]. Only the arrangement flips — sizes, and
+// the other axis, are untouched. Reflecting within the bounding box (rather
+// than the whole grid) keeps the group in place and swaps items, which
+// composes with the Shift actions for a grid-wide flip. Vertical mirroring is
+// effectively a row swap since the grid re-compacts everything upward.
+function mirrorLayoutArrangement(
+    layout: ReactGridLayout.Layout[],
+    axis: MirrorAxis,
+): ReactGridLayout.Layout[] {
+    if (layout.length === 0) return layout
+    if (axis === "horizontal") {
+        const min = Math.min(...layout.map(l => l.x))
+        const max = Math.max(...layout.map(l => l.x + l.w))
+        return layout.map(l => ({ ...l, x: min + max - (l.x + l.w) }))
+    }
+    const min = Math.min(...layout.map(l => l.y))
+    const max = Math.max(...layout.map(l => l.y + l.h))
+    return layout.map(l => ({ ...l, y: min + max - (l.y + l.h) }))
 }
 
 function buildLayout(buildData: LayoutBuildData, itemsPerRow: number, restrictToVisible: boolean): ReactGridLayout.Layout[] {
