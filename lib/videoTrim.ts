@@ -4,11 +4,18 @@ import { TrimRange } from "./pinboardCrop"
 // Two trim points closer than this (seconds) behave as a freeze frame
 const FREEZE_EPS = 0.02
 
+// A forward step larger than this (seconds) between two checks is a user
+// seek, not playback advancing — seeks past the end point must not trigger
+// the loop jump
+const MAX_PLAYBACK_STEP = 0.5
+
 // Enforces a playback trim range on a <video>: playback (re)starts from
-// `start`, crossing `end` while playing jumps back to `start`, and
+// `start`, playback *crossing* `end` jumps back to `start`, and
 // start === end shows a still frame instead of playing. Seeking is
 // deliberately NOT clamped — the user must be able to scrub anywhere to
-// place new points; the range only reasserts itself at loop boundaries.
+// place new points; a playhead placed at or beyond the end point plays out
+// to the file's natural end and then wraps to `start`. The range only
+// reasserts itself at loop boundaries.
 // The video element must render without the native `loop` attribute while
 // a trim is set (see isEmptyTrim), since loops have to restart from
 // `start` rather than 0.
@@ -52,14 +59,25 @@ export function useVideoTrim({
     if (!video) return
     const s = start ?? 0
     const freeze = end != null && end - s <= FREEZE_EPS
+    // Crossing detection needs the previous playback position; seeks (ours
+    // and the user's) reset it so a jump over the end point doesn't count
+    let prev = video.currentTime
     const jumpToStart = () => {
       video.currentTime = s
+      prev = s
     }
     let raf = 0
     const check = () => {
-      if (!freeze && end != null && !video.paused && video.currentTime >= end) {
-        jumpToStart()
-      }
+      if (freeze) return
+      const now = video.currentTime
+      const crossed =
+        end != null &&
+        !video.paused &&
+        prev < end &&
+        now >= end &&
+        now - prev < MAX_PLAYBACK_STEP
+      if (crossed) jumpToStart()
+      else prev = now
     }
     const tick = () => {
       check()
@@ -72,9 +90,12 @@ export function useVideoTrim({
         video.pause()
         return
       }
-      if (end != null && video.currentTime >= end) jumpToStart()
+      prev = video.currentTime
       cancelAnimationFrame(raf)
       raf = requestAnimationFrame(tick)
+    }
+    const onSeeking = () => {
+      prev = video.currentTime
     }
     const onPause = () => cancelAnimationFrame(raf)
     const onEnded = () => {
@@ -87,6 +108,7 @@ export function useVideoTrim({
     video.addEventListener("play", onPlay)
     video.addEventListener("pause", onPause)
     video.addEventListener("ended", onEnded)
+    video.addEventListener("seeking", onSeeking)
     // rAF gives frame-accurate loop points but freezes in hidden tabs;
     // timeupdate (~4Hz, keeps firing when hidden) is the fallback
     video.addEventListener("timeupdate", check)
@@ -96,6 +118,7 @@ export function useVideoTrim({
       video.removeEventListener("play", onPlay)
       video.removeEventListener("pause", onPause)
       video.removeEventListener("ended", onEnded)
+      video.removeEventListener("seeking", onSeeking)
       video.removeEventListener("timeupdate", check)
     }
   }, [active, start, end, videoRef])

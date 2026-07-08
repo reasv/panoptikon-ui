@@ -22,6 +22,7 @@ import { useVideoPlayerState } from '@/lib/videoPlayerState'
 import { CropRect, TrimRange, isEmptyTrim, packHField, parseHField } from '@/lib/pinboardCrop'
 import { useVideoTrim } from '@/lib/videoTrim'
 import { CropView } from './CropView'
+import { VideoTimeline } from './VideoTimeline'
 import { ArrowRightFromLine, ArrowRightToLine, Check, Crop } from 'lucide-react'
 const ResponsiveGridLayout = WidthProvider(Responsive)
 
@@ -472,6 +473,13 @@ function PinBoardPin({
             }
         }
         onTrimChange(start == null && end == null ? null : { start, end })
+        // Setting the end mid-playback leaves the playhead exactly at the end
+        // point, from which crossing detection would never fire — restart the
+        // loop, which doubles as "here's your loop" feedback
+        if (which === "end" && !e.shiftKey && end != null) {
+            const video = videoRef.current
+            if (video && !video.paused) video.currentTime = start ?? 0
+        }
     }
     return (
         <>
@@ -580,7 +588,16 @@ function PinBoardPin({
                 setMuted={videoState.setMuted}
                 showControls={videoState.showControls}
                 setShowControls={videoState.setControls}
+                volume={videoState.volume}
+                setVolume={videoState.setVolume}
             />}
+            {showVideo && !videoState.showControls &&
+                <VideoTimeline
+                    videoRef={videoRef}
+                    trim={trim}
+                    onTrimChange={onTrimChange}
+                    className="absolute left-14 right-14 bottom-2 h-10 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                />}
             {showVideo && <>
                 <button
                     title={trim?.start != null
