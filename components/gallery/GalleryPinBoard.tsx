@@ -127,25 +127,59 @@ export function PinBoard(
         return [newLayout, pinned, cropsMap]
     }, [savedLayout, cropKey, dbs])
 
+    // Rebuilds the packed records from RGL's reported layout, in the EXISTING
+    // record order: the item keys embed each record's offset, so persisting in
+    // RGL's iteration order would shuffle the offsets, change every key,
+    // remount every pin (with its ContextMenu popper) and re-fire this handler
+    // — feeding the layout back into itself through the URL until React's
+    // nested-update limit crashes the page.
+    const rebuildRecords = (prev: string[], currentLayout: ReactGridLayout.Layout[]) => {
+        const byKey = new Map(
+            currentLayout.filter((e) => e.i !== "__preview").map((l) => [l.i, l])
+        )
+        const next: string[] = []
+        for (let i = 0; i < prev.length; i += 5) {
+            const key = `${i}-${prev[i]}`
+            const item = byKey.get(key)
+            if (!item) continue
+            byKey.delete(key)
+            next.push(
+                prev[i],
+                item.x.toString(),
+                item.y.toString(),
+                item.w.toString(),
+                // Crop suffixes stored in the h field survive box moves/resizes
+                packHField(item.h, parseHField(prev[i + 4]).crop),
+            )
+        }
+        // Items RGL reports that have no record yet
+        for (const item of byKey.values()) {
+            next.push(
+                item.i.split("-")[1],
+                item.x.toString(),
+                item.y.toString(),
+                item.w.toString(),
+                packHField(item.h, null),
+            )
+        }
+        return next
+    }
+
     const onLayoutChange = (currentLayout: ReactGridLayout.Layout[]) => {
-        // Functional update so crop suffixes stored in the h field survive
-        // box moves/resizes, and so crop commits landing in the same tick
-        // aren't clobbered
-        setSavedLayout((prev) => {
-            const prevCrops: Record<string, CropRect | null> = {}
-            for (let i = 0; i < prev.length; i += 5) {
-                prevCrops[`${i}-${prev[i]}`] = parseHField(prev[i + 4]).crop
-            }
-            return currentLayout.filter((e) => e.i !== "__preview").map(l => {
-                return [
-                    l.i.split("-")[1],
-                    l.x.toString(),
-                    l.y.toString(),
-                    l.w.toString(),
-                    packHField(l.h, prevCrops[l.i] ?? null),
-                ]
-            }).flat()
-        })
+        // RGL fires onLayoutChange on every layouts-prop change and on mount,
+        // not only on user interaction. If nothing actually moved, writing an
+        // equal value back would push a redundant history entry and re-trigger
+        // this handler — the write must only happen on real changes.
+        const candidate = rebuildRecords(savedLayout, currentLayout)
+        if (
+            candidate.length === savedLayout.length &&
+            candidate.every((v, i) => v === savedLayout[i])
+        ) {
+            return
+        }
+        // Functional update so crop commits landing in the same tick aren't
+        // clobbered
+        setSavedLayout((prev) => rebuildRecords(prev, currentLayout))
     }
 
     // Append an identical copy of the pin's 5-string record (sha256, x, y, w,
@@ -173,6 +207,9 @@ export function PinBoard(
         })
     }
 
+    // Stable layouts object: a fresh identity on every render makes RGL
+    // re-sync (and re-fire onLayoutChange) on unrelated parent re-renders
+    const rglLayouts = useMemo(() => ({ lg: layout }), [layout])
     const [fs, setFs] = useGalleryFullscreen()
     const [showGrid] = useGalleryPinGrid()
     const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -222,7 +259,7 @@ export function PinBoard(
                 )}
                 <ResponsiveGridLayout
                     className="layout"
-                    layouts={{ lg: layout }}
+                    layouts={rglLayouts}
                     breakpoints={{ lg: 0, }}
                     cols={{ lg: columns, }}
                     rowHeight={rowHeight}
