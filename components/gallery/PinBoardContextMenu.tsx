@@ -3,7 +3,7 @@ import { ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuS
 import { components } from "@/lib/panoptikon";
 import { useEffect, useRef } from "react";
 import { useGalleryFullscreen, useGalleryPinGrid } from "@/lib/state/gallery";
-import { CropRect } from "@/lib/pinboardCrop";
+import { CropRect, TrimRange } from "@/lib/pinboardCrop";
 import { useFileOpenActions } from "@/hooks/fileOpen";
 
 // Layout keys are `${recordIndex}-${sha256Prefix}` (the same image can be
@@ -23,6 +23,8 @@ export function PinBoardCtx({
     hasCrop,
     onToggleCrop,
     onClearCrop,
+    trim,
+    onTrimChange,
     onDuplicate,
     pinboardRef,
     dbs,
@@ -39,6 +41,8 @@ export function PinBoardCtx({
     hasCrop: boolean,
     onToggleCrop: () => void,
     onClearCrop: () => void,
+    trim: TrimRange | null,
+    onTrimChange: (trim: TrimRange | null) => void,
     onDuplicate: () => void,
     pinboardRef: React.RefObject<HTMLDivElement>,
     columns: number,
@@ -147,6 +151,19 @@ export function PinBoardCtx({
                 {cropMode ? "Finish Cropping" : "Crop Image"}
             </ContextMenuItem>
             {hasCrop && <ContextMenuItem onClick={onClearCrop}>Clear Crop</ContextMenuItem>}
+            {trim?.start != null && <ContextMenuItem
+                onClick={() => onTrimChange(trim.end != null ? { start: null, end: trim.end } : null)}
+            >
+                Clear Loop Start
+            </ContextMenuItem>}
+            {trim?.end != null && <ContextMenuItem
+                onClick={() => onTrimChange(trim.start != null ? { start: trim.start, end: null } : null)}
+            >
+                Clear Loop End
+            </ContextMenuItem>}
+            {trim?.start != null && trim?.end != null && <ContextMenuItem onClick={() => onTrimChange(null)}>
+                Clear Loop Range
+            </ContextMenuItem>}
             <ContextMenuSub>
                 <ContextMenuSubTrigger inset>Resize Item</ContextMenuSubTrigger>
                 <ContextMenuSubContent className="w-48">

@@ -19,9 +19,10 @@ import { $api } from '@/lib/api'
 import { MediaControls } from './PlayButton'
 import React from 'react'
 import { useVideoPlayerState } from '@/lib/videoPlayerState'
-import { CropRect, packHField, parseHField } from '@/lib/pinboardCrop'
+import { CropRect, TrimRange, isEmptyTrim, packHField, parseHField } from '@/lib/pinboardCrop'
+import { useVideoTrim } from '@/lib/videoTrim'
 import { CropView } from './CropView'
-import { Check, Crop } from 'lucide-react'
+import { ArrowRightFromLine, ArrowRightToLine, Check, Crop } from 'lucide-react'
 const ResponsiveGridLayout = WidthProvider(Responsive)
 
 const ALL_RESIZE_HANDLES: ReactGridLayout.Layout["resizeHandles"] =
@@ -87,19 +88,22 @@ export function PinBoard(
     const [cropKey, setCropKey] = useState<string | null>(null)
     // True while the crop-mode item's box is being resized via a grid handle
     const [cropResizing, setCropResizing] = useState(false)
-    const [layout, pinnedFiles, crops]: [
+    const [layout, pinnedFiles, crops, trims]: [
         ReactGridLayout.Layout[],
         [string, string, string, string][],
         Record<string, CropRect | null>,
+        Record<string, TrimRange | null>,
     ] = useMemo(() => {
         const newLayout: ReactGridLayout.Layout[] = []
         const pinned: [string, string, string, string][] = []
         const cropsMap: Record<string, CropRect | null> = {}
+        const trimsMap: Record<string, TrimRange | null> = {}
         for (let i = 0; i < savedLayout.length; i += 5) {
             const [sha256, x, y, w, hField] = savedLayout.slice(i, i + 5)
             const index = `${i}-${sha256}`
-            const { h, crop } = parseHField(hField)
+            const { h, crop, trim } = parseHField(hField)
             cropsMap[index] = crop
+            trimsMap[index] = trim
             newLayout.push({
                 i: index,
                 x: parseInt(x),
@@ -124,7 +128,7 @@ export function PinBoard(
                 getFileURL(dbs, "file", "sha256", sha256),
             ])
         }
-        return [newLayout, pinned, cropsMap]
+        return [newLayout, pinned, cropsMap, trimsMap]
     }, [savedLayout, cropKey, dbs])
 
     // Rebuilds the packed records from RGL's reported layout, in the EXISTING
@@ -143,13 +147,14 @@ export function PinBoard(
             const item = byKey.get(key)
             if (!item) continue
             byKey.delete(key)
+            const { crop, trim } = parseHField(prev[i + 4])
             next.push(
                 prev[i],
                 item.x.toString(),
                 item.y.toString(),
                 item.w.toString(),
-                // Crop suffixes stored in the h field survive box moves/resizes
-                packHField(item.h, parseHField(prev[i + 4]).crop),
+                // Crop/trim suffixes stored in the h field survive box moves/resizes
+                packHField(item.h, crop, trim),
             )
         }
         // Items RGL reports that have no record yet
@@ -199,7 +204,22 @@ export function PinBoard(
             const next = [...prev]
             for (let i = 0; i < prev.length; i += 5) {
                 if (`${i}-${prev[i]}` === key) {
-                    next[i + 4] = packHField(parseHField(prev[i + 4]).h, crop)
+                    const parsed = parseHField(prev[i + 4])
+                    next[i + 4] = packHField(parsed.h, crop, parsed.trim)
+                    break
+                }
+            }
+            return next
+        })
+    }
+
+    const onItemTrimChange = (key: string, trim: TrimRange | null) => {
+        setSavedLayout((prev) => {
+            const next = [...prev]
+            for (let i = 0; i < prev.length; i += 5) {
+                if (`${i}-${prev[i]}` === key) {
+                    const parsed = parseHField(prev[i + 4])
+                    next[i + 4] = packHField(parsed.h, parsed.crop, trim)
                     break
                 }
             }
@@ -329,10 +349,12 @@ export function PinBoard(
                                     layout={layout}
                                     crops={crops}
                                     crop={crops[i] ?? null}
+                                    trim={trims[i] ?? null}
                                     cropMode={cropKey === i}
                                     boxResizing={cropKey === i && cropResizing}
                                     onCropModeToggle={() => setCropKey((k) => k === i ? null : i)}
                                     onCropChange={(crop) => onItemCropChange(i, crop)}
+                                    onTrimChange={(trim) => onItemTrimChange(i, trim)}
                                     onDuplicate={() => onDuplicatePin(i)}
                                     scrollAreaRef={scrollAreaRef}
                                     columns={columns}
@@ -356,10 +378,12 @@ function PinBoardPin({
     layout,
     crops,
     crop,
+    trim,
     cropMode,
     boxResizing,
     onCropModeToggle,
     onCropChange,
+    onTrimChange,
     onDuplicate,
     scrollAreaRef,
     columns,
@@ -374,10 +398,12 @@ function PinBoardPin({
     layout: ReactGridLayout.Layout[]
     crops: Record<string, CropRect | null>
     crop: CropRect | null
+    trim: TrimRange | null
     cropMode: boolean
     boxResizing: boolean
     onCropModeToggle: () => void
     onCropChange: (crop: CropRect | null) => void
+    onTrimChange: (trim: TrimRange | null) => void
     onDuplicate: () => void
     scrollAreaRef: React.RefObject<HTMLDivElement>
     columns: number
@@ -421,6 +447,32 @@ function PinBoardPin({
     }, [cropMode, onCropModeToggle])
 
     const showVideo = isPlayable && videoState.showVideo
+    useVideoTrim({ videoRef, trim, active: showVideo })
+
+    // Set one trim bound to the video's current time (centisecond-rounded, the
+    // URL resolution); shift-click clears the bound instead. Placing a bound
+    // on the wrong side of the other one clears the other — the user is
+    // redefining the range. Equal bounds are allowed (freeze frame).
+    const setTrimPoint = (which: "start" | "end", e: React.MouseEvent) => {
+        let start = trim?.start ?? null
+        let end = trim?.end ?? null
+        if (e.shiftKey) {
+            if (which === "start") start = null
+            else end = null
+        } else {
+            const video = videoRef.current
+            if (!video) return
+            const t = Math.round(video.currentTime * 100) / 100
+            if (which === "start") {
+                start = t
+                if (end != null && end < t) end = null
+            } else {
+                end = t
+                if (start != null && start > t) start = null
+            }
+        }
+        onTrimChange(start == null && end == null ? null : { start, end })
+    }
     return (
         <>
             <ContextMenu>
@@ -447,7 +499,10 @@ function PinBoardPin({
                                     <video
                                         ref={videoRef}
                                         autoPlay
-                                        loop
+                                        // With a trim set, looping is handled by
+                                        // useVideoTrim so it restarts from the
+                                        // trim start rather than 0
+                                        loop={isEmptyTrim(trim)}
                                         muted={videoState.videoIsMuted}
                                         controls={videoState.showControls}
                                         className="rounded"
@@ -485,6 +540,8 @@ function PinBoardPin({
                     hasCrop={!!crop}
                     onToggleCrop={onCropModeToggle}
                     onClearCrop={() => onCropChange(null)}
+                    trim={trim}
+                    onTrimChange={onTrimChange}
                     onDuplicate={onDuplicate}
                     pinboardRef={scrollAreaRef}
                     columns={columns}
@@ -524,6 +581,36 @@ function PinBoardPin({
                 showControls={videoState.showControls}
                 setShowControls={videoState.setControls}
             />}
+            {showVideo && <>
+                <button
+                    title={trim?.start != null
+                        ? `Loop start: ${trim.start.toFixed(2)}s — click to move here, shift-click to clear`
+                        : "Set loop start to current time"}
+                    className={cn(
+                        "hover:scale-105 absolute bottom-14 left-2 rounded-full p-2 transition-opacity duration-300",
+                        trim?.start != null
+                            ? "opacity-100 bg-blue-200"
+                            : "opacity-0 group-hover:opacity-100 bg-white",
+                    )}
+                    onClick={(e) => setTrimPoint("start", e)}
+                >
+                    <ArrowRightFromLine className="w-6 h-6 text-gray-800" />
+                </button>
+                <button
+                    title={trim?.end != null
+                        ? `Loop end: ${trim.end.toFixed(2)}s — click to move here, shift-click to clear`
+                        : "Set loop end to current time"}
+                    className={cn(
+                        "hover:scale-105 absolute bottom-[6.5rem] left-2 rounded-full p-2 transition-opacity duration-300",
+                        trim?.end != null
+                            ? "opacity-100 bg-blue-200"
+                            : "opacity-0 group-hover:opacity-100 bg-white",
+                    )}
+                    onClick={(e) => setTrimPoint("end", e)}
+                >
+                    <ArrowRightToLine className="w-6 h-6 text-gray-800" />
+                </button>
+            </>}
             <FindButton
                 id={data?.files[0]?.id || sha256}
                 id_type={data?.files[0] ? "file_id" : "sha256"}
