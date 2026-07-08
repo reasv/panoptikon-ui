@@ -336,6 +336,10 @@ export function CropView({
         if (t && size && nw && nh) commit(transformToCrop(t, size.w, size.h, nw, nh))
     }
 
+    // Both modes render the same element tree (container > clip > media) and
+    // differ only in styles, so the media element — possibly a playing
+    // <video> — survives mode toggles instead of being remounted (which
+    // would reset playback).
     const fallbackStyle: React.CSSProperties = {
         position: 'absolute',
         top: 0,
@@ -344,73 +348,68 @@ export function CropView({
         height: '100%',
         objectFit: 'contain',
     }
+    const fullClip: React.CSSProperties = { left: 0, top: 0, width: '100%', height: '100%' }
+
+    // Fallbacks: natural dimensions unknown (or transform not initialized
+    // yet in crop mode) — plain letterboxed view
+    let clipStyle = fullClip
+    let mediaStyle = fallbackStyle
+    let ghostStyle: React.CSSProperties | null = null
 
     if (cropMode) {
-        const t = transform
-        const mediaStyle: React.CSSProperties | null = t && nw && nh ? {
+        if (transform && nw && nh) {
+            mediaStyle = {
+                position: 'absolute',
+                left: transform.x,
+                top: transform.y,
+                width: nw * transform.scale,
+                height: nh * transform.scale,
+                maxWidth: 'none',
+                objectFit: 'fill',
+            }
+            ghostStyle = { ...mediaStyle, objectFit: undefined }
+        }
+    } else if (containerSize && nw && nh) {
+        const geom = computeRestGeometry(containerSize.w, containerSize.h, crop ?? FULL_CROP, nw, nh)
+        clipStyle = { left: geom.visL, top: geom.visT, width: geom.visW, height: geom.visH }
+        mediaStyle = {
             position: 'absolute',
-            left: t.x,
-            top: t.y,
-            width: nw * t.scale,
-            height: nh * t.scale,
+            left: geom.imgL - geom.visL,
+            top: geom.imgT - geom.visT,
+            width: geom.imgW,
+            height: geom.imgH,
             maxWidth: 'none',
             objectFit: 'fill',
-        } : null
-        return (
-            <div ref={containerRef} className="absolute top-0 left-0 w-full h-full rounded ring-2 ring-inset ring-blue-500">
-                {mediaStyle ? (
-                    <>
-                        {ghostSrc && (
-                            <img
-                                src={ghostSrc}
-                                alt=""
-                                draggable={false}
-                                className="absolute opacity-30 pointer-events-none select-none"
-                                style={{ ...mediaStyle, objectFit: undefined }}
-                            />
-                        )}
-                        <div className="absolute top-0 left-0 w-full h-full overflow-hidden rounded">
-                            {renderMedia(mediaStyle)}
-                        </div>
-                        <div
-                            className="absolute top-0 left-0 w-full h-full cursor-grab active:cursor-grabbing touch-none"
-                            onPointerDown={onPointerDown}
-                            onPointerMove={onPointerMove}
-                            onPointerUp={endPan}
-                            onPointerCancel={endPan}
-                        />
-                    </>
-                ) : (
-                    renderMedia(fallbackStyle)
-                )}
-            </div>
-        )
+        }
     }
 
-    const geom = containerSize && nw && nh
-        ? computeRestGeometry(containerSize.w, containerSize.h, crop ?? FULL_CROP, nw, nh)
-        : null
     return (
-        <div ref={containerRef} className="absolute top-0 left-0 w-full h-full">
-            {geom ? (
+        <div
+            ref={containerRef}
+            className={"absolute top-0 left-0 w-full h-full"
+                + (cropMode ? " rounded ring-2 ring-inset ring-blue-500" : "")}
+        >
+            {ghostStyle && ghostSrc ? (
+                <img
+                    src={ghostSrc}
+                    alt=""
+                    draggable={false}
+                    className="absolute opacity-30 pointer-events-none select-none"
+                    style={ghostStyle}
+                />
+            ) : null}
+            <div className="absolute overflow-hidden rounded" style={clipStyle}>
+                {renderMedia(mediaStyle)}
+            </div>
+            {cropMode && transform ? (
                 <div
-                    className="absolute overflow-hidden rounded"
-                    style={{ left: geom.visL, top: geom.visT, width: geom.visW, height: geom.visH }}
-                >
-                    {renderMedia({
-                        position: 'absolute',
-                        left: geom.imgL - geom.visL,
-                        top: geom.imgT - geom.visT,
-                        width: geom.imgW,
-                        height: geom.imgH,
-                        maxWidth: 'none',
-                        objectFit: 'fill',
-                    })}
-                </div>
-            ) : (
-                // Natural dimensions not known yet: plain letterboxed view
-                renderMedia(fallbackStyle)
-            )}
+                    className="absolute top-0 left-0 w-full h-full cursor-grab active:cursor-grabbing touch-none"
+                    onPointerDown={onPointerDown}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={endPan}
+                    onPointerCancel={endPan}
+                />
+            ) : null}
         </div>
     )
 }

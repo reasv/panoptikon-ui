@@ -392,7 +392,12 @@ function PinBoardPin({
                         "absolute top-0 left-0 w-full h-full",
                         !cropMode && "drag-handle cursor-move",
                     )}>
-                        {(cropMode || crop) ?
+                        {/* Playing videos always render through CropView (even
+                            uncropped: rest mode with a null crop is a plain
+                            contain fit) so toggling crop mode only restyles the
+                            <video> instead of remounting it, which would reset
+                            the playback position */}
+                        {(cropMode || crop || showVideo) ?
                             <CropView
                                 crop={crop}
                                 cropMode={cropMode}
@@ -423,25 +428,13 @@ function PinBoardPin({
                                 }
                             />
                             :
-                            showVideo ?
-                                <video
-                                    ref={videoRef}
-                                    autoPlay
-                                    loop
-                                    muted={videoState.videoIsMuted}
-                                    controls={videoState.showControls}
-                                    className="rounded object-contain"
-                                    style={{ width: "100%", height: "100%" }}
-                                    src={file}
-                                />
-                                :
-                                <Image
-                                    src={thumbnail}
-                                    alt={`Sha256 Hash ${sha256}`}
-                                    fill
-                                    className="rounded object-contain"
-                                    unoptimized={true}
-                                />}
+                            <Image
+                                src={thumbnail}
+                                alt={`Sha256 Hash ${sha256}`}
+                                fill
+                                className="rounded object-contain"
+                                unoptimized={true}
+                            />}
                     </div>
                 </ContextMenuTrigger>
                 <PinBoardCtx
