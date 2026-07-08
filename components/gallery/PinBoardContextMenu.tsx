@@ -400,12 +400,16 @@ function buildRowLayout(
     const totalRowBudget = Math.max(rows.length, Math.floor(
         (containerHeight - 2 * GRID_PADDING + GRID_MARGIN) / (rowHeight + GRID_MARGIN)
     ))
-    const baseRowBudget = Math.floor(totalRowBudget / rows.length)
+    // Give every row the same height budget rather than flooring and handing
+    // the remainder to the top rows (which singled out the last row as a grid
+    // row shorter). Rounding fills the viewport; when it rounds up the final
+    // row simply extends a little past the fold, which reads better than one
+    // visibly undersized row.
+    const uniformRowBudget = Math.max(1, Math.round(totalRowBudget / rows.length))
     const layout: ReactGridLayout.Layout[] = []
     let currentY = 0
-    rows.forEach((row, rowIndex) => {
-        // Leftover budget rows go to the first rows, one each
-        const heightBudget = baseRowBudget + (rowIndex < totalRowBudget % rows.length ? 1 : 0)
+    rows.forEach((row) => {
+        const heightBudget = uniformRowBudget
         const ratios = row.map(item => item.width / item.height)
         const totalRatio = ratios.reduce((acc, curr) => acc + curr, 0)
         // Height of the row if it spans all columns with every item at its true aspect
@@ -423,25 +427,35 @@ function buildRowLayout(
         const idealColumns = ratios.map(ratio =>
             (ratio * targetHeight + GRID_MARGIN) / (columnWidth + GRID_MARGIN)
         )
-        const columnCounts = apportionColumns(idealColumns, columns)
+        // When the row doesn't fill the width there's room to round every item's
+        // column count up, so each image is wide enough to reach the shared row
+        // height rather than being left narrow-and-letterboxed. Fall back to
+        // proportional apportionment only when the row is width-bound and the
+        // columns must be squeezed to fit.
+        const ceilColumns = idealColumns.map(v => Math.max(1, Math.ceil(v)))
+        const columnCounts = ceilColumns.reduce((acc, curr) => acc + curr, 0) <= columns
+            ? ceilColumns
+            : apportionColumns(idealColumns, columns)
         const usedColumns = columnCounts.reduce((acc, curr) => acc + curr, 0)
         // Center rows that don't span the full width
         let currentX = Math.floor((columns - usedColumns) / 2)
-        const heights: number[] = []
+        // Every item in a row shares one height (justified-row layout). Deriving
+        // each item's height independently from its rounded column count let
+        // siblings disagree, leaving the shorter ones undersized with a gap
+        // below. Round the shared target height to grid rows once instead.
+        let rowGridHeight = Math.max(1, Math.round((targetHeight + GRID_MARGIN) / (rowHeight + GRID_MARGIN)))
+        if (restrictToVisible) rowGridHeight = Math.min(rowGridHeight, heightBudget)
         for (let i = 0; i < row.length; i++) {
-            let h = findOptimalHeight(columnCounts[i], rowHeight, columnWidth, row[i].width, row[i].height)
-            if (restrictToVisible) h = Math.min(h, heightBudget)
-            heights.push(h)
             layout.push({
                 i: row[i].sha256,
                 x: currentX,
                 y: currentY,
                 w: columnCounts[i],
-                h,
+                h: rowGridHeight,
             })
             currentX += columnCounts[i]
         }
-        currentY += Math.max(...heights)
+        currentY += rowGridHeight
     })
     return layout
 }
