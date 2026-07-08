@@ -587,10 +587,8 @@ function PinBoardPin({
                         ? `Loop start: ${trim.start.toFixed(2)}s — click to move here, shift-click to clear`
                         : "Set loop start to current time"}
                     className={cn(
-                        "hover:scale-105 absolute bottom-14 left-2 rounded-full p-2 transition-opacity duration-300",
-                        trim?.start != null
-                            ? "opacity-100 bg-blue-200"
-                            : "opacity-0 group-hover:opacity-100 bg-white",
+                        "hover:scale-105 absolute bottom-14 left-2 rounded-full p-2 transition-opacity duration-300 opacity-0 group-hover:opacity-100",
+                        trim?.start != null ? "bg-blue-200" : "bg-white",
                     )}
                     onClick={(e) => setTrimPoint("start", e)}
                 >
@@ -601,10 +599,8 @@ function PinBoardPin({
                         ? `Loop end: ${trim.end.toFixed(2)}s — click to move here, shift-click to clear`
                         : "Set loop end to current time"}
                     className={cn(
-                        "hover:scale-105 absolute bottom-[6.5rem] left-2 rounded-full p-2 transition-opacity duration-300",
-                        trim?.end != null
-                            ? "opacity-100 bg-blue-200"
-                            : "opacity-0 group-hover:opacity-100 bg-white",
+                        "hover:scale-105 absolute bottom-[6.5rem] left-2 rounded-full p-2 transition-opacity duration-300 opacity-0 group-hover:opacity-100",
+                        trim?.end != null ? "bg-blue-200" : "bg-white",
                     )}
                     onClick={(e) => setTrimPoint("end", e)}
                 >
