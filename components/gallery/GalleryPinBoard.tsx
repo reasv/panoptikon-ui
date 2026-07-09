@@ -23,7 +23,7 @@ import React from 'react'
 import { useVideoPlayerState } from '@/lib/videoPlayerState'
 import { CropRect, TrimRange, composeCrops, isEmptyTrim, packHField, parseHField } from '@/lib/pinboardCrop'
 import { useVideoTrim } from '@/lib/videoTrim'
-import { CropView } from './CropView'
+import { CropGeometry, CropView } from './CropView'
 import { VideoTimeline } from './VideoTimeline'
 import { ArrowRightFromLine, ArrowRightToLine, Check, Crop } from 'lucide-react'
 import { usePinboardLayoutActions } from '@/hooks/pinboardLayout'
@@ -92,6 +92,8 @@ export function PinBoard(
     const [cropKey, setCropKey] = useState<string | null>(null)
     // True while the crop-mode item's box is being resized via a grid handle
     const [cropResizing, setCropResizing] = useState(false)
+    // Getter for the crop-mode image's viewport extent, set by its CropView
+    const cropImageExtentRef = useRef<(() => CropGeometry | null) | null>(null)
     const [layout, pinnedFiles, crops, autoCrops, trims]: [
         ReactGridLayout.Layout[],
         [string, string, string, string][],
@@ -365,10 +367,51 @@ export function PinBoard(
                     droppingItem={{ i: '__preview', w: Math.round(10 * sx), h: Math.round(10 * sy) }}
                     compactType="vertical" // Compacts items vertically to keep them visible on screen
                     preventCollision={false}
-                    onResizeStart={(_currentLayout, oldItem) => {
-                        if (oldItem.i === cropKey) setCropResizing(true)
+                    onResizeStart={(_currentLayout, oldItem, newItem, _placeholder, e, node) => {
+                        if (oldItem.i !== cropKey) return
+                        setCropResizing(true)
+                        // In crop mode the box is the crop window: clamp its
+                        // growth at the image's edges. A window past the image
+                        // frames dead space the stored crop (box∩image) cannot
+                        // represent, which would render as letterbox at rest.
+                        // RGL passes its LIVE layout item here; maxW/maxH set
+                        // on it feed react-resizable's maxConstraints, so the
+                        // dragged edge hard-stops at the image edge. The grid
+                        // resyncs items from our layouts prop on the next
+                        // record write, which drops the constraint again.
+                        const geom = cropImageExtentRef.current?.()
+                        const areaWidth = gridAreaRef.current?.clientWidth
+                        if (!geom || !areaWidth) return
+                        // e.target is the react-resizable handle span; note
+                        // that `node` is that same handle element, NOT the
+                        // grid item, so the box rect comes from CropView
+                        const handle = /react-resizable-handle-(se|sw|ne|nw|e|w|n|s)(?:\s|$)/
+                            .exec(String((e.target as HTMLElement)?.className ?? ''))?.[1]
+                        if (!handle) return
+                        const { image, box } = geom
+                        const colWidth = (areaWidth - 2 * grid.padding
+                            - (grid.columns - 1) * grid.margin) / grid.columns
+                        const unitX = colWidth + grid.margin
+                        const unitY = grid.rowHeight + grid.margin
+                        if (!(unitX > 0) || !(unitY > 0)) return
+                        // Largest span (units) whose moving edge stays on the
+                        // image; never below the current span, so pre-existing
+                        // dead space doesn't snap the box on grab (growth is
+                        // simply capped, shrinking stays free)
+                        const cap = (px: number, unit: number, current: number) =>
+                            Math.max(current, Math.floor((px + grid.margin) / unit))
+                        if (handle.includes('e')) newItem.maxW = cap(image.right - box.left, unitX, newItem.w)
+                        if (handle.includes('w')) newItem.maxW = cap(box.right - image.left, unitX, newItem.w)
+                        if (handle.includes('s')) newItem.maxH = cap(image.bottom - box.top, unitY, newItem.h)
+                        if (handle.includes('n')) newItem.maxH = cap(box.bottom - image.top, unitY, newItem.h)
                     }}
-                    onResizeStop={() => setCropResizing(false)}
+                    onResizeStop={(_currentLayout, _oldItem, newItem) => {
+                        setCropResizing(false)
+                        if (newItem) {
+                            newItem.maxW = undefined
+                            newItem.maxH = undefined
+                        }
+                    }}
                     onDrop={(layout, layoutItem, e) => {
                         const event = e as unknown as React.DragEvent<HTMLDivElement>
                         if (event.dataTransfer && event.dataTransfer.getData("text/plain")) {
@@ -428,6 +471,7 @@ export function PinBoard(
                                     trim={trims[i] ?? null}
                                     cropMode={cropKey === i}
                                     boxResizing={cropKey === i && cropResizing}
+                                    imageExtentRef={cropImageExtentRef}
                                     onCropModeToggle={() => setCropKey((k) => k === i ? null : i)}
                                     onCropChange={(crop) => onItemCropChange(i, crop)}
                                     onTrimChange={(trim) => onItemTrimChange(i, trim)}
@@ -460,6 +504,7 @@ function PinBoardPin({
     trim,
     cropMode,
     boxResizing,
+    imageExtentRef,
     onCropModeToggle,
     onCropChange,
     onTrimChange,
@@ -487,6 +532,7 @@ function PinBoardPin({
     trim: TrimRange | null
     cropMode: boolean
     boxResizing: boolean
+    imageExtentRef?: React.MutableRefObject<(() => CropGeometry | null) | null>
     onCropModeToggle: () => void
     onCropChange: (crop: CropRect | null) => void
     onTrimChange: (trim: TrimRange | null) => void
@@ -590,6 +636,7 @@ function PinBoardPin({
                                 crop={cropMode ? crop : effectiveCrop}
                                 cropMode={cropMode}
                                 boxResizing={boxResizing}
+                                imageExtentRef={imageExtentRef}
                                 naturalWidth={data?.item?.width}
                                 naturalHeight={data?.item?.height}
                                 onCropChange={onCropChange}

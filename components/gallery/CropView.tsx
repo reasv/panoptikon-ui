@@ -69,24 +69,29 @@ function clampTransform(t: Transform, boxW: number, boxH: number, nw: number, nh
     }
 }
 
-// Initial view for a stored crop: contain-fit it, then, on any axis where
-// content is actually cropped away, raise the scale until the crop fills
-// the box on that axis. This keeps hidden content from ever sitting
-// full-opacity in a letterbox band, while an uncropped axis still shows
-// its letterbox (which the user can then eliminate by zooming/panning).
+// Initial view for a stored crop: contain-fit it, centered — the exact
+// same framing rest mode renders (computeRestGeometry), so toggling crop
+// mode never changes what the user sees. The crop's aspect can differ
+// from the box's (a box edge dragged past the image edge commits only
+// box∩image — the dead space isn't representable — and plain rest-mode
+// box resizes don't touch the crop at all); the honest display of that
+// mismatch is the letterboxed contain fit, so unlike the interactive
+// gestures this initial placement is NOT clamped: pan/zoom invariants
+// (clampTransform) would pin the image flush against the window instead
+// of centering the crop, silently showing a different region than rest
+// mode. An earlier version also raised the scale until the crop filled
+// the box on any cropped axis, which made every subsequent commit
+// silently tighten the crop by the aspect mismatch.
 function initTransform(boxW: number, boxH: number, nw: number, nh: number, crop: CropRect | null): Transform {
     const c = crop ?? FULL_CROP
     const cropW = c.w * nw
     const cropH = c.h * nh
-    let scale = Math.min(boxW / cropW, boxH / cropH)
-    const eps = 0.001
-    if (c.w < 1 - eps) scale = Math.max(scale, boxW / cropW)
-    if (c.h < 1 - eps) scale = Math.max(scale, boxH / cropH)
-    return clampTransform({
+    const scale = Math.min(boxW / cropW, boxH / cropH)
+    return {
         scale,
         x: boxW / 2 - (c.x + c.w / 2) * nw * scale,
         y: boxH / 2 - (c.y + c.h / 2) * nh * scale,
-    }, boxW, boxH, nw, nh)
+    }
 }
 
 // The region of the image visible through the box, in image fractions
@@ -107,6 +112,19 @@ function cropEq(a: CropRect | null, b: CropRect | null): boolean {
         && Math.abs(a.w - b.w) < eps && Math.abs(a.h - b.h) < eps
 }
 
+// The image's and the crop window's current extents in viewport pixels,
+// for the grid layer to clamp crop-mode box resizes against
+interface Rect {
+    left: number
+    top: number
+    right: number
+    bottom: number
+}
+export interface CropGeometry {
+    image: Rect
+    box: Rect
+}
+
 export function CropView({
     crop,
     cropMode,
@@ -114,6 +132,7 @@ export function CropView({
     naturalWidth,
     naturalHeight,
     onCropChange,
+    imageExtentRef,
     ghostSrc,
     renderMedia,
 }: {
@@ -126,6 +145,10 @@ export function CropView({
     naturalWidth?: number | null
     naturalHeight?: number | null
     onCropChange: (crop: CropRect) => void
+    // While in crop mode, receives a getter for the image's and the crop
+    // window's viewport extents so the grid layer can stop box edges at
+    // the image edges
+    imageExtentRef?: React.MutableRefObject<(() => CropGeometry | null) | null>
     // Translucent full image shown beyond the box while cropping
     ghostSrc?: string
     renderMedia: (style: React.CSSProperties) => React.ReactNode
@@ -212,6 +235,48 @@ export function CropView({
         return () => observer.disconnect()
     }, [nw, nh])
 
+    // Expose the image's viewport extent while in crop mode, so the grid
+    // layer can clamp box-edge drags at the image edges (a window past
+    // the image frames dead space that box∩image cannot store)
+    useEffect(() => {
+        if (!imageExtentRef || !cropMode) return
+        imageExtentRef.current = () => {
+            const el = containerRef.current
+            const t = transformRef.current
+            if (!el || !t || !nw || !nh) return null
+            const rect = el.getBoundingClientRect()
+            const box = {
+                left: rect.left,
+                top: rect.top,
+                right: rect.right,
+                bottom: rect.bottom,
+            }
+            // Mid-drag the image is frozen at the anchor's screen position
+            const anchor = anchorRef.current
+            if (anchor) {
+                return {
+                    box,
+                    image: {
+                        left: anchor.left,
+                        top: anchor.top,
+                        right: anchor.left + nw * anchor.scale,
+                        bottom: anchor.top + nh * anchor.scale,
+                    },
+                }
+            }
+            return {
+                box,
+                image: {
+                    left: rect.left + t.x,
+                    top: rect.top + t.y,
+                    right: rect.left + t.x + nw * t.scale,
+                    bottom: rect.top + t.y + nh * t.scale,
+                },
+            }
+        }
+        return () => { imageExtentRef.current = null }
+    }, [cropMode, nw, nh, imageExtentRef])
+
     // Enter/leave crop mode, and react to external crop changes (Clear Crop)
     useEffect(() => {
         if (!cropMode) {
@@ -248,25 +313,29 @@ export function CropView({
         // The crop as last rendered during the drag — what the user saw
         const live = liveCropRef.current
         liveCropRef.current = null
-        if (live) {
-            commit(live)
+        const el = containerRef.current
+        if (!el || !nw || !nh) {
+            if (live) commit(live)
             return
         }
-        // No resize step was observed (the tab wasn't rendering, or the
-        // handle never moved): derive the crop from the release-time box.
-        // The anchor still holds the image's screen position from the
-        // start of the drag; the settle animation has only just started,
-        // so the box rect is still (close to) where it was released.
-        const el = containerRef.current
-        if (!el || !nw || !nh) return
         const rect = el.getBoundingClientRect()
-        const t = anchor ? {
-            scale: anchor.scale,
-            x: anchor.left - rect.left,
-            y: anchor.top - rect.top,
-        } : transformRef.current
-        if (!t) return
-        commit(transformToCrop(t, rect.width, rect.height, nw, nh))
+        let crop = live
+        if (!crop) {
+            // No resize step was observed (the tab wasn't rendering, or
+            // the handle never moved): derive the crop from the
+            // release-time box. The anchor still holds the image's screen
+            // position from the start of the drag; the settle animation
+            // has only just started, so the box rect is still (close to)
+            // where it was released.
+            const t = anchor ? {
+                scale: anchor.scale,
+                x: anchor.left - rect.left,
+                y: anchor.top - rect.top,
+            } : transformRef.current
+            if (!t) return
+            crop = transformToCrop(t, rect.width, rect.height, nw, nh)
+        }
+        commit(crop)
     }
 
     useEffect(() => {
