@@ -152,7 +152,6 @@ export function CropView({
     const lastSizeRef = useRef<{ w: number; h: number } | null>(null)
     const panStateRef = useRef<{ startX: number; startY: number; t: Transform } | null>(null)
     const wheelCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const finishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     const commit = (c: CropRect) => {
         lastCommittedRef.current = c
@@ -186,9 +185,9 @@ export function CropView({
                 }
                 const anchor = anchorRef.current
                 if (anchor) {
-                    // Box edges move around the screen-fixed image. The grid's
-                    // snap-back is a ~200ms animation, so if a commit is
-                    // pending, push it out until the size stops changing.
+                    // Box edges move around the screen-fixed image while the
+                    // handle is held; the region in the window is the crop
+                    // that will be committed on release
                     const anchored = {
                         scale: anchor.scale,
                         x: anchor.left - rect.left,
@@ -196,7 +195,6 @@ export function CropView({
                     }
                     applyTransform(anchored)
                     liveCropRef.current = transformToCrop(anchored, size.w, size.h, nw, nh)
-                    if (finishTimerRef.current) restartFinishTimer()
                 } else if (lastSizeRef.current &&
                     (Math.abs(size.w - lastSizeRef.current.w) > 1 || Math.abs(size.h - lastSizeRef.current.h) > 1)) {
                     // Box changed outside a handle drag (e.g. menu resize):
@@ -230,40 +228,49 @@ export function CropView({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [cropMode, containerSize, nw, nh, crop?.x, crop?.y, crop?.w, crop?.h])
 
-    // Finish an anchored box-resize: runs only once the box size has been
-    // stable for a beat (the grid animates its snap-back), so the image
-    // never visibly moves — the crop committed is what the settled box shows
-    const restartFinishTimer = () => {
-        if (finishTimerRef.current) clearTimeout(finishTimerRef.current)
-        finishTimerRef.current = setTimeout(() => {
-            finishTimerRef.current = null
-            const anchor = anchorRef.current
-            anchorRef.current = null
-            const el = containerRef.current
-            if (!el || !nw || !nh) return
-            const rect = el.getBoundingClientRect()
-            // No anchor means no resize step was ever observed (e.g. the
-            // tab wasn't rendering): the transform is still in container
-            // coordinates and IS the current view — commit it directly.
-            const t = anchor ? {
-                scale: anchor.scale,
-                x: anchor.left - rect.left,
-                y: anchor.top - rect.top,
-            } : transformRef.current
-            if (!t) return
-            if (cropModeRef.current) applyTransform(t)
-            lastSizeRef.current = { w: rect.width, h: rect.height }
-            commit(transformToCrop(t, rect.width, rect.height, nw, nh))
-            liveCropRef.current = null
-        }, 150)
+    // Finish a box-resize: commit the crop exactly as the user framed it
+    // when the handle was released. The grid keeps moving AFTER release —
+    // the dragged edge snaps to the lattice (sub-cell) and vertical
+    // compaction can translate the whole box several cells (e.g. after
+    // dragging the TOP edge down, gravity pulls the box back up) — but
+    // that motion must not change WHICH region gets committed: a commit
+    // computed after the dust settles from the viewport-frozen anchor
+    // would let the compaction translation slide the window over the
+    // image and bake in a misframed crop. With the crop committed up
+    // front, the post-release motion only affects the in-editor view:
+    // dropping the anchor puts the transform back in container
+    // coordinates, so the image rides along with a translated box, and
+    // lattice snaps re-fit the view through the ordinary
+    // outside-resize path in the resize observer.
+    const finishBoxResize = () => {
+        const anchor = anchorRef.current
+        anchorRef.current = null
+        // The crop as last rendered during the drag — what the user saw
+        const live = liveCropRef.current
+        liveCropRef.current = null
+        if (live) {
+            commit(live)
+            return
+        }
+        // No resize step was observed (the tab wasn't rendering, or the
+        // handle never moved): derive the crop from the release-time box.
+        // The anchor still holds the image's screen position from the
+        // start of the drag; the settle animation has only just started,
+        // so the box rect is still (close to) where it was released.
+        const el = containerRef.current
+        if (!el || !nw || !nh) return
+        const rect = el.getBoundingClientRect()
+        const t = anchor ? {
+            scale: anchor.scale,
+            x: anchor.left - rect.left,
+            y: anchor.top - rect.top,
+        } : transformRef.current
+        if (!t) return
+        commit(transformToCrop(t, rect.width, rect.height, nw, nh))
     }
 
     useEffect(() => {
         if (boxResizing) {
-            if (finishTimerRef.current) {
-                clearTimeout(finishTimerRef.current)
-                finishTimerRef.current = null
-            }
             const el = containerRef.current
             const t = transformRef.current
             // The transform may not exist yet (image metadata or the first
@@ -273,7 +280,7 @@ export function CropView({
             const rect = el.getBoundingClientRect()
             anchorRef.current = { left: rect.left + t.x, top: rect.top + t.y, scale: t.scale }
         } else if (anchorRef.current || transformRef.current) {
-            restartFinishTimer()
+            finishBoxResize()
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [boxResizing])
