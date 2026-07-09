@@ -141,6 +141,8 @@ export function CropView({
     transformRef.current = transform
     const cropModeRef = useRef(cropMode)
     cropModeRef.current = cropMode
+    const boxResizingRef = useRef(boxResizing)
+    boxResizingRef.current = boxResizing
     const onCropChangeRef = useRef(onCropChange)
     onCropChangeRef.current = onCropChange
     const lastCommittedRef = useRef<CropRect | null>(null)
@@ -171,6 +173,17 @@ export function CropView({
             setContainerSize(size)
             const t = transformRef.current
             if (cropModeRef.current && t && nw && nh) {
+                // The anchor can be missing while a handle-drag is in
+                // progress: the transform wasn't initialized yet when the
+                // boxResizing effect tried to capture it (image metadata or
+                // the first size measurement arrived late), or the component
+                // remounted mid-drag. Capture it now, from the image's
+                // current viewport position — without this, the resize falls
+                // into the re-fit branch below, which re-centers the image
+                // on every step and eats BOTH sides of the resized axis.
+                if (boxResizingRef.current && !anchorRef.current) {
+                    anchorRef.current = { left: rect.left + t.x, top: rect.top + t.y, scale: t.scale }
+                }
                 const anchor = anchorRef.current
                 if (anchor) {
                     // Box edges move around the screen-fixed image. The grid's
@@ -227,13 +240,17 @@ export function CropView({
             const anchor = anchorRef.current
             anchorRef.current = null
             const el = containerRef.current
-            if (!anchor || !el || !nw || !nh) return
+            if (!el || !nw || !nh) return
             const rect = el.getBoundingClientRect()
-            const t = {
+            // No anchor means no resize step was ever observed (e.g. the
+            // tab wasn't rendering): the transform is still in container
+            // coordinates and IS the current view — commit it directly.
+            const t = anchor ? {
                 scale: anchor.scale,
                 x: anchor.left - rect.left,
                 y: anchor.top - rect.top,
-            }
+            } : transformRef.current
+            if (!t) return
             if (cropModeRef.current) applyTransform(t)
             lastSizeRef.current = { w: rect.width, h: rect.height }
             commit(transformToCrop(t, rect.width, rect.height, nw, nh))
@@ -249,10 +266,13 @@ export function CropView({
             }
             const el = containerRef.current
             const t = transformRef.current
+            // The transform may not exist yet (image metadata or the first
+            // size measurement still pending); the resize-observer callback
+            // captures the anchor lazily in that case
             if (!el || !t) return
             const rect = el.getBoundingClientRect()
             anchorRef.current = { left: rect.left + t.x, top: rect.top + t.y, scale: t.scale }
-        } else if (anchorRef.current) {
+        } else if (anchorRef.current || transformRef.current) {
             restartFinishTimer()
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
