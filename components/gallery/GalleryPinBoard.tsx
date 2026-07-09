@@ -1,7 +1,7 @@
 import Image from 'next/image'
 import { cn, getFileURL } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
-import { useGalleryFullscreen, useGalleryPinGrid } from '@/lib/state/gallery'
+import { useGalleryFullscreen, useGalleryPinAutoLayout, useGalleryPinGrid } from '@/lib/state/gallery'
 import { usePinBoard } from '@/lib/state/pinboard'
 import { GridParams, v1ScaleFactors } from '@/lib/pinboardGrid'
 import { PinButton } from './PinButton'
@@ -26,6 +26,7 @@ import { useVideoTrim } from '@/lib/videoTrim'
 import { CropView } from './CropView'
 import { VideoTimeline } from './VideoTimeline'
 import { ArrowRightFromLine, ArrowRightToLine, Check, Crop } from 'lucide-react'
+import { usePinboardLayoutActions } from '@/hooks/pinboardLayout'
 const ResponsiveGridLayout = WidthProvider(Responsive)
 
 const ALL_RESIZE_HANDLES: ReactGridLayout.Layout["resizeHandles"] =
@@ -287,6 +288,40 @@ export function PinBoard(
         return () => ro.disconnect()
     }, [records])
     const pinItem = usePinItem()
+    // Auto-layout mode: when enabled, adding/removing/duplicating a pin
+    // re-runs the viewport-filling mosaic over ALL items. The board's own
+    // layout-actions instance shares the machinery the context menu uses.
+    const [autoLayout] = useGalleryPinAutoLayout()
+    const { fillViewport } = usePinboardLayoutActions({
+        layout, crops, autoCrops, dbs, grid,
+        pinboardRef: scrollAreaRef,
+        onLayoutChange,
+    })
+    // Refs so the effect below reads the CURRENT flag and action at fire
+    // time while only reacting to `records` changes (the moment pins land)
+    const autoLayoutRef = useRef(autoLayout)
+    autoLayoutRef.current = autoLayout
+    const fillViewportRef = useRef(fillViewport)
+    fillViewportRef.current = fillViewport
+    // Previous pin count; null until the first observation so loading a
+    // board never rewrites it (the first run just records the baseline)
+    const prevPinCountRef = useRef<number | null>(null)
+    useEffect(() => {
+        const count = records.length / 5
+        const prev = prevPinCountRef.current
+        // Keep the baseline current even while the mode is off, so toggling
+        // it on later can't misfire from a stale count
+        prevPinCountRef.current = count
+        if (prev === null || prev === count) return
+        // Count-change detection is itself the loop guard: the relayout's
+        // own record write preserves the count, as do drags, resizes, crops
+        // and the v1->v2 migration — none of them can re-trigger this.
+        if (count === 0) return // board emptied: nothing to lay out
+        if (!autoLayoutRef.current) return
+        // Fire-and-forget: fillViewport is async (fetches metadata) and
+        // no-ops on its own when the container can't be measured
+        void fillViewportRef.current(false)
+    }, [records])
     return (
         <ScrollArea ref={scrollAreaRef} className="overflow-y-auto">
             <div

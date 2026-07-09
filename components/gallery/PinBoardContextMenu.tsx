@@ -1,5 +1,5 @@
-import { ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger } from "../ui/context-menu";
-import { useGalleryFullscreen, useGalleryPinGrid } from "@/lib/state/gallery";
+import { ContextMenuCheckboxItem, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger } from "../ui/context-menu";
+import { useGalleryFullscreen, useGalleryPinAutoLayout, useGalleryPinGrid } from "@/lib/state/gallery";
 import { CropRect, TrimRange } from "@/lib/pinboardCrop";
 import { GridParams } from "@/lib/pinboardGrid";
 import { useFileOpenActions } from "@/hooks/fileOpen";
@@ -87,6 +87,7 @@ export function PinBoardCtx({
     const setItemSize = (size: number) => setItemSizeByKey(layoutKey, size)
     const [fs, setFs] = useGalleryFullscreen()
     const [showGrid, setShowGrid] = useGalleryPinGrid()
+    const [autoLayout, setAutoLayout] = useGalleryPinAutoLayout()
     // Width presets are fixed fractions of the board width, so the menu is
     // the same on every grid resolution; the step sizes scale with the
     // resolution (1 v1 column = `stepUnit` columns on this grid)
@@ -158,6 +159,14 @@ export function PinBoardCtx({
             <ContextMenuItem onClick={() => setShowGrid(!showGrid)}>
                 {showGrid ? "Hide Grid" : "Show Grid"}
             </ContextMenuItem>
+            {/* When on, the board re-runs Fill Viewport (all items) whenever
+                a pin is added, removed or duplicated (see PinBoard) */}
+            <ContextMenuCheckboxItem
+                checked={autoLayout}
+                onCheckedChange={(checked) => setAutoLayout(!!checked)}
+            >
+                Auto-Layout
+            </ContextMenuCheckboxItem>
             {isV1 && <ContextMenuItem onClick={onUpgradeGrid}>
                 Upgrade Board Grid
             </ContextMenuItem>}
