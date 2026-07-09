@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import { useGalleryFullscreen, useGalleryPinGrid } from "@/lib/state/gallery";
 import { CropRect, TrimRange } from "@/lib/pinboardCrop";
 import { GridParams, rowStep } from "@/lib/pinboardGrid";
+import { PackItem, groupRowsByOverlap, justifyRows, packRows } from "@/lib/pinboardPack";
 import { useFileOpenActions } from "@/hooks/fileOpen";
 
 // Layout keys are `${recordIndex}-${sha256Prefix}` (the same image can be
@@ -71,26 +72,79 @@ export function PinBoardCtx({
         layoutBuildData.current = null
     }, [layout, crops, dbs, grid])
 
-    async function changeLayout(itemsPerRow: number, restrictToVisible = false) {
+    // Cached build data, or null when the container can't be measured (in
+    // which case layout actions no-op rather than destroy the arrangement)
+    async function ensureBuildData(): Promise<LayoutBuildData | null> {
         if (!layoutBuildData.current) {
-            const buildData = await getLayoutBuildData({ layout, crops, dbs, grid, pinboardRef })
-            layoutBuildData.current = buildData
+            layoutBuildData.current = await getLayoutBuildData({ layout, crops, dbs, grid, pinboardRef })
         }
-        const buildData = layoutBuildData.current
+        return layoutBuildData.current
+    }
+
+    async function changeLayout(itemsPerRow: number, restrictToVisible = false) {
+        const buildData = await ensureBuildData()
+        if (!buildData) return
         const newLayout = buildLayout(buildData, itemsPerRow, restrictToVisible)
         onLayoutChange(newLayout)
     }
 
+    // Grid rows above the fold: the block a fill action must span exactly,
+    // so that items parked below the fold can't compact up into view
+    function foldRows(buildData: LayoutBuildData): number {
+        return Math.max(1, Math.floor(
+            (buildData.containerHeight - 2 * grid.padding + grid.margin) / rowStep(grid)
+        ))
+    }
+
+    function toPackItem(buildData: LayoutBuildData, l: ReactGridLayout.Layout): PackItem {
+        const [width, height] = croppedDimensions(buildData, l.i)
+        return { key: l.i, width, height }
+    }
+
+    // Repack into justified rows filling the viewport exactly. With
+    // visibleOnly, items whose top edge is below the fold (the cutting
+    // board) are left untouched and settle back just under the packed
+    // block; rowCount "auto" lets the row-break DP pick the row count.
+    async function fillViewport(visibleOnly: boolean, rowCount: number | "auto" = "auto") {
+        const buildData = await ensureBuildData()
+        if (!buildData) return
+        const total = foldRows(buildData)
+        const participants = visibleOnly
+            ? buildData.sortedLayout.filter(l => l.y < total)
+            : buildData.sortedLayout
+        if (participants.length === 0) return
+        const packed = packRows({
+            items: participants.map(l => toPackItem(buildData, l)),
+            grid,
+            columnWidth: buildData.columnWidth,
+            totalGridRows: total,
+            rowCount,
+            // With a cutting board below the fold, an under-filled block
+            // would let it compact up into view — the wall wins over
+            // letterboxing. The plain fill has nothing below to wall off.
+            forceFill: visibleOnly,
+        })
+        const packedKeys = new Set(packed.map(l => l.i))
+        const rest = layout.filter(l => !packedKeys.has(l.i))
+        onLayoutChange([...packed, ...rest])
+    }
+
+    // Resize-only: keep the current row groupings and reading order, give
+    // each row its natural full-width justified height
+    async function justifyCurrentRows() {
+        const buildData = await ensureBuildData()
+        if (!buildData) return
+        const groups = groupRowsByOverlap(buildData.sortedLayout)
+            .map(row => row.map(l => toPackItem(buildData, l)))
+        onLayoutChange(justifyRows({ groups, grid, columnWidth: buildData.columnWidth }))
+    }
+
     function layoutFixedRows(rows: number) {
-        const itemsPerRow = Math.ceil(layout.length / rows)
-        changeLayout(itemsPerRow, true)
+        fillViewport(false, rows)
     }
     async function changeItemSize(increase: number) {
-        if (!layoutBuildData.current) {
-            const buildData = await getLayoutBuildData({ layout, crops, dbs, grid, pinboardRef })
-            layoutBuildData.current = buildData
-        }
-        const buildData = layoutBuildData.current
+        const buildData = await ensureBuildData()
+        if (!buildData) return
         const newLayout = layout.map(l => {
             if (l.i === layoutKey) {
                 const [w, h] = croppedDimensions(buildData, l.i)
@@ -105,11 +159,8 @@ export function PinBoardCtx({
         onLayoutChange(newLayout)
     }
     async function setItemSize(size: number) {
-        if (!layoutBuildData.current) {
-            const buildData = await getLayoutBuildData({ layout, crops, dbs, grid, pinboardRef })
-            layoutBuildData.current = buildData
-        }
-        const buildData = layoutBuildData.current
+        const buildData = await ensureBuildData()
+        if (!buildData) return
         const newLayout = layout.map(l => {
             if (l.i === layoutKey) {
                 const [w, h] = croppedDimensions(buildData, l.i)
@@ -212,25 +263,44 @@ export function PinBoardCtx({
                 Upgrade Board Grid
             </ContextMenuItem>}
             <ContextMenuSeparator />
-            <ContextMenuItem onClick={() => changeLayout(3)}>Layout 3 Items/Row</ContextMenuItem>
-            <ContextMenuItem onClick={() => changeLayout(4)}>Layout 4 Items/Row</ContextMenuItem>
-            <ContextMenuItem onClick={() => changeLayout(5)}>Layout 5 Items/Row</ContextMenuItem>
-            <ContextMenuItem onClick={() => changeLayout(6)}>Layout 6 Items/Row</ContextMenuItem>
-            <ContextMenuSeparator />
-            <ContextMenuItem onClick={() => layoutFixedRows(1)}>Layout 1 Row</ContextMenuItem>
-            <ContextMenuItem onClick={() => layoutFixedRows(2)}>Layout 2 Rows</ContextMenuItem>
-            <ContextMenuItem onClick={() => layoutFixedRows(3)}>Layout 3 Rows</ContextMenuItem>
-            <ContextMenuItem onClick={() => layoutFixedRows(4)}>Layout 4 Rows</ContextMenuItem>
-            <ContextMenuSeparator />
             <ContextMenuSub>
-                <ContextMenuSubTrigger inset>Shift Layout</ContextMenuSubTrigger>
-                <ContextMenuSubContent className="w-48">
-                    <ContextMenuItem onClick={() => shiftLayout("left")}>Shift Left</ContextMenuItem>
-                    <ContextMenuItem onClick={() => shiftLayout("center")}>Center</ContextMenuItem>
-                    <ContextMenuItem onClick={() => shiftLayout("right")}>Shift Right</ContextMenuItem>
+                <ContextMenuSubTrigger inset>Layout</ContextMenuSubTrigger>
+                <ContextMenuSubContent className="w-56">
+                    <ContextMenuItem onClick={() => fillViewport(false)}>Fill Viewport</ContextMenuItem>
+                    <ContextMenuItem onClick={() => fillViewport(true)}>Fill Viewport (Visible Only)</ContextMenuItem>
+                    <ContextMenuItem onClick={() => justifyCurrentRows()}>Justify Rows</ContextMenuItem>
                     <ContextMenuSeparator />
-                    <ContextMenuItem onClick={() => mirrorLayout("horizontal")}>Mirror Horizontally</ContextMenuItem>
-                    <ContextMenuItem onClick={() => mirrorLayout("vertical")}>Mirror Vertically</ContextMenuItem>
+                    <ContextMenuSub>
+                        <ContextMenuSubTrigger>Items per Row</ContextMenuSubTrigger>
+                        <ContextMenuSubContent className="w-48">
+                            {[3, 4, 5, 6].map(n => (
+                                <ContextMenuItem key={n} onClick={() => changeLayout(n)}>
+                                    {n} Items per Row
+                                </ContextMenuItem>
+                            ))}
+                        </ContextMenuSubContent>
+                    </ContextMenuSub>
+                    <ContextMenuSub>
+                        <ContextMenuSubTrigger>Rows</ContextMenuSubTrigger>
+                        <ContextMenuSubContent className="w-48">
+                            {[1, 2, 3, 4].map(n => (
+                                <ContextMenuItem key={n} onClick={() => layoutFixedRows(n)}>
+                                    {n} {n === 1 ? "Row" : "Rows"}
+                                </ContextMenuItem>
+                            ))}
+                        </ContextMenuSubContent>
+                    </ContextMenuSub>
+                    <ContextMenuSub>
+                        <ContextMenuSubTrigger>Shift</ContextMenuSubTrigger>
+                        <ContextMenuSubContent className="w-48">
+                            <ContextMenuItem onClick={() => shiftLayout("left")}>Shift Left</ContextMenuItem>
+                            <ContextMenuItem onClick={() => shiftLayout("center")}>Center</ContextMenuItem>
+                            <ContextMenuItem onClick={() => shiftLayout("right")}>Shift Right</ContextMenuItem>
+                            <ContextMenuSeparator />
+                            <ContextMenuItem onClick={() => mirrorLayout("horizontal")}>Mirror Horizontally</ContextMenuItem>
+                            <ContextMenuItem onClick={() => mirrorLayout("vertical")}>Mirror Vertically</ContextMenuItem>
+                        </ContextMenuSubContent>
+                    </ContextMenuSub>
                 </ContextMenuSubContent>
             </ContextMenuSub>
         </ContextMenuContent>
@@ -316,11 +386,16 @@ async function getLayoutBuildData(
         grid: GridParams,
         pinboardRef: React.RefObject<HTMLDivElement>,
     }
-): Promise<LayoutBuildData> {
+): Promise<LayoutBuildData | null> {
     const keys = layout.map(l => l.i)
+    const clientWidth = pinboardRef.current?.clientWidth || 0
+    const containerHeight = pinboardRef.current?.clientHeight || 0
+    // An unmeasurable container (display: none, background tab with
+    // rendering suspended...) would quietly produce a garbage layout —
+    // computing against a 0x0 viewport crams everything into one tiny row.
+    // No layout is better than a destructive one.
+    if (clientWidth < 100 || containerHeight < 100) return null
     const metadata = await fetchMetadata(keys, dbs)
-    const clientWidth = pinboardRef.current?.clientWidth || 1
-    const containerHeight = pinboardRef.current?.clientHeight || 1
     // Exact pixel width of one column: the container width minus its padding
     // and the margins between columns, split evenly
     const columnWidth = Math.max(1, (clientWidth - 2 * grid.padding - (grid.columns - 1) * grid.margin) / grid.columns)
