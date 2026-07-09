@@ -1,7 +1,9 @@
 import Image from 'next/image'
 import { cn, getFileURL } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
-import { useGalleryFullscreen, useGalleryPinBoardLayout, useGalleryPinGrid } from '@/lib/state/gallery'
+import { useGalleryFullscreen, useGalleryPinGrid } from '@/lib/state/gallery'
+import { usePinBoard } from '@/lib/state/pinboard'
+import { GridParams, v1ScaleFactors } from '@/lib/pinboardGrid'
 import { PinButton } from './PinButton'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactGridLayout, { Responsive, WidthProvider } from "react-grid-layout"
@@ -32,27 +34,25 @@ const ALL_RESIZE_HANDLES: ReactGridLayout.Layout["resizeHandles"] =
 // Faint overlay of react-grid-layout's cells, for eyeballing item sizes while
 // debugging layouts. Each cell's left/right and top/bottom edges are drawn at
 // their exact computed positions (the gaps between the paired lines are the
-// grid's 10px margins). Positions are placed explicitly rather than via a
+// grid's margins). Positions are placed explicitly rather than via a
 // repeating gradient, whose fractional column period would accumulate rounding
-// error across 36 columns and smear into overlapping/uneven lines.
-function GridOverlay({ width, height, columns, rowHeight }: {
+// error across the columns and smear into overlapping/uneven lines.
+function GridOverlay({ width, height, grid }: {
     width: number
     height: number
-    columns: number
-    rowHeight: number
+    grid: GridParams
 }) {
-    const MARGIN = 10
-    const PADDING = 10
-    const columnWidth = (width - 2 * PADDING - (columns - 1) * MARGIN) / columns
+    const { columns, rowHeight, margin, padding } = grid
+    const columnWidth = (width - 2 * padding - (columns - 1) * margin) / columns
     if (!(columnWidth > 0) || height <= 0) return null
 
     const xs: number[] = []
     for (let i = 0; i < columns; i++) {
-        const left = PADDING + i * (columnWidth + MARGIN)
+        const left = padding + i * (columnWidth + margin)
         xs.push(left, left + columnWidth)
     }
     const ys: number[] = []
-    for (let top = PADDING; top < height; top += rowHeight + MARGIN) {
+    for (let top = padding; top < height; top += rowHeight + margin) {
         ys.push(top, top + rowHeight)
     }
 
@@ -84,7 +84,9 @@ export function PinBoard(
     }
 ) {
     const dbs = useSelectedDBs()[0]
-    const [savedLayout, setSavedLayout] = useGalleryPinBoardLayout()
+    // Token-stripped records plus the board's grid parameters; writes migrate
+    // v1 boards to the v2 grid (see lib/pinboardGrid.ts)
+    const { grid, records, isV1, updateRecords, upgradeGrid } = usePinBoard()
     // Key of the item currently in crop mode, if any
     const [cropKey, setCropKey] = useState<string | null>(null)
     // True while the crop-mode item's box is being resized via a grid handle
@@ -99,8 +101,8 @@ export function PinBoard(
         const pinned: [string, string, string, string][] = []
         const cropsMap: Record<string, CropRect | null> = {}
         const trimsMap: Record<string, TrimRange | null> = {}
-        for (let i = 0; i < savedLayout.length; i += 5) {
-            const [sha256, x, y, w, hField] = savedLayout.slice(i, i + 5)
+        for (let i = 0; i < records.length; i += 5) {
+            const [sha256, x, y, w, hField] = records.slice(i, i + 5)
             const index = `${i}-${sha256}`
             const { h, crop, trim } = parseHField(hField)
             cropsMap[index] = crop
@@ -130,7 +132,7 @@ export function PinBoard(
             ])
         }
         return [newLayout, pinned, cropsMap, trimsMap]
-    }, [savedLayout, cropKey, dbs])
+    }, [records, cropKey, dbs])
 
     // Rebuilds the packed records from RGL's reported layout, in the EXISTING
     // record order: the item keys embed each record's offset, so persisting in
@@ -175,24 +177,26 @@ export function PinBoard(
         // RGL fires onLayoutChange on every layouts-prop change and on mount,
         // not only on user interaction. If nothing actually moved, writing an
         // equal value back would push a redundant history entry and re-trigger
-        // this handler — the write must only happen on real changes.
-        const candidate = rebuildRecords(savedLayout, currentLayout)
+        // this handler — the write must only happen on real changes. This
+        // guard is also what keeps merely *viewing* a v1 board from migrating
+        // it: updateRecords only converts on writes.
+        const candidate = rebuildRecords(records, currentLayout)
         if (
-            candidate.length === savedLayout.length &&
-            candidate.every((v, i) => v === savedLayout[i])
+            candidate.length === records.length &&
+            candidate.every((v, i) => v === records[i])
         ) {
             return
         }
         // Functional update so crop commits landing in the same tick aren't
         // clobbered
-        setSavedLayout((prev) => rebuildRecords(prev, currentLayout))
+        updateRecords((prev) => rebuildRecords(prev, currentLayout))
     }
 
     // Append an identical copy of the pin's 5-string record (sha256, x, y, w,
     // packed h+crop). The offset embedded in the layout key locates the source
     // record; compactType="vertical" then nudges the copy off the original.
     const onDuplicatePin = (key: string) => {
-        setSavedLayout((prev) => {
+        updateRecords((prev) => {
             const offset = parseInt(key.split("-")[0])
             const record = prev.slice(offset, offset + 5)
             if (record.length < 5) return prev
@@ -201,7 +205,7 @@ export function PinBoard(
     }
 
     const onItemCropChange = (key: string, crop: CropRect | null) => {
-        setSavedLayout((prev) => {
+        updateRecords((prev) => {
             const next = [...prev]
             for (let i = 0; i < prev.length; i += 5) {
                 if (`${i}-${prev[i]}` === key) {
@@ -215,7 +219,7 @@ export function PinBoard(
     }
 
     const onItemTrimChange = (key: string, trim: TrimRange | null) => {
-        setSavedLayout((prev) => {
+        updateRecords((prev) => {
             const next = [...prev]
             for (let i = 0; i < prev.length; i += 5) {
                 if (`${i}-${prev[i]}` === key) {
@@ -234,8 +238,10 @@ export function PinBoard(
     const [fs, setFs] = useGalleryFullscreen()
     const [showGrid] = useGalleryPinGrid()
     const scrollAreaRef = useRef<HTMLDivElement>(null);
-    const columns = 36
-    const rowHeight = 50
+    // v1 boards use v1-unit sizes for new/dropped pins so they stay
+    // consistent pre-migration; on the finer v2 grid the same physical size
+    // is these units times the lattice scale factors
+    const { sx, sy } = v1ScaleFactors(grid)
     // Measure the grid area so the debug grid overlay can match react-grid-layout's
     // column width (from the container width) and cover the full grid height,
     // which grows past the viewport when an item extends below the fold. The
@@ -246,17 +252,17 @@ export function PinBoard(
     useEffect(() => {
         const el = gridAreaRef.current
         if (!el) return
-        const grid = el.querySelector<HTMLElement>(".react-grid-layout")
+        const gridEl = el.querySelector<HTMLElement>(".react-grid-layout")
         const measure = () => setGridAreaSize({
             width: el.clientWidth,
-            height: Math.max(el.clientHeight, grid?.offsetHeight ?? 0),
+            height: Math.max(el.clientHeight, gridEl?.offsetHeight ?? 0),
         })
         measure()
         const ro = new ResizeObserver(measure)
         ro.observe(el)
-        if (grid) ro.observe(grid)
+        if (gridEl) ro.observe(gridEl)
         return () => ro.disconnect()
-    }, [savedLayout])
+    }, [records])
     const pinItem = usePinItem()
     return (
         <ScrollArea ref={scrollAreaRef} className="overflow-y-auto">
@@ -274,22 +280,31 @@ export function PinBoard(
                     <GridOverlay
                         width={gridAreaSize.width}
                         height={gridAreaSize.height}
-                        columns={columns}
-                        rowHeight={rowHeight}
+                        grid={grid}
                     />
                 )}
                 <ResponsiveGridLayout
+                    // Remount when the grid parameters change (v1 -> v2
+                    // migration, future per-board settings): Responsive RGL
+                    // otherwise reconciles the new layouts against its stale
+                    // internal cols, clamping x+w to the old column count and
+                    // compacting items into the wrong places before the new
+                    // cols prop is applied.
+                    key={`grid-${grid.columns}-${grid.rowHeight}-${grid.margin}-${grid.padding}`}
                     className="layout"
                     layouts={rglLayouts}
                     breakpoints={{ lg: 0, }}
-                    cols={{ lg: columns, }}
-                    rowHeight={rowHeight}
+                    cols={{ lg: grid.columns, }}
+                    rowHeight={grid.rowHeight}
+                    margin={[grid.margin, grid.margin]}
+                    containerPadding={[grid.padding, grid.padding]}
                     onLayoutChange={(currentLayout) => onLayoutChange(currentLayout)}
                     draggableHandle=".drag-handle"
                     isResizable={true}
                     isDraggable={true}
                     isDroppable={true}
-                    droppingItem={{ i: '__preview', w: 10, h: 10 }} // size of the grey preview box
+                    // Size of the grey preview box (10x10 in v1 units)
+                    droppingItem={{ i: '__preview', w: Math.round(10 * sx), h: Math.round(10 * sy) }}
                     compactType="vertical" // Compacts items vertically to keep them visible on screen
                     preventCollision={false}
                     onResizeStart={(_currentLayout, oldItem) => {
@@ -358,8 +373,9 @@ export function PinBoard(
                                     onTrimChange={(trim) => onItemTrimChange(i, trim)}
                                     onDuplicate={() => onDuplicatePin(i)}
                                     scrollAreaRef={scrollAreaRef}
-                                    columns={columns}
-                                    rowHeight={rowHeight}
+                                    grid={grid}
+                                    isV1={isV1}
+                                    onUpgradeGrid={upgradeGrid}
                                     dbs={dbs}
                                 />}
                         </div>
@@ -387,8 +403,9 @@ function PinBoardPin({
     onTrimChange,
     onDuplicate,
     scrollAreaRef,
-    columns,
-    rowHeight,
+    grid,
+    isV1,
+    onUpgradeGrid,
     dbs,
 }: {
     layoutKey: string
@@ -407,8 +424,9 @@ function PinBoardPin({
     onTrimChange: (trim: TrimRange | null) => void
     onDuplicate: () => void
     scrollAreaRef: React.RefObject<HTMLDivElement>
-    columns: number
-    rowHeight: number
+    grid: GridParams
+    isV1: boolean
+    onUpgradeGrid: () => void
     dbs: {
         index_db: string | null
         user_data_db: string | null
@@ -552,8 +570,9 @@ function PinBoardPin({
                     onTrimChange={onTrimChange}
                     onDuplicate={onDuplicate}
                     pinboardRef={scrollAreaRef}
-                    columns={columns}
-                    rowHeight={rowHeight}
+                    grid={grid}
+                    isV1={isV1}
+                    onUpgradeGrid={onUpgradeGrid}
                     dbs={dbs}
                 />
             </ContextMenu>
@@ -635,14 +654,22 @@ function PinBoardPin({
 
 export function usePinItem() {
     const prefixLength = 10 // The length of the prefix of the sha256 hash
-    const [savedLayout, setSavedLayout] = useGalleryPinBoardLayout()
+    const { updateRecords } = usePinBoard()
     const pinItem = (sha256: string, pos?: { x: number, y: number, w: number, h: number }) => {
-        // If position is provided, use it, otherwise default to 0, 0, 2, 2
-        if (!pos) {
-            pos = { x: 0, y: 0, w: 2, h: 2 }
-        }
-        setSavedLayout([...savedLayout, sha256.slice(0, prefixLength), pos.x.toString(), pos.y.toString(), pos.w.toString(), pos.h.toString()])
-
+        updateRecords((records, grid) => {
+            // An explicit position (e.g. from a drop) is already in the
+            // board's grid units; the fallback size is 2x2 in v1 units
+            const { sx, sy } = v1ScaleFactors(grid)
+            const p = pos ?? { x: 0, y: 0, w: Math.round(2 * sx), h: Math.round(2 * sy) }
+            return [
+                ...records,
+                sha256.slice(0, prefixLength),
+                p.x.toString(),
+                p.y.toString(),
+                p.w.toString(),
+                p.h.toString(),
+            ]
+        })
     }
     return { pinItem }
 }

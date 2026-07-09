@@ -2,7 +2,8 @@
 
 import React, { useMemo } from 'react'
 import { cn } from "@/lib/utils"
-import { useGalleryPinBoardLayout } from "@/lib/state/gallery"
+import { usePinBoard } from "@/lib/state/pinboard"
+import { v1ScaleFactors } from "@/lib/pinboardGrid"
 
 import { Pin, PinOff } from 'lucide-react'
 
@@ -21,27 +22,45 @@ export function PinButton({
     hidePins?: boolean
 }) {
     const prefixLength = 10 // The length of the prefix of the sha256 hash
-    const [savedLayout, setSavedLayout] = useGalleryPinBoardLayout()
-    const pins: [string, number][] = useMemo(() => savedLayout.filter((_, i) => i % 5 === 0).map((id, index) => [id, index]), [savedLayout])
-    const isPinned = useMemo(() => savedLayout.filter((id, i) => i % 5 === 0 && sha256.slice(0, prefixLength) === id.slice(0, prefixLength)).length > 0, [savedLayout, sha256])
+    const { records, updateRecords } = usePinBoard()
+    const isPinned = useMemo(
+        () => records.filter((id, i) => i % 5 === 0 && sha256.slice(0, prefixLength) === id.slice(0, prefixLength)).length > 0,
+        [records, sha256]
+    )
     const handlePinClick = () => {
         // Bound to a specific copy: splice out that exact record by its offset
         if (layoutKey !== undefined) {
-            const offset = parseInt(layoutKey.split("-")[0])
-            const newLayout = [...savedLayout]
-            newLayout.splice(offset, 5)
-            setSavedLayout(newLayout)
+            updateRecords((prev) => {
+                const offset = parseInt(layoutKey.split("-")[0])
+                const next = [...prev]
+                next.splice(offset, 5)
+                return next
+            })
             return
         }
-        const isPinnedIndex = pins.findIndex(([id]) => id.slice(0, prefixLength) === sha256.slice(0, prefixLength))
-        if (isPinnedIndex !== -1) {
-            const index = pins[isPinnedIndex][1]
-            const newLayout = [...savedLayout]
-            newLayout.splice(index * 5, 5)
-            setSavedLayout(newLayout)
-        } else {
-            setSavedLayout([...savedLayout, sha256.slice(0, prefixLength), "0", "0", "10", "10"])
-        }
+        updateRecords((prev, grid) => {
+            const pins: [string, number][] = prev
+                .filter((_, i) => i % 5 === 0)
+                .map((id, index) => [id, index])
+            const isPinnedIndex = pins.findIndex(([id]) => id.slice(0, prefixLength) === sha256.slice(0, prefixLength))
+            if (isPinnedIndex !== -1) {
+                const index = pins[isPinnedIndex][1]
+                const next = [...prev]
+                next.splice(index * 5, 5)
+                return next
+            }
+            // Default new-pin size is 10x10 in v1 units, scaled to the
+            // board's grid
+            const { sx, sy } = v1ScaleFactors(grid)
+            return [
+                ...prev,
+                sha256.slice(0, prefixLength),
+                "0",
+                "0",
+                Math.round(10 * sx).toString(),
+                Math.round(10 * sy).toString(),
+            ]
+        })
     }
     return <button
         title={

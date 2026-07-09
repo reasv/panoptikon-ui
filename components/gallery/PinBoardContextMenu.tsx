@@ -4,6 +4,7 @@ import { components } from "@/lib/panoptikon";
 import { useEffect, useRef } from "react";
 import { useGalleryFullscreen, useGalleryPinGrid } from "@/lib/state/gallery";
 import { CropRect, TrimRange } from "@/lib/pinboardCrop";
+import { GridParams, rowStep } from "@/lib/pinboardGrid";
 import { useFileOpenActions } from "@/hooks/fileOpen";
 
 // Layout keys are `${recordIndex}-${sha256Prefix}` (the same image can be
@@ -28,8 +29,9 @@ export function PinBoardCtx({
     onDuplicate,
     pinboardRef,
     dbs,
-    columns,
-    rowHeight,
+    grid,
+    isV1,
+    onUpgradeGrid,
 }: {
     layoutKey: string
     sha256: string
@@ -45,8 +47,9 @@ export function PinBoardCtx({
     onTrimChange: (trim: TrimRange | null) => void,
     onDuplicate: () => void,
     pinboardRef: React.RefObject<HTMLDivElement>,
-    columns: number,
-    rowHeight: number,
+    grid: GridParams,
+    isV1: boolean,
+    onUpgradeGrid: () => void,
     dbs: {
         index_db: string | null
         user_data_db: string | null
@@ -66,11 +69,11 @@ export function PinBoardCtx({
     const layoutBuildData = useRef<LayoutBuildData | null>(null)
     useEffect(() => {
         layoutBuildData.current = null
-    }, [layout, crops, dbs, columns, rowHeight])
+    }, [layout, crops, dbs, grid])
 
     async function changeLayout(itemsPerRow: number, restrictToVisible = false) {
         if (!layoutBuildData.current) {
-            const buildData = await getLayoutBuildData({ layout, crops, dbs, columns, rowHeight, pinboardRef })
+            const buildData = await getLayoutBuildData({ layout, crops, dbs, grid, pinboardRef })
             layoutBuildData.current = buildData
         }
         const buildData = layoutBuildData.current
@@ -84,7 +87,7 @@ export function PinBoardCtx({
     }
     async function changeItemSize(increase: number) {
         if (!layoutBuildData.current) {
-            const buildData = await getLayoutBuildData({ layout, crops, dbs, columns, rowHeight, pinboardRef })
+            const buildData = await getLayoutBuildData({ layout, crops, dbs, grid, pinboardRef })
             layoutBuildData.current = buildData
         }
         const buildData = layoutBuildData.current
@@ -94,7 +97,7 @@ export function PinBoardCtx({
                 return {
                     ...l,
                     w: l.w + increase,
-                    h: findOptimalHeight(l.w + increase, rowHeight, buildData.columnWidth, w, h),
+                    h: findOptimalHeight(l.w + increase, grid, buildData.columnWidth, w, h),
                 }
             }
             return l
@@ -103,7 +106,7 @@ export function PinBoardCtx({
     }
     async function setItemSize(size: number) {
         if (!layoutBuildData.current) {
-            const buildData = await getLayoutBuildData({ layout, crops, dbs, columns, rowHeight, pinboardRef })
+            const buildData = await getLayoutBuildData({ layout, crops, dbs, grid, pinboardRef })
             layoutBuildData.current = buildData
         }
         const buildData = layoutBuildData.current
@@ -113,7 +116,7 @@ export function PinBoardCtx({
                 return {
                     ...l,
                     w: size,
-                    h: findOptimalHeight(size, rowHeight, buildData.columnWidth, w, h),
+                    h: findOptimalHeight(size, grid, buildData.columnWidth, w, h),
                 }
             }
             return l
@@ -123,7 +126,7 @@ export function PinBoardCtx({
     // One-time horizontal "gravity": slide every item to the left/right/center
     // of its row without resizing. Pure x repacking, so no build data needed.
     function shiftLayout(mode: ShiftMode) {
-        onLayoutChange(shiftLayoutHorizontally(layout, mode, columns))
+        onLayoutChange(shiftLayoutHorizontally(layout, mode, grid.columns))
     }
     // Mirror the arrangement (not the images) about the centre of the items'
     // own bounding box, so the group stays put and items swap places. A
@@ -133,7 +136,20 @@ export function PinBoardCtx({
         onLayoutChange(mirrorLayoutArrangement(layout, axis))
     }
     const [fs, setFs] = useGalleryFullscreen()
-    const [grid, setGrid] = useGalleryPinGrid()
+    const [showGrid, setShowGrid] = useGalleryPinGrid()
+    // Width presets are fixed fractions of the board width, so the menu is
+    // the same on every grid resolution; the step sizes scale with the
+    // resolution (1 v1 column = `stepUnit` columns on this grid)
+    const widthPresets: [number, string][] = [
+        [1 / 18, "1/18"],
+        [1 / 9, "1/9"],
+        [1 / 6, "1/6"],
+        [1 / 4, "1/4"],
+        [1 / 3, "1/3"],
+        [2 / 3, "2/3"],
+        [1, "Full"],
+    ]
+    const stepUnit = Math.max(1, Math.round(grid.columns / 36))
     return (
         <ContextMenuContent>
             <ContextMenuItem onClick={() => openURL()}>Open in New Tab</ContextMenuItem>
@@ -167,30 +183,34 @@ export function PinBoardCtx({
             <ContextMenuSub>
                 <ContextMenuSubTrigger inset>Resize Item</ContextMenuSubTrigger>
                 <ContextMenuSubContent className="w-48">
-                    <ContextMenuItem onClick={() => setItemSize(2)}>Width 2/36 (1/18)</ContextMenuItem>
-                    <ContextMenuItem onClick={() => setItemSize(4)}>Width 4/36 (1/9)</ContextMenuItem>
-                    <ContextMenuItem onClick={() => setItemSize(6)}>Width 6/36 (1/6)</ContextMenuItem>
-                    <ContextMenuItem onClick={() => setItemSize(9)}>Width 9/36 (1/4)</ContextMenuItem>
-                    <ContextMenuItem onClick={() => setItemSize(12)}>Width 12/36 (1/3)</ContextMenuItem>
-                    <ContextMenuItem onClick={() => setItemSize(24)}>Width 24/36 (2/3)</ContextMenuItem>
-                    <ContextMenuItem onClick={() => setItemSize(36)}>Width 36/36 (Full)</ContextMenuItem>
+                    {widthPresets.map(([frac, label]) => {
+                        const w = Math.max(1, Math.round(grid.columns * frac))
+                        return (
+                            <ContextMenuItem key={label} onClick={() => setItemSize(w)}>
+                                Width {w}/{grid.columns} ({label})
+                            </ContextMenuItem>
+                        )
+                    })}
                     <ContextMenuSeparator />
-                    <ContextMenuItem onClick={() => changeItemSize(1)}>+1/36 Width</ContextMenuItem>
-                    <ContextMenuItem onClick={() => changeItemSize(4)}>+4/36 Width</ContextMenuItem>
-                    <ContextMenuItem onClick={() => changeItemSize(6)}>+6/36 Width</ContextMenuItem>
+                    <ContextMenuItem onClick={() => changeItemSize(stepUnit)}>+{stepUnit}/{grid.columns} Width</ContextMenuItem>
+                    <ContextMenuItem onClick={() => changeItemSize(4 * stepUnit)}>+{4 * stepUnit}/{grid.columns} Width</ContextMenuItem>
+                    <ContextMenuItem onClick={() => changeItemSize(6 * stepUnit)}>+{6 * stepUnit}/{grid.columns} Width</ContextMenuItem>
                     <ContextMenuSeparator />
-                    <ContextMenuItem onClick={() => changeItemSize(-1)}>-1/36 Width</ContextMenuItem>
-                    <ContextMenuItem onClick={() => changeItemSize(-4)}>-4/36 Width</ContextMenuItem>
-                    <ContextMenuItem onClick={() => changeItemSize(-6)}>-6/36 Width</ContextMenuItem>
+                    <ContextMenuItem onClick={() => changeItemSize(-stepUnit)}>-{stepUnit}/{grid.columns} Width</ContextMenuItem>
+                    <ContextMenuItem onClick={() => changeItemSize(-4 * stepUnit)}>-{4 * stepUnit}/{grid.columns} Width</ContextMenuItem>
+                    <ContextMenuItem onClick={() => changeItemSize(-6 * stepUnit)}>-{6 * stepUnit}/{grid.columns} Width</ContextMenuItem>
                 </ContextMenuSubContent>
             </ContextMenuSub>
             <ContextMenuSeparator />
             <ContextMenuItem onClick={() => setFs(!fs)}>
                 {fs ? "Restore Pinboard Size" : "Maximize Pinboard"}
             </ContextMenuItem>
-            <ContextMenuItem onClick={() => setGrid(!grid)}>
-                {grid ? "Hide Grid" : "Show Grid"}
+            <ContextMenuItem onClick={() => setShowGrid(!showGrid)}>
+                {showGrid ? "Hide Grid" : "Show Grid"}
             </ContextMenuItem>
+            {isV1 && <ContextMenuItem onClick={onUpgradeGrid}>
+                Upgrade Board Grid
+            </ContextMenuItem>}
             <ContextMenuSeparator />
             <ContextMenuItem onClick={() => changeLayout(3)}>Layout 3 Items/Row</ContextMenuItem>
             <ContextMenuItem onClick={() => changeLayout(4)}>Layout 4 Items/Row</ContextMenuItem>
@@ -245,18 +265,13 @@ async function fetchMetadata(keys: string[], dbs: { index_db: string | null, use
     return Object.fromEntries(keys.map(key => [key, bySha[keyToSha256(key)]]));
 }
 
-// react-grid-layout defaults; the pinboard grid doesn't override margin or
-// containerPadding, so cells are 10px apart and the container has 10px padding
-const GRID_MARGIN = 10
-const GRID_PADDING = 10
-
 // Pixel size of an item spanning w columns / h rows, including the margins
 // between the cells it spans
-function pixelWidth(w: number, columnWidth: number): number {
-    return w * columnWidth + (w - 1) * GRID_MARGIN
+function pixelWidth(w: number, columnWidth: number, margin: number): number {
+    return w * columnWidth + (w - 1) * margin
 }
-function pixelHeight(h: number, rowHeight: number): number {
-    return h * rowHeight + (h - 1) * GRID_MARGIN
+function pixelHeight(h: number, grid: GridParams): number {
+    return h * grid.rowHeight + (h - 1) * grid.margin
 }
 
 interface LayoutBuildData {
@@ -268,8 +283,7 @@ interface LayoutBuildData {
     },
     crops: Record<string, CropRect | null>,
     columnWidth: number,
-    rowHeight: number,
-    columns: number,
+    grid: GridParams,
     containerHeight: number,
     sortedLayout: ReactGridLayout.Layout[],
 }
@@ -290,8 +304,7 @@ async function getLayoutBuildData(
         layout,
         crops,
         dbs,
-        columns,
-        rowHeight,
+        grid,
         pinboardRef,
     }: {
         layout: ReactGridLayout.Layout[],
@@ -300,8 +313,7 @@ async function getLayoutBuildData(
             index_db: string | null,
             user_data_db: string | null,
         },
-        columns: number,
-        rowHeight: number,
+        grid: GridParams,
         pinboardRef: React.RefObject<HTMLDivElement>,
     }
 ): Promise<LayoutBuildData> {
@@ -311,9 +323,9 @@ async function getLayoutBuildData(
     const containerHeight = pinboardRef.current?.clientHeight || 1
     // Exact pixel width of one column: the container width minus its padding
     // and the margins between columns, split evenly
-    const columnWidth = Math.max(1, (clientWidth - 2 * GRID_PADDING - (columns - 1) * GRID_MARGIN) / columns)
+    const columnWidth = Math.max(1, (clientWidth - 2 * grid.padding - (grid.columns - 1) * grid.margin) / grid.columns)
     const sortedLayout = sortLayout(layout)
-    return { metadata, crops, columnWidth, rowHeight, columns, containerHeight, sortedLayout }
+    return { metadata, crops, columnWidth, grid, containerHeight, sortedLayout }
 }
 
 function sortLayout(layout: ReactGridLayout.Layout[]): ReactGridLayout.Layout[] {
@@ -423,9 +435,8 @@ function buildLayout(buildData: LayoutBuildData, itemsPerRow: number, restrictTo
                 height,
             }
         }),
-        buildData.rowHeight,
+        buildData.grid,
         buildData.columnWidth,
-        buildData.columns,
         buildData.containerHeight,
         restrictToVisible,
     )
@@ -434,13 +445,13 @@ function buildLayout(buildData: LayoutBuildData, itemsPerRow: number, restrictTo
 function buildRowLayout(
     itemsPerRow: number,
     items: { sha256: string, width: number, height: number }[],
-    rowHeight: number,
+    grid: GridParams,
     columnWidth: number,
-    columns: number,
     containerHeight: number,
     restrictToVisible = false,
 ): ReactGridLayout.Layout[] {
     if (items.length === 0) return []
+    const { columns, margin, padding } = grid
     // Split the items into rows
     const rows: { sha256: string, width: number, height: number }[][] = []
     for (let i = 0; i < items.length; i += itemsPerRow) {
@@ -449,7 +460,7 @@ function buildRowLayout(
     // Total grid rows that fit in the container: h grid rows occupy
     // h*rowHeight + (h-1)*margin px, plus the container's own padding
     const totalRowBudget = Math.max(rows.length, Math.floor(
-        (containerHeight - 2 * GRID_PADDING + GRID_MARGIN) / (rowHeight + GRID_MARGIN)
+        (containerHeight - 2 * padding + margin) / rowStep(grid)
     ))
     // Give every row the same height budget rather than flooring and handing
     // the remainder to the top rows (which singled out the last row as a grid
@@ -465,10 +476,10 @@ function buildRowLayout(
         const totalRatio = ratios.reduce((acc, curr) => acc + curr, 0)
         // Height of the row if it spans all columns with every item at its true aspect
         const naturalHeight =
-            (pixelWidth(columns, columnWidth) - (row.length - 1) * GRID_MARGIN) / totalRatio
+            (pixelWidth(columns, columnWidth, margin) - (row.length - 1) * margin) / totalRatio
         let targetHeight = naturalHeight
         if (restrictToVisible) {
-            const budgetPx = pixelHeight(heightBudget, rowHeight)
+            const budgetPx = pixelHeight(heightBudget, grid)
             // Too tall to fit at full width: shrink the whole row (narrower
             // boxes at the same aspect) instead of clamping heights, which
             // would letterbox the items
@@ -476,7 +487,7 @@ function buildRowLayout(
         }
         // Ideal (fractional) column count per item at the target height
         const idealColumns = ratios.map(ratio =>
-            (ratio * targetHeight + GRID_MARGIN) / (columnWidth + GRID_MARGIN)
+            (ratio * targetHeight + margin) / (columnWidth + margin)
         )
         // When the row doesn't fill the width there's room to round every item's
         // column count up, so each image is wide enough to reach the shared row
@@ -494,7 +505,7 @@ function buildRowLayout(
         // each item's height independently from its rounded column count let
         // siblings disagree, leaving the shorter ones undersized with a gap
         // below. Round the shared target height to grid rows once instead.
-        let rowGridHeight = Math.max(1, Math.round((targetHeight + GRID_MARGIN) / (rowHeight + GRID_MARGIN)))
+        let rowGridHeight = Math.max(1, Math.round((targetHeight + margin) / rowStep(grid)))
         if (restrictToVisible) rowGridHeight = Math.min(rowGridHeight, heightBudget)
         for (let i = 0; i < row.length; i++) {
             layout.push({
@@ -543,12 +554,12 @@ function apportionColumns(ideal: number[], maxColumns: number): number[] {
 
 function findOptimalHeight(
     w: number,
-    rowHeight: number,
+    grid: GridParams,
     columnWidth: number,
     itemWidth: number,
     itemHeight: number,
 ) {
     // Grid rows whose pixel height best matches the item's aspect at this width
-    const idealPx = pixelWidth(w, columnWidth) * itemHeight / itemWidth
-    return Math.max(1, Math.round((idealPx + GRID_MARGIN) / (rowHeight + GRID_MARGIN)))
+    const idealPx = pixelWidth(w, columnWidth, grid.margin) * itemHeight / itemWidth
+    return Math.max(1, Math.round((idealPx + grid.margin) / rowStep(grid)))
 }
