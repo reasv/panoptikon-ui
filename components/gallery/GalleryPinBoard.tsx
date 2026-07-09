@@ -21,7 +21,7 @@ import { $api } from '@/lib/api'
 import { MediaControls } from './PlayButton'
 import React from 'react'
 import { useVideoPlayerState } from '@/lib/videoPlayerState'
-import { CropRect, TrimRange, isEmptyTrim, packHField, parseHField } from '@/lib/pinboardCrop'
+import { CropRect, TrimRange, composeCrops, isEmptyTrim, packHField, parseHField } from '@/lib/pinboardCrop'
 import { useVideoTrim } from '@/lib/videoTrim'
 import { CropView } from './CropView'
 import { VideoTimeline } from './VideoTimeline'
@@ -91,21 +91,24 @@ export function PinBoard(
     const [cropKey, setCropKey] = useState<string | null>(null)
     // True while the crop-mode item's box is being resized via a grid handle
     const [cropResizing, setCropResizing] = useState(false)
-    const [layout, pinnedFiles, crops, trims]: [
+    const [layout, pinnedFiles, crops, autoCrops, trims]: [
         ReactGridLayout.Layout[],
         [string, string, string, string][],
+        Record<string, CropRect | null>,
         Record<string, CropRect | null>,
         Record<string, TrimRange | null>,
     ] = useMemo(() => {
         const newLayout: ReactGridLayout.Layout[] = []
         const pinned: [string, string, string, string][] = []
         const cropsMap: Record<string, CropRect | null> = {}
+        const autoCropsMap: Record<string, CropRect | null> = {}
         const trimsMap: Record<string, TrimRange | null> = {}
         for (let i = 0; i < records.length; i += 5) {
             const [sha256, x, y, w, hField] = records.slice(i, i + 5)
             const index = `${i}-${sha256}`
-            const { h, crop, trim } = parseHField(hField)
+            const { h, crop, autoCrop, trim } = parseHField(hField)
             cropsMap[index] = crop
+            autoCropsMap[index] = autoCrop
             trimsMap[index] = trim
             newLayout.push({
                 i: index,
@@ -131,7 +134,7 @@ export function PinBoard(
                 getFileURL(dbs, "file", "sha256", sha256),
             ])
         }
-        return [newLayout, pinned, cropsMap, trimsMap]
+        return [newLayout, pinned, cropsMap, autoCropsMap, trimsMap]
     }, [records, cropKey, dbs])
 
     // Rebuilds the packed records from RGL's reported layout, in the EXISTING
@@ -140,7 +143,18 @@ export function PinBoard(
     // remount every pin (with its ContextMenu popper) and re-fire this handler
     // — feeding the layout back into itself through the URL until React's
     // nested-update limit crashes the page.
-    const rebuildRecords = (prev: string[], currentLayout: ReactGridLayout.Layout[]) => {
+    // autoCropOverrides, when given, replaces the auto-crop slot of the keys
+    // it contains (null clears the slot); keys absent from the map keep their
+    // existing auto crop. Layout actions pass it so the recomputed fit-to-cell
+    // crops land in the SAME record write as the geometry — one URL write,
+    // one history entry. Raw RGL drags/resizes don't pass it, so a hand-resized
+    // cell intentionally keeps its stale auto crop until the next auto-crop or
+    // layout action recomputes it from the manual base.
+    const rebuildRecords = (
+        prev: string[],
+        currentLayout: ReactGridLayout.Layout[],
+        autoCropOverrides?: Record<string, CropRect | null>,
+    ) => {
         const byKey = new Map(
             currentLayout.filter((e) => e.i !== "__preview").map((l) => [l.i, l])
         )
@@ -150,14 +164,17 @@ export function PinBoard(
             const item = byKey.get(key)
             if (!item) continue
             byKey.delete(key)
-            const { crop, trim } = parseHField(prev[i + 4])
+            const { crop, autoCrop, trim } = parseHField(prev[i + 4])
+            const nextAuto = autoCropOverrides && key in autoCropOverrides
+                ? autoCropOverrides[key]
+                : autoCrop
             next.push(
                 prev[i],
                 item.x.toString(),
                 item.y.toString(),
                 item.w.toString(),
                 // Crop/trim suffixes stored in the h field survive box moves/resizes
-                packHField(item.h, crop, trim),
+                packHField(item.h, crop, nextAuto, trim),
             )
         }
         // Items RGL reports that have no record yet
@@ -173,14 +190,17 @@ export function PinBoard(
         return next
     }
 
-    const onLayoutChange = (currentLayout: ReactGridLayout.Layout[]) => {
+    const onLayoutChange = (
+        currentLayout: ReactGridLayout.Layout[],
+        autoCropOverrides?: Record<string, CropRect | null>,
+    ) => {
         // RGL fires onLayoutChange on every layouts-prop change and on mount,
         // not only on user interaction. If nothing actually moved, writing an
         // equal value back would push a redundant history entry and re-trigger
         // this handler — the write must only happen on real changes. This
         // guard is also what keeps merely *viewing* a v1 board from migrating
         // it: updateRecords only converts on writes.
-        const candidate = rebuildRecords(records, currentLayout)
+        const candidate = rebuildRecords(records, currentLayout, autoCropOverrides)
         if (
             candidate.length === records.length &&
             candidate.every((v, i) => v === records[i])
@@ -189,7 +209,7 @@ export function PinBoard(
         }
         // Functional update so crop commits landing in the same tick aren't
         // clobbered
-        updateRecords((prev) => rebuildRecords(prev, currentLayout))
+        updateRecords((prev) => rebuildRecords(prev, currentLayout, autoCropOverrides))
     }
 
     // Append an identical copy of the pin's 5-string record (sha256, x, y, w,
@@ -204,13 +224,16 @@ export function PinBoard(
         })
     }
 
+    // Writing the manual crop also clears the auto slot: the manual crop is
+    // the base the auto crop was derived from, so any stored auto crop is
+    // stale the moment the base changes
     const onItemCropChange = (key: string, crop: CropRect | null) => {
         updateRecords((prev) => {
             const next = [...prev]
             for (let i = 0; i < prev.length; i += 5) {
                 if (`${i}-${prev[i]}` === key) {
                     const parsed = parseHField(prev[i + 4])
-                    next[i + 4] = packHField(parsed.h, crop, parsed.trim)
+                    next[i + 4] = packHField(parsed.h, crop, null, parsed.trim)
                     break
                 }
             }
@@ -224,7 +247,7 @@ export function PinBoard(
             for (let i = 0; i < prev.length; i += 5) {
                 if (`${i}-${prev[i]}` === key) {
                     const parsed = parseHField(prev[i + 4])
-                    next[i + 4] = packHField(parsed.h, parsed.crop, trim)
+                    next[i + 4] = packHField(parsed.h, parsed.crop, parsed.autoCrop, trim)
                     break
                 }
             }
@@ -364,7 +387,9 @@ export function PinBoard(
                                     onLayoutChange={onLayoutChange}
                                     layout={layout}
                                     crops={crops}
+                                    autoCrops={autoCrops}
                                     crop={crops[i] ?? null}
+                                    autoCrop={autoCrops[i] ?? null}
                                     trim={trims[i] ?? null}
                                     cropMode={cropKey === i}
                                     boxResizing={cropKey === i && cropResizing}
@@ -394,7 +419,9 @@ function PinBoardPin({
     onLayoutChange,
     layout,
     crops,
+    autoCrops,
     crop,
+    autoCrop,
     trim,
     cropMode,
     boxResizing,
@@ -412,10 +439,16 @@ function PinBoardPin({
     sha256: string
     thumbnail: string
     file: string
-    onLayoutChange: (currentLayout: ReactGridLayout.Layout[]) => void
+    onLayoutChange: (
+        currentLayout: ReactGridLayout.Layout[],
+        autoCropOverrides?: Record<string, CropRect | null>,
+    ) => void
     layout: ReactGridLayout.Layout[]
     crops: Record<string, CropRect | null>
+    autoCrops: Record<string, CropRect | null>
+    // Manual crop (the editable base) and the derived fit-to-cell auto crop
     crop: CropRect | null
+    autoCrop: CropRect | null
     trim: TrimRange | null
     cropMode: boolean
     boxResizing: boolean
@@ -468,6 +501,11 @@ function PinBoardPin({
     const showVideo = isPlayable && videoState.showVideo
     useVideoTrim({ videoRef, trim, active: showVideo })
 
+    // Rendering shows the composition of both crop slots; the crop editor
+    // edits the manual slot only (the auto crop is derived from it and gets
+    // cleared when a new manual crop is committed)
+    const effectiveCrop = composeCrops(crop, autoCrop)
+
     // Set one trim bound to the video's current time (centisecond-rounded, the
     // URL resolution); shift-click clears the bound instead. Placing a bound
     // on the wrong side of the other one clears the other — the user is
@@ -512,9 +550,9 @@ function PinBoardPin({
                             contain fit) so toggling crop mode only restyles the
                             <video> instead of remounting it, which would reset
                             the playback position */}
-                        {(cropMode || crop || showVideo) ?
+                        {(cropMode || effectiveCrop || showVideo) ?
                             <CropView
-                                crop={crop}
+                                crop={cropMode ? crop : effectiveCrop}
                                 cropMode={cropMode}
                                 boxResizing={boxResizing}
                                 naturalWidth={data?.item?.width}
@@ -562,8 +600,9 @@ function PinBoardPin({
                     onLayoutChange={onLayoutChange}
                     layout={layout}
                     crops={crops}
+                    autoCrops={autoCrops}
                     cropMode={cropMode}
-                    hasCrop={!!crop}
+                    hasCrop={!!(crop || autoCrop)}
                     onToggleCrop={onCropModeToggle}
                     onClearCrop={() => onCropChange(null)}
                     trim={trim}

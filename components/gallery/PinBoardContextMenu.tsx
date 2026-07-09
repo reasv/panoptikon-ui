@@ -3,7 +3,7 @@ import { ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuS
 import { components } from "@/lib/panoptikon";
 import { useEffect, useRef } from "react";
 import { useGalleryFullscreen, useGalleryPinGrid } from "@/lib/state/gallery";
-import { CropRect, TrimRange } from "@/lib/pinboardCrop";
+import { CropRect, TrimRange, computeAutoCrop } from "@/lib/pinboardCrop";
 import { GridParams, rowStep } from "@/lib/pinboardGrid";
 import { PackItem, groupRowsByOverlap, justifyRows, packMosaic, packRows } from "@/lib/pinboardPack";
 import { useFileOpenActions } from "@/hooks/fileOpen";
@@ -21,6 +21,7 @@ export function PinBoardCtx({
     onLayoutChange,
     layout,
     crops,
+    autoCrops,
     cropMode,
     hasCrop,
     onToggleCrop,
@@ -37,9 +38,16 @@ export function PinBoardCtx({
     layoutKey: string
     sha256: string
     file_url: string
-    onLayoutChange: (layout: ReactGridLayout.Layout[]) => void
+    // autoCropOverrides ride along with the layout so both land in one
+    // record write (one URL update, one history entry)
+    onLayoutChange: (
+        layout: ReactGridLayout.Layout[],
+        autoCropOverrides?: Record<string, CropRect | null>,
+    ) => void
     layout: ReactGridLayout.Layout[],
+    // Manual crops (the layout-math base) and derived fit-to-cell auto crops
     crops: Record<string, CropRect | null>,
+    autoCrops: Record<string, CropRect | null>,
     cropMode: boolean,
     hasCrop: boolean,
     onToggleCrop: () => void,
@@ -85,7 +93,7 @@ export function PinBoardCtx({
         const buildData = await ensureBuildData()
         if (!buildData) return
         const newLayout = buildLayout(buildData, itemsPerRow, restrictToVisible)
-        onLayoutChange(newLayout)
+        onLayoutChange(newLayout, stickyAutoCrops(buildData, newLayout))
     }
 
     // Grid rows above the fold: the block a fill action must span exactly,
@@ -99,6 +107,43 @@ export function PinBoardCtx({
     function toPackItem(buildData: LayoutBuildData, l: ReactGridLayout.Layout): PackItem {
         const [width, height] = croppedDimensions(buildData, l.i)
         return { key: l.i, width, height }
+    }
+
+    // Fit-to-cell auto crop for an item at a given cell size, computed from
+    // the manual-cropped base (croppedDimensions is manual-only). Returns
+    // undefined when the item's natural dimensions are unknown (metadata
+    // fetch failed) — callers must leave that item's auto slot untouched
+    // rather than crop against a made-up 1:1 aspect.
+    function autoCropForCell(
+        buildData: LayoutBuildData,
+        key: string,
+        w: number,
+        h: number,
+    ): CropRect | null | undefined {
+        const item = buildData.metadata[key]?.item
+        if (!item?.width || !item?.height) return undefined
+        const [baseW, baseH] = croppedDimensions(buildData, key)
+        const cellW = pixelWidth(w, buildData.columnWidth, buildData.grid.margin)
+        const cellH = pixelHeight(h, buildData.grid)
+        return computeAutoCrop(baseW / baseH, cellW / cellH)
+    }
+
+    // An item with an auto slot is sticky "keep me fitted to my cell": every
+    // action that computes new cell sizes recomputes those items' auto crops
+    // for their NEW cells — always from the manual base, never from the
+    // previous auto value, so repeated actions can't ratchet the crop tighter.
+    // Items without an auto slot are left alone.
+    function stickyAutoCrops(
+        buildData: LayoutBuildData,
+        newLayout: ReactGridLayout.Layout[],
+    ): Record<string, CropRect | null> {
+        const overrides: Record<string, CropRect | null> = {}
+        for (const l of newLayout) {
+            if (!autoCrops[l.i]) continue
+            const next = autoCropForCell(buildData, l.i, l.w, l.h)
+            if (next !== undefined) overrides[l.i] = next
+        }
+        return overrides
     }
 
     // Repack into a 2D mosaic filling the viewport. With visibleOnly, items
@@ -125,7 +170,8 @@ export function PinBoardCtx({
             totalGridRows: total,
             fill: rest.length > 0 ? "force" : "auto",
         })
-        onLayoutChange([...packed, ...rest])
+        const newLayout = [...packed, ...rest]
+        onLayoutChange(newLayout, stickyAutoCrops(buildData, newLayout))
     }
 
     // "Split the space evenly among N rows" — explicitly row-based
@@ -139,7 +185,7 @@ export function PinBoardCtx({
             totalGridRows: foldRows(buildData),
             rowCount,
         })
-        onLayoutChange(packed)
+        onLayoutChange(packed, stickyAutoCrops(buildData, packed))
     }
 
     // Resize-only: keep the current row groupings and reading order, give
@@ -149,7 +195,8 @@ export function PinBoardCtx({
         if (!buildData) return
         const groups = groupRowsByOverlap(buildData.sortedLayout)
             .map(row => row.map(l => toPackItem(buildData, l)))
-        onLayoutChange(justifyRows({ groups, grid, columnWidth: buildData.columnWidth }))
+        const newLayout = justifyRows({ groups, grid, columnWidth: buildData.columnWidth })
+        onLayoutChange(newLayout, stickyAutoCrops(buildData, newLayout))
     }
 
     function layoutFixedRows(rows: number) {
@@ -169,7 +216,7 @@ export function PinBoardCtx({
             }
             return l
         })
-        onLayoutChange(newLayout)
+        onLayoutChange(newLayout, stickyAutoCrops(buildData, newLayout))
     }
     async function setItemSize(size: number) {
         const buildData = await ensureBuildData()
@@ -185,7 +232,31 @@ export function PinBoardCtx({
             }
             return l
         })
-        onLayoutChange(newLayout)
+        onLayoutChange(newLayout, stickyAutoCrops(buildData, newLayout))
+    }
+    // Fit every item (or only those starting above the fold) to its current
+    // cell by writing its auto-crop slot — which also sets the sticky
+    // "keep me fitted" flag. Near-fits (>= 98% of the base) get null. The
+    // geometry is untouched: the current layout plus the overrides map goes
+    // through the same atomic mechanism as the layout actions.
+    async function autoCropToCells(visibleOnly: boolean) {
+        const buildData = await ensureBuildData()
+        if (!buildData) return
+        const total = foldRows(buildData)
+        const overrides: Record<string, CropRect | null> = {}
+        for (const l of layout) {
+            if (visibleOnly && l.y >= total) continue
+            const next = autoCropForCell(buildData, l.i, l.w, l.h)
+            if (next !== undefined) overrides[l.i] = next
+        }
+        onLayoutChange(layout, overrides)
+    }
+    // Clear every auto slot, manual crops untouched. No aspect math, so no
+    // build data needed — this works even when the container is unmeasurable.
+    function clearAutoCrops() {
+        const overrides: Record<string, CropRect | null> = {}
+        for (const l of layout) overrides[l.i] = null
+        onLayoutChange(layout, overrides)
     }
     // One-time horizontal "gravity": slide every item to the left/right/center
     // of its row without resizing. Pure x repacking, so no build data needed.
@@ -283,6 +354,10 @@ export function PinBoardCtx({
                     <ContextMenuItem onClick={() => fillViewport(true)}>Fill Viewport (Visible Only)</ContextMenuItem>
                     <ContextMenuItem onClick={() => justifyCurrentRows()}>Justify Rows</ContextMenuItem>
                     <ContextMenuSeparator />
+                    <ContextMenuItem onClick={() => autoCropToCells(false)}>Auto-Crop to Cells</ContextMenuItem>
+                    <ContextMenuItem onClick={() => autoCropToCells(true)}>Auto-Crop to Cells (Visible Only)</ContextMenuItem>
+                    <ContextMenuItem onClick={() => clearAutoCrops()}>Clear Auto-Crops</ContextMenuItem>
+                    <ContextMenuSeparator />
                     <ContextMenuSub>
                         <ContextMenuSubTrigger>Items per Row</ContextMenuSubTrigger>
                         <ContextMenuSubContent className="w-48">
@@ -372,7 +447,10 @@ interface LayoutBuildData {
 }
 
 // Effective source dimensions of an item: the image size scaled by its
-// crop rect, so cropped items keep the aspect of what's actually shown
+// MANUAL crop rect (the rebase), so cropped items keep the aspect of the
+// user's chosen region. Auto crops are deliberately excluded: they are
+// derived from cell sizes, so feeding them back into the layout math would
+// make every layout action see the previous action's output as the truth.
 function croppedDimensions(buildData: LayoutBuildData, key: string): [number, number] {
     const item = buildData.metadata[key]?.item
     const crop = buildData.crops[key]
