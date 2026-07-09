@@ -344,6 +344,225 @@ export function justifyRows({
     return layout
 }
 
+// ---------------------------------------------------------------------------
+// Mosaic packing: fill a target rectangle with 2D compositions, not just rows.
+//
+// Row-based layouts are structurally incapable of filling a viewport with few
+// items: a handful of images whose aspect ratios sum to 5 on a 2:1 viewport
+// can make one short row or two overflowing ones, nothing in between. Filling
+// requires columns and nested stacks — "portrait full-height on the left, a
+// wide video over two small ones on the right".
+//
+// The search space is order-preserving binary partitions of the item
+// sequence. Aspect ratios compose: side-by-side (same height) adds them,
+// a1 + a2; stacking (same width) combines them harmonically,
+// a1*a2/(a1 + a2). Every leaf keeps its own aspect EXACTLY, so a tree whose
+// composed aspect matches the viewport aspect fills the viewport with no
+// letterboxing at all — the DP below searches for that tree, bucketing
+// achievable aspects per item interval in log space to stay polynomial.
+// Whatever mismatch remains at the root is spread evenly across all items
+// when the composition is stretched onto the target rectangle.
+
+interface MosaicEntry {
+    a: number      // composed pixel aspect of this subtree
+    k: number      // split index; -1 = leaf
+    dir: 0 | 1     // 0 = side by side, 1 = stacked
+    lb: number     // bucket key of the left/top child
+    rb: number     // bucket key of the right/bottom child
+    // Statistics of log(leaf area fraction) over the subtree's leaves,
+    // treating the subtree as unit area: count, sum, sum of squares. Their
+    // variance measures leaf-size disparity — without it the DP happily
+    // pairs a giant leaf with a strip of thumbnails, since any tree with a
+    // matching root aspect is otherwise equally good.
+    c: number
+    sl: number
+    sl2: number
+}
+
+const MOSAIC_BUCKET = 0.05
+// Above this the interval DP gets slow; callers fall back to row packing
+// (dense boards are exactly where rows work fine)
+export const MOSAIC_MAX_ITEMS = 60
+// Cap on aspect buckets kept per interval, evenly spread so both wide and
+// tall sub-compositions stay reachable
+const MOSAIC_MAX_SET = 40
+
+const mosaicKey = (a: number) => Math.round(Math.log(a) / MOSAIC_BUCKET)
+
+// All split points for short intervals; for long ones the endpoints (chain
+// layouts need them) plus points near even ratio fractions
+function candidateSplits(i: number, j: number, prefix: number[]): number[] {
+    if (j - i <= 10) {
+        return Array.from({ length: j - i - 1 }, (_, t) => i + 1 + t)
+    }
+    const ks = new Set<number>([i + 1, j - 1])
+    for (const f of [0.2, 1 / 3, 0.5, 2 / 3, 0.8]) {
+        const target = prefix[i] + (prefix[j] - prefix[i]) * f
+        let best = i + 1
+        for (let k = i + 1; k < j; k++) {
+            if (Math.abs(prefix[k] - target) < Math.abs(prefix[best] - target)) best = k
+        }
+        ks.add(best)
+    }
+    return [...ks].sort((x, y) => x - y)
+}
+
+export function packMosaic({
+    items,
+    grid,
+    columnWidth,
+    totalGridRows,
+    // "force": always span the full target rectangle (the wall against a
+    // cutting board below the fold). "auto": fill when the best composition
+    // is within ~35% of the viewport aspect, otherwise render it undistorted
+    // and leave the viewport partially empty.
+    fill,
+}: {
+    items: PackItem[],
+    grid: GridParams,
+    columnWidth: number,
+    totalGridRows: number,
+    fill: "force" | "auto",
+}): ReactGridLayout.Layout[] {
+    const n = items.length
+    if (n === 0) return []
+    if (n > MOSAIC_MAX_ITEMS) {
+        return packRows({ items, grid, columnWidth, totalGridRows, rowCount: "auto", forceFill: fill === "force" })
+    }
+    const step = rowStep(grid)
+    const total = Math.max(1, totalGridRows)
+    const widthPx = pixelWidth(grid.columns, columnWidth, grid.margin)
+    const heightPx = total * step - grid.margin
+    const targetA = widthPx / heightPx
+
+    const prefix = [0]
+    for (const it of items) prefix.push(prefix[prefix.length - 1] + ratio(it))
+
+    // sets[i][j]: aspect bucket -> best entry for items[i..j)
+    const sets: Map<number, MosaicEntry>[][] = Array.from({ length: n + 1 }, () =>
+        Array.from({ length: n + 1 }, () => new Map())
+    )
+    const variance = (e: MosaicEntry) => e.sl2 / e.c - (e.sl / e.c) ** 2
+    // Compose two subtrees; fl/fr are the children's shares of the parent
+    // area (side by side: proportional to aspect; stacked: inverse)
+    const compose = (left: MosaicEntry, right: MosaicEntry, a: number, k: number, dir: 0 | 1, lb: number, rb: number): MosaicEntry => {
+        const fl = dir === 0 ? left.a / (left.a + right.a) : right.a / (left.a + right.a)
+        const lfl = Math.log(fl)
+        const lfr = Math.log(1 - fl)
+        return {
+            a, k, dir, lb, rb,
+            c: left.c + right.c,
+            sl: left.sl + left.c * lfl + right.sl + right.c * lfr,
+            sl2: left.sl2 + 2 * lfl * left.sl + left.c * lfl * lfl
+                + right.sl2 + 2 * lfr * right.sl + right.c * lfr * lfr,
+        }
+    }
+    for (let i = 0; i < n; i++) {
+        const a = ratio(items[i])
+        sets[i][i + 1].set(mosaicKey(a), { a, k: -1, dir: 0, lb: 0, rb: 0, c: 1, sl: 0, sl2: 0 })
+    }
+    for (let len = 2; len <= n; len++) {
+        for (let i = 0; i + len <= n; i++) {
+            const j = i + len
+            const out = sets[i][j]
+            const offer = (e: MosaicEntry) => {
+                const bk = mosaicKey(e.a)
+                const cur = out.get(bk)
+                if (!cur || variance(e) < variance(cur)) out.set(bk, e)
+            }
+            for (const k of candidateSplits(i, j, prefix)) {
+                for (const [lb, left] of sets[i][k]) {
+                    for (const [rb, right] of sets[k][j]) {
+                        const side = left.a + right.a
+                        const stack = (left.a * right.a) / (left.a + right.a)
+                        offer(compose(left, right, side, k, 0, lb, rb))
+                        offer(compose(left, right, stack, k, 1, lb, rb))
+                    }
+                }
+            }
+            if (out.size > MOSAIC_MAX_SET) {
+                const keys = [...out.keys()].sort((x, y) => x - y)
+                const keep = new Set<number>()
+                for (let t = 0; t < MOSAIC_MAX_SET; t++) {
+                    keep.add(keys[Math.round((t * (keys.length - 1)) / (MOSAIC_MAX_SET - 1))])
+                }
+                for (const kk of keys) if (!keep.has(kk)) out.delete(kk)
+            }
+        }
+    }
+
+    // Root: among compositions close to the viewport aspect (within a small
+    // tolerance of the best achievable), take the most balanced one
+    let rootDist = Infinity
+    for (const [, entry] of sets[0][n]) {
+        rootDist = Math.min(rootDist, Math.abs(Math.log(entry.a / targetA)))
+    }
+    let rootKey = -1
+    let rootVar = Infinity
+    for (const [bk, entry] of sets[0][n]) {
+        const d = Math.abs(Math.log(entry.a / targetA))
+        if (d > rootDist + 0.08) continue
+        const v = variance(entry)
+        if (v < rootVar) { rootVar = v; rootKey = bk }
+    }
+    if (rootKey === -1) return []
+    const root = sets[0][n].get(rootKey)!
+
+    // Target box in grid cells: stretch onto the full rectangle when forced
+    // or close enough; otherwise keep the composition's own aspect (full
+    // width and shorter, or full height and narrower, centered)
+    const chosenDist = Math.abs(Math.log(root.a / targetA))
+    let box = { x: 0, y: 0, w: grid.columns, h: total }
+    if (fill !== "force" && chosenDist > Math.log(1.35)) {
+        if (root.a >= targetA) {
+            const hPx = widthPx / root.a
+            box.h = Math.max(1, Math.min(total, Math.round((hPx + grid.margin) / step)))
+        } else {
+            const wPx = heightPx * root.a
+            const w = Math.max(1, Math.min(grid.columns,
+                Math.round((wPx + grid.margin) / (columnWidth + grid.margin))))
+            box = { x: Math.floor((grid.columns - w) / 2), y: 0, w, h: total }
+        }
+    }
+
+    const layout: ReactGridLayout.Layout[] = []
+    const emit = (i: number, j: number, bk: number, x: number, y: number, w: number, h: number) => {
+        const entry = sets[i][j].get(bk)!
+        if (entry.k === -1) {
+            layout.push({ i: items[i].key, x, y, w, h })
+            return
+        }
+        const left = sets[i][entry.k].get(entry.lb)!
+        const right = sets[entry.k][j].get(entry.rb)!
+        // A box too thin to split in the tree's direction degrades to the
+        // other one rather than emitting zero-sized children
+        const dir = entry.dir === 0 && w < 2 ? 1 : entry.dir === 1 && h < 2 ? 0 : entry.dir
+        // Split positions are computed in pixels and then snapped to the
+        // lattice: a box spanning w cells is w*(unit) - margin pixels wide
+        // and the split consumes one margin, so apportioning cell counts
+        // directly would drift by a margin's worth per level of nesting —
+        // enough to visibly distort small leaves in deep trees.
+        if (dir === 0) {
+            const unit = columnWidth + grid.margin
+            const boxPx = w * unit - grid.margin
+            const leftPx = (boxPx - grid.margin) * (left.a / (left.a + right.a))
+            const wl = Math.min(w - 1, Math.max(1, Math.round((leftPx + grid.margin) / unit)))
+            emit(i, entry.k, entry.lb, x, y, wl, h)
+            emit(entry.k, j, entry.rb, x + wl, y, w - wl, h)
+        } else {
+            const unit = step
+            const boxPx = h * unit - grid.margin
+            // Stacked: heights inversely proportional to aspects
+            const topPx = (boxPx - grid.margin) * (right.a / (left.a + right.a))
+            const hl = Math.min(h - 1, Math.max(1, Math.round((topPx + grid.margin) / unit)))
+            emit(i, entry.k, entry.lb, x, y, w, hl)
+            emit(entry.k, j, entry.rb, x, y + hl, w, h - hl)
+        }
+    }
+    emit(0, n, rootKey, box.x, box.y, box.w, box.h)
+    return layout
+}
+
 // Group items into logical rows by y-overlap: a row is seeded by the
 // topmost remaining item and collects every item whose top edge is above
 // that item's vertical center. Same grouping the sort/shift actions use.

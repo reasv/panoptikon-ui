@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 import { useGalleryFullscreen, useGalleryPinGrid } from "@/lib/state/gallery";
 import { CropRect, TrimRange } from "@/lib/pinboardCrop";
 import { GridParams, rowStep } from "@/lib/pinboardGrid";
-import { PackItem, groupRowsByOverlap, justifyRows, packRows } from "@/lib/pinboardPack";
+import { PackItem, groupRowsByOverlap, justifyRows, packMosaic, packRows } from "@/lib/pinboardPack";
 import { useFileOpenActions } from "@/hooks/fileOpen";
 
 // Layout keys are `${recordIndex}-${sha256Prefix}` (the same image can be
@@ -101,11 +101,14 @@ export function PinBoardCtx({
         return { key: l.i, width, height }
     }
 
-    // Repack into justified rows filling the viewport exactly. With
-    // visibleOnly, items whose top edge is below the fold (the cutting
-    // board) are left untouched and settle back just under the packed
-    // block; rowCount "auto" lets the row-break DP pick the row count.
-    async function fillViewport(visibleOnly: boolean, rowCount: number | "auto" = "auto") {
+    // Repack into a 2D mosaic filling the viewport. With visibleOnly, items
+    // whose top edge is below the fold (the cutting board) are left
+    // untouched and settle back just under the packed block — and only in
+    // that case (something actually parked below) is the block forced to
+    // span the fold exactly even at the cost of distortion, because an
+    // under-filled block would let the cutting board compact up into view.
+    // When everything is visible the two actions are equivalent.
+    async function fillViewport(visibleOnly: boolean) {
         const buildData = await ensureBuildData()
         if (!buildData) return
         const total = foldRows(buildData)
@@ -113,20 +116,30 @@ export function PinBoardCtx({
             ? buildData.sortedLayout.filter(l => l.y < total)
             : buildData.sortedLayout
         if (participants.length === 0) return
-        const packed = packRows({
+        const packedKeys = new Set(participants.map(l => l.i))
+        const rest = layout.filter(l => !packedKeys.has(l.i))
+        const packed = packMosaic({
             items: participants.map(l => toPackItem(buildData, l)),
             grid,
             columnWidth: buildData.columnWidth,
             totalGridRows: total,
-            rowCount,
-            // With a cutting board below the fold, an under-filled block
-            // would let it compact up into view — the wall wins over
-            // letterboxing. The plain fill has nothing below to wall off.
-            forceFill: visibleOnly,
+            fill: rest.length > 0 ? "force" : "auto",
         })
-        const packedKeys = new Set(packed.map(l => l.i))
-        const rest = layout.filter(l => !packedKeys.has(l.i))
         onLayoutChange([...packed, ...rest])
+    }
+
+    // "Split the space evenly among N rows" — explicitly row-based
+    async function fillViewportRows(rowCount: number) {
+        const buildData = await ensureBuildData()
+        if (!buildData) return
+        const packed = packRows({
+            items: buildData.sortedLayout.map(l => toPackItem(buildData, l)),
+            grid,
+            columnWidth: buildData.columnWidth,
+            totalGridRows: foldRows(buildData),
+            rowCount,
+        })
+        onLayoutChange(packed)
     }
 
     // Resize-only: keep the current row groupings and reading order, give
@@ -140,7 +153,7 @@ export function PinBoardCtx({
     }
 
     function layoutFixedRows(rows: number) {
-        fillViewport(false, rows)
+        fillViewportRows(rows)
     }
     async function changeItemSize(increase: number) {
         const buildData = await ensureBuildData()
