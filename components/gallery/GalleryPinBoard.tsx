@@ -394,12 +394,19 @@ export function PinBoard(
                         const unitX = colWidth + grid.margin
                         const unitY = grid.rowHeight + grid.margin
                         if (!(unitX > 0) || !(unitY > 0)) return
-                        // Largest span (units) whose moving edge stays on the
-                        // image; never below the current span, so pre-existing
-                        // dead space doesn't snap the box on grab (growth is
-                        // simply capped, shrinking stays free)
+                        // Smallest span (units) whose moving edge reaches AT
+                        // LEAST the image edge (span of w cells = w*unit −
+                        // margin, hence the +margin) — ceil, so the user can
+                        // always consume the whole image; floor left up to a
+                        // cell of unreachable ghost, a different sub-cell
+                        // amount per side. The <1-cell overshoot is trimmed by
+                        // the box∩image commit, leaving only a sub-cell
+                        // letterbox on par with the lattice quantization every
+                        // block has. Never below the current span, so
+                        // pre-existing dead space doesn't snap the box on grab
+                        // (growth is simply capped, shrinking stays free)
                         const cap = (px: number, unit: number, current: number) =>
-                            Math.max(current, Math.floor((px + grid.margin) / unit))
+                            Math.max(current, Math.ceil((px + grid.margin) / unit))
                         if (handle.includes('e')) newItem.maxW = cap(image.right - box.left, unitX, newItem.w)
                         if (handle.includes('w')) newItem.maxW = cap(box.right - image.left, unitX, newItem.w)
                         if (handle.includes('s')) newItem.maxH = cap(image.bottom - box.top, unitY, newItem.h)
