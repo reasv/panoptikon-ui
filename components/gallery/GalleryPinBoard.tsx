@@ -305,6 +305,23 @@ export function PinBoard(
         if (gridEl) ro.observe(gridEl)
         return () => ro.disconnect()
     }, [records])
+    // Keep RGL's transitions off until shortly after each RGL mount (see
+    // globals.css: .rgl-mount-still): a freshly mounted grid renders
+    // percentage positions first (that's what SSR paints), then switches to
+    // px transforms on mount, and the stylesheet's 200ms transition animates
+    // that switch as every box flying in from the container origin. RGL
+    // remounts when the grid parameters change (via its key), so settling is
+    // tracked per grid key — derived, not reset in an effect, because the
+    // class must be present in the SAME commit that remounts the grid (a
+    // reset effect would run after that commit painted). The timeout
+    // (rather than rAF) also settles hidden tabs, where rAF never fires.
+    const gridKey = `grid-${grid.columns}-${grid.rowHeight}-${grid.margin}-${grid.padding}`
+    const [settledGrid, setSettledGrid] = useState<string | null>(null)
+    const rglSettled = settledGrid === gridKey
+    useEffect(() => {
+        const t = setTimeout(() => setSettledGrid(gridKey), 300)
+        return () => clearTimeout(t)
+    }, [gridKey])
     const pinItem = usePinItem()
     // Auto-layout mode: when enabled, adding/removing/duplicating a pin
     // re-runs the viewport-filling mosaic over ALL items. The board's own
@@ -344,7 +361,7 @@ export function PinBoard(
         <ScrollArea ref={scrollAreaRef} className="overflow-y-auto">
             <div
                 ref={gridAreaRef}
-                className={`relative flex-grow ${fs ? "h-[97vh]" : (
+                className={`relative flex-grow ${rglSettled ? "" : "rgl-mount-still "}${fs ? "h-[97vh]" : (
                     showPagination ?
                         (thumbnailsOpen ? "h-[calc(100vh-567px)]" : "h-[calc(100vh-213px)]")
                         :
@@ -366,7 +383,7 @@ export function PinBoard(
                     // internal cols, clamping x+w to the old column count and
                     // compacting items into the wrong places before the new
                     // cols prop is applied.
-                    key={`grid-${grid.columns}-${grid.rowHeight}-${grid.margin}-${grid.padding}`}
+                    key={gridKey}
                     className="layout"
                     layouts={rglLayouts}
                     breakpoints={{ lg: 0, }}
@@ -662,6 +679,21 @@ function PinBoardPin({
     const videoRef = React.useRef<HTMLVideoElement>(null)
     const videoState = useVideoPlayerState({ videoRef })
 
+    // Natural dimensions read off the media element itself. The item query
+    // above is the authoritative source, but on a fresh page load it races
+    // the (usually browser-cached) thumbnail: while it's in flight CropView
+    // has no dimensions and can't place a stored crop. The crop math only
+    // uses the aspect ratio, which the thumbnail preserves, so the element's
+    // own dimensions are an exact stand-in the moment it can paint.
+    const [mediaDims, setMediaDims] = useState<{ w: number; h: number } | null>(null)
+    const noteMediaDims = (w: number, h: number) => {
+        if (!w || !h) return
+        setMediaDims((prev) => prev && prev.w === w && prev.h === h ? prev : { w, h })
+    }
+    const naturalSize = data?.item?.width && data?.item?.height
+        ? { w: data.item.width, h: data.item.height }
+        : mediaDims
+
     useEffect(() => {
         if (data?.item?.type === "video/mp4" || data?.item?.type === "video/webm") {
             // Autoplay short videos
@@ -740,8 +772,8 @@ function PinBoardPin({
                                 cropMode={cropMode}
                                 boxResizing={boxResizing}
                                 imageExtentRef={imageExtentRef}
-                                naturalWidth={data?.item?.width}
-                                naturalHeight={data?.item?.height}
+                                naturalWidth={naturalSize?.w}
+                                naturalHeight={naturalSize?.h}
                                 onCropChange={onCropChange}
                                 ghostSrc={showVideo ? undefined : thumbnail}
                                 renderMedia={(style) => showVideo ?
@@ -757,6 +789,10 @@ function PinBoardPin({
                                         className="rounded"
                                         style={style}
                                         src={file}
+                                        onLoadedMetadata={(e) => noteMediaDims(
+                                            e.currentTarget.videoWidth,
+                                            e.currentTarget.videoHeight,
+                                        )}
                                     />
                                     :
                                     <img
@@ -765,6 +801,15 @@ function PinBoardPin({
                                         draggable={false}
                                         className="rounded select-none"
                                         style={style}
+                                        // The ref covers cache hits that complete
+                                        // before React attaches the load handler
+                                        ref={(el) => {
+                                            if (el?.complete) noteMediaDims(el.naturalWidth, el.naturalHeight)
+                                        }}
+                                        onLoad={(e) => noteMediaDims(
+                                            e.currentTarget.naturalWidth,
+                                            e.currentTarget.naturalHeight,
+                                        )}
                                     />
                                 }
                             />

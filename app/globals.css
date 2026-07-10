@@ -68,6 +68,17 @@
   }
 }
 
+/* react-grid-layout mount settling: at hydration, items switch from their
+   SSR percentage top/left positions to px transforms, and RGL's stylesheet
+   transitions animate that switch as a 200ms fly-in from the container
+   origin (transform goes none -> translate). The board keeps this class on
+   until just after mount so the switch paints in place; interactive
+   drag/resize/compaction animations are unaffected once it's removed. */
+.rgl-mount-still .react-grid-layout,
+.rgl-mount-still .react-grid-item {
+  transition: none !important;
+}
+
 /* Pinboard crop mode: make all 8 resize handles on the active item stand out */
 .pinboard-crop-item > .react-resizable-handle {
   opacity: 1 !important;

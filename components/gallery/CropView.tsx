@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { CropRect, FULL_CROP, MIN_CROP_FRAC, clampCrop } from '@/lib/pinboardCrop'
 
 // Crop-mode model: the box (card interior) IS the window. The image is a
@@ -185,10 +185,14 @@ export function CropView({
         setTransform(t)
     }
 
-    useEffect(() => {
+    // Layout effect + an immediate measure so the first paint already has
+    // the container size: waiting for the ResizeObserver's initial async
+    // delivery paints at least one frame of the geometry-less fallback,
+    // which for a cropped item is the full uncropped image.
+    useLayoutEffect(() => {
         const el = containerRef.current
         if (!el) return
-        const observer = new ResizeObserver(() => {
+        const measure = () => {
             const rect = el.getBoundingClientRect()
             const size = { w: rect.width, h: rect.height }
             setContainerSize(size)
@@ -242,7 +246,9 @@ export function CropView({
                 }
             }
             lastSizeRef.current = size
-        })
+        }
+        measure()
+        const observer = new ResizeObserver(measure)
         observer.observe(el)
         return () => observer.disconnect()
     }, [nw, nh])
@@ -458,6 +464,21 @@ export function CropView({
             maxWidth: 'none',
             objectFit: 'fill',
         }
+    } else if (crop) {
+        // A crop exists but the geometry to apply it isn't known yet: on
+        // the server, during hydration, and while natural dimensions load.
+        // object-view-box makes the browser contain-fit exactly the crop
+        // region without JS knowing the image's dimensions, so the SSR
+        // HTML itself paints the cropped view — no empty box and no
+        // uncropped flash before the JS geometry takes over (which
+        // produces the same centered contain fit, so the handoff is
+        // seamless). Browsers without object-view-box support ignore it
+        // and briefly show the full contain fit instead.
+        mediaStyle = {
+            ...fallbackStyle,
+            objectViewBox: `inset(${crop.y * 100}% ${(1 - crop.x - crop.w) * 100}% `
+                + `${(1 - crop.y - crop.h) * 100}% ${crop.x * 100}%)`,
+        } as React.CSSProperties
     }
 
     return (
