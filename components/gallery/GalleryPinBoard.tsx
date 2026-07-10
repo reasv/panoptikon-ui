@@ -21,7 +21,7 @@ import { $api } from '@/lib/api'
 import { MediaControls } from './PlayButton'
 import React from 'react'
 import { useVideoPlayerState } from '@/lib/videoPlayerState'
-import { CropRect, TrimRange, composeCrops, isEmptyTrim, packHField, parseHField } from '@/lib/pinboardCrop'
+import { CropRect, TrimRange, clampCrop, composeCrops, isEmptyTrim, packHField, parseHField } from '@/lib/pinboardCrop'
 import { useVideoTrim } from '@/lib/videoTrim'
 import { CropGeometry, CropView } from './CropView'
 import { VideoTimeline } from './VideoTimeline'
@@ -153,10 +153,18 @@ export function PinBoard(
     // one history entry. Raw RGL drags/resizes don't pass it, so a hand-resized
     // cell intentionally keeps its stale auto crop until the next auto-crop or
     // layout action recomputes it from the manual base.
+    // manualCropOverrides does the same for the MANUAL crop slot (and, like
+    // any manual-crop write, clears the auto slot of those keys). Crop-mode
+    // box resizes use it: the crop committed at release MUST ride the same
+    // write as the geometry, because two updateRecords calls in one event
+    // tick do not compose — nuqs resolves each functional updater against
+    // a stateRef that only advances when React runs the queued updater, so
+    // the second write rebuilds from the first one's base and clobbers it.
     const rebuildRecords = (
         prev: string[],
         currentLayout: ReactGridLayout.Layout[],
         autoCropOverrides?: Record<string, CropRect | null>,
+        manualCropOverrides?: Record<string, CropRect | null>,
     ) => {
         const byKey = new Map(
             currentLayout.filter((e) => e.i !== "__preview").map((l) => [l.i, l])
@@ -168,16 +176,20 @@ export function PinBoard(
             if (!item) continue
             byKey.delete(key)
             const { crop, autoCrop, trim } = parseHField(prev[i + 4])
-            const nextAuto = autoCropOverrides && key in autoCropOverrides
-                ? autoCropOverrides[key]
-                : autoCrop
+            const hasManual = manualCropOverrides && key in manualCropOverrides
+            const nextCrop = hasManual ? manualCropOverrides[key] : crop
+            const nextAuto = hasManual
+                ? null // manual crop is the auto crop's base; the old auto is stale
+                : autoCropOverrides && key in autoCropOverrides
+                    ? autoCropOverrides[key]
+                    : autoCrop
             next.push(
                 prev[i],
                 item.x.toString(),
                 item.y.toString(),
                 item.w.toString(),
                 // Crop/trim suffixes stored in the h field survive box moves/resizes
-                packHField(item.h, crop, nextAuto, trim),
+                packHField(item.h, nextCrop, nextAuto, trim),
             )
         }
         // Items RGL reports that have no record yet
@@ -193,26 +205,30 @@ export function PinBoard(
         return next
     }
 
+    // Manual crop waiting to be folded into the next onLayoutChange write —
+    // set by the crop-mode resize release, which fires onLayoutChange (via
+    // RGL's own resize-stop layout report) in the same tick
+    const pendingManualCropRef = useRef<Record<string, CropRect | null> | null>(null)
     const onLayoutChange = (
         currentLayout: ReactGridLayout.Layout[],
         autoCropOverrides?: Record<string, CropRect | null>,
     ) => {
+        const manualCropOverrides = pendingManualCropRef.current ?? undefined
+        pendingManualCropRef.current = null
         // RGL fires onLayoutChange on every layouts-prop change and on mount,
         // not only on user interaction. If nothing actually moved, writing an
         // equal value back would push a redundant history entry and re-trigger
         // this handler — the write must only happen on real changes. This
         // guard is also what keeps merely *viewing* a v1 board from migrating
         // it: updateRecords only converts on writes.
-        const candidate = rebuildRecords(records, currentLayout, autoCropOverrides)
+        const candidate = rebuildRecords(records, currentLayout, autoCropOverrides, manualCropOverrides)
         if (
             candidate.length === records.length &&
             candidate.every((v, i) => v === records[i])
         ) {
             return
         }
-        // Functional update so crop commits landing in the same tick aren't
-        // clobbered
-        updateRecords((prev) => rebuildRecords(prev, currentLayout, autoCropOverrides))
+        updateRecords((prev) => rebuildRecords(prev, currentLayout, autoCropOverrides, manualCropOverrides))
     }
 
     // Append an identical copy of the pin's 5-string record (sha256, x, y, w,
@@ -412,12 +428,92 @@ export function PinBoard(
                         if (handle.includes('s')) newItem.maxH = cap(image.bottom - box.top, unitY, newItem.h)
                         if (handle.includes('n')) newItem.maxH = cap(box.bottom - image.top, unitY, newItem.h)
                     }}
-                    onResizeStop={(_currentLayout, _oldItem, newItem) => {
+                    onResizeStop={(currentLayout, oldItem, newItem) => {
                         setCropResizing(false)
                         if (newItem) {
                             newItem.maxW = undefined
                             newItem.maxH = undefined
                         }
+                        // Crop-mode release does two things, both computed
+                        // from the same release-time geometry (the image's
+                        // drag-frozen viewport extent and the box rect, read
+                        // synchronously before RGL re-renders anything):
+                        //
+                        // 1. COMMIT the crop: box∩image in image fractions —
+                        //    exactly the window the user saw at mouseup. This
+                        //    must happen HERE, not in CropView's boxResizing
+                        //    effect: the editor's live view crop is fed by
+                        //    ResizeObserver deliveries that lag the drag by a
+                        //    frame or more, so on a fast drag a commit from
+                        //    that state bakes in the box from ~one frame ago
+                        //    — up to hundreds of px behind the drop point.
+                        //    Computing at mouseup is also inherently immune
+                        //    to everything that moves the box afterwards
+                        //    (lattice snap, vertical compaction, the trim
+                        //    below, and the resize transition). The commit
+                        //    rides the onLayoutChange write RGL fires right
+                        //    after this callback (pendingManualCropRef): a
+                        //    separate updateRecords here would be clobbered
+                        //    by that same-tick layout write (see
+                        //    rebuildRecords).
+                        // 2. TRIM the box: any box edge left hanging in dead
+                        //    space (typically the letterbox opposite the
+                        //    dragged edge) makes the box aspect diverge from
+                        //    the crop aspect, and the rest view's centered
+                        //    contain fit then re-letterboxes the crop on BOTH
+                        //    sides, detaching the freshly placed edge from
+                        //    the image. Overhang is floored to whole cells
+                        //    (the box never cuts into committed content; at
+                        //    most the usual sub-cell letterbox remains).
+                        //    Unlike onResizeStart, the mutation can't go on
+                        //    `newItem`: RGL has already compact()ed the
+                        //    layout it is about to commit to state and report
+                        //    through onLayoutChange, and `newItem` is the
+                        //    pre-compact clone — the trim goes on that final
+                        //    layout's item instead.
+                        //
+                        // A no-op resize (grab and release) skips both, so
+                        // merely touching a handle neither snaps the box nor
+                        // rewrites the crop.
+                        if (!newItem || newItem.i !== cropKey) return
+                        if (oldItem && oldItem.x === newItem.x && oldItem.y === newItem.y
+                            && oldItem.w === newItem.w && oldItem.h === newItem.h) return
+                        const geom = cropImageExtentRef.current?.()
+                        const areaWidth = gridAreaRef.current?.clientWidth
+                        const item = currentLayout.find((l) => l.i === newItem.i)
+                        if (!geom || !areaWidth || !item) return
+                        const { image, box } = geom
+                        const iw = image.right - image.left
+                        const ih = image.bottom - image.top
+                        const il = Math.max(box.left, image.left)
+                        const ir = Math.min(box.right, image.right)
+                        const it = Math.max(box.top, image.top)
+                        const ib = Math.min(box.bottom, image.bottom)
+                        if (iw > 0 && ih > 0 && ir > il && ib > it) {
+                            pendingManualCropRef.current = {
+                                [newItem.i]: clampCrop({
+                                    x: (il - image.left) / iw,
+                                    y: (it - image.top) / ih,
+                                    w: (ir - il) / iw,
+                                    h: (ib - it) / ih,
+                                }),
+                            }
+                        }
+                        const colWidth = (areaWidth - 2 * grid.padding
+                            - (grid.columns - 1) * grid.margin) / grid.columns
+                        const unitX = colWidth + grid.margin
+                        const unitY = grid.rowHeight + grid.margin
+                        if (!(unitX > 0) || !(unitY > 0)) return
+                        const cells = (px: number, unit: number) =>
+                            Math.max(0, Math.floor(px / unit))
+                        const dl = Math.min(cells(image.left - box.left, unitX), item.w - 1)
+                        item.x += dl
+                        item.w -= dl
+                        item.w -= Math.min(cells(box.right - image.right, unitX), item.w - 1)
+                        const dt = Math.min(cells(image.top - box.top, unitY), item.h - 1)
+                        item.y += dt
+                        item.h -= dt
+                        item.h -= Math.min(cells(box.bottom - image.bottom, unitY), item.h - 1)
                     }}
                     onDrop={(layout, layoutItem, e) => {
                         const event = e as unknown as React.DragEvent<HTMLDivElement>

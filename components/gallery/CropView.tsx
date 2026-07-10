@@ -169,7 +169,6 @@ export function CropView({
     const onCropChangeRef = useRef(onCropChange)
     onCropChangeRef.current = onCropChange
     const lastCommittedRef = useRef<CropRect | null>(null)
-    const liveCropRef = useRef<CropRect | null>(null)
     // Image position in viewport coordinates, frozen while the box resizes
     const anchorRef = useRef<{ left: number; top: number; scale: number } | null>(null)
     const lastSizeRef = useRef<{ w: number; h: number } | null>(null)
@@ -217,13 +216,26 @@ export function CropView({
                         y: anchor.top - rect.top,
                     }
                     applyTransform(anchored)
-                    liveCropRef.current = transformToCrop(anchored, size.w, size.h, nw, nh)
                 } else if (lastSizeRef.current &&
                     (Math.abs(size.w - lastSizeRef.current.w) > 1 || Math.abs(size.h - lastSizeRef.current.h) > 1)) {
-                    // Box changed outside a handle drag (e.g. menu resize):
-                    // re-fit the current view to the new box
-                    const c = transformToCrop(t, lastSizeRef.current.w, lastSizeRef.current.h, nw, nh)
-                    applyTransform(initTransform(size.w, size.h, nw, nh, c))
+                    // Box changed outside a handle drag (a menu resize, or
+                    // RGL's post-release resize transition delivering one
+                    // step per frame): re-fit the LAST COMMITTED crop to the
+                    // new box. Reading the crop back from the current
+                    // transform (transformToCrop) here would iterate the
+                    // letterbox instead of preserving the view: contain-
+                    // fitting a crop whose aspect differs from the box shows
+                    // adjacent image content in the letterbox area, and
+                    // box∩image reads that content back into the crop — so
+                    // each frame of an animated resize loosens the view
+                    // toward the full image, and the next pan/wheel commit
+                    // would then store that loosened crop over the real one.
+                    // Deliberate view changes all commit (pan end, wheel
+                    // debounce, resize release via the grid layer), so the
+                    // committed crop IS the view to preserve; it reaches
+                    // this ref through the crop prop via the enter/react
+                    // effect below.
+                    applyTransform(initTransform(size.w, size.h, nw, nh, lastCommittedRef.current))
                 } else {
                     // Sub-pixel jitter: keep the previous reference size
                     return
@@ -282,7 +294,6 @@ export function CropView({
         if (!cropMode) {
             transformRef.current = null
             setTransform(null)
-            liveCropRef.current = null
             return
         }
         if (!containerSize || !nw || !nh) return
@@ -293,51 +304,22 @@ export function CropView({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [cropMode, containerSize, nw, nh, crop?.x, crop?.y, crop?.w, crop?.h])
 
-    // Finish a box-resize: commit the crop exactly as the user framed it
-    // when the handle was released. The grid keeps moving AFTER release —
-    // the dragged edge snaps to the lattice (sub-cell) and vertical
-    // compaction can translate the whole box several cells (e.g. after
-    // dragging the TOP edge down, gravity pulls the box back up) — but
-    // that motion must not change WHICH region gets committed: a commit
-    // computed after the dust settles from the viewport-frozen anchor
-    // would let the compaction translation slide the window over the
-    // image and bake in a misframed crop. With the crop committed up
-    // front, the post-release motion only affects the in-editor view:
-    // dropping the anchor puts the transform back in container
-    // coordinates, so the image rides along with a translated box, and
-    // lattice snaps re-fit the view through the ordinary
-    // outside-resize path in the resize observer.
-    const finishBoxResize = () => {
-        const anchor = anchorRef.current
-        anchorRef.current = null
-        // The crop as last rendered during the drag — what the user saw
-        const live = liveCropRef.current
-        liveCropRef.current = null
-        const el = containerRef.current
-        if (!el || !nw || !nh) {
-            if (live) commit(live)
-            return
-        }
-        const rect = el.getBoundingClientRect()
-        let crop = live
-        if (!crop) {
-            // No resize step was observed (the tab wasn't rendering, or
-            // the handle never moved): derive the crop from the
-            // release-time box. The anchor still holds the image's screen
-            // position from the start of the drag; the settle animation
-            // has only just started, so the box rect is still (close to)
-            // where it was released.
-            const t = anchor ? {
-                scale: anchor.scale,
-                x: anchor.left - rect.left,
-                y: anchor.top - rect.top,
-            } : transformRef.current
-            if (!t) return
-            crop = transformToCrop(t, rect.width, rect.height, nw, nh)
-        }
-        commit(crop)
-    }
-
+    // Box-resize lifecycle. The COMMIT for a box-resize does not happen
+    // here: the grid layer computes box∩image synchronously at mouseup
+    // (GalleryPinBoard's onResizeStop) from this component's extent
+    // getter, because everything CropView knows is a frame behind the
+    // pointer — the anchored view (and any crop derived from it) is fed
+    // by ResizeObserver deliveries, so a fast drag ends with the last
+    // ~frame of handle travel never reflected here. The grid keeps
+    // moving AFTER release too (lattice snap, vertical compaction, the
+    // dead-space trim, all animated by RGL's resize transition); none of
+    // that can touch the committed crop since it was read at mouseup.
+    // Here we only manage the drag state: capture the image's viewport
+    // anchor when the resize starts, and drop it when it ends — dropping
+    // the anchor puts the transform back in container coordinates, so
+    // the image rides along with a translated box, and the committed
+    // crop flowing back through the crop prop re-inits the view via the
+    // enter/react effect above.
     useEffect(() => {
         if (boxResizing) {
             const el = containerRef.current
@@ -348,10 +330,9 @@ export function CropView({
             if (!el || !t) return
             const rect = el.getBoundingClientRect()
             anchorRef.current = { left: rect.left + t.x, top: rect.top + t.y, scale: t.scale }
-        } else if (anchorRef.current || transformRef.current) {
-            finishBoxResize()
+        } else {
+            anchorRef.current = null
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [boxResizing])
 
     // Zoom with the scroll wheel around the cursor. Non-passive so the
