@@ -92,28 +92,34 @@ export function composeCrops(
   })
 }
 
-// Auto crops within this fraction of the full base are treated as no crop:
-// near-fits aren't worth cropping, and dropping them keeps hFields short
-export const AUTO_CROP_FULL_THRESHOLD = 0.98
+// Auto crops that would remove less letterbox than this many pixels (both
+// bars combined, at the cell's on-screen size) are treated as no crop:
+// invisible near-fits aren't worth cropping, and dropping them keeps
+// hFields short. Pixel-based rather than a fraction of the cell, because
+// letterbox visibility is absolute — 2% of a 1000px cell is a 20px bar.
+export const AUTO_CROP_MAX_LETTERBOX_PX = 4
 
 // Fit-to-cell auto crop: the centered window over the base (the
-// manual-cropped region) whose aspect matches the cell. Computed from the
-// BASE aspect only, so recomputing for the same cell is idempotent — the
-// result never feeds back into itself.
+// manual-cropped region) whose aspect matches the cell of cellW x cellH
+// pixels. Computed from the BASE aspect only, so recomputing for the same
+// cell is idempotent — the result never feeds back into itself.
 export function computeAutoCrop(
   baseAspect: number,
-  cellAspect: number
+  cellW: number,
+  cellH: number
 ): CropRect | null {
+  const cellAspect = cellW / cellH
   if (!(baseAspect > 0) || !(cellAspect > 0)) return null
   if (baseAspect > cellAspect) {
-    // Base wider than the cell: crop the sides
+    // Base wider than the cell: contain-fit letterboxes top/bottom, the
+    // crop trims the sides to match
     const f = cellAspect / baseAspect
-    if (f >= AUTO_CROP_FULL_THRESHOLD) return null
+    if ((1 - f) * cellH < AUTO_CROP_MAX_LETTERBOX_PX) return null
     return clampCrop({ x: (1 - f) / 2, y: 0, w: f, h: 1 })
   }
-  // Base taller than the cell: crop top and bottom
+  // Base taller than the cell: letterbox at the sides, crop top and bottom
   const f = baseAspect / cellAspect
-  if (f >= AUTO_CROP_FULL_THRESHOLD) return null
+  if ((1 - f) * cellW < AUTO_CROP_MAX_LETTERBOX_PX) return null
   return clampCrop({ x: 0, y: (1 - f) / 2, w: 1, h: f })
 }
 

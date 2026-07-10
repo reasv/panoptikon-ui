@@ -92,7 +92,7 @@ export function usePinboardLayoutActions({
         const [baseW, baseH] = croppedDimensions(buildData, key)
         const cellW = pixelWidth(w, buildData.columnWidth, buildData.grid.margin)
         const cellH = pixelHeight(h, buildData.grid)
-        return computeAutoCrop(baseW / baseH, cellW / cellH)
+        return computeAutoCrop(baseW / baseH, cellW, cellH)
     }
 
     // An item with an auto slot is sticky "keep me fitted to my cell": every
