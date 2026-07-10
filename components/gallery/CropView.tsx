@@ -29,8 +29,10 @@ interface Geometry {
 }
 
 // Fit the crop region into the container ("contain" semantics: the crop
-// rect is treated as the source image, letterboxing on aspect mismatch)
-function computeRestGeometry(
+// rect is treated as the source image, letterboxing on aspect mismatch).
+// Exported for the pinboard preview compositor, which must place each pin
+// exactly as rest-mode rendering does.
+export function computeRestGeometry(
     W: number,
     H: number,
     c: CropRect,

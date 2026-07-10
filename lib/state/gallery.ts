@@ -75,6 +75,17 @@ const useGalleryPinBoardLayout = () =>
       history: "push",
     })
   )
+// The saved-pinboard id the current board was loaded from (or last saved
+// to). Save updates this board; absent means Save creates a new one. Lives
+// in the URL like all board state, so refresh and back/forward keep the
+// document identity together with the layout it belongs to.
+const useGalleryPinBoardId = () =>
+  useQueryState(
+    "pbid",
+    parseAsInteger.withOptions({
+      history: "push",
+    })
+  )
 
 const gallerySearchParams = () => ({
   gi: parseAsInteger,
@@ -90,6 +101,7 @@ export {
   useGalleryThumbnail,
   getGalleryOptionsSerializer,
   useGalleryPinBoardLayout,
+  useGalleryPinBoardId,
   useGalleryFullscreen,
   useGalleryHidePinBoard,
   useGalleryPinGrid,

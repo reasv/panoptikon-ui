@@ -18,6 +18,7 @@ import { serializers } from '@/lib/state/searchQuery/serializers'
 import { VirtualGalleryHorizontalScroll } from './VirtualizedHorizontalScroll'
 import { PinButton } from './PinButton'
 import { PinBoard } from './GalleryPinBoard'
+import { PinboardMenu } from './PinboardMenu'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { FindButton } from './FindButton'
 import { blurHashToDataURL } from '@/lib/state/blurHashDataURL'
@@ -211,6 +212,7 @@ export function PinboardTabs({ itemPath }: { itemPath: string }) {
         >
             <TabsList className="flex w-full">
                 <TabsTrigger value="pins" className="shrink-0">Pinboard</TabsTrigger>
+                <PinboardMenu />
                 <TabsTrigger value="gallery" className="flex-1 min-w-0">
                     <span title={itemPath} className="w-full min-w-0 text-sm truncate cursor-pointer" style={{ direction: 'rtl', textAlign: 'left' }}>
                         {itemPath}
