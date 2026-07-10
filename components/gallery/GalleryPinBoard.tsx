@@ -1,7 +1,7 @@
 import Image from 'next/image'
 import { cn, getFileURL } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
-import { useGalleryFullscreen, useGalleryPinAutoLayout, useGalleryPinGrid } from '@/lib/state/gallery'
+import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid } from '@/lib/state/gallery'
 import { usePinBoard } from '@/lib/state/pinboard'
 import { GridParams, v1ScaleFactors } from '@/lib/pinboardGrid'
 import { PinButton } from './PinButton'
@@ -329,19 +329,25 @@ export function PinBoard(
         return () => clearTimeout(t)
     }, [rglSettling])
     const pinItem = usePinItem()
-    // Auto-layout mode: when enabled, adding/removing/duplicating a pin
-    // re-runs the viewport-filling mosaic over ALL items. The board's own
-    // layout-actions instance shares the machinery the context menu uses.
+    // Auto-layout mode: when enabled, adding/removing/duplicating a pin —
+    // or explicitly growing the board's viewport (see below) — re-runs the
+    // viewport-filling mosaic over ALL items; with the auto-crop flag also
+    // on, every item additionally gets fitted to its new cell in the same
+    // write. The board's own layout-actions instance shares the machinery
+    // the context menu uses.
     const [autoLayout] = useGalleryPinAutoLayout()
+    const [autoLayoutCrop] = useGalleryPinAutoCrop()
     const { fillViewport } = usePinboardLayoutActions({
         layout, crops, autoCrops, dbs, grid,
         pinboardRef: scrollAreaRef,
         onLayoutChange,
     })
-    // Refs so the effect below reads the CURRENT flag and action at fire
-    // time while only reacting to `records` changes (the moment pins land)
+    // Refs so the effects below read the CURRENT flags and action at fire
+    // time while only reacting to their own trigger conditions
     const autoLayoutRef = useRef(autoLayout)
     autoLayoutRef.current = autoLayout
+    const autoLayoutCropRef = useRef(autoLayoutCrop)
+    autoLayoutCropRef.current = autoLayoutCrop
     const fillViewportRef = useRef(fillViewport)
     fillViewportRef.current = fillViewport
     // Previous pin count; null until the first observation so loading a
@@ -361,8 +367,34 @@ export function PinBoard(
         if (!autoLayoutRef.current) return
         // Fire-and-forget: fillViewport is async (fetches metadata) and
         // no-ops on its own when the container can't be measured
-        void fillViewportRef.current(false)
+        void fillViewportRef.current(false, autoLayoutCropRef.current)
     }, [records])
+    // Viewport-growth trigger: explicit user actions that give the board
+    // more room — maximizing it, hiding the gallery thumbnails — re-run the
+    // layout so it fills the space. Deliberately asymmetric: shrinking back
+    // never triggers, so returning to the search UI isn't a "commitment"
+    // that repaints the board (the next pin add recomputes anyway). Keying
+    // off the state flags rather than measured size means window resizes
+    // can't trigger; and since this component is unmounted while the
+    // full-size-image tab is focused, flags flipped over there don't fire
+    // either — the baseline re-initializes on mount, so a tab switch back
+    // is navigation, not a layout request. An empty board is safe:
+    // fillViewport no-ops with no participants.
+    const prevViewportFlagsRef = useRef({ fs, thumbnailsOpen })
+    useEffect(() => {
+        const prev = prevViewportFlagsRef.current
+        prevViewportFlagsRef.current = { fs, thumbnailsOpen }
+        const grewByMaximize = fs && !prev.fs
+        // Thumbnails only affect the board height outside fullscreen (the
+        // fs branch of the height class ignores them), so toggling them
+        // while maximized changes nothing on screen and must not repaint
+        const grewByThumbnails = !fs && !prev.fs && prev.thumbnailsOpen && !thumbnailsOpen
+        if (!grewByMaximize && !grewByThumbnails) return
+        if (!autoLayoutRef.current) return
+        // Post-commit the height class has applied, so fillViewport
+        // measures the grown container
+        void fillViewportRef.current(false, autoLayoutCropRef.current)
+    }, [fs, thumbnailsOpen])
     return (
         <ScrollArea ref={scrollAreaRef} className="overflow-y-auto">
             <div

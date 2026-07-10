@@ -497,7 +497,10 @@ export function packMosaic({
     for (const [, entry] of sets[0][n]) {
         rootDist = Math.min(rootDist, Math.abs(Math.log(entry.a / targetA)))
     }
-    let rootKey = -1
+    // Bucket keys are signed (negative for aspects < 1), so "none" must be
+    // null — a -1 sentinel collides with the bucket holding aspects just
+    // under square and returns [] exactly when the viewport is squarish
+    let rootKey: number | null = null
     let rootVar = Infinity
     for (const [bk, entry] of sets[0][n]) {
         const d = Math.abs(Math.log(entry.a / targetA))
@@ -505,7 +508,7 @@ export function packMosaic({
         const v = variance(entry)
         if (v < rootVar) { rootVar = v; rootKey = bk }
     }
-    if (rootKey === -1) return []
+    if (rootKey === null) return []
     const root = sets[0][n].get(rootKey)!
 
     // Target box in grid cells: stretch onto the full rectangle when forced

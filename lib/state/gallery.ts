@@ -56,6 +56,17 @@ const useGalleryPinAutoLayout = () =>
       history: "push",
     })
   )
+// Auto-crop rides on auto-layout: the flag is stored independently (so it
+// survives auto-layout being toggled off and back on) but only takes effect
+// while auto-layout is on — every consumer must check both flags
+const useGalleryPinAutoCrop = () =>
+  useQueryState(
+    "pbc",
+    parseAsBoolean.withDefault(false).withOptions({
+      clearOnDefault: true,
+      history: "push",
+    })
+  )
 const useGalleryPinBoardLayout = () =>
   useQueryState(
     "pinboard",
@@ -83,4 +94,5 @@ export {
   useGalleryHidePinBoard,
   useGalleryPinGrid,
   useGalleryPinAutoLayout,
+  useGalleryPinAutoCrop,
 }

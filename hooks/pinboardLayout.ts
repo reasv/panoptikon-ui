@@ -113,6 +113,22 @@ export function usePinboardLayoutActions({
         return overrides
     }
 
+    // The crop-all variant of stickyAutoCrops: fit EVERY item to its new
+    // cell, seeding auto slots for items that had none. Auto-layout runs
+    // with the auto-crop flag on use this so the whole board lands cropped
+    // to its cells in the same write as the geometry.
+    function allAutoCrops(
+        buildData: LayoutBuildData,
+        newLayout: ReactGridLayout.Layout[],
+    ): Record<string, CropRect | null> {
+        const overrides: Record<string, CropRect | null> = {}
+        for (const l of newLayout) {
+            const next = autoCropForCell(buildData, l.i, l.w, l.h)
+            if (next !== undefined) overrides[l.i] = next
+        }
+        return overrides
+    }
+
     // Repack into a 2D mosaic filling the viewport. With visibleOnly, items
     // whose top edge is below the fold (the cutting board) are left
     // untouched and settle back just under the packed block — and only in
@@ -120,7 +136,7 @@ export function usePinboardLayoutActions({
     // span the fold exactly even at the cost of distortion, because an
     // under-filled block would let the cutting board compact up into view.
     // When everything is visible the two actions are equivalent.
-    async function fillViewport(visibleOnly: boolean) {
+    async function fillViewport(visibleOnly: boolean, cropToCells = false) {
         const buildData = await ensureBuildData()
         if (!buildData) return
         const total = foldRows(buildData)
@@ -137,8 +153,14 @@ export function usePinboardLayoutActions({
             totalGridRows: total,
             fill: rest.length > 0 ? "force" : "auto",
         })
+        // A packer that can't produce a composition returns [] — committing
+        // that would erase the packed items' records (rebuildRecords drops
+        // records absent from the reported layout). No layout beats data loss.
+        if (packed.length === 0) return
         const newLayout = [...packed, ...rest]
-        onLayoutChange(newLayout, stickyAutoCrops(buildData, newLayout))
+        onLayoutChange(newLayout, cropToCells
+            ? allAutoCrops(buildData, newLayout)
+            : stickyAutoCrops(buildData, newLayout))
     }
 
     // "Split the space evenly among N rows" — explicitly row-based
@@ -152,6 +174,7 @@ export function usePinboardLayoutActions({
             totalGridRows: foldRows(buildData),
             rowCount,
         })
+        if (packed.length === 0) return
         onLayoutChange(packed, stickyAutoCrops(buildData, packed))
     }
 

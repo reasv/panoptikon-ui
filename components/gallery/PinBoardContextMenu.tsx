@@ -1,5 +1,5 @@
 import { ContextMenuCheckboxItem, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger } from "../ui/context-menu";
-import { useGalleryFullscreen, useGalleryPinAutoLayout, useGalleryPinGrid } from "@/lib/state/gallery";
+import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid } from "@/lib/state/gallery";
 import { CropRect, TrimRange } from "@/lib/pinboardCrop";
 import { GridParams } from "@/lib/pinboardGrid";
 import { useFileOpenActions } from "@/hooks/fileOpen";
@@ -88,6 +88,7 @@ export function PinBoardCtx({
     const [fs, setFs] = useGalleryFullscreen()
     const [showGrid, setShowGrid] = useGalleryPinGrid()
     const [autoLayout, setAutoLayout] = useGalleryPinAutoLayout()
+    const [autoLayoutCrop, setAutoLayoutCrop] = useGalleryPinAutoCrop()
     // Width presets are fixed fractions of the board width, so the menu is
     // the same on every grid resolution; the step sizes scale with the
     // resolution (1 v1 column = `stepUnit` columns on this grid)
@@ -160,12 +161,35 @@ export function PinBoardCtx({
                 {showGrid ? "Hide Grid" : "Show Grid"}
             </ContextMenuItem>
             {/* When on, the board re-runs Fill Viewport (all items) whenever
-                a pin is added, removed or duplicated (see PinBoard) */}
+                a pin is added, removed or duplicated, or the board viewport
+                is explicitly grown (see PinBoard). Toggling it on IS a
+                layout request, so it applies immediately. */}
             <ContextMenuCheckboxItem
                 checked={autoLayout}
-                onCheckedChange={(checked) => setAutoLayout(!!checked)}
+                onCheckedChange={(checked) => {
+                    setAutoLayout(!!checked)
+                    if (checked) void fillViewport(false, autoLayoutCrop)
+                }}
             >
                 Auto-Layout
+            </ContextMenuCheckboxItem>
+            {/* Rides on auto-layout: each auto relayout also fits every item
+                to its cell (same write). The stored flag survives auto-layout
+                toggling off — it just greys out — but never acts alone: both
+                the disabled state here and the flag checks in PinBoard's
+                effects require auto-layout on. Toggling it on applies
+                crops-only immediately (the geometry is already current);
+                toggling it off stops future seeding without clearing
+                anything — that stays the job of Clear Auto-Crops. */}
+            <ContextMenuCheckboxItem
+                checked={autoLayoutCrop}
+                disabled={!autoLayout}
+                onCheckedChange={(checked) => {
+                    setAutoLayoutCrop(!!checked)
+                    if (checked) void autoCropToCells(false)
+                }}
+            >
+                Auto-Crop to Cells
             </ContextMenuCheckboxItem>
             {isV1 && <ContextMenuItem onClick={onUpgradeGrid}>
                 Upgrade Board Grid
