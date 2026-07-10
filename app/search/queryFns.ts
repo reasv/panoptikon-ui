@@ -10,7 +10,7 @@ export interface SearchQueryArgs {
   params: {
     query: queryParams
   }
-  body: components["schemas"]["PQLQuery"]
+  body: components["schemas"]["PqlQuery"]
 }
 
 export async function fetchSearch(args: SearchQueryArgs) {

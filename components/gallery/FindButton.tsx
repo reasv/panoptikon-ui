@@ -32,7 +32,7 @@ function getQuery(
     order: OrderArgsType["order"],
     count: boolean,
     check_path: boolean
-): components["schemas"]["PQLQuery"] {
+): components["schemas"]["PqlQuery"] {
     return {
         page,
         page_size,
@@ -141,7 +141,9 @@ export function FindButton({
                     query: {
                         ...dbs,
                         id_type,
-                        id,
+                        // The spec types id as string; numeric IDs serialize
+                        // identically in the query string.
+                        id: String(id),
                     }
                 }
             })

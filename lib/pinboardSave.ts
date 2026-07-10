@@ -27,18 +27,6 @@ import { clearStash } from "@/lib/pinboardStash"
 
 type Dbs = { index_db: string | null; user_data_db: string | null }
 
-// The grafted Rust-gateway types declare db params as optional strings,
-// while useSelectedDBs yields nulls (matching the Python-era types).
-export function dbQuery(dbs: Dbs): {
-  index_db?: string
-  user_data_db?: string
-} {
-  return {
-    index_db: dbs.index_db ?? undefined,
-    user_data_db: dbs.user_data_db ?? undefined,
-  }
-}
-
 function distinctPrefixes(savedLayout: string[]): string[] {
   const { records } = parseBoard(savedLayout)
   const prefixes = new Set<string>()
@@ -121,7 +109,7 @@ export function usePinboardActions() {
 
   const createBoard = async (body: Awaited<ReturnType<typeof buildSaveBody>>) => {
     const { data, error } = await fetchClient.POST("/api/pinboards", {
-      params: { query: { ...dbQuery(dbs) } },
+      params: { query: { ...dbs } },
       body: { name: null, ...body },
     })
     if (error || !data) throw new Error("create failed")
@@ -142,7 +130,7 @@ export function usePinboardActions() {
           {
             params: {
               path: { pinboard_id: pbid },
-              query: { ...dbQuery(dbs) },
+              query: { ...dbs },
             },
             body,
           }
@@ -185,7 +173,7 @@ export function usePinboardActions() {
     try {
       const { data: board } = await fetchClient.GET(
         "/api/pinboards/{pinboard_id}",
-        { params: { path: { pinboard_id: pbid }, query: { ...dbQuery(dbs) } } }
+        { params: { path: { pinboard_id: pbid }, query: { ...dbs } } }
       )
       const relabelHead = board?.head
         ? layoutsEqual(board.head.layout, savedLayout)
@@ -193,7 +181,7 @@ export function usePinboardActions() {
       const { error } = await fetchClient.PATCH(
         "/api/pinboards/{pinboard_id}",
         {
-          params: { path: { pinboard_id: pbid }, query: { ...dbQuery(dbs) } },
+          params: { path: { pinboard_id: pbid }, query: { ...dbs } },
           body: { name, relabel_head: relabelHead },
         }
       )

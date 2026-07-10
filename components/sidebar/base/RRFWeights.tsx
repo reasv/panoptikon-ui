@@ -9,8 +9,8 @@ export function RRFParams({
     storageKey
 }: {
     storageKey: string,
-    rrf: components["schemas"]["RRF"]
-    setRrf: SetFn<components["schemas"]["RRF"]>
+    rrf: components["schemas"]["Rrf"]
+    setRrf: SetFn<components["schemas"]["Rrf"]>
 }) {
     return (
         <FilterContainer

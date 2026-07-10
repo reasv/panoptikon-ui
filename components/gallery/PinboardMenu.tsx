@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { dbQuery, usePinboardActions } from "@/lib/pinboardSave"
+import { usePinboardActions } from "@/lib/pinboardSave"
 import { useSelectedDBs } from "@/lib/state/database"
 import { $api } from "@/lib/api"
 import { PinboardLibraryDialog } from "./PinboardLibrary"
@@ -44,7 +44,7 @@ export function PinboardMenu() {
         {
             params: {
                 path: { pinboard_id: pbid ?? -1 },
-                query: { ...dbQuery(dbs) },
+                query: { ...dbs },
             },
         },
         { enabled: pbid != null }

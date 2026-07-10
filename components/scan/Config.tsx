@@ -17,7 +17,7 @@ import { scheduleColumns } from "../table/columns/scheduled"
 
 export function Config() {
     const [dbs] = useSelectedDBs()
-    const { data, error, isError, refetch, isFetching } = $api.useQuery(
+    const { data: configData, error, isError, refetch, isFetching } = $api.useQuery(
         "get",
         "/api/jobs/config",
         {
@@ -29,6 +29,10 @@ export function Config() {
             placeholderData: keepPreviousData,
         },
     )
+    // The GET response always serializes every field; the schema leaves them
+    // optional only because the same SystemConfig shape is the PUT input,
+    // where omitted fields fall back to server defaults.
+    const data = configData as Required<components["schemas"]["SystemConfig"]> | undefined
     const queryClient = useQueryClient()
     const { toast } = useToast()
     const changeSettings = $api.useMutation("put", "/api/jobs/config", {

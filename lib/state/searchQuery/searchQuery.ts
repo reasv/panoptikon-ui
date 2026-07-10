@@ -12,7 +12,7 @@ export interface OrderMetadata {
 }
 export function queryFromState(
   state: KeymapComponents
-): [components["schemas"]["PQLQuery"], OrderMetadata] {
+): [components["schemas"]["PqlQuery"], OrderMetadata] {
   const queryFilters: components["schemas"]["AndOperator"] = {
     and_: [],
   }
@@ -390,7 +390,7 @@ export function queryFromState(
     }
     available_filter_orders = ["search_item_similarity"]
   }
-  const query: components["schemas"]["PQLQuery"] = {
+  const query: components["schemas"]["PqlQuery"] = {
     query: queryFilters,
     order_by: [
       {
@@ -482,7 +482,7 @@ function sourceFilters(source: components["schemas"]["SourceArgs"]) {
 }
 
 export function sbSimilarityQueryFromState(state: SimilaritySideBarComponents) {
-  const query: components["schemas"]["PQLQuery"] = {
+  const query: components["schemas"]["PqlQuery"] = {
     query: null,
     page: 1,
     page_size: 10,
@@ -510,7 +510,7 @@ export function sbSimilarityQueryFromState(state: SimilaritySideBarComponents) {
   const clip: (
     target: string,
     modelFallback: string
-  ) => components["schemas"]["PQLQuery"] = (
+  ) => components["schemas"]["PqlQuery"] = (
     target: string,
     modelFallback: string
   ) => ({
@@ -544,7 +544,7 @@ export function sbSimilarityQueryFromState(state: SimilaritySideBarComponents) {
   const text: (
     target: string,
     modelFallback: string
-  ) => components["schemas"]["PQLQuery"] = (
+  ) => components["schemas"]["PqlQuery"] = (
     target: string,
     modelFallback: string
   ) => ({

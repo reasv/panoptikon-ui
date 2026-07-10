@@ -9,8 +9,8 @@ export function SelectButton({
     files,
 }: {
     sha256: string,
-    item?: components["schemas"]["ItemRecord"],
-    files?: components["schemas"]["FileRecord"][]
+    item?: components["schemas"]["ItemRecordResponse"],
+    files?: components["schemas"]["FileRecordResponse"][]
 }) {
     const [selected, setSelected] = useItemSelection((state) => [state.getSelected(), state.setItem])
     // Match on the prefix of the sha256 hash

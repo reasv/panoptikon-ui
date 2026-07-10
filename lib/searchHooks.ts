@@ -29,7 +29,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const throttleMs = clientConfig?.searchThrottleMs ?? 500
   const searchQuery = isClient
     ? searchQueryState
-    : (initialQuery.body as Required<components["schemas"]["PQLQuery"]>)
+    : (initialQuery.body as Required<components["schemas"]["PqlQuery"]>)
   const dbs = isClient ? useSelectedDBs()[0] : initialQuery.params.query
   const [page, setPage] = useSearchPage()
   const searchEnabled = useQueryOptions()[0].s_enable
@@ -51,7 +51,9 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   }
   const throttledRequest = useThrottledValue(liveRequest, throttleMs)
   const request = throttleMs > 0 ? throttledRequest : liveRequest
-  const pageSize = request.body.page_size
+  // page_size is optional in the spec (server default 10); the query
+  // builders always set it, but the type can't promise that.
+  const pageSize = request.body.page_size ?? 10
   const { data, error, isError, refetch, isFetching } = $api.useQuery(
     "post",
     "/api/search/pql",

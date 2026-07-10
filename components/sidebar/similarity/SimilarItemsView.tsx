@@ -44,7 +44,7 @@ export function SimilarItemsView({
     sha256: string
     filterOptions: SimilaritySideBarComponents["CLIPSimilarity"] | SimilaritySideBarComponents["TextSimilarity"]
     srcFilterOptions: SimilaritySideBarComponents["CLIPTextSource"] | SimilaritySideBarComponents["TextSource"]
-    query: components["schemas"]["PQLQuery"]
+    query: components["schemas"]["PqlQuery"]
     distance_function: "COSINE" | "L2"
 
 }) {
@@ -158,7 +158,7 @@ export function SimilarItemsView({
         const baseLink = getSimilarityModeLink(
             filter,
             srcFilter,
-            query.page_size,
+            query.page_size ?? 10,
             model,
             sha256,
             distance_function,

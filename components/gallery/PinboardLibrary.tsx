@@ -13,7 +13,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input"
 import { $api, fetchClient } from "@/lib/api"
 import { useSelectedDBs } from "@/lib/state/database"
-import { dbQuery, usePinboardActions } from "@/lib/pinboardSave"
+import { usePinboardActions } from "@/lib/pinboardSave"
 import { pinboardPreviewURL } from "@/lib/pinboardPreview"
 import { useToast } from "@/components/ui/use-toast"
 import { useQueryClient } from "@tanstack/react-query"
@@ -44,7 +44,7 @@ export function PinboardLibraryDialog({
         "/api/pinboards",
         {
             params: {
-                query: { ...dbQuery(dbs), q: nameQuery.trim() === "" ? undefined : nameQuery },
+                query: { ...dbs, q: nameQuery.trim() === "" ? undefined : nameQuery },
             },
         },
         { enabled: open }
@@ -57,7 +57,7 @@ export function PinboardLibraryDialog({
     const openBoard = async (board: PinboardSummary) => {
         const { data: detail } = await fetchClient.GET(
             "/api/pinboards/{pinboard_id}",
-            { params: { path: { pinboard_id: board.id }, query: { ...dbQuery(dbs) } } }
+            { params: { path: { pinboard_id: board.id }, query: { ...dbs } } }
         )
         if (!detail?.head) {
             toast({ title: "Error", description: "Board has no saved version" })
@@ -73,7 +73,7 @@ export function PinboardLibraryDialog({
             return
         }
         await fetchClient.DELETE("/api/pinboards/{pinboard_id}", {
-            params: { path: { pinboard_id: board.id }, query: { ...dbQuery(dbs) } },
+            params: { path: { pinboard_id: board.id }, query: { ...dbs } },
         })
         invalidate()
         toast({ title: "Deleted pinboard", duration: 2000 })
@@ -83,7 +83,7 @@ export function PinboardLibraryDialog({
         const name = window.prompt("Pinboard name", board.name ?? "")
         if (name === null) return
         await fetchClient.PATCH("/api/pinboards/{pinboard_id}", {
-            params: { path: { pinboard_id: board.id }, query: { ...dbQuery(dbs) } },
+            params: { path: { pinboard_id: board.id }, query: { ...dbs } },
             body: { name: name.trim() === "" ? null : name.trim(), relabel_head: false },
         })
         invalidate()

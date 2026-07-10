@@ -3,7 +3,7 @@ import * as def from "nuqs/server"
 
 export type OrderArgsType = {
   order_by:
-    | components["schemas"]["OrderArgs"]["order_by"]
+    | NonNullable<components["schemas"]["OrderArgs"]["order_by"]>
     | "bookmark_time"
     | "match_at"
     | "match_text"
@@ -17,17 +17,18 @@ export type OrderArgsType = {
   page: number
   page_size: number
 }
-export type orderByType = Exclude<
-  components["schemas"]["OrderArgs"]["order_by"],
-  null
+export type orderByType = NonNullable<
+  components["schemas"]["OrderArgs"]["order_by"]
 >
 export type orderType = Exclude<OrderArgsType["order"], null | undefined>
 
-export type distanceAggregation =
+export type distanceAggregation = NonNullable<
   components["schemas"]["SemanticTextArgs"]["distance_aggregation"]
+>
 
-export type distanceFunction =
+export type distanceFunction = NonNullable<
   components["schemas"]["SimilarityArgs"]["distance_function"]
+>
 const applyOptionsToMap = <T extends Record<string, any>>(
   map: T
 ): {
@@ -329,24 +330,32 @@ export type KeymapComponents = {
   SemanticTextSource: NonNullableProps<
     Required<components["schemas"]["SourceArgs"]>
   >
+  // force_distance_function (gateway addition) is not exposed as query-param
+  // state; omitting it from the request lets the backend default apply.
   SemanticImageSearch: Required<
-    Omit<components["schemas"]["SemanticImageArgs"], "embed" | "src_text">
+    Omit<
+      components["schemas"]["SemanticImageArgs"],
+      "embed" | "src_text" | "force_distance_function"
+    >
   >
   ItemSimilarity: Required<
-    Omit<components["schemas"]["SimilarityArgs"], "embed" | "src_text">
+    Omit<
+      components["schemas"]["SimilarityArgs"],
+      "embed" | "src_text" | "force_distance_function"
+    >
   >
   ItemSimilarityTextSource: Required<components["schemas"]["SourceArgs"]>
   SearchQueryOptions: Required<Omit<SearchQueryOptions, "src_text">>
   ATMatchText: ATMatchText
-  ATTextRRF: Required<components["schemas"]["RRF"]>
+  ATTextRRF: Required<components["schemas"]["Rrf"]>
   ATMatchPath: ATMatchPath
-  ATPathRRF: Required<components["schemas"]["RRF"]>
+  ATPathRRF: Required<components["schemas"]["Rrf"]>
   ATSemanticText: ATSemanticText
-  ATSemanticTextRRF: Required<components["schemas"]["RRF"]>
+  ATSemanticTextRRF: Required<components["schemas"]["Rrf"]>
   ATSemanticImage: ATSemanticImage
-  ATSemanticImageRRF: Required<components["schemas"]["RRF"]>
+  ATSemanticImageRRF: Required<components["schemas"]["Rrf"]>
   ATSemanticAudio: ATSemanticAudio
-  ATSemanticAudioRRF: Required<components["schemas"]["RRF"]>
+  ATSemanticAudioRRF: Required<components["schemas"]["Rrf"]>
   ATSourceText: ATSourceText
 }
 
@@ -363,7 +372,7 @@ export type SimilaritySideBarComponents = {
   CLIPSimilarity: Required<
     Omit<
       components["schemas"]["SimilarityArgs"],
-      "target" | "distance_function" | "src_text"
+      "target" | "distance_function" | "src_text" | "force_distance_function"
     >
   >
   CLIPTextSource: Required<components["schemas"]["SourceArgs"]>
@@ -377,6 +386,7 @@ export type SimilaritySideBarComponents = {
       | "clip_xmodal"
       | "xmodal_t2t"
       | "xmodal_i2i"
+      | "force_distance_function"
     >
   >
   TextSource: Required<components["schemas"]["SourceArgs"]>

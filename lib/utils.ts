@@ -1,6 +1,6 @@
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { components, operations } from "./panoptikon"
+import { components, paths } from "./panoptikon"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -8,7 +8,9 @@ export function cn(...inputs: ClassValue[]) {
 export function getFileURL(
   dbs: { index_db: string | null; user_data_db: string | null },
   file_type: "file" | "thumbnail",
-  id_type: operations["get_item_meta_api_items_item_get"]["parameters"]["query"]["id_type"],
+  // Path-derived (not operations[...]): path strings are stable across
+  // spec generators, operationIds are not.
+  id_type: paths["/api/items/item"]["get"]["parameters"]["query"]["id_type"],
   id: string | number
 ) {
   const index_db_param = dbs.index_db ? `&index_db=${dbs.index_db}` : ""

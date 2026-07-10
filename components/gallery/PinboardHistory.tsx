@@ -9,7 +9,7 @@ import {
     useGalleryPinBoardId,
     useGalleryPinBoardLayout,
 } from "@/lib/state/gallery"
-import { dbQuery, layoutsEqual } from "@/lib/pinboardSave"
+import { layoutsEqual } from "@/lib/pinboardSave"
 import { pinboardPreviewURL } from "@/lib/pinboardPreview"
 import { clearStash, readStash, writeStash } from "@/lib/pinboardStash"
 import { useToast } from "@/components/ui/use-toast"
@@ -50,7 +50,7 @@ export function PinboardHistoryPanel({
         {
             params: {
                 path: { pinboard_id: pbid ?? -1 },
-                query: { ...dbQuery(dbs) },
+                query: { ...dbs },
             },
         },
         { enabled: open && pbid != null }
@@ -90,7 +90,7 @@ export function PinboardHistoryPanel({
             {
                 params: {
                     path: { pinboard_id: pbid, version_id: version.id },
-                    query: { ...dbQuery(dbs) },
+                    query: { ...dbs },
                 },
             }
         )

@@ -313,8 +313,8 @@ function pixelHeight(h: number, grid: GridParams): number {
 interface LayoutBuildData {
     metadata: {
         [x: string]: {
-            item: components["schemas"]["ItemRecord"];
-            files: components["schemas"]["FileRecord"][];
+            item: components["schemas"]["ItemRecordResponse"];
+            files: components["schemas"]["FileRecordResponse"][];
         } | undefined
     },
     crops: Record<string, CropRect | null>,

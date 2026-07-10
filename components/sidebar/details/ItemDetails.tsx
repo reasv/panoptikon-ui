@@ -189,7 +189,7 @@ function ExtractedTextList(
     )
     const text = (
         data?.text
-            .filter((t) => selectedLanguages.length == 0 || selectedLanguages.includes(t.language))
+            .filter((t) => selectedLanguages.length == 0 || (t.language !== null && selectedLanguages.includes(t.language)))
             .filter((t) => minConfidence > 0 ? (t.confidence || 0) >= minConfidence : true)
             .filter((t) => minLanguageConfidence > 0 ? (t.language_confidence || 0) >= minLanguageConfidence : true)
     ) || []
@@ -206,7 +206,7 @@ function ExtractedTextCard(
     {
         text,
     }: {
-        text: components["schemas"]["ExtractedText"]
+        text: components["schemas"]["ExtractedTextRecord"]
     }
 ) {
     const truncatedCharNumber = text.length - text.text.length
@@ -566,7 +566,7 @@ function MetadataCard(
     {
         text,
     }: {
-        text: components["schemas"]["ExtractedText"]
+        text: components["schemas"]["ExtractedTextRecord"]
     }
 ) {
     const metadata: [string, string, string | null][] = useMemo(() => {
