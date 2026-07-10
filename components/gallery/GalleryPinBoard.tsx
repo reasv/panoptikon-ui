@@ -305,23 +305,29 @@ export function PinBoard(
         if (gridEl) ro.observe(gridEl)
         return () => ro.disconnect()
     }, [records])
-    // Keep RGL's transitions off until shortly after each RGL mount (see
-    // globals.css: .rgl-mount-still): a freshly mounted grid renders
-    // percentage positions first (that's what SSR paints), then switches to
-    // px transforms on mount, and the stylesheet's 200ms transition animates
-    // that switch as every box flying in from the container origin. RGL
-    // remounts when the grid parameters change (via its key), so settling is
-    // tracked per grid key — derived, not reset in an effect, because the
-    // class must be present in the SAME commit that remounts the grid (a
-    // reset effect would run after that commit painted). The timeout
-    // (rather than rAF) also settles hidden tabs, where rAF never fires.
     const gridKey = `grid-${grid.columns}-${grid.rowHeight}-${grid.margin}-${grid.padding}`
-    const [settledGrid, setSettledGrid] = useState<string | null>(null)
-    const rglSettled = settledGrid === gridKey
+    // Keep RGL's transitions off while HYDRATING only (see globals.css:
+    // .rgl-mount-still): the SSR HTML paints items at percentage positions,
+    // and RGL's switch to px transforms at mount would otherwise animate
+    // every box flying in from the container origin — over positions the
+    // user has been looking at since first paint. Scoped to hydration and
+    // not to client-side mounts (opening the panel), where nothing has been
+    // painted yet and the mount transition instead usefully smooths the
+    // panel's settling; suppressing it there just trades the slide for a
+    // flash of intermediate positions. Hydration is detected by a grid
+    // already existing in the DOM at first render: only SSR puts one there
+    // before this component renders (the pinboard's alternate tree is the
+    // large-image view, which has no grid). The timeout (rather than rAF)
+    // also settles hidden tabs, where rAF never fires.
+    const [rglSettling, setRglSettling] = useState(
+        () => typeof document === "undefined"
+            || !!document.querySelector(".react-grid-layout")
+    )
     useEffect(() => {
-        const t = setTimeout(() => setSettledGrid(gridKey), 300)
+        if (!rglSettling) return
+        const t = setTimeout(() => setRglSettling(false), 300)
         return () => clearTimeout(t)
-    }, [gridKey])
+    }, [rglSettling])
     const pinItem = usePinItem()
     // Auto-layout mode: when enabled, adding/removing/duplicating a pin
     // re-runs the viewport-filling mosaic over ALL items. The board's own
@@ -361,7 +367,7 @@ export function PinBoard(
         <ScrollArea ref={scrollAreaRef} className="overflow-y-auto">
             <div
                 ref={gridAreaRef}
-                className={`relative flex-grow ${rglSettled ? "" : "rgl-mount-still "}${fs ? "h-[97vh]" : (
+                className={`relative flex-grow ${rglSettling ? "rgl-mount-still " : ""}${fs ? "h-[97vh]" : (
                     showPagination ?
                         (thumbnailsOpen ? "h-[calc(100vh-567px)]" : "h-[calc(100vh-213px)]")
                         :

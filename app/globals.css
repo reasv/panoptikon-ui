@@ -68,12 +68,13 @@
   }
 }
 
-/* react-grid-layout mount settling: at hydration, items switch from their
-   SSR percentage top/left positions to px transforms, and RGL's stylesheet
-   transitions animate that switch as a 200ms fly-in from the container
-   origin (transform goes none -> translate). The board keeps this class on
-   until just after mount so the switch paints in place; interactive
-   drag/resize/compaction animations are unaffected once it's removed. */
+/* react-grid-layout hydration settling: at hydration, items switch from
+   their SSR percentage top/left positions to px transforms, and RGL's
+   stylesheet transitions animate that switch as a 200ms fly-in from the
+   container origin (transform goes none -> translate) over content that
+   was already painted in place. The board wears this class through
+   hydration only — client-side mounts keep RGL's transitions, which
+   usefully smooth the panel settling into place there. */
 .rgl-mount-still .react-grid-layout,
 .rgl-mount-still .react-grid-item {
   transition: none !important;
