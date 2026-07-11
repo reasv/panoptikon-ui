@@ -1,5 +1,5 @@
 "use server"
-import { serverFetchClient } from "@/lib/api"
+import { serverFetchClient } from "@/lib/serverApi"
 import { components } from "@/lib/panoptikon"
 
 interface queryParams {
