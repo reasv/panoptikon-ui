@@ -2,8 +2,20 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import Image from "next/image";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getServerClientConfig } from "@/lib/serverApi";
 
-export default function Home() {
+export default async function Home() {
+  // `home_redirect` is a [policies.client] convention key (gateway config,
+  // see the gateway README): when the matched policy sets it to a path
+  // (e.g. "/search"), the landing page immediately redirects there instead
+  // of showing the getting-started guide. Absent (or config unreachable) =
+  // no redirect. Fetched server-side with the policy token echoed, so it is
+  // the original requester's policy that decides.
+  const clientConfig = await getServerClientConfig()
+  if (clientConfig?.homeRedirect) {
+    redirect(clientConfig.homeRedirect)
+  }
   return (
     <ScrollArea className="overflow-y-auto">
       <div className="max-h-[100vh]">
