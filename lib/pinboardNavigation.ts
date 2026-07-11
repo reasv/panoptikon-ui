@@ -24,3 +24,24 @@ export function consumePinboardNavigation(): boolean {
   navigated = false
   return wasNavigation
 }
+
+// The inverse mark: a pin was added/removed by a button that lives OUTSIDE
+// the board (the search grid, or gallery thumbnails while the image tab is
+// focused). The board's count trigger is unmounted at that moment, and on
+// the next mount it only records a baseline — so without this mark those
+// edits would never be auto-laid out.
+
+let pendingEdit = false
+
+// Call when a pin edit is written somewhere the board may not be mounted.
+export function markPinboardPendingEdit() {
+  pendingEdit = true
+}
+
+// Consumed by the auto-layout trigger on every records observation: true on
+// the trigger's first run means the board mounted onto an un-laid-out edit.
+export function consumePinboardPendingEdit(): boolean {
+  const wasPending = pendingEdit
+  pendingEdit = false
+  return wasPending
+}

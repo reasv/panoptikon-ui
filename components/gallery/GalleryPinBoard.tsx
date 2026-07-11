@@ -2,7 +2,7 @@ import Image from 'next/image'
 import { cn, getFileURL } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid } from '@/lib/state/gallery'
-import { consumePinboardNavigation } from '@/lib/pinboardNavigation'
+import { consumePinboardNavigation, consumePinboardPendingEdit } from '@/lib/pinboardNavigation'
 import { usePinBoard } from '@/lib/state/pinboard'
 import { GridParams, v1ScaleFactors } from '@/lib/pinboardGrid'
 import { PinButton } from './PinButton'
@@ -360,10 +360,22 @@ export function PinBoard(
         // Keep the baseline current even while the mode is off, so toggling
         // it on later can't misfire from a stale count
         prevPinCountRef.current = count
-        // Consume the mark unconditionally so it can't linger past the write
-        // it was set for and misfire on a later real pin add/remove
+        // Consume the marks unconditionally so they can't linger past the
+        // write they were set for and misfire on a later real pin add/remove
         const wasNavigation = consumePinboardNavigation()
-        if (prev === null || prev === count) return
+        const pendingEdit = consumePinboardPendingEdit()
+        if (prev === null) {
+            // First observation is normally just the baseline — but a
+            // pending-edit mark means pins were added/removed from outside
+            // the gallery (search-grid pin buttons) while this trigger was
+            // unmounted, and that edit still needs laying out. Navigation
+            // takes precedence: a restored version replaced those records.
+            if (pendingEdit && !wasNavigation && count > 0 && autoLayoutRef.current) {
+                void fillViewportRef.current(false, autoLayoutCropRef.current)
+            }
+            return
+        }
+        if (prev === count) return
         // Loading a saved version/board with a different item count is
         // navigation, not a pin edit: relayouting it here would rewrite the
         // just-restored layout (and bounce the history panel's selection

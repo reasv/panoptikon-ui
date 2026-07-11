@@ -4,6 +4,7 @@ import React, { useMemo } from 'react'
 import { cn } from "@/lib/utils"
 import { usePinBoard } from "@/lib/state/pinboard"
 import { v1ScaleFactors } from "@/lib/pinboardGrid"
+import { markPinboardPendingEdit } from "@/lib/pinboardNavigation"
 
 import { Pin, PinOff } from 'lucide-react'
 
@@ -28,6 +29,12 @@ export function PinButton({
         [records, sha256]
     )
     const handlePinClick = () => {
+        // This button also renders where the board is unmounted (search
+        // grid, gallery image tab): leave a mark so the auto-layout trigger
+        // picks the edit up on the board's next mount. A mounted board
+        // consumes it in the same pass its count trigger fires, so it never
+        // double-layouts.
+        markPinboardPendingEdit()
         // Bound to a specific copy: splice out that exact record by its offset
         if (layoutKey !== undefined) {
             updateRecords((prev) => {

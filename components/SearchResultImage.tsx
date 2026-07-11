@@ -5,7 +5,7 @@ import { useCallback, useMemo } from "react";
 import { cn, getFileURL, getLocale } from "@/lib/utils";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { useSearchParams } from 'next/navigation';
-import { getGalleryOptionsSerializer, useGalleryIndex } from '@/lib/state/gallery';
+import { getGalleryOptionsSerializer } from '@/lib/state/gallery';
 import { PinButton } from './gallery/PinButton';
 import { blurHashToDataURL } from '@/lib/state/blurHashDataURL';
 
@@ -38,7 +38,6 @@ export function SearchResultImage({
     const thumbnailUrl = getFileURL(dbs, "thumbnail", "sha256", result.sha256)
     const dateString = getLocale(new Date(result.last_modified))
     const params = useSearchParams()
-    const galleryOpen = useGalleryIndex()[0] !== null
 
     const imageLink = useMemo(() => {
         if (!galleryLink) return fileUrl
@@ -110,7 +109,7 @@ export function SearchResultImage({
                 <OpenFile sha256={result.sha256} path={result.path} />
                 <OpenFolder sha256={result.sha256} path={result.path} />
                 <OpenDetailsButton item={result} variantButton />
-                {galleryOpen && (<PinButton sha256={result.sha256} />)}
+                <PinButton sha256={result.sha256} />
             </div>
             <FilePathComponent path={result.path} />
             <p className="text-xs text-gray-500">
