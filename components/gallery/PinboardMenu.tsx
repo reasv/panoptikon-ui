@@ -25,7 +25,10 @@ import { PinboardLibraryDialog } from "./PinboardLibrary"
 import { PinboardHistoryPanel } from "./PinboardHistory"
 
 // All board-level verbs live in this one chevron, so the tab header costs
-// ~16px regardless of viewport width. Save is one click and never asks
+// ~24px regardless of viewport width. The chevron renders as the right
+// segment of the Pinboard tab's split button: the wrapper in PinboardTabs
+// carries the active-tab background, so this button only draws its own
+// hover state and stretches to the wrapper's height. Save is one click and never asks
 // anything: with a pbid it appends a version to that board (no-op when
 // unchanged), without one it creates a board. "Save as new copy" is the
 // first-class fork — it snapshots the CURRENT state (including unsaved
@@ -67,12 +70,14 @@ export function PinboardMenu() {
                     <button
                         title="Pinboard actions"
                         aria-label="Pinboard actions"
-                        className="shrink-0 rounded-sm px-0.5 py-1.5 hover:bg-background/60"
+                        className="inline-flex shrink-0 items-center justify-center rounded-sm rounded-l-none px-1 transition-colors hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                         <ChevronDown className="h-4 w-4" />
                     </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-56">
+                {/* Left-align the menu with the whole split button: offset by the
+                    width of the Pinboard TabsTrigger sitting left of this chevron. */}
+                <DropdownMenuContent align="start" alignOffset={-80} className="w-56">
                     <DropdownMenuItem onClick={() => save(false)}>
                         Save
                         {pbid != null && (
@@ -91,7 +96,7 @@ export function PinboardMenu() {
                         </DropdownMenuItem>
                     )}
                     <DropdownMenuItem onClick={() => setLibraryOpen(true)}>
-                        Open library
+                        Library
                     </DropdownMenuItem>
                     {pbid != null && (
                         <DropdownMenuItem onClick={openRename}>

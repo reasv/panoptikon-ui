@@ -87,6 +87,18 @@ const useGalleryPinBoardId = () =>
     })
   )
 
+// A deferred board-load reference: "head" or a version id, always paired
+// with pbid. Links (library cards, history rows) carry it so boards open in
+// new tabs without the layout being known up front; usePinboardURLLoader
+// resolves it to a layout and clears it (see lib/pinboardLinks.ts).
+const useGalleryPinBoardLoad = () =>
+  useQueryState(
+    "pbl",
+    parseAsString.withOptions({
+      history: "replace",
+    })
+  )
+
 const gallerySearchParams = () => ({
   gi: parseAsInteger,
   gt: parseAsBoolean,
@@ -102,6 +114,7 @@ export {
   getGalleryOptionsSerializer,
   useGalleryPinBoardLayout,
   useGalleryPinBoardId,
+  useGalleryPinBoardLoad,
   useGalleryFullscreen,
   useGalleryHidePinBoard,
   useGalleryPinGrid,

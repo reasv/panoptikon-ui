@@ -1,14 +1,18 @@
 'use client'
 
-import React, { useMemo, useRef, useState } from "react"
-import { Pencil, Trash2 } from "lucide-react"
+import React, { useRef, useState } from "react"
+import { usePathname, useSearchParams } from "next/navigation"
+import { Expand, Pencil, Trash2, X } from "lucide-react"
 import {
     Dialog,
     DialogContent,
     DialogDescription,
+    DialogFooter,
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input"
 import { $api, fetchClient } from "@/lib/api"
@@ -16,14 +20,23 @@ import { useSelectedDBs } from "@/lib/state/database"
 import { usePinboardActions } from "@/lib/pinboardSave"
 import { pinboardPreviewURL } from "@/lib/pinboardPreview"
 import { useToast } from "@/components/ui/use-toast"
-import { useQueryClient } from "@tanstack/react-query"
-import { getLocale } from "@/lib/utils"
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query"
+import { pinboardOpenHref } from "@/lib/pinboardLinks"
+import { cn, compactDate, dateTitle, getLocale } from "@/lib/utils"
+import {
+    PreviewPopover,
+    PREVIEW_POPOVER_WIDTH,
+    useDelayedHover,
+    verticalPopoverBox,
+} from "./PinboardPreviewPopover"
 import { components } from "@/lib/panoptikon"
 
 type PinboardSummary = components["schemas"]["PinboardSummaryResponse"]
 
 const CARD_PREVIEW_WIDTH = 320
-const POPOVER_PREVIEW_WIDTH = 1024
+// All cards share one aspect ratio so the grid stays aligned regardless of
+// each board's save-time window shape; previews crop/pan inside it.
+const CARD_ASPECT = 4 / 3
 
 export function PinboardLibraryDialog({
     open,
@@ -36,8 +49,24 @@ export function PinboardLibraryDialog({
     const { loadBoard } = usePinboardActions()
     const { toast } = useToast()
     const queryClient = useQueryClient()
+    const pathname = usePathname()
+    const searchParams = useSearchParams()
     const [nameQuery, setNameQuery] = useState("")
-    const [hovered, setHovered] = useState<PinboardSummary | null>(null)
+    const searchInputRef = useRef<HTMLInputElement>(null)
+    // Hovered card + its rect, captured when the pointer enters the card's
+    // preview icon (a short delay so grazing it doesn't flash the popover).
+    // The rect goes stale if the grid scrolls under the pointer, so
+    // scrolling clears the hover.
+    const [hovered, setHovered] = useDelayedHover<{
+        board: PinboardSummary
+        anchor: DOMRect
+    }>(100)
+    // Board awaiting delete confirmation / being renamed (dialog state)
+    const [confirmDelete, setConfirmDelete] = useState<PinboardSummary | null>(null)
+    const [renameTarget, setRenameTarget] = useState<PinboardSummary | null>(null)
+    const [renameValue, setRenameValue] = useState("")
+    // Board whose full-size preview is open in the stacked preview modal
+    const [previewBoard, setPreviewBoard] = useState<PinboardSummary | null>(null)
 
     const { data } = $api.useQuery(
         "get",
@@ -47,7 +76,9 @@ export function PinboardLibraryDialog({
                 query: { ...dbs, q: nameQuery.trim() === "" ? undefined : nameQuery },
             },
         },
-        { enabled: open }
+        // keepPreviousData: while a keystroke's refetch is in flight, keep
+        // showing the previous results instead of flashing the empty state
+        { enabled: open, placeholderData: keepPreviousData }
     )
     const boards = data?.pinboards ?? []
 
@@ -68,10 +99,6 @@ export function PinboardLibraryDialog({
     }
 
     const deleteBoard = async (board: PinboardSummary) => {
-        const label = board.name || `saved ${getLocale(new Date(board.time_updated))}`
-        if (!window.confirm(`Delete pinboard "${label}" and its entire history?`)) {
-            return
-        }
         await fetchClient.DELETE("/api/pinboards/{pinboard_id}", {
             params: { path: { pinboard_id: board.id }, query: { ...dbs } },
         })
@@ -79,12 +106,18 @@ export function PinboardLibraryDialog({
         toast({ title: "Deleted pinboard", duration: 2000 })
     }
 
-    const renameBoard = async (board: PinboardSummary) => {
-        const name = window.prompt("Pinboard name", board.name ?? "")
-        if (name === null) return
+    const openRename = (board: PinboardSummary) => {
+        setRenameValue(board.name ?? "")
+        setRenameTarget(board)
+    }
+    const submitRename = async () => {
+        const board = renameTarget
+        setRenameTarget(null)
+        if (!board) return
+        const trimmed = renameValue.trim()
         await fetchClient.PATCH("/api/pinboards/{pinboard_id}", {
             params: { path: { pinboard_id: board.id }, query: { ...dbs } },
-            body: { name: name.trim() === "" ? null : name.trim(), relabel_head: false },
+            body: { name: trimmed === "" ? null : trimmed, relabel_head: false },
         })
         invalidate()
     }
@@ -95,74 +128,199 @@ export function PinboardLibraryDialog({
                 <DialogHeader>
                     <DialogTitle>Saved pinboards</DialogTitle>
                     <DialogDescription>
-                        Click a board to open it. Previews show each board's latest save.
+                        Click a board to open it — or middle-click to open it in a new
+                        tab. Hover a card&apos;s corner icon to preview its latest save.
                     </DialogDescription>
                 </DialogHeader>
-                <Input
-                    value={nameQuery}
-                    onChange={(e) => setNameQuery(e.target.value)}
-                    placeholder="Search by name"
-                    className="max-w-xs"
-                />
-                <ScrollArea className="max-h-[65vh]">
+                <div className="relative max-w-xs">
+                    <Input
+                        ref={searchInputRef}
+                        value={nameQuery}
+                        onChange={(e) => setNameQuery(e.target.value)}
+                        placeholder="Search by name"
+                        className="pr-8"
+                    />
+                    {nameQuery !== "" && (
+                        <button
+                            type="button"
+                            title="Clear search"
+                            onClick={() => {
+                                setNameQuery("")
+                                searchInputRef.current?.focus()
+                            }}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
+                    )}
+                </div>
+                {/* Fixed height: result-count changes while searching must
+                    not resize the dialog */}
+                <ScrollArea
+                    className="h-[65vh]"
+                    onScrollCapture={() => setHovered(null)}
+                >
                     {boards.length === 0 ? (
                         <p className="text-sm text-muted-foreground p-8 text-center">
                             {nameQuery ? "No pinboards match" : "No saved pinboards yet — Save a board from the Pinboard tab menu"}
                         </p>
                     ) : (
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 p-1">
+                        <div className="grid grid-cols-2 md:grid-cols-3 items-start gap-3 p-1">
                             {boards.map((board) => (
                                 <PinboardCard
                                     key={board.id}
                                     board={board}
                                     dbs={dbs}
+                                    href={pinboardOpenHref(pathname, searchParams, board.id, "head")}
                                     onOpen={() => openBoard(board)}
-                                    onDelete={() => deleteBoard(board)}
-                                    onRename={() => renameBoard(board)}
-                                    onHover={setHovered}
+                                    onDelete={() => setConfirmDelete(board)}
+                                    onRename={() => openRename(board)}
+                                    onPreview={() => {
+                                        setHovered(null)
+                                        setPreviewBoard(board)
+                                    }}
+                                    onHover={(b, anchor) =>
+                                        setHovered(b && anchor ? { board: b, anchor } : null)
+                                    }
                                 />
                             ))}
                         </div>
                     )}
                 </ScrollArea>
-                {hovered && hovered.head_version_id != null && (
-                    <HoverPreview board={hovered} dbs={dbs} />
+                {hovered && hovered.board.head_version_id != null && (
+                    <PreviewPopover
+                        src={pinboardPreviewURL(
+                            dbs,
+                            hovered.board.id,
+                            hovered.board.head_version_id,
+                            PREVIEW_POPOVER_WIDTH
+                        )}
+                        box={verticalPopoverBox(
+                            hovered.anchor,
+                            hovered.board.preview_w ?? 1,
+                            hovered.board.preview_h ?? 1
+                        )}
+                    />
                 )}
+                <ConfirmDialog
+                    open={confirmDelete != null}
+                    title="Delete pinboard?"
+                    description={
+                        confirmDelete
+                            ? `Delete pinboard "${confirmDelete.name || `saved ${getLocale(new Date(confirmDelete.time_updated))}`}" and its entire history.`
+                            : undefined
+                    }
+                    confirmLabel="Delete"
+                    onConfirm={() => {
+                        if (confirmDelete) void deleteBoard(confirmDelete)
+                        setConfirmDelete(null)
+                    }}
+                    onCancel={() => setConfirmDelete(null)}
+                />
+                <Dialog
+                    open={previewBoard != null}
+                    onOpenChange={(next) => {
+                        if (!next) setPreviewBoard(null)
+                    }}
+                >
+                    <DialogContent className="w-fit max-w-[92vw] p-3 gap-2">
+                        <DialogTitle className="pr-8 text-sm font-medium leading-normal truncate">
+                            {previewBoard?.name || (
+                                <span className="italic text-muted-foreground">Untitled</span>
+                            )}
+                            {previewBoard && (
+                                <span className="ml-2 font-normal text-xs text-muted-foreground">
+                                    {previewBoard.item_count}{" "}
+                                    {previewBoard.item_count === 1 ? "item" : "items"} ·{" "}
+                                    {getLocale(new Date(previewBoard.time_updated))}
+                                </span>
+                            )}
+                        </DialogTitle>
+                        {previewBoard?.head_version_id != null && (
+                            <img
+                                src={pinboardPreviewURL(
+                                    dbs,
+                                    previewBoard.id,
+                                    previewBoard.head_version_id,
+                                    PREVIEW_POPOVER_WIDTH
+                                )}
+                                alt={previewBoard.name || "Pinboard preview"}
+                                className="max-h-[80vh] max-w-full w-auto h-auto rounded border"
+                                draggable={false}
+                            />
+                        )}
+                    </DialogContent>
+                </Dialog>
+                <Dialog
+                    open={renameTarget != null}
+                    onOpenChange={(next) => {
+                        if (!next) setRenameTarget(null)
+                    }}
+                >
+                    <DialogContent className="sm:max-w-sm">
+                        <DialogHeader>
+                            <DialogTitle>Rename pinboard</DialogTitle>
+                        </DialogHeader>
+                        <Input
+                            value={renameValue}
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            placeholder="Untitled"
+                            onKeyDown={(e) => {
+                                if (e.key === "Enter") submitRename()
+                            }}
+                            autoFocus
+                        />
+                        <DialogFooter>
+                            <Button variant="ghost" onClick={() => setRenameTarget(null)}>
+                                Cancel
+                            </Button>
+                            <Button onClick={submitRename}>Rename</Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
             </DialogContent>
         </Dialog>
     )
 }
 
-// A library card: uniform-height, cropped to the board's first save-time
-// screenful. Taller previews pan on wheel, with a fade and a slim scrollbar
-// signalling there's more below the crop line.
+// A library card: a fixed-aspect viewport onto the board preview so every
+// card in the grid is the same size. Previews taller than the viewport are
+// top-aligned and pan on wheel (fade + slim scrollbar signal the overflow);
+// shorter ones are centered. The card is a real link — plain click loads
+// the board in place, middle/ctrl-click opens it in a new tab — and the
+// full-size hover popover is triggered from the corner icon only.
 export function PinboardCard({
     board,
     dbs,
+    href,
     onOpen,
     onDelete,
     onRename,
+    onPreview,
     onHover,
 }: {
     board: PinboardSummary
     dbs: { index_db: string | null; user_data_db: string | null }
+    href: string
     onOpen: () => void
     onDelete: () => void
     onRename: () => void
-    onHover: (board: PinboardSummary | null) => void
+    onPreview: () => void
+    onHover: (board: PinboardSummary | null, anchor?: DOMRect) => void
 }) {
     const [pan, setPan] = useState(0)
     const viewportRef = useRef<HTMLDivElement>(null)
+    const cardRef = useRef<HTMLAnchorElement>(null)
 
-    // The card viewport shows preview pixels [pan, pan + screenful_h); the
-    // preview image extends to preview_h. Everything is scaled by the
-    // rendered card width / preview_w.
+    // All geometry in preview-image pixels: the image is previewW wide and
+    // the viewport is a CARD_ASPECT window onto it, panned by `pan`.
     const previewW = board.preview_w ?? 1
     const previewH = board.preview_h ?? 1
-    const screenfulH = board.screenful_h ?? previewH
-    const overflowH = Math.max(0, previewH - screenfulH)
-    const maxPan = overflowH
-    const canPan = overflowH > 0
+    const viewportH = previewW / CARD_ASPECT
+    const maxPan = Math.max(0, previewH - viewportH)
+    const canPan = maxPan > 0
+    // Previews shorter than the viewport sit vertically centered
+    const restTop = canPan ? 0 : (viewportH - previewH) / 2
 
     const onWheel = (e: React.WheelEvent) => {
         if (!canPan) return
@@ -174,30 +332,35 @@ export function PinboardCard({
         setPan((prev) => Math.min(maxPan, Math.max(0, prev + e.deltaY * scale)))
     }
 
-    const aspect = previewW / Math.max(1, screenfulH)
-    const label = board.name || getLocale(new Date(board.time_updated))
+    const name = board.name || "Untitled"
+    const updated = new Date(board.time_updated)
     const versionId = board.head_version_id
 
     return (
-        <div
-            className="group/card border rounded-md overflow-hidden bg-muted/30 cursor-pointer"
-            onMouseEnter={() => onHover(board)}
-            onMouseLeave={() => onHover(null)}
+        <a
+            ref={cardRef}
+            href={href}
+            draggable={false}
+            className="group/card flex flex-col border rounded-md overflow-hidden bg-muted/30 cursor-pointer"
+            onClick={(e) => {
+                // Modified clicks keep the browser's link behavior (new tab)
+                if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return
+                e.preventDefault()
+                onOpen()
+            }}
         >
             <div
                 ref={viewportRef}
                 className="relative w-full overflow-hidden"
-                style={{ aspectRatio: `${aspect}` }}
-                onClick={onOpen}
+                style={{ aspectRatio: `${CARD_ASPECT}` }}
                 onWheel={onWheel}
-                title={label}
             >
                 {versionId != null ? (
                     <img
                         src={pinboardPreviewURL(dbs, board.id, versionId, CARD_PREVIEW_WIDTH)}
-                        alt={label}
+                        alt={name}
                         className="absolute left-0 w-full"
-                        style={{ top: `${(-pan / previewW) * 100}%` }}
+                        style={{ top: `${((restTop - pan) / viewportH) * 100}%` }}
                         draggable={false}
                     />
                 ) : (
@@ -211,62 +374,72 @@ export function PinboardCard({
                         <div
                             className="absolute w-1 rounded bg-foreground/40"
                             style={{
-                                height: `${(screenfulH / previewH) * 100}%`,
+                                height: `${Math.min(100, (viewportH / previewH) * 100)}%`,
                                 top: `${(pan / previewH) * 100}%`,
                             }}
                         />
                     </div>
                 )}
-            </div>
-            <div className="flex items-center justify-between px-2 py-1 text-xs text-muted-foreground">
-                <span className="truncate" title={label}>
-                    {label} · {board.item_count} {board.item_count === 1 ? "item" : "items"}
-                </span>
-                <span className="hidden group-hover/card:flex items-center gap-1 shrink-0">
+                {versionId != null && (
                     <button
-                        title="Rename"
-                        onClick={(e) => { e.stopPropagation(); onRename() }}
-                        className="hover:text-foreground"
+                        type="button"
+                        title="Preview full size"
+                        className="absolute right-2.5 top-1.5 hidden group-hover/card:flex items-center justify-center h-6 w-6 rounded border bg-background/80 text-muted-foreground hover:text-foreground"
+                        onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            // The hover popover would z-stack above the modal
+                            onHover(null)
+                            onPreview()
+                        }}
+                        onMouseEnter={() => {
+                            const anchor = cardRef.current?.getBoundingClientRect()
+                            if (anchor) onHover(board, anchor)
+                        }}
+                        onMouseLeave={() => onHover(null)}
                     >
-                        <Pencil className="h-3.5 w-3.5" />
+                        <Expand className="h-3.5 w-3.5" />
                     </button>
-                    <button
-                        title="Delete"
-                        onClick={(e) => { e.stopPropagation(); onDelete() }}
-                        className="hover:text-destructive"
-                    >
-                        <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                )}
+            </div>
+            <div className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs">
+                <span
+                    className={cn(
+                        "truncate",
+                        board.name
+                            ? "font-medium"
+                            : // pr keeps the last italic glyph's overhang inside
+                              // the truncate clip box
+                              "italic text-muted-foreground pr-0.5"
+                    )}
+                    title={name}
+                >
+                    {name}
+                </span>
+                <span className="flex items-center gap-1.5 shrink-0 text-muted-foreground">
+                    <span title={dateTitle(updated)}>
+                        {board.item_count} {board.item_count === 1 ? "item" : "items"} ·{" "}
+                        {compactDate(updated)}
+                    </span>
+                    <span className="hidden group-hover/card:flex items-center gap-1">
+                        <button
+                            title="Rename"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRename() }}
+                            className="hover:text-foreground"
+                        >
+                            <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                            title="Delete"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete() }}
+                            className="hover:text-destructive"
+                        >
+                            <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                    </span>
                 </span>
             </div>
-        </div>
+        </a>
     )
 }
 
-// Large floating preview while hovering a card: the stored image at full
-// resolution (immutable, so the browser caches each size once).
-function HoverPreview({
-    board,
-    dbs,
-}: {
-    board: PinboardSummary
-    dbs: { index_db: string | null; user_data_db: string | null }
-}) {
-    const src = useMemo(
-        () =>
-            board.head_version_id != null
-                ? pinboardPreviewURL(dbs, board.id, board.head_version_id, POPOVER_PREVIEW_WIDTH)
-                : null,
-        [board, dbs]
-    )
-    if (!src) return null
-    return (
-        <div className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center p-8">
-            <img
-                src={src}
-                alt=""
-                className="max-w-[70vw] max-h-[80vh] rounded-md border shadow-lg object-contain bg-background"
-            />
-        </div>
-    )
-}

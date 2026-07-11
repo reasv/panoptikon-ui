@@ -23,6 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { FindButton } from './FindButton'
 import { blurHashToDataURL } from '@/lib/state/blurHashDataURL'
 import { useSearchLoading } from '@/lib/state/zust'
+import { usePinboardURLLoader } from '@/lib/pinboardLinks'
 import { MediaControls } from './PlayButton'
 import React from 'react'
 import { useVideoPlayerState } from '@/lib/videoPlayerState'
@@ -45,6 +46,8 @@ export function ImageGallery({
     setPage: (page: number) => Promise<void>
 }) {
     const [qIndex, setIndex] = useGalleryIndex()
+    // Resolve pinboard links (?pbl=…) into a loaded board layout
+    usePinboardURLLoader()
     const [page] = useSearchPage()
     const pageSize = usePageSize()[0]
     const index = (qIndex || 0) % items.length
@@ -211,8 +214,20 @@ export function PinboardTabs({ itemPath }: { itemPath: string }) {
             className="w-full"
         >
             <TabsList className="flex w-full">
-                <TabsTrigger value="pins" className="shrink-0">Pinboard</TabsTrigger>
-                <PinboardMenu />
+                <div
+                    className={cn(
+                        "flex shrink-0 items-stretch rounded-sm",
+                        !hidePinBoard && "bg-background text-foreground shadow-sm"
+                    )}
+                >
+                    <TabsTrigger
+                        value="pins"
+                        className="shrink-0 rounded-r-none pr-2 data-[state=active]:shadow-none"
+                    >
+                        Pinboard
+                    </TabsTrigger>
+                    <PinboardMenu />
+                </div>
                 <TabsTrigger value="gallery" className="flex-1 min-w-0">
                     <span title={itemPath} className="w-full min-w-0 text-sm truncate cursor-pointer" style={{ direction: 'rtl', textAlign: 'left' }}>
                         {itemPath}

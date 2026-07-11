@@ -14,8 +14,14 @@
 // screenful keeps re-saves from reflowing the crop line with whatever
 // chrome happened to be open). Content below the cap — typically scratch
 // stacks — is simply not part of the preview; the item count still says
-// it exists. The library crops cards to the first screenful (screenfulH)
-// and lets the rest be panned.
+// it exists.
+//
+// The capture is then cropped to the content bounding box (keeping
+// grid.padding as a margin): a one-pin board previews as the pin, not as
+// a screen-wide strip of background. This trades save-time-screen
+// fidelity for legible thumbnails — the deliberate choice here.
+// screenfulH still marks one save-time screenful measured from the top of
+// the (cropped) image, for consumers that want the above-the-fold cut.
 
 import { composeCrops, parseHField } from "@/lib/pinboardCrop"
 import { GridParams, parseBoard, rowStep } from "@/lib/pinboardGrid"
@@ -147,10 +153,32 @@ export async function composeBoardPreview(
     CAPTURE_SCREENFULS * screenful
   )
 
-  const scale = Math.min(1, PREVIEW_WIDTH / boardWidth)
-  const outWidth = Math.round(boardWidth * scale)
-  const outHeight = Math.round(captureHeight * scale)
-  const screenfulH = Math.round(Math.min(screenful, captureHeight) * scale)
+  // Content bounding box, padded by grid.padding and clamped to the board
+  const cropLeft = Math.max(
+    0,
+    Math.min(...placements.map((p) => p.left)) - grid.padding
+  )
+  const cropTop = Math.max(
+    0,
+    Math.min(...placements.map((p) => p.top)) - grid.padding
+  )
+  const cropRight = Math.min(
+    boardWidth,
+    Math.max(...placements.map((p) => p.left + p.width)) + grid.padding
+  )
+  const cropW = cropRight - cropLeft
+  const cropH = captureHeight - cropTop
+  if (cropW <= 0 || cropH <= 0) return null
+
+  const scale = Math.min(1, PREVIEW_WIDTH / cropW)
+  const outWidth = Math.round(cropW * scale)
+  const outHeight = Math.round(cropH * scale)
+  // First-screen cut in cropped-image coordinates; if the content starts
+  // below the first screen entirely, the whole image is the screenful.
+  const firstScreenH = Math.min(cropH, screenful - cropTop)
+  const screenfulH = Math.round(
+    (firstScreenH > 0 ? firstScreenH : cropH) * scale
+  )
 
   const canvas = document.createElement("canvas")
   canvas.width = outWidth
@@ -160,7 +188,9 @@ export async function composeBoardPreview(
   ctx.fillStyle = background
   ctx.fillRect(0, 0, outWidth, outHeight)
 
-  const visible = placements.filter((p) => p.top * scale < outHeight)
+  const visible = placements.filter(
+    (p) => (p.top - cropTop) * scale < outHeight
+  )
   const images = await Promise.allSettled(
     visible.map((p) =>
       loadImage(getFileURL(dbs, "thumbnail", "sha256", p.sha256))
@@ -169,8 +199,8 @@ export async function composeBoardPreview(
 
   for (let i = 0; i < visible.length; i++) {
     const p = visible[i]
-    const cellLeft = p.left * scale
-    const cellTop = p.top * scale
+    const cellLeft = (p.left - cropLeft) * scale
+    const cellTop = (p.top - cropTop) * scale
     const cellW = p.width * scale
     const cellH = p.height * scale
 

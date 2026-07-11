@@ -51,6 +51,56 @@ export function getLocale(date: Date) {
   })
 }
 
+const MINUTE_MS = 60_000
+// Past this age, relative times ("38d ago") read worse than a plain date.
+const RELATIVE_CUTOFF_MS = 7 * 24 * 60 * MINUTE_MS
+
+function relativeShort(date: Date, now: Date): string | null {
+  const diff = now.getTime() - date.getTime()
+  if (diff < 0 || diff >= RELATIVE_CUTOFF_MS) return null
+  const minutes = Math.floor(diff / MINUTE_MS)
+  if (minutes < 1) return "just now"
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}
+
+// Compact date for card/row footers: relative while recent, then a short
+// absolute date. Pair with dateTitle() on hover for the full timestamp.
+export function compactDate(date: Date, now: Date = new Date()): string {
+  return (
+    relativeShort(date, now) ??
+    date.toLocaleDateString("en", {
+      month: "short",
+      day: "numeric",
+      ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+    })
+  )
+}
+
+// Hover text pairing the full timestamp with a relative age, so whichever
+// form a compactDate() displays, the other is one hover away.
+export function dateTitle(date: Date, now: Date = new Date()): string {
+  const diff = date.getTime() - now.getTime()
+  const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" })
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [
+    ["year", 365 * 24 * 3600e3],
+    ["month", 30 * 24 * 3600e3],
+    ["week", 7 * 24 * 3600e3],
+    ["day", 24 * 3600e3],
+    ["hour", 3600e3],
+    ["minute", 60e3],
+  ]
+  const [unit, ms] = units.find(([, ms]) => Math.abs(diff) >= ms) ?? [
+    "second",
+    1e3,
+  ]
+  // trunc, not round: "2h55m ago" must read "2 hours ago" to agree with
+  // the floored short form compactDate shows next to it
+  return `${getLocale(date)} (${rtf.format(Math.trunc(diff / ms), unit)})`
+}
+
 export function envVariableIsTrue(envVariable: string | undefined): boolean {
   return envVariable?.toLowerCase() === "true" || envVariable === "1"
 }

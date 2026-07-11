@@ -1,0 +1,30 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000,
+      "autoPort": true
+    },
+    {
+      "name": "dev-smoke",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set PANOPTIKON_API_URL=http://127.0.0.1:6399&& npm run dev -- --port 3999"
+      ],
+      "port": 3999
+    },
+    {
+      "name": "dev-copy",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "cd /d C:\\Users\\moot\\AppData\\Local\\Temp\\claude\\Q--projects-panoptikon-ui\\1ef477f4-a6df-43ed-a270-9bce38186d0f\\scratchpad\\pano-test && npm run dev -- --port 3005"
+      ],
+      "port": 3005
+    }
+  ]
+}

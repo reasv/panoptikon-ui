@@ -24,6 +24,7 @@ import {
   findBoardElement,
 } from "@/lib/pinboardPreview"
 import { clearStash } from "@/lib/pinboardStash"
+import { markPinboardNavigation } from "@/lib/pinboardNavigation"
 
 type Dbs = { index_db: string | null; user_data_db: string | null }
 
@@ -209,6 +210,7 @@ export function usePinboardActions() {
     options?: { history?: "push" | "replace" }
   ) => {
     const history = options?.history ?? "push"
+    markPinboardNavigation()
     setSavedLayout(layout, { history })
     setPbid(pinboardId, { history })
     setHidePinBoard(false, { history })

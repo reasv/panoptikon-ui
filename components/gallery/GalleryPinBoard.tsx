@@ -2,6 +2,7 @@ import Image from 'next/image'
 import { cn, getFileURL } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid } from '@/lib/state/gallery'
+import { consumePinboardNavigation } from '@/lib/pinboardNavigation'
 import { usePinBoard } from '@/lib/state/pinboard'
 import { GridParams, v1ScaleFactors } from '@/lib/pinboardGrid'
 import { PinButton } from './PinButton'
@@ -359,7 +360,15 @@ export function PinBoard(
         // Keep the baseline current even while the mode is off, so toggling
         // it on later can't misfire from a stale count
         prevPinCountRef.current = count
+        // Consume the mark unconditionally so it can't linger past the write
+        // it was set for and misfire on a later real pin add/remove
+        const wasNavigation = consumePinboardNavigation()
         if (prev === null || prev === count) return
+        // Loading a saved version/board with a different item count is
+        // navigation, not a pin edit: relayouting it here would rewrite the
+        // just-restored layout (and bounce the history panel's selection
+        // back off it)
+        if (wasNavigation) return
         // Count-change detection is itself the loop guard: the relayout's
         // own record write preserves the count, as do drags, resizes, crops
         // and the v1->v2 migration — none of them can re-trigger this.
@@ -396,7 +405,9 @@ export function PinBoard(
         void fillViewportRef.current(false, autoLayoutCropRef.current)
     }, [fs, thumbnailsOpen])
     return (
-        <ScrollArea ref={scrollAreaRef} className="overflow-y-auto">
+        // data-pinboard-area: the version-history panel docks into this
+        // box's corners (PinboardHistory measures it by this attribute)
+        <ScrollArea ref={scrollAreaRef} data-pinboard-area className="overflow-y-auto">
             <div
                 ref={gridAreaRef}
                 className={`relative flex-grow ${rglSettling ? "rgl-mount-still " : ""}${fs ? "h-[97vh]" : (
