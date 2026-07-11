@@ -148,6 +148,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/client-config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the matched policy's client configuration and capabilities
+         * @description Returns the name of the policy that matched this request, coarse capability booleans derived from the policy's ruleset (which controls to show), and the policy's free-form `[policies.client]` table verbatim. Always allowed regardless of ruleset restrictions.
+         */
+        get: operations["client_config"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/db": {
         parameters: {
             query?: never;
@@ -1039,6 +1059,39 @@ export interface components {
         };
         CancelResponse: {
             detail: string;
+        };
+        /** @description Coarse feature switches derived from the matched policy's ruleset. Each
+         *     capability is one representative probe from the real route list in
+         *     main.rs, evaluated with the exact rule-matching code enforcement uses
+         *     (`policy::ruleset_allows`) — true means the probe request would pass the
+         *     ruleset gate. */
+        ClientCapabilities: {
+            /** @description PUT /api/bookmarks/ns/{namespace}/{sha256} */
+            bookmarks: boolean;
+            /** @description POST /api/db/create */
+            db_create: boolean;
+            /** @description POST /api/inference/predict/{group}/{inference_id} */
+            inference: boolean;
+            /** @description GET /api/items/item */
+            items: boolean;
+            /** @description POST /api/open/file/{sha256} */
+            open_files: boolean;
+            /** @description POST /api/pinboards */
+            pinboards: boolean;
+            /** @description POST /api/jobs/folders/rescan */
+            scan_jobs: boolean;
+            /** @description POST /api/search/pql */
+            search: boolean;
+        };
+        ClientConfigResponse: {
+            /** @description Ruleset-derived feature switches (see ClientCapabilities). */
+            capabilities: components["schemas"]["ClientCapabilities"];
+            /** @description The policy's `[policies.client]` table, verbatim (empty object when
+             *     unset). Free-form; recognized-by-convention keys include
+             *     `search_throttle_ms` and `disable_backend_open`. */
+            client: unknown;
+            /** @description Name of the policy that matched this request. */
+            policy: string;
         };
         /** @enum {string} */
         Column: "file_id" | "sha256" | "path" | "filename" | "last_modified" | "item_id" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks" | "blurhash" | "data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id";
@@ -2703,6 +2756,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BookmarkUsers"];
+                };
+            };
+        };
+    };
+    client_config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Client configuration for the matched policy */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientConfigResponse"];
                 };
             };
         };

@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "gen:api": "openapi-typescript ../panoptikon/gateway/openapi.json -o lib/panoptikon.d.ts --default-non-nullable=false"
+    "gen:api": "openapi-typescript ../panoptikon/openapi.json -o lib/panoptikon.d.ts --default-non-nullable=false"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.1.2",
