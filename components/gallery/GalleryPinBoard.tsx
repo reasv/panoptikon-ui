@@ -413,8 +413,11 @@ export function PinBoard(
         if (!grewByMaximize && !grewByThumbnails) return
         if (!autoLayoutRef.current) return
         // Post-commit the height class has applied, so fillViewport
-        // measures the grown container
-        void fillViewportRef.current(false, autoLayoutCropRef.current)
+        // measures the grown container. skipIfCovered: a board already laid
+        // out at this size (shrunk and regrown without edits) keeps its
+        // layout — otherwise peeking at the search UI and coming back would
+        // repaint for nothing.
+        void fillViewportRef.current(false, autoLayoutCropRef.current, true)
     }, [fs, thumbnailsOpen])
     return (
         // data-pinboard-area: the version-history panel docks into this

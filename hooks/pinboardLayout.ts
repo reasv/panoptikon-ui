@@ -136,10 +136,21 @@ export function usePinboardLayoutActions({
     // span the fold exactly even at the cost of distortion, because an
     // under-filled block would let the cutting board compact up into view.
     // When everything is visible the two actions are equivalent.
-    async function fillViewport(visibleOnly: boolean, cropToCells = false) {
+    async function fillViewport(visibleOnly: boolean, cropToCells = false, skipIfCovered = false) {
         const buildData = await ensureBuildData()
         if (!buildData) return
         const total = foldRows(buildData)
+        // A layout already reaching the fold was made for this viewport or a
+        // bigger one (both viewport-growth triggers are height-only, so the
+        // width can't have changed under it) — repainting it would make
+        // shrink-and-regrow a destructive round trip. >= rather than >: a
+        // fill spans the fold exactly, it doesn't overshoot. Only the
+        // viewport-growth trigger passes this; pin edits must relayout even
+        // a covering board to integrate the new item.
+        if (skipIfCovered) {
+            const maxY = buildData.sortedLayout.reduce((acc, l) => Math.max(acc, l.y + l.h), 0)
+            if (maxY >= total) return
+        }
         const participants = visibleOnly
             ? buildData.sortedLayout.filter(l => l.y < total)
             : buildData.sortedLayout
