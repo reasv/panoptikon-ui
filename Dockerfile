@@ -26,9 +26,6 @@ COPY . /app
 # Change ownership of the application directory to the non-root user
 RUN chown -R appuser /app
 
-# Define build arguments and environment variables
-ENV DISABLE_API_PROXY=true
-
 # Install Node.js dependencies and build the Next.js application
 RUN npm install --include=dev && \
     npx --yes next build
