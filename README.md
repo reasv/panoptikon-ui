@@ -6,8 +6,31 @@ Panoptikon will automatically pull and install the latest version of the UI from
 ## Prerequisites
 
 You must have a running instance of the Panoptikon server to use this UI.
-Set the `PANOPTIKON_API_URL` environment variable to the URL of the Panoptikon server.
-By default, Panoptikon runs at `http://127.0.0.1:6342`, and the UI will automatically use this URL if `PANOPTIKON_API_URL` is not set.
+
+### Environment variables
+
+- `PANOPTIKON_API_URL` — the base URL of the Panoptikon backend (default
+  `http://127.0.0.1:6342`). It is used in exactly two places: as the target
+  of the **dev-only** `/api`, `/docs` and `/openapi.json` rewrites (so
+  `next dev` works without a gateway in front), and as the base URL for
+  server-side rendering's own API fetches. Production builds emit **no**
+  rewrites: the panoptikon gateway serves those routes itself and only
+  forwards the remaining traffic to the UI server.
+- `BUILD_STANDALONE=true` — opts `next build` into `output: "standalone"`
+  for the panoptikon repo's `bundled-ui` feature (see `next.config.mjs`).
+
+The former `DISABLE_API_PROXY`, `RESTRICTED_MODE`, `INFERENCE_API_URL`,
+`DISABLE_BACKEND_OPEN_BTN` and `SEARCH_THROTTLE_MS` variables are gone:
+their behavior moved into the gateway's per-policy configuration. The UI
+asks `GET /api/client-config` what the matched policy allows (capability
+booleans derived from the ruleset) and how it should behave (the free-form
+`[policies.client]` table — recognized keys: `search_throttle_ms`,
+`disable_backend_open`, `home_redirect`). Server-rendered pages make that
+request — and every other SSR API call — with the gateway's short-lived
+`x-panoptikon-policy` token echoed back, so SSR acts with the original
+requester's policy rather than the UI server's network position. See the
+panoptikon repo's `panoptikon/README.md` ("Policy-scoped SSR tokens" and
+"`GET /api/client-config`") for the full mechanism and key conventions.
 
 ## Getting Started
 
