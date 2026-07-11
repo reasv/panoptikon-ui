@@ -2,24 +2,35 @@ import { $api } from "@/lib/api"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useToast } from "../ui/use-toast"
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query"
-import { components } from "@/lib/panoptikon"
 import { FilterContainer } from "../sidebar/base/FilterContainer"
 import { SwitchFilter } from "../sidebar/base/SwitchFilter"
 import { Label } from "../ui/label"
 import { Input } from "../ui/input"
 import { Button } from "../ui/button"
-import { Plus, Save } from "lucide-react"
+import { Save } from "lucide-react"
 import React, { useEffect } from "react"
 import { ScrollArea, ScrollBar } from "../ui/scroll-area"
 import { DataTable } from "../table/dataTable"
 import { RowSelectionState } from "@tanstack/react-table"
 import { scheduleColumns } from "../table/columns/scheduled"
+import { useSystemConfig } from "@/lib/useSystemConfig"
+
+function formatRunTime(time: string | null | undefined) {
+    if (!time) {
+        return "—"
+    }
+    const parsed = new Date(time)
+    return isNaN(parsed.getTime()) ? time : parsed.toLocaleString()
+}
 
 export function Config() {
     const [dbs] = useSelectedDBs()
-    const { data: configData, error, isError, refetch, isFetching } = $api.useQuery(
+    const { config: data, changeConfig } = useSystemConfig()
+    const queryClient = useQueryClient()
+    const { toast } = useToast()
+    const { data: schedule } = $api.useQuery(
         "get",
-        "/api/jobs/config",
+        "/api/jobs/cronjob/schedule",
         {
             params: {
                 query: dbs,
@@ -27,33 +38,10 @@ export function Config() {
         },
         {
             placeholderData: keepPreviousData,
+            // next_run/last_run move on their own as the scheduler fires.
+            refetchInterval: 30000,
         },
     )
-    // The GET response always serializes every field; the schema leaves them
-    // optional only because the same SystemConfig shape is the PUT input,
-    // where omitted fields fall back to server defaults.
-    const data = configData as Required<components["schemas"]["SystemConfig"]> | undefined
-    const queryClient = useQueryClient()
-    const { toast } = useToast()
-    const changeSettings = $api.useMutation("put", "/api/jobs/config", {
-        onSuccess: () => {
-            queryClient.invalidateQueries({
-                queryKey: [
-                    "get",
-                    "/api/jobs/config",
-                    {
-                        params: {
-                            query: dbs,
-                        },
-                    }
-                ],
-            })
-            toast({
-                title: "Settings Updated",
-                description: "The changes have been applied",
-            })
-        },
-    })
     const [cronInputValue, setCronInputValue] = React.useState('')
 
     useEffect(() => {
@@ -62,38 +50,10 @@ export function Config() {
         }
     }, [data])
 
-    const changeConfig = async (modifyConfig: (currentConfig: components["schemas"]["SystemConfig"]) => components["schemas"]["SystemConfig"]) => {
-        // Refetch the latest configuration
-        const latestConfig = await refetch()
-
-        // Apply the change to the latest config
-        if (latestConfig.data) {
-            const newConfig = modifyConfig(latestConfig.data)
-            changeSettings.mutate({ body: newConfig, params: { query: dbs } })
-        }
-    }
-    const validateCron = (cron: string) => {
-        // Regular expression to validate a cron string, including step values and ranges
-        const cronRegex = /^(\*(\/[1-9]\d*)?|([0-5]?\d)(\/[1-9]\d*)?|([0-5]?\d)-([0-5]?\d)(\/[1-9]\d*)?) (\*(\/[1-9]\d*)?|([01]?\d|2[0-3])(\/[1-9]\d*)?|([01]?\d|2[0-3])-([01]?\d|2[0-3])(\/[1-9]\d*)?) (\*(\/[1-9]\d*)?|([01]?\d|3[01])(\/[1-9]\d*)?|([01]?\d|3[01])-([01]?\d|3[01])(\/[1-9]\d*)?) (\*(\/[1-9]\d*)?|(0?[1-9]|1[0-2])(\/[1-9]\d*)?|(0?[1-9]|1[0-2])-(0?[1-9]|1[0-2])(\/[1-9]\d*)?) (\*(\/[1-9]\d*)?|([0-6])(\/[1-9]\d*)?|([0-6])-([0-6])(\/[1-9]\d*)?)$/;
-
-        if (!cronRegex.test(cron)) {
-            toast({
-                title: "Invalid cron string",
-                description: "Follow the format 'min hr day month weekday' (e.g., '0 3 * * *')",
-                variant: "destructive"
-            });
-            return false;
-        }
-
-        return true;
-    };
+    // The gateway's cron parser is the source of truth for validity; the
+    // schedule endpoint reports it after every save.
+    const cronInvalid = schedule !== undefined && !schedule.valid
     const changeCron = async () => {
-        if (!validateCron(cronInputValue)) {
-            if (data) {
-                setCronInputValue(data.cron_schedule)
-            }
-            return
-        }
         changeConfig((currentConfig) => ({
             ...currentConfig,
             cron_schedule: cronInputValue,
@@ -200,6 +160,15 @@ export function Config() {
                         }))}
                     />
                     <SwitchFilter
+                        label="Embedding Model Prewarm"
+                        description="Load this database's embedding model code eagerly at startup so the first search doesn't wait for it"
+                        value={data.prewarm_embedding_models}
+                        onChange={(value) => changeConfig((currentConfig) => ({
+                            ...currentConfig,
+                            prewarm_embedding_models: value,
+                        }))}
+                    />
+                    <SwitchFilter
                         label="Enable Cron Job"
                         description="Enable the cron job to run the file scan and selected extraction jobs at regular intervals"
                         value={data.enable_cron_job}
@@ -230,6 +199,17 @@ export function Config() {
                                 <Save className="h-4 w-4" />
                             </Button>
                         </div>
+                        {cronInvalid ? (
+                            <div className="text-destructive text-sm mt-2">
+                                The saved schedule string is invalid; automatic runs are disabled until it is fixed
+                            </div>
+                        ) : (
+                            <div className="text-gray-400 text-sm mt-2">
+                                Next run: {data.enable_cron_job ? formatRunTime(schedule?.next_run) : "—"}
+                                {" · "}
+                                Last run: {formatRunTime(schedule?.last_run)}
+                            </div>
+                        )}
                     </div>
                 </div>
                 <div className="flex flex-col items-left rounded-lg border p-4 mt-4">

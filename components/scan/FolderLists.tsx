@@ -1,13 +1,12 @@
 import { $api } from "@/lib/api"
 import { useSelectedDBs } from "@/lib/state/database"
-import { keepPreviousData, useQueryClient } from "@tanstack/react-query"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useQueryClient } from "@tanstack/react-query"
 import React, { useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/use-toast"
-import { components } from "@/lib/panoptikon"
 import { Label } from "../ui/label"
+import { useSystemConfig } from "@/lib/useSystemConfig"
 
 export function FolderLists() {
     const [dbs] = useSelectedDBs()
@@ -39,47 +38,7 @@ export function FolderLists() {
             })
         },
     })
-    const changeSettings = $api.useMutation("put", "/api/jobs/config", {
-        onSuccess: () => {
-            queryClient.invalidateQueries({
-                queryKey: [
-                    "get",
-                    "/api/jobs/config",
-                    {
-                        params: {
-                            query: dbs,
-                        },
-                    }
-                ],
-            })
-            toast({
-                title: "Settings Updated",
-                description: "The changes have been applied",
-            })
-        },
-    })
-    const { data, refetch } = $api.useQuery(
-        "get",
-        "/api/jobs/config",
-        {
-            params: {
-                query: dbs,
-            },
-        },
-        {
-            placeholderData: keepPreviousData,
-        },
-    )
-    const changeConfig = async (modifyConfig: (currentConfig: components["schemas"]["SystemConfig"]) => components["schemas"]["SystemConfig"]) => {
-        // Refetch the latest configuration
-        const latestConfig = await refetch()
-
-        // Apply the change to the latest config
-        if (latestConfig.data) {
-            const newConfig = modifyConfig(latestConfig.data)
-            changeSettings.mutate({ body: newConfig, params: { query: dbs } })
-        }
-    }
+    const { config: data, changeConfig } = useSystemConfig()
     // Update the local state whenever data is fetched
     useEffect(() => {
         if (data) {

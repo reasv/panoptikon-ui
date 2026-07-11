@@ -1,8 +1,13 @@
 import { ColumnDef } from "@tanstack/react-table"
 import { prettyPrintDate, prettyPrintDuration, prettyPrintDurationBetweenDates } from "../utils"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { ArrowUpDown } from "lucide-react"
 import { components } from "@/lib/panoptikon"
+
+// Sentinel path the gateway writes on scan records produced by the
+// continuous filescan rather than a folder rescan.
+const CONTINUOUS_PATH_SENTINEL = "<continuous>"
 
 // File scan rows are now inserted when the scan starts, so a running scan has
 // no meaningful end_time yet (null or a placeholder predating start_time)
@@ -67,6 +72,14 @@ export const fileScanColumns: ColumnDef<components["schemas"]["FileScanRecord"]>
         id: "path",
         accessorKey: "path",
         header: "Path",
+        cell: ({ row }) =>
+            row.getValue("path") === CONTINUOUS_PATH_SENTINEL ? (
+                <Badge variant="secondary" title="Changes indexed by the continuous filescan">
+                    Continuous
+                </Badge>
+            ) : (
+                row.getValue("path")
+            ),
     },
     {
         id: "total_available",

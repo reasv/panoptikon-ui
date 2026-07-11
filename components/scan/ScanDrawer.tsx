@@ -3,6 +3,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { SwitchDB } from "@/components/sidebar/options/switchDB"
 import { CreateNewDB } from "@/components/scan/CreateDB"
 import { Config } from "@/components/scan/Config"
+import { ContinuousScan } from "@/components/scan/ContinuousScan"
 import { GroupList } from "@/components/scan/GroupLists"
 import { JobQueue } from "@/components/scan/JobQueue"
 import { JobHistory } from "@/components/scan/JobHistory"
@@ -20,6 +21,7 @@ export function ScanInternal() {
         </div>
         <Config />
         <FolderLists />
+        <ContinuousScan />
         <GroupList />
         <JobQueue />
         <JobHistory />

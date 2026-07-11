@@ -498,6 +498,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/continuous/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the continuous filescan status
+         * @description Report the live state of the continuous filescan for the selected database: whether it is enabled and actively watching, the change-detection mode in effect, the effective watch roots, and any configured watched folders that were rejected.
+         */
+        get: operations["get_continuous_scan_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/cronjob/run": {
         parameters: {
             query?: never;
@@ -1031,6 +1051,38 @@ export interface components {
             included_folders?: string[];
             /** Format: int64 */
             poll_interval_secs?: number | null;
+        };
+        /**
+         * @description Change-detection mode configured for the continuous filescan.
+         * @enum {string}
+         */
+        ContinuousScanMode: "watcher" | "poller";
+        ContinuousScanStatusResponse: {
+            /** @description Whether the scanner is currently watching for changes. False when
+             *     disabled, while paused for a running job, or when the configured
+             *     watched folders produced no valid watch roots. */
+            active: boolean;
+            /** @description Whether continuous scanning is enabled in this database's config. */
+            enabled: boolean;
+            /** @description Configured watched folders that were rejected because they are not
+             *     inside an included folder or fall under an excluded folder. */
+            invalid_includes: string[];
+            /** @description Change-detection mode from the configuration. */
+            mode: components["schemas"]["ContinuousScanMode"];
+            /** @description Whether the scanner is temporarily paused while a job runs on this
+             *     database. It resumes automatically when the job finishes. */
+            paused_for_job: boolean;
+            /**
+             * Format: int64
+             * @description Poll interval in effect when `mode` is `poller`.
+             */
+            poll_interval_secs?: number | null;
+            /** @description False when every configured watched folder was rejected; continuous
+             *     scanning is inactive in that case even when enabled. */
+            roots_valid: boolean;
+            /** @description The folder roots being watched for changes (the global included
+             *     folders when no continuous watched folders are configured). */
+            watch_roots: string[];
         };
         CreatePinboardRequest: components["schemas"]["SaveVersionRequest"] & {
             /** @description Optional display name; pinboards are identified by preview otherwise. */
@@ -3232,6 +3284,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SystemConfig"];
+                };
+            };
+        };
+    };
+    get_continuous_scan_status: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Continuous filescan status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContinuousScanStatusResponse"];
                 };
             };
         };
