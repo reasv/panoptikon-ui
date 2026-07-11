@@ -25,7 +25,8 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const isClient = typeof window !== "undefined"
   const searchQueryState = useSearchQuery()
   const { data: clientConfig } = useClientConfig()
-  // ?? rather than ||: an explicit SEARCH_THROTTLE_MS=0 disables throttling
+  // ?? rather than ||: an explicit search_throttle_ms = 0 in the gateway
+  // policy's [policies.client] table disables throttling
   const throttleMs = clientConfig?.searchThrottleMs ?? 500
   const searchQuery = isClient
     ? searchQueryState

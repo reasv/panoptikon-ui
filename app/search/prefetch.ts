@@ -3,7 +3,7 @@ import { selectedDBsServer } from "@/lib/state/databaseServer"
 import { fetchDB, fetchNs, fetchSearch, fetchStats } from "./queryFns"
 import { getSearchQueryCache } from "@/lib/state/searchQuery/serverParsers"
 import { partitionByParamsCache } from "@/lib/state/partitionByServer"
-import { prefetchClientConfig } from "@/lib/useClientConfig"
+import { getServerClientConfig } from "@/lib/serverApi"
 
 export const prefetchSearchPage = async (
   queryClient: QueryClient,
@@ -68,6 +68,13 @@ export const prefetchSearchPage = async (
     queryKey: ["get", "/api/db", null],
     queryFn: () => fetchDB(),
   })
-  await prefetchClientConfig(queryClient)
-  return searchRequest
+  // Token-echoed server-side fetch, so the config reflects the original
+  // requester's policy. Seeding the query cache hydrates the client-side
+  // useClientConfig() hook; on failure the cache is left empty and the
+  // client refetches same-origin on mount.
+  const clientConfig = await getServerClientConfig()
+  if (clientConfig) {
+    queryClient.setQueryData(["clientConfig"], clientConfig)
+  }
+  return { searchRequest, clientConfig }
 }

@@ -10,7 +10,10 @@ import { useRelayOpen } from "@/hooks/relayOpen"
 // buttons (OpenFile/OpenFolder) and the pinboard context menu resolve the
 // relay -> restricted -> backend branch identically and can't drift apart.
 //
-// `disableBackendOpen` is the public-instance flag: local file access is off,
+// `disableBackendOpen` is the public-instance flag (from the gateway's
+// /api/client-config: `disable_backend_open` in the policy's
+// [policies.client] table, or an open_files capability the ruleset would
+// reject anyway): local file access is off,
 // so the plain open/folder actions degrade (Open File -> new browser tab;
 // Show in Folder -> in-app FindButton, handled by the caller). The relay
 // (companion app) always takes precedence and performs a real open even in

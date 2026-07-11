@@ -100,15 +100,3 @@ export function dateTitle(date: Date, now: Date = new Date()): string {
   // the floored short form compactDate shows next to it
   return `${getLocale(date)} (${rtf.format(Math.trunc(diff / ms), unit)})`
 }
-
-export function envVariableIsTrue(envVariable: string | undefined): boolean {
-  return envVariable?.toLowerCase() === "true" || envVariable === "1"
-}
-
-export function envVariableIntegerParse(
-  envVariable: string | undefined,
-  defaultValue: number = 0
-): number {
-  const parsed = parseInt(envVariable || "", 10)
-  return isNaN(parsed) ? defaultValue : parsed
-}

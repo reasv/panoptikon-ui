@@ -13,13 +13,15 @@ export default async function SearchPage({
     searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 }) {
     const queryClient = new QueryClient()
-    const request = await prefetchSearchPage(queryClient, await searchParams)
-    const restrictedMode = process.env.RESTRICTED_MODE === "true"
+    const { searchRequest, clientConfig } = await prefetchSearchPage(queryClient, await searchParams)
+    // "Restricted" = the matched gateway policy's ruleset blocks scan/job
+    // management; hide the scan drawer and related navigation. Purely
+    // cosmetic — the gateway enforces the policy on every API call.
     return (
         <HydrationBoundary state={dehydrate(queryClient)}>
             <SearchPageContent
-                initialQuery={request}
-                isRestrictedMode={restrictedMode}
+                initialQuery={searchRequest}
+                isRestrictedMode={clientConfig?.restrictedMode ?? false}
             />
         </HydrationBoundary>
     )
