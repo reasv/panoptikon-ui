@@ -1,6 +1,15 @@
 /** @type {import('next').NextConfig} */
 
 const nextConfig = {
+  // Standalone output is opt-in (BUILD_STANDALONE=true next build) because
+  // `next start` refuses to run when output is "standalone", which would
+  // break plain `npm start` and the panoptikon gateway's checkout mode.
+  // The standalone build is consumed by the panoptikon repo's `bundled-ui`
+  // cargo feature (PANOPTIKON_UI_BUNDLE): note that rewrites/redirects and
+  // their env vars (PANOPTIKON_API_URL, RESTRICTED_MODE, ...) are baked in
+  // at build time for standalone output — the embedded server ignores them
+  // at runtime.
+  output: process.env.BUILD_STANDALONE === "true" ? "standalone" : undefined,
   experimental: {
     reactCompiler: true,
   },
