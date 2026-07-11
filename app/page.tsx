@@ -11,7 +11,10 @@ export default async function Home() {
   // (e.g. "/search"), the landing page immediately redirects there instead
   // of showing the getting-started guide. Absent (or config unreachable) =
   // no redirect. Fetched server-side with the policy token echoed, so it is
-  // the original requester's policy that decides.
+  // the original requester's policy that decides. Misconfigured targets —
+  // non-paths, protocol-relative "//..." URLs, or "/" itself (which would
+  // redirect this page to itself in a loop) — are normalized away to null
+  // in deriveClientConfig (lib/clientConfig.ts), so no extra guard here.
   const clientConfig = await getServerClientConfig()
   if (clientConfig?.homeRedirect) {
     redirect(clientConfig.homeRedirect)

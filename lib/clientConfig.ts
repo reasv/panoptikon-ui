@@ -23,12 +23,13 @@ export interface ClientConfig {
 //   the ruleset would technically allow /api/open/*.
 // - home_redirect (string path, e.g. "/search"): send the landing page ("/")
 //   there instead of showing the getting-started guide; absent = no redirect.
+//   Guarded by normalizeHomeRedirect below: non-path and self ("/") targets
+//   are dropped (treated as unset).
 // Unknown keys are passthrough and simply ignored here.
 export function deriveClientConfig(response: ClientConfigResponse): ClientConfig {
   const client = (response.client ?? {}) as Record<string, unknown>
   const capabilities = response.capabilities
   const throttle = client["search_throttle_ms"]
-  const homeRedirect = client["home_redirect"]
   return {
     // Backend-open is off when the policy says so explicitly, or when the
     // ruleset would reject POST /api/open/* anyway (the button would 403).
@@ -39,6 +40,22 @@ export function deriveClientConfig(response: ClientConfigResponse): ClientConfig
     // hide the scan drawer and job-related navigation.
     restrictedMode: capabilities.scan_jobs === false,
     searchThrottleMs: typeof throttle === "number" ? throttle : 500,
-    homeRedirect: typeof homeRedirect === "string" ? homeRedirect : null,
+    homeRedirect: normalizeHomeRedirect(client["home_redirect"]),
   }
+}
+
+// Guard for home_redirect. The value is operator-controlled TOML, so this is
+// not a security boundary — it just catches misconfigurations cheaply:
+// - only same-app paths: must start with "/" but not "//" (browsers treat
+//   "//host" as protocol-relative, i.e. an accidental external redirect);
+// - never "/": the landing page redirecting to itself would loop forever.
+// Anything rejected behaves exactly like an unset home_redirect.
+function normalizeHomeRedirect(value: unknown): string | null {
+  if (typeof value !== "string") return null
+  const path = value.trim()
+  if (!path.startsWith("/") || path.startsWith("//")) return null
+  // Self-target: "/" (with or without query/hash) still lands on this page.
+  const pathOnly = path.split(/[?#]/, 1)[0]
+  if (pathOnly === "/") return null
+  return path
 }
