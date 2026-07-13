@@ -1,33 +1,34 @@
 import { createJSONStorage, persist } from "zustand/middleware"
 import { persistLocalStorage } from "./store"
 import { create } from "zustand"
-import { useEffect, useState } from "react"
 
-// Define the shape of the state, where keys are strings and values are booleans.
-interface RelayConfigState {
+interface RelayV1State {
   enabled: boolean
-  setEnabled: (enabled: boolean) => void
   relayURL: string
+  instanceId: string
+  credential: string
+  pairingRequestId: string
+  setEnabled: (enabled: boolean) => void
   setRelayURL: (url: string) => void
-  apiKey: string
-  setApiKey: (key: string) => void
-}
-
-const relayConfigStateStorage = {
-  name: "relayConfigState",
-  storage: createJSONStorage<RelayConfigState>(() => persistLocalStorage),
+  setPairingRequestId: (id: string) => void
+  setPaired: (instanceId: string, credential: string) => void
+  clearPairing: () => void
 }
 
 export const useRelayConfigState = create(
-  persist<RelayConfigState>(
-    (set, get) => ({
+  persist<RelayV1State>(
+    (set) => ({
       enabled: false,
-      setEnabled: (enabled: boolean) => set({ enabled }),
       relayURL: "http://127.0.0.1:17600",
-      setRelayURL: (url: string) => set({ relayURL: url }),
-      apiKey: "",
-      setApiKey: (key: string) => set({ apiKey: key }),
+      instanceId: "",
+      credential: "",
+      pairingRequestId: "",
+      setEnabled: (enabled) => set({ enabled }),
+      setRelayURL: (relayURL) => set({ relayURL }),
+      setPairingRequestId: (pairingRequestId) => set({ pairingRequestId }),
+      setPaired: (instanceId, credential) => set({ instanceId, credential, pairingRequestId: "", enabled: true }),
+      clearPairing: () => set({ instanceId: "", credential: "", pairingRequestId: "", enabled: false }),
     }),
-    relayConfigStateStorage
-  )
+    { name: "panoptikonRelayV1State", storage: createJSONStorage(() => persistLocalStorage) },
+  ),
 )

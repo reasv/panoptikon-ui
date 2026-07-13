@@ -7,7 +7,7 @@ import { useRelayConfigState } from "@/lib/state/relayConfig"
 
 export function useRelayOpen() {
     const enabled = useRelayConfigState((state) => state.enabled)
-    const [apiKey, apiURL] = useRelayConfigState((state) => [state.apiKey, state.relayURL])
+    const [credential, apiURL] = useRelayConfigState((state) => [state.credential, state.relayURL])
     const { toast } = useToast()
     const dbs = useSelectedDBs()[0]
     async function getFilePath(sha256: string) {
@@ -39,13 +39,13 @@ export function useRelayOpen() {
                     throw new Error("File path not found")
                 }
             }
-            const url = `${requestURL}/open?verb=${verb}&path=${encodeURIComponent(path)}`
-            const response = await fetch(url, {
+            const response = await fetch(`${requestURL}/v1/actions`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    "Authorization": `Bearer ${apiKey}`
+                    "Authorization": `Bearer ${credential}`
                 },
+                body: JSON.stringify({ action: verb === "file" ? "open_file" : "reveal_in_folder", path }),
             })
             if (!response.ok) {
                 if (response.status === 400) {
@@ -71,5 +71,5 @@ export function useRelayOpen() {
             })
         },
     })
-    return enabled ? openFileMutation : null
+    return enabled && credential ? openFileMutation : null
 }

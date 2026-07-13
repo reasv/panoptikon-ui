@@ -47,3 +47,16 @@ bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+## Desktop routes and Relay
+
+`/desktop/setup` is the wizard-oriented onboarding route used by Panoptikon
+Desktop. It reuses the normal database and scan components, records completion
+through the Desktop-managed Server, and redirects ordinary Server deployments
+away from the route.
+
+Remote Panoptikon instances can pair with Panoptikon Desktop Relay v1 from the
+file-open settings. Pairing requires local approval in Desktop, issues a unique
+origin-bound credential, and replaces the retired global API-key `/open` and
+`/config` protocol. Old browser-local Relay settings are intentionally not
+migrated.

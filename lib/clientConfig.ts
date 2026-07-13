@@ -3,7 +3,9 @@ import { components } from "@/lib/panoptikon"
 // The gateway's GET /api/client-config response: the name of the policy that
 // matched the request, capability booleans derived from that policy's
 // ruleset, and the policy's free-form [policies.client] TOML table verbatim.
-export type ClientConfigResponse = components["schemas"]["ClientConfigResponse"]
+export type ClientConfigResponse = components["schemas"]["ClientConfigResponse"] & {
+  desktop_managed?: boolean
+}
 
 // The derived shape the UI actually consumes. Computed by deriveClientConfig
 // in exactly one place, shared by the client hook (lib/useClientConfig.ts)
@@ -13,6 +15,7 @@ export interface ClientConfig {
   restrictedMode: boolean
   searchThrottleMs: number
   homeRedirect: string | null
+  desktopManaged: boolean
 }
 
 // [policies.client] keys are free-form; these are the by-convention keys the
@@ -41,6 +44,8 @@ export function deriveClientConfig(response: ClientConfigResponse): ClientConfig
     restrictedMode: capabilities.scan_jobs === false,
     searchThrottleMs: typeof throttle === "number" ? throttle : 500,
     homeRedirect: normalizeHomeRedirect(client["home_redirect"]),
+    desktopManaged:
+      response.desktop_managed === true || client["desktop"] === true,
   }
 }
 
