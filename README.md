@@ -50,10 +50,14 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 ## Desktop routes and Relay
 
-`/desktop/setup` is the wizard-oriented onboarding route used by Panoptikon
-Desktop. It reuses the normal database and scan components, records completion
-through the Desktop-managed Server, and redirects ordinary Server deployments
-away from the route.
+`/desktop/setup` is the wizard route used by Panoptikon Desktop. Its onboarding
+mode configures the first/default index database without asking the user to
+name or select one. Desktop considers that database ready when a scan has
+started for one of its currently included folders. Once it is ready, Desktop
+opens this route in new-database mode instead; that mode collects a unique
+database name and creates it only when the wizard is finished. Closing the
+initial wizard defers setup; it does not mark it skipped. Ordinary Server
+deployments are redirected away from the route.
 
 Remote Panoptikon instances can pair with Panoptikon Desktop Relay v1 from the
 file-open settings. Pairing requires local approval in Desktop, issues a unique
