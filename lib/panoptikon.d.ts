@@ -247,6 +247,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/desktop/setup-schedule/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["desktop_preview_setup_schedule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/desktop/setup-status": {
         parameters: {
             query?: never;
@@ -1258,19 +1274,37 @@ export interface components {
             /** @description A new database has no indexed rows, so empty folders are safe. */
             new_database?: boolean;
         };
+        DesktopSchedulePreviewRequest: {
+            cron_schedule: string;
+        };
+        DesktopSchedulePreviewResponse: {
+            error?: string | null;
+            next_run?: string | null;
+            valid: boolean;
+        };
         DesktopSetupCompleteRequest: {
             continuous_filescan_enabled?: boolean;
             continuous_filescan_included_folders?: string[];
             /** Format: int64 */
             continuous_filescan_poll_interval_secs?: number | null;
+            cron_jobs?: components["schemas"]["CronJob"][];
+            cron_schedule?: string;
+            enable_cron_job?: boolean;
             excluded_folders?: string[];
             included_folders: string[];
             /** @description When present, create and configure this index instead of the default. */
             new_index_db?: string | null;
+            scan_audio?: boolean;
+            scan_html?: boolean;
+            scan_images?: boolean;
+            scan_pdf?: boolean;
+            scan_video?: boolean;
         };
         DesktopSetupCompleteResponse: {
             index_db: string;
-            job: components["schemas"]["JobModel"];
+            /** @description The immediate first run: full rescan followed by configured models.
+             *     Empty only when an earlier cron-style run for this DB is still active. */
+            jobs: components["schemas"]["JobModel"][];
         };
         DesktopSetupStatus: {
             /** @description The policy-resolved default index database used for this request. */
@@ -1538,6 +1572,14 @@ export interface components {
             /** Format: double */
             threshold?: number | null;
         };
+        JobOutcomeModel: {
+            error?: string | null;
+            /** Format: int64 */
+            queue_id: number;
+            status: components["schemas"]["JobOutcomeStatus"];
+        };
+        /** @enum {string} */
+        JobOutcomeStatus: "completed" | "failed" | "cancelled";
         JobSettings: {
             /** Format: int64 */
             default_batch_size?: number | null;
@@ -2082,6 +2124,8 @@ export interface components {
             cancelled_jobs: number[];
         };
         QueueStatusModel: {
+            /** @description Bounded, process-local outcomes for jobs that recently left the queue. */
+            outcomes: components["schemas"]["JobOutcomeModel"][];
             queue: components["schemas"]["JobModel"][];
         };
         RenamePinboardRequest: {
@@ -2984,6 +3028,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FolderValidation"];
+                };
+            };
+        };
+    };
+    desktop_preview_setup_schedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DesktopSchedulePreviewRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DesktopSchedulePreviewResponse"];
                 };
             };
         };
