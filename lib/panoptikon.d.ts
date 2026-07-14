@@ -215,6 +215,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/desktop/setup-continuous/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["desktop_validate_setup_continuous_folders"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop/setup-folders/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["desktop_validate_setup_folders"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/desktop/setup-status": {
         parameters: {
             query?: never;
@@ -225,6 +257,22 @@ export interface paths {
         get: operations["desktop_setup_status"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop/setup/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["complete_desktop_setup"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1197,6 +1245,33 @@ export interface components {
             /** @description Name of the setter that would produce the derived data */
             setter_name: string;
         };
+        DesktopContinuousScanSelection: {
+            continuous_folders?: string[];
+            excluded_folders?: string[];
+            included_folders: string[];
+            /** @description A new database has no indexed rows, so empty folders are safe. */
+            new_database?: boolean;
+        };
+        DesktopFolderSelection: {
+            excluded_folders?: string[];
+            included_folders: string[];
+            /** @description A new database has no indexed rows, so empty folders are safe. */
+            new_database?: boolean;
+        };
+        DesktopSetupCompleteRequest: {
+            continuous_filescan_enabled?: boolean;
+            continuous_filescan_included_folders?: string[];
+            /** Format: int64 */
+            continuous_filescan_poll_interval_secs?: number | null;
+            excluded_folders?: string[];
+            included_folders: string[];
+            /** @description When present, create and configure this index instead of the default. */
+            new_index_db?: string | null;
+        };
+        DesktopSetupCompleteResponse: {
+            index_db: string;
+            job: components["schemas"]["JobModel"];
+        };
         DesktopSetupStatus: {
             /** @description The policy-resolved default index database used for this request. */
             index_db: string;
@@ -1330,6 +1405,15 @@ export interface components {
             total: number;
             /** Format: int64 */
             unique: number;
+        };
+        FolderValidation: {
+            errors: components["schemas"]["FolderValidationIssue"][];
+            excluded_folders: string[];
+            included_folders: string[];
+        };
+        FolderValidationIssue: {
+            error: string;
+            path: string;
         };
         FoldersResponse: {
             excluded_folders: string[];
@@ -2848,6 +2932,62 @@ export interface operations {
             };
         };
     };
+    desktop_validate_setup_continuous_folders: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DesktopContinuousScanSelection"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderValidation"];
+                };
+            };
+        };
+    };
+    desktop_validate_setup_folders: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DesktopFolderSelection"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderValidation"];
+                };
+            };
+        };
+    };
     desktop_setup_status: {
         parameters: {
             query?: {
@@ -2868,6 +3008,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DesktopSetupStatus"];
+                };
+            };
+        };
+    };
+    complete_desktop_setup: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DesktopSetupCompleteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DesktopSetupCompleteResponse"];
                 };
             };
         };
