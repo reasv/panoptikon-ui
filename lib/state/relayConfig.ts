@@ -19,7 +19,7 @@ export const useRelayConfigState = create(
   persist<RelayV1State>(
     (set) => ({
       enabled: false,
-      relayURL: "http://127.0.0.1:17600",
+      relayURL: "http://localhost:17600",
       instanceId: "",
       credential: "",
       pairingRequestId: "",
