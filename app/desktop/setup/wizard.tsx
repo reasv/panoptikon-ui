@@ -1,34 +1,45 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useCallback, useMemo, useState } from "react"
 import { $api } from "@/lib/api"
+import { components } from "@/lib/panoptikon"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { FolderValidationIssue, WizardFolderSelector } from "./folder-selector"
 import { ContinuousScanMode, WizardContinuousScan } from "./continuous-scan"
+import { WizardFileTypes, WizardFileTypeSelection } from "./file-types"
+import { WizardModelSelection, WizardModelSettings } from "./models"
+import { WizardSchedule, WizardScheduleSelection, effectiveCronSchedule } from "./schedule"
+import { WizardReview } from "./review"
+import { WizardProgress } from "./progress"
 
 export type DesktopSetupMode = "onboarding" | "new-database"
 
-type StepId = "welcome" | "database" | "folders" | "continuous" | "models" | "finish"
+type StepId = "welcome" | "database" | "folders" | "file-types" | "continuous" | "models" | "schedule" | "review" | "progress"
 
 const onboardingSteps: { id: StepId; label: string }[] = [
   { id: "welcome", label: "Welcome" },
   { id: "folders", label: "Folders" },
+  { id: "file-types", label: "File types" },
   { id: "continuous", label: "Continuous scan" },
   { id: "models", label: "Models" },
-  { id: "finish", label: "Finish" },
+  { id: "schedule", label: "Schedule" },
+  { id: "review", label: "Review" },
+  { id: "progress", label: "Scan" },
 ]
 
 const newDatabaseSteps: { id: StepId; label: string }[] = [
   { id: "welcome", label: "New database" },
   { id: "database", label: "Name" },
   { id: "folders", label: "Folders" },
+  { id: "file-types", label: "File types" },
   { id: "continuous", label: "Continuous scan" },
   { id: "models", label: "Models" },
-  { id: "finish", label: "Finish" },
+  { id: "schedule", label: "Schedule" },
+  { id: "review", label: "Review" },
+  { id: "progress", label: "Scan" },
 ]
 
 export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
@@ -37,14 +48,21 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
   const [includedFolders, setIncludedFolders] = useState("")
   const [excludedFolders, setExcludedFolders] = useState("")
   const [folderErrors, setFolderErrors] = useState<FolderValidationIssue[]>([])
+  const [fileTypes, setFileTypes] = useState<WizardFileTypes>({ images: true, video: true, audio: false, pdf: false, html: false })
   const [continuousScanEnabled, setContinuousScanEnabled] = useState(false)
   const [continuousScanMode, setContinuousScanMode] = useState<ContinuousScanMode>("watcher")
   const [pollInterval, setPollInterval] = useState("60")
   const [continuousFolders, setContinuousFolders] = useState("")
   const [continuousFolderErrors, setContinuousFolderErrors] = useState<FolderValidationIssue[]>([])
+  const [selectedModels, setSelectedModels] = useState<string[]>([])
+  const [modelSettings, setModelSettings] = useState<WizardModelSettings>({})
+  const [schedule, setSchedule] = useState<WizardSchedule>({ enabled: true, mode: "daily", time: "03:00", everyHours: "3", weekday: "0", cron: "0 3 * * *" })
+  const [scheduleValid, setScheduleValid] = useState(true)
+  const [scheduleNextRun, setScheduleNextRun] = useState<string | null>(null)
+  const [scheduleError, setScheduleError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const router = useRouter()
+  const [completion, setCompletion] = useState<components["schemas"]["DesktopSetupCompleteResponse"] | null>(null)
   const { data: databases } = $api.useQuery("get", "/api/db")
   const steps = mode === "onboarding" ? onboardingSteps : newDatabaseSteps
   const currentStep = steps[step].id
@@ -63,47 +81,29 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
     }
     return null
   }, [existingNames, mode, trimmedDatabaseName])
+  const handleSchedulePreview = useCallback((valid: boolean, nextRun: string | null, error: string | null) => {
+    setScheduleValid(valid)
+    setScheduleNextRun(nextRun)
+    setScheduleError(error)
+  }, [])
 
-  async function finishOnboarding() {
+  async function startScan() {
+    if (mode === "new-database" && (!trimmedDatabaseName || databaseNameError)) return
     setSaving(true)
     setSaveError(null)
     try {
-      const completion = await completeSetup()
-      if (!completion) return
-      const deadline = Date.now() + 180_000
-      while (Date.now() < deadline) {
-        const response = await fetch("/api/desktop/setup-status", { cache: "no-store" })
-        if (!response.ok) throw new Error("Desktop could not determine whether the database is ready.")
-        const status = await response.json() as { ready: boolean }
-        if (status.ready) {
-          router.push("/search")
-          return
-        }
-        await new Promise((resolve) => window.setTimeout(resolve, 500))
-      }
-      throw new Error("The initial file scan has not started yet. Check the folder settings and job queue, then try again.")
+      const result = await completeSetup(mode === "new-database" ? trimmedDatabaseName : undefined)
+      if (!result) return
+      setCompletion(result)
+      setStep(steps.findIndex((item) => item.id === "progress"))
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : String(error))
+      setSaveError(error instanceof Error ? error.message : "Panoptikon could not start the initial scan.")
     } finally {
       setSaving(false)
     }
   }
 
-  async function finishNewDatabase() {
-    if (!trimmedDatabaseName || databaseNameError) return
-    setSaving(true)
-    setSaveError(null)
-    try {
-      const completion = await completeSetup(trimmedDatabaseName)
-      if (completion) router.push(`/search?index_db=${encodeURIComponent(completion.index_db)}`)
-    } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "Panoptikon could not create the database.")
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function completeSetup(newIndexDb?: string): Promise<{ index_db: string } | null> {
+  async function completeSetup(newIndexDb?: string): Promise<components["schemas"]["DesktopSetupCompleteResponse"] | null> {
     const response = await fetch("/api/desktop/setup/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -113,6 +113,21 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
         continuous_filescan_enabled: continuousScanEnabled,
         continuous_filescan_poll_interval_secs: continuousScanEnabled && continuousScanMode === "poller" ? Number(pollInterval) : null,
         continuous_filescan_included_folders: continuousScanEnabled ? lines(continuousFolders) : [],
+        scan_images: fileTypes.images,
+        scan_video: fileTypes.video,
+        scan_audio: fileTypes.audio,
+        scan_pdf: fileTypes.pdf,
+        scan_html: fileTypes.html,
+        cron_jobs: selectedModels.map((inferenceId) => {
+          const settings = modelSettings[inferenceId]
+          return {
+            inference_id: inferenceId,
+            batch_size: settings?.batchSize ?? null,
+            threshold: settings?.threshold ?? null,
+          }
+        }),
+        enable_cron_job: schedule.enabled,
+        cron_schedule: effectiveCronSchedule(schedule),
         new_index_db: newIndexDb,
       }),
     })
@@ -120,7 +135,7 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
       const body = await response.json().catch(() => null) as { detail?: string } | null
       throw new Error(body?.detail || "Panoptikon could not save the folder configuration.")
     }
-    return await response.json() as { index_db: string }
+    return await response.json() as components["schemas"]["DesktopSetupCompleteResponse"]
   }
 
   async function validateFoldersAndContinue() {
@@ -207,19 +222,23 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
     ? databaseNameError === null
     : currentStep === "folders"
       ? lines(includedFolders).length > 0
-      : currentStep !== "continuous" || !continuousScanEnabled || pollingIntervalIsValid
+      : currentStep === "file-types"
+        ? Object.values(fileTypes).some(Boolean)
+        : currentStep === "continuous"
+          ? !continuousScanEnabled || pollingIntervalIsValid
+          : currentStep !== "schedule" || scheduleValid
   const showDatabaseNameError = databaseName.length > 0
   const defaultDatabaseName = databases?.index.current ?? "default"
   const exampleDatabaseName = defaultDatabaseName.toLocaleLowerCase() === "photos" ? "family_photos" : "photos"
 
   return (
-    <main className="mx-auto flex h-screen max-w-4xl flex-col overflow-hidden px-4 sm:px-6">
+    <main className="mx-auto flex h-screen w-full flex-col overflow-hidden px-4 sm:px-6">
       <div className="shrink-0 py-4 sm:py-6" aria-label="Setup progress">
-        <div className="flex flex-wrap gap-2">
+        <div className="flex w-full flex-nowrap justify-center gap-2 overflow-x-auto pb-1">
           {steps.map((item, index) => (
             <span
               key={item.id}
-              className={`rounded-full border px-3 py-1 text-sm ${index === step ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              className={`shrink-0 rounded-full border px-3 py-1 text-sm ${index === step ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
             >
               {index + 1}. {item.label}
             </span>
@@ -228,7 +247,7 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
       </div>
 
       <ScrollArea key={currentStep} className="min-h-0 flex-1">
-        <div className="pr-4">
+        <div className="mx-auto w-full max-w-3xl px-2 pb-6 sm:pb-8">
         {currentStep === "welcome" && mode === "onboarding" && (
           <section className="max-w-3xl space-y-4">
             <h1 className="text-3xl font-semibold">Welcome to Panoptikon</h1>
@@ -293,6 +312,7 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
             onExcludedChange={(value) => { setExcludedFolders(value); setFolderErrors([]) }}
           />
         )}
+        {currentStep === "file-types" && <WizardFileTypeSelection value={fileTypes} onChange={setFileTypes} />}
         {currentStep === "continuous" && (
           <WizardContinuousScan
             enabled={continuousScanEnabled}
@@ -308,25 +328,24 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
             onWatchedFoldersChange={(value) => { setContinuousFolders(value); setContinuousFolderErrors([]) }}
           />
         )}
-        {currentStep === "models" && <section className="space-y-4"><h1 className="text-2xl font-semibold">Models and extraction</h1><p>Scanning makes files searchable by path and metadata. Extraction models add tags, text, and semantic search. The first model load can download large files and may take time.</p><p>You do not need to wait for extraction to finish. Model selection, job progress, and accelerator settings remain available on the Scan page.</p><Button variant="outline" onClick={() => router.push("/scan")}>Open full model and job settings</Button></section>}
-        {currentStep === "finish" && mode === "onboarding" && <section className="space-y-4"><h1 className="text-2xl font-semibold">Finish setup</h1><p>Once the initial scan has started, your first database is ready to use. You can change its folders, models, and other indexing options from the Scan page at any time.</p></section>}
-        {currentStep === "finish" && mode === "new-database" && <section className="space-y-4"><h1 className="text-2xl font-semibold">Create {trimmedDatabaseName}</h1><p>Panoptikon will create this separate index database when you finish.</p></section>}
+        {currentStep === "models" && <WizardModelSelection selected={selectedModels} settings={modelSettings} onSelectedChange={setSelectedModels} onSettingsChange={setModelSettings} />}
+        {currentStep === "schedule" && <WizardScheduleSelection value={schedule} selectedModelCount={selectedModels.length} valid={scheduleValid} nextRun={scheduleNextRun} error={scheduleError} onChange={setSchedule} onPreviewChange={handleSchedulePreview} />}
+        {currentStep === "review" && <WizardReview database={mode === "new-database" ? trimmedDatabaseName : defaultDatabaseName} includedFolders={lines(includedFolders)} excludedFolders={lines(excludedFolders)} fileTypes={fileTypes} continuousEnabled={continuousScanEnabled} continuousMode={continuousScanMode} pollInterval={pollInterval} continuousFolders={lines(continuousFolders)} selectedModels={selectedModels} modelSettings={modelSettings} schedule={schedule} scheduleNextRun={scheduleNextRun} />}
+        {currentStep === "progress" && completion && <WizardProgress completion={completion} />}
         </div>
       </ScrollArea>
 
-      <div className="shrink-0 border-t bg-background py-4 sm:py-5">
+      {currentStep !== "progress" && <div className="shrink-0 border-t bg-background py-4 sm:py-5">
         {saveError && <p className="mb-3 text-sm text-destructive" role="alert">{saveError}</p>}
         <div className="flex items-center justify-between gap-2">
           <Button variant="ghost" disabled={step === 0 || saving} onClick={() => setStep((value) => value - 1)}>Back</Button>
           <div className="flex flex-wrap justify-end gap-2">
-            {step < steps.length - 1
+            {currentStep !== "review"
               ? <Button disabled={!canContinue || saving} onClick={continueFromCurrentStep}>Continue</Button>
-              : mode === "onboarding"
-                ? <Button disabled={saving} onClick={finishOnboarding}>Finish and open Search</Button>
-                : <Button disabled={saving || Boolean(databaseNameError)} onClick={finishNewDatabase}>Create database and open Search</Button>}
+              : <Button disabled={saving || (mode === "new-database" && Boolean(databaseNameError))} onClick={startScan}>{saving ? "Starting…" : "Start scan"}</Button>}
           </div>
         </div>
-      </div>
+      </div>}
     </main>
   )
 }

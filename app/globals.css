@@ -66,6 +66,32 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Chromium renders native date/time picker indicators as dark artwork
+     unless the control declares its color scheme explicitly. */
+  input:is([type="date"], [type="datetime-local"], [type="month"], [type="time"], [type="week"]) {
+    color-scheme: light;
+  }
+
+  .dark input:is([type="date"], [type="datetime-local"], [type="month"], [type="time"], [type="week"]) {
+    color-scheme: dark;
+  }
+
+  .dark input:is([type="date"], [type="datetime-local"], [type="month"], [type="time"], [type="week"])::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.85;
+  }
+
+  input[type="time"]::-webkit-datetime-edit {
+    flex: 1;
+    padding: 0;
+    text-align: center;
+  }
+
+  input[type="time"]::-webkit-datetime-edit-fields-wrapper {
+    display: flex;
+    justify-content: center;
+  }
 }
 
 /* react-grid-layout hydration settling: at hydration, items switch from
