@@ -7,15 +7,17 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { FolderLists } from "@/components/scan/FolderLists"
+import { FolderValidationIssue, WizardFolderSelector } from "./folder-selector"
+import { ContinuousScanMode, WizardContinuousScan } from "./continuous-scan"
 
 export type DesktopSetupMode = "onboarding" | "new-database"
 
-type StepId = "welcome" | "database" | "folders" | "models" | "finish"
+type StepId = "welcome" | "database" | "folders" | "continuous" | "models" | "finish"
 
 const onboardingSteps: { id: StepId; label: string }[] = [
   { id: "welcome", label: "Welcome" },
   { id: "folders", label: "Folders" },
+  { id: "continuous", label: "Continuous scan" },
   { id: "models", label: "Models" },
   { id: "finish", label: "Finish" },
 ]
@@ -24,6 +26,7 @@ const newDatabaseSteps: { id: StepId; label: string }[] = [
   { id: "welcome", label: "New database" },
   { id: "database", label: "Name" },
   { id: "folders", label: "Folders" },
+  { id: "continuous", label: "Continuous scan" },
   { id: "models", label: "Models" },
   { id: "finish", label: "Finish" },
 ]
@@ -31,11 +34,18 @@ const newDatabaseSteps: { id: StepId; label: string }[] = [
 export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
   const [step, setStep] = useState(0)
   const [databaseName, setDatabaseName] = useState("")
+  const [includedFolders, setIncludedFolders] = useState("")
+  const [excludedFolders, setExcludedFolders] = useState("")
+  const [folderErrors, setFolderErrors] = useState<FolderValidationIssue[]>([])
+  const [continuousScanEnabled, setContinuousScanEnabled] = useState(false)
+  const [continuousScanMode, setContinuousScanMode] = useState<ContinuousScanMode>("watcher")
+  const [pollInterval, setPollInterval] = useState("60")
+  const [continuousFolders, setContinuousFolders] = useState("")
+  const [continuousFolderErrors, setContinuousFolderErrors] = useState<FolderValidationIssue[]>([])
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const router = useRouter()
   const { data: databases } = $api.useQuery("get", "/api/db")
-  const createDatabase = $api.useMutation("post", "/api/db/create")
   const steps = mode === "onboarding" ? onboardingSteps : newDatabaseSteps
   const currentStep = steps[step].id
   const existingNames = databases?.index.all ?? []
@@ -58,6 +68,8 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
     setSaving(true)
     setSaveError(null)
     try {
+      const completion = await completeSetup()
+      if (!completion) return
       const deadline = Date.now() + 180_000
       while (Date.now() < deadline) {
         const response = await fetch("/api/desktop/setup-status", { cache: "no-store" })
@@ -82,10 +94,8 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
     setSaving(true)
     setSaveError(null)
     try {
-      await createDatabase.mutateAsync({
-        params: { query: { new_index_db: trimmedDatabaseName } },
-      })
-      router.push(`/search?index_db=${encodeURIComponent(trimmedDatabaseName)}`)
+      const completion = await completeSetup(trimmedDatabaseName)
+      if (completion) router.push(`/search?index_db=${encodeURIComponent(completion.index_db)}`)
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "Panoptikon could not create the database.")
     } finally {
@@ -93,7 +103,111 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
     }
   }
 
-  const canContinue = currentStep !== "database" || databaseNameError === null
+  async function completeSetup(newIndexDb?: string): Promise<{ index_db: string } | null> {
+    const response = await fetch("/api/desktop/setup/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        included_folders: lines(includedFolders),
+        excluded_folders: lines(excludedFolders),
+        continuous_filescan_enabled: continuousScanEnabled,
+        continuous_filescan_poll_interval_secs: continuousScanEnabled && continuousScanMode === "poller" ? Number(pollInterval) : null,
+        continuous_filescan_included_folders: continuousScanEnabled ? lines(continuousFolders) : [],
+        new_index_db: newIndexDb,
+      }),
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => null) as { detail?: string } | null
+      throw new Error(body?.detail || "Panoptikon could not save the folder configuration.")
+    }
+    return await response.json() as { index_db: string }
+  }
+
+  async function validateFoldersAndContinue() {
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const response = await fetch("/api/desktop/setup-folders/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          included_folders: lines(includedFolders),
+          excluded_folders: lines(excludedFolders),
+          new_database: mode === "new-database",
+        }),
+      })
+      if (!response.ok) throw new Error("Panoptikon could not validate these folders.")
+      const result = await response.json() as {
+        included_folders: string[]
+        excluded_folders: string[]
+        errors: FolderValidationIssue[]
+      }
+      setIncludedFolders(result.included_folders.join("\n"))
+      setExcludedFolders(result.excluded_folders.join("\n"))
+      setFolderErrors(result.errors)
+      if (result.errors.length === 0) setStep((value) => value + 1)
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function validateContinuousScanAndContinue() {
+    if (!continuousScanEnabled) {
+      setContinuousFolderErrors([])
+      setStep((value) => value + 1)
+      return
+    }
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const response = await fetch("/api/desktop/setup-continuous/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          included_folders: lines(includedFolders),
+          excluded_folders: lines(excludedFolders),
+          continuous_folders: lines(continuousFolders),
+          new_database: mode === "new-database",
+        }),
+      })
+      if (!response.ok) throw new Error("Panoptikon could not validate the continuously watched folders.")
+      const result = await response.json() as {
+        included_folders: string[]
+        errors: FolderValidationIssue[]
+      }
+      setContinuousFolders(result.included_folders.join("\n"))
+      setContinuousFolderErrors(result.errors)
+      if (result.errors.length === 0) setStep((value) => value + 1)
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function continueFromCurrentStep() {
+    if (currentStep === "folders") {
+      void validateFoldersAndContinue()
+    } else if (currentStep === "continuous") {
+      void validateContinuousScanAndContinue()
+    } else {
+      setStep((value) => value + 1)
+    }
+  }
+
+  function lines(value: string): string[] {
+    return value.split("\n").map((line) => line.trim()).filter(Boolean)
+  }
+
+  const pollingIntervalIsValid = continuousScanMode !== "poller"
+    || (Number.isInteger(Number(pollInterval)) && Number(pollInterval) >= 1)
+  const canContinue = currentStep === "database"
+    ? databaseNameError === null
+    : currentStep === "folders"
+      ? lines(includedFolders).length > 0
+      : currentStep !== "continuous" || !continuousScanEnabled || pollingIntervalIsValid
   const showDatabaseNameError = databaseName.length > 0
   const defaultDatabaseName = databases?.index.current ?? "default"
   const exampleDatabaseName = defaultDatabaseName.toLocaleLowerCase() === "photos" ? "family_photos" : "photos"
@@ -170,7 +284,30 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
           </section>
         )}
 
-        {currentStep === "folders" && <section><h1 className="text-2xl font-semibold">Choose folders to index</h1><p className="text-muted-foreground">Add at least one folder and save it to start the initial scan.</p><FolderLists /></section>}
+        {currentStep === "folders" && (
+          <WizardFolderSelector
+            includedFolders={includedFolders}
+            excludedFolders={excludedFolders}
+            errors={folderErrors}
+            onIncludedChange={(value) => { setIncludedFolders(value); setFolderErrors([]) }}
+            onExcludedChange={(value) => { setExcludedFolders(value); setFolderErrors([]) }}
+          />
+        )}
+        {currentStep === "continuous" && (
+          <WizardContinuousScan
+            enabled={continuousScanEnabled}
+            mode={continuousScanMode}
+            pollInterval={pollInterval}
+            watchedFolders={continuousFolders}
+            includedFolders={lines(includedFolders)}
+            foldersStepNumber={steps.findIndex((item) => item.id === "folders") + 1}
+            errors={continuousFolderErrors}
+            onEnabledChange={setContinuousScanEnabled}
+            onModeChange={setContinuousScanMode}
+            onPollIntervalChange={setPollInterval}
+            onWatchedFoldersChange={(value) => { setContinuousFolders(value); setContinuousFolderErrors([]) }}
+          />
+        )}
         {currentStep === "models" && <section className="space-y-4"><h1 className="text-2xl font-semibold">Models and extraction</h1><p>Scanning makes files searchable by path and metadata. Extraction models add tags, text, and semantic search. The first model load can download large files and may take time.</p><p>You do not need to wait for extraction to finish. Model selection, job progress, and accelerator settings remain available on the Scan page.</p><Button variant="outline" onClick={() => router.push("/scan")}>Open full model and job settings</Button></section>}
         {currentStep === "finish" && mode === "onboarding" && <section className="space-y-4"><h1 className="text-2xl font-semibold">Finish setup</h1><p>Once the initial scan has started, your first database is ready to use. You can change its folders, models, and other indexing options from the Scan page at any time.</p></section>}
         {currentStep === "finish" && mode === "new-database" && <section className="space-y-4"><h1 className="text-2xl font-semibold">Create {trimmedDatabaseName}</h1><p>Panoptikon will create this separate index database when you finish.</p></section>}
@@ -183,7 +320,7 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
           <Button variant="ghost" disabled={step === 0 || saving} onClick={() => setStep((value) => value - 1)}>Back</Button>
           <div className="flex flex-wrap justify-end gap-2">
             {step < steps.length - 1
-              ? <Button disabled={!canContinue || saving} onClick={() => setStep((value) => value + 1)}>Continue</Button>
+              ? <Button disabled={!canContinue || saving} onClick={continueFromCurrentStep}>Continue</Button>
               : mode === "onboarding"
                 ? <Button disabled={saving} onClick={finishOnboarding}>Finish and open Search</Button>
                 : <Button disabled={saving || Boolean(databaseNameError)} onClick={finishNewDatabase}>Create database and open Search</Button>}

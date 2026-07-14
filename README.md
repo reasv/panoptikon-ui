@@ -59,6 +59,17 @@ database name and creates it only when the wizard is finished. Closing the
 initial wizard defers setup; it does not mark it skipped. Ordinary Server
 deployments are redirected away from the route.
 
+Folder choices are wizard-local state. Included and excluded paths have
+separate tabs, are normalized and checked before leaving the step, and are
+saved only when the wizard finishes. Desktop exposes a narrowly scoped native
+multi-folder picker that appends selections to the active textarea.
+
+The following Continuous scan step is also wizard-local. It stages optional
+enablement, native-event versus hierarchical-polling change detection, the
+polling interval, and an optional watched-folder whitelist. The whitelist is
+normalized and checked against the staged full-scan include/exclude scope on
+Continue; no setting or scan action is committed before the wizard finishes.
+
 Remote Panoptikon instances can pair with Panoptikon Desktop Relay v1 from the
 file-open settings. Pairing requires local approval in Desktop, issues a unique
 origin-bound credential, and replaces the retired global API-key `/open` and
