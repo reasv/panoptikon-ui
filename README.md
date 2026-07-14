@@ -70,6 +70,17 @@ polling interval, and an optional watched-folder whitelist. The whitelist is
 normalized and checked against the staged full-scan include/exclude scope on
 Continue; no setting or scan action is committed before the wizard finishes.
 
+The wizard also stages supported file categories, an ordered free selection of
+registry models with per-model batch/threshold sliders shown after selection,
+and the database's routine schedule. Models are never preselected. Daily,
+every-N-hours, and weekly controls generate five-field cron strings; advanced
+users can edit a custom expression, which is previewed by the Desktop API with
+its next local run time. A review step summarizes every staged choice before
+Start Scan commits anything. The final, non-reversible Scan step tracks the
+returned scan/model queue IDs and opens database-scoped Search or Scan pages in
+the system browser. The initial jobs run even when later automatic runs are
+disabled.
+
 Remote Panoptikon instances can pair with Panoptikon Desktop Relay v1 from the
 file-open settings. Pairing requires local approval in Desktop, issues a unique
 origin-bound credential, and replaces the retired global API-key `/open` and
