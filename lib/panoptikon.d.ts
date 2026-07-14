@@ -215,6 +215,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/desktop/setup-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["desktop_setup_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/inference/cache": {
         parameters: {
             query?: never;
@@ -1090,6 +1106,9 @@ export interface components {
              *     unset). Free-form; recognized-by-convention keys include
              *     `search_throttle_ms` and `disable_backend_open`. */
             client: unknown;
+            /** @description True only when this Server process is the bundled sidecar owned by
+             *     Panoptikon Desktop. API semantics are otherwise identical. */
+            desktop_managed: boolean;
             /** @description Name of the policy that matched this request. */
             policy: string;
         };
@@ -1177,6 +1196,12 @@ export interface components {
             data_types: string[];
             /** @description Name of the setter that would produce the derived data */
             setter_name: string;
+        };
+        DesktopSetupStatus: {
+            /** @description The policy-resolved default index database used for this request. */
+            index_db: string;
+            /** @description True once a current included folder has a corresponding filescan row. */
+            ready: boolean;
         };
         /** @enum {string} */
         DistanceAggregation: "MIN" | "MAX" | "AVG";
@@ -2819,6 +2844,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DbCreateResponse"];
+                };
+            };
+        };
+    };
+    desktop_setup_status: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DesktopSetupStatus"];
                 };
             };
         };
