@@ -1437,6 +1437,9 @@ export interface components {
         DesktopUpdateDismissRequest: {
             version: string;
         };
+        DesktopUpdateSnoozeRequest: {
+            version: string;
+        };
         /** @enum {string} */
         DistanceAggregation: "MIN" | "MAX" | "AVG";
         /** @enum {string} */
@@ -3319,6 +3322,20 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Same-origin browser request required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Available update version changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     snooze_desktop_update_ribbon: {
@@ -3328,10 +3345,28 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DesktopUpdateSnoozeRequest"];
+            };
+        };
         responses: {
             /** @description Ribbon snoozed for 24 hours */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Same-origin browser request required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Available update version changed */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3370,6 +3405,13 @@ export interface operations {
         responses: {
             /** @description Update window opened */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Same-origin browser request required */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
