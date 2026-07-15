@@ -114,7 +114,7 @@ export async function acknowledgeRelayOperation(session: RelaySession, operation
 
 export async function cancelPairingOperation(session: RelaySession, operationId: string) {
   await Promise.allSettled([
-    fetch(`/api/relay/pairing-operations/${operationId}`, { method: "DELETE" }),
+    fetch(`/api/relay/pairing-operations/${operationId}/cancel`, { method: "DELETE" }),
     fetch(`${session.relayURL}/v1/pairing/${operationId}`, { method: "DELETE" }),
   ])
 }
