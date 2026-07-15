@@ -14,7 +14,6 @@ import { ItemFileDetails } from "./ItemFileDetails"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useMemo } from "react"
-import { RelayConfig } from "./FileOpenRelay"
 
 export function ItemDetails() {
     const selected = useItemSelection((state) => state.getSelected())
@@ -26,7 +25,6 @@ export function ItemDetails() {
             <ExtractedMetadata item={selected} />
             <ResetFilters />
             {selected && <FileBookmarks item={selected} />}
-            <RelayConfig />
         </div>
     )
 }

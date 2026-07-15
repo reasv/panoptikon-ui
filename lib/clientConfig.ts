@@ -18,6 +18,7 @@ export interface ClientConfig {
   homeRedirect: string | null
   desktopManaged: boolean
   desktopShellAvailable: boolean
+  relayEnabled: boolean
 }
 
 // [policies.client] keys are free-form; these are the by-convention keys the
@@ -49,6 +50,7 @@ export function deriveClientConfig(response: ClientConfigResponse): ClientConfig
     desktopManaged:
       response.desktop_managed === true || client["desktop"] === true,
     desktopShellAvailable: response.desktop_shell_available === true,
+    relayEnabled: client["relay_enabled"] !== false,
   }
 }
 

@@ -3,7 +3,7 @@ import { $api } from "@/lib/api"
 import { useBookmarkNs, } from "@/lib/state/zust"
 import { useQueryClient } from "@tanstack/react-query"
 import { useToast } from "@/components/ui/use-toast"
-import { File, FolderOpen, BookmarkPlus, BookmarkX } from "lucide-react"
+import { File, FolderOpen, BookmarkPlus, BookmarkX, ChevronDown } from "lucide-react"
 import { Button } from "./ui/button"
 import { Toggle } from "./ui/toggle"
 import { cn } from "@/lib/utils"
@@ -13,6 +13,27 @@ import { FindButton } from "./gallery/FindButton"
 import { FileBookmarksSetter } from "./sidebar/details/FileBookmarks"
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "./ui/context-menu"
 import { useFileOpenActions } from "@/hooks/fileOpen"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "./ui/dropdown-menu"
+
+function RelayTargetSelector({ actions, floatingClass }: { actions: ReturnType<typeof useFileOpenActions>, floatingClass?: string }) {
+    if (!actions.relayDetected) return null
+    return <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+            <Button aria-label="Choose where file actions run" title="Choose where file actions run" variant="ghost" size="icon" className={cn("h-6 w-6", floatingClass)}>
+                <ChevronDown className="h-3 w-3" />
+            </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+            {actions.relayPaired ? <DropdownMenuRadioGroup value={actions.actionTarget} onValueChange={value => actions.setActionTarget(value as "relay" | "host")}>
+                <DropdownMenuRadioItem value="relay">This computer (Relay)</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="host">{actions.disableBackendOpen ? "Browser" : "Panoptikon server host"}</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup> : <>
+                <DropdownMenuItem disabled>{actions.disableBackendOpen ? "Browser" : "Panoptikon server host"}</DropdownMenuItem>
+                <DropdownMenuItem onSelect={actions.pairRelay}>Pair local Relay…</DropdownMenuItem>
+            </>}
+        </DropdownMenuContent>
+    </DropdownMenu>
+}
 
 export const BookmarkBtn = (
     {
@@ -189,7 +210,8 @@ export const OpenFile = (
         buttonVariant?: boolean
     }
 ) => {
-    const { openFile, disableBackendOpen } = useFileOpenActions({ sha256, path })
+    const actions = useFileOpenActions({ sha256, path })
+    const { openFile, disableBackendOpen } = actions
     const handleClick = openFile
     const buttonTitle = disableBackendOpen ? "Open file in new tab" : "Open file with your system's default application"
     return (
@@ -220,6 +242,7 @@ export const OpenFile = (
                         <path d="M14 2H6C4.9 2 4 2.9 4 4v16c0 1.1 0.9 2 2 2h12c1.1 0 2-0.9 2-2V8l-6-6zm1 7V3.5L18.5 9H15z" />
                     </svg>
                 </button>}
+            <RelayTargetSelector actions={actions} floatingClass={buttonVariant ? undefined : "absolute bottom-10 left-7 bg-white opacity-0 group-hover:opacity-100"} />
         </>
     )
 }
@@ -234,20 +257,16 @@ export const OpenFolder = (
         buttonVariant?: boolean
     }
 ) => {
-    const { showInFolder, disableBackendOpen } = useFileOpenActions({ sha256, path })
+    const actions = useFileOpenActions({ sha256, path })
+    const { showInFolder, disableBackendOpen } = actions
     const handleClick = showInFolder
-    if (disableBackendOpen) {
+    if (disableBackendOpen && !(actions.relayPaired && actions.actionTarget === "relay")) {
         return (
-            <FindButton
-                id={sha256}
-                id_type="sha256"
-                path={path || ""}
-                buttonVariant={buttonVariant}
-                buttonClassName={!buttonVariant ? "bottom-3 left-12" : undefined}
-            />
+            <><FindButton id={sha256} id_type="sha256" path={path || ""} buttonVariant={buttonVariant} buttonClassName={!buttonVariant ? "bottom-3 left-12" : undefined} />
+            <RelayTargetSelector actions={actions} floatingClass={buttonVariant ? undefined : "absolute bottom-10 left-16 bg-white opacity-0 group-hover:opacity-100"} /></>
         )
     }
-    return (
+    return (<>
         buttonVariant ?
             <Button
                 title="Show file in folder"
@@ -274,7 +293,8 @@ export const OpenFolder = (
                     <path d="M10 4H4c-1.1 0-2 0.9-2 2v12c0 1.1 0.9 2 2 2h16c1.1 0 2-0.9 2-2V8c0-1.1-0.9-2-2-2h-8l-2-2z" />
                 </svg>
             </button>
-    )
+        <RelayTargetSelector actions={actions} floatingClass={buttonVariant ? undefined : "absolute bottom-10 left-16 bg-white opacity-0 group-hover:opacity-100"} />
+    </>)
 }
 
 export const FilePathComponent = ({ path }: { path: string }) => {
