@@ -215,6 +215,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/desktop/external-inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["desktop_external_inputs"];
+        put: operations["update_desktop_external_inputs"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop/external-inputs/{variable}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["reveal_desktop_external_input"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/desktop/setup-continuous/validate": {
         parameters: {
             query?: never;
@@ -342,6 +374,23 @@ export interface paths {
         post?: never;
         /** Unload a model from a cache slot */
         delete: operations["unload_model"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/inference/external-inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get model external-input requirements */
+        get: operations["get_external_inputs"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1267,6 +1316,12 @@ export interface components {
             included_folders: string[];
             /** @description A new database has no indexed rows, so empty folders are safe. */
             new_database?: boolean;
+        };
+        DesktopExternalInputUpdate: {
+            remove?: string[];
+            values?: {
+                [key: string]: string;
+            };
         };
         DesktopFolderSelection: {
             excluded_folders?: string[];
@@ -2976,6 +3031,73 @@ export interface operations {
             };
         };
     };
+    desktop_external_inputs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Declared external inputs, presence, and editable non-secret values */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Value"];
+                };
+            };
+        };
+    };
+    update_desktop_external_inputs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DesktopExternalInputUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated external-input status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Value"];
+                };
+            };
+        };
+    };
+    reveal_desktop_external_input: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Declared environment-variable binding */
+                variable: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current value after an explicit reveal action */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Value"];
+                };
+            };
+        };
+    };
     desktop_validate_setup_continuous_folders: {
         parameters: {
             query?: {
@@ -3208,6 +3330,35 @@ export interface operations {
                 };
             };
             /** @description Unload failure */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_external_inputs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reusable definitions, model usages, and configured presence */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Value"];
+                };
+            };
+            /** @description Registry or environment resolution failed */
             500: {
                 headers: {
                     [name: string]: unknown;

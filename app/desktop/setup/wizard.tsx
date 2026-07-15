@@ -14,10 +14,11 @@ import { WizardModelSelection, WizardModelSettings } from "./models"
 import { WizardSchedule, WizardScheduleSelection, effectiveCronSchedule } from "./schedule"
 import { WizardReview } from "./review"
 import { WizardProgress } from "./progress"
+import { ExternalInputEditor, selectedExternalInputIds, useExternalInputs } from "@/components/external-inputs"
 
 export type DesktopSetupMode = "onboarding" | "new-database"
 
-type StepId = "welcome" | "database" | "folders" | "file-types" | "continuous" | "models" | "schedule" | "review" | "progress"
+type StepId = "welcome" | "database" | "folders" | "file-types" | "continuous" | "models" | "configuration" | "schedule" | "review" | "progress"
 
 const onboardingSteps: { id: StepId; label: string }[] = [
   { id: "welcome", label: "Welcome" },
@@ -56,6 +57,7 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
   const [continuousFolderErrors, setContinuousFolderErrors] = useState<FolderValidationIssue[]>([])
   const [selectedModels, setSelectedModels] = useState<string[]>([])
   const [modelSettings, setModelSettings] = useState<WizardModelSettings>({})
+  const [externalInputsReady, setExternalInputsReady] = useState(false)
   const [schedule, setSchedule] = useState<WizardSchedule>({ enabled: true, mode: "daily", time: "03:00", everyHours: "3", weekday: "0", cron: "0 3 * * *" })
   const [scheduleValid, setScheduleValid] = useState(true)
   const [scheduleNextRun, setScheduleNextRun] = useState<string | null>(null)
@@ -64,7 +66,12 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [completion, setCompletion] = useState<components["schemas"]["DesktopSetupCompleteResponse"] | null>(null)
   const { data: databases } = $api.useQuery("get", "/api/db")
-  const steps = mode === "onboarding" ? onboardingSteps : newDatabaseSteps
+  const externalInputs = useExternalInputs()
+  const hasExternalInputs = selectedExternalInputIds(externalInputs.data, selectedModels).length > 0
+  const baseSteps = mode === "onboarding" ? onboardingSteps : newDatabaseSteps
+  const steps = hasExternalInputs
+    ? baseSteps.flatMap((item) => item.id === "models" ? [item, { id: "configuration" as const, label: "Configuration" }] : [item])
+    : baseSteps
   const currentStep = steps[step].id
   const existingNames = databases?.index.all ?? []
   const trimmedDatabaseName = databaseName.trim()
@@ -226,7 +233,9 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
         ? Object.values(fileTypes).some(Boolean)
         : currentStep === "continuous"
           ? !continuousScanEnabled || pollingIntervalIsValid
-          : currentStep !== "schedule" || scheduleValid
+          : currentStep === "configuration"
+            ? externalInputsReady
+            : currentStep !== "schedule" || scheduleValid
   const showDatabaseNameError = databaseName.length > 0
   const defaultDatabaseName = databases?.index.current ?? "default"
   const exampleDatabaseName = defaultDatabaseName.toLocaleLowerCase() === "photos" ? "family_photos" : "photos"
@@ -329,6 +338,16 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
           />
         )}
         {currentStep === "models" && <WizardModelSelection selected={selectedModels} settings={modelSettings} onSelectedChange={setSelectedModels} onSettingsChange={setModelSettings} />}
+        {currentStep === "configuration" && (
+          <section className="space-y-5">
+            <div className="space-y-2">
+              <h1 className="text-2xl font-semibold">Additional configuration</h1>
+              <p className="text-muted-foreground">The selected models need or can use installation-wide values. These settings are shared by every database on this Panoptikon Desktop installation.</p>
+              <p className="text-sm text-muted-foreground">Save all required values to continue, or go back and deselect the models that require them.</p>
+            </div>
+            <ExternalInputEditor selectedModels={selectedModels} onReadyChange={setExternalInputsReady} />
+          </section>
+        )}
         {currentStep === "schedule" && <WizardScheduleSelection value={schedule} selectedModelCount={selectedModels.length} valid={scheduleValid} nextRun={scheduleNextRun} error={scheduleError} onChange={setSchedule} onPreviewChange={handleSchedulePreview} />}
         {currentStep === "review" && <WizardReview database={mode === "new-database" ? trimmedDatabaseName : defaultDatabaseName} includedFolders={lines(includedFolders)} excludedFolders={lines(excludedFolders)} fileTypes={fileTypes} continuousEnabled={continuousScanEnabled} continuousMode={continuousScanMode} pollInterval={pollInterval} continuousFolders={lines(continuousFolders)} selectedModels={selectedModels} modelSettings={modelSettings} schedule={schedule} scheduleNextRun={scheduleNextRun} />}
         {currentStep === "progress" && completion && <WizardProgress completion={completion} />}

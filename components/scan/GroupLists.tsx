@@ -18,6 +18,9 @@ import { ModelConfig, useCronJobSchedule, useModelConfig } from "./ModelConfig"
 import { useExtractionGroupTabs } from "@/lib/state/ScanTabs"
 import { splitByFirstSlash } from "../SearchTypeSelector"
 import { dataSettersColumns } from "../table/columns/dataSetters"
+import Link from "next/link"
+import { missingRequiredExternalInputs, useExternalInputs } from "@/components/external-inputs"
+import { useClientConfig } from "@/lib/useClientConfig"
 
 export function GroupList() {
     const { data } = $api.useQuery(
@@ -70,6 +73,11 @@ export function GroupTab({ group }: { group: Group }) {
     const { toast } = useToast()
     const [dbs] = useSelectedDBs()
     const modelConfig = useModelConfig(group)
+    const externalInputs = useExternalInputs()
+    const clientConfig = useClientConfig()
+    const selectedInferenceIds = selectedValues.map((model) => `${group.group_name}/${model.inference_id}`)
+    const missingInputs = missingRequiredExternalInputs(externalInputs.data, selectedInferenceIds)
+    const requirementsMissing = missingInputs.length > 0
     const runJob = $api.useMutation("post", "/api/jobs/data/extraction", {
         onSuccess: () => {
             queryClient.invalidateQueries({
@@ -158,6 +166,7 @@ export function GroupTab({ group }: { group: Group }) {
                     {data && <ModelConfig
                         modelConfig={modelConfig}
                     />}
+                    {requirementsMissing && <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm"><p className="font-medium text-destructive">The selected model configuration is incomplete.</p><p className="mt-1 text-muted-foreground">Supply the required external values before running or scheduling these models.</p>{clientConfig.data?.desktopManaged ? <Link className="mt-2 inline-block font-medium text-primary underline underline-offset-4" href="/desktop/configuration">Open Additional configuration</Link> : <p className="mt-2">Configure the declared environment variables on the Inferio host.</p>}</div>}
                     <DataTable
                         setRowSelection={setSelected}
                         rowSelection={selected}
@@ -169,7 +178,7 @@ export function GroupTab({ group }: { group: Group }) {
                         header={
                             <>
                                 <Button
-                                    disabled={selectedValues.length === 0}
+                                    disabled={selectedValues.length === 0 || requirementsMissing}
                                     variant="outline"
                                     onClick={() => runSelected()}
                                 >
@@ -184,7 +193,7 @@ export function GroupTab({ group }: { group: Group }) {
                                     Delete Data From Selected
                                 </Button>
                                 <Button
-                                    disabled={selectedValues.length === 0}
+                                    disabled={selectedValues.length === 0 || requirementsMissing}
                                     className="ml-4 mr-4"
                                     variant="outline"
                                     onClick={() => addToCronSchedule()}

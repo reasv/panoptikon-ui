@@ -6,8 +6,10 @@ import Link from "next/link"
 import { selectedDBsSerializer, useSelectedDBs } from "@/lib/state/database"
 import { useMemo } from "react"
 import { ScanInternal } from "@/components/scan/ScanDrawer"
+import { useClientConfig } from "@/lib/useClientConfig"
 
 export function ScanPage() {
+  const clientConfig = useClientConfig()
   const dbs = useSelectedDBs()[0]
   const searchLink = useMemo(() => {
     return selectedDBsSerializer("/search", {
@@ -27,6 +29,7 @@ export function ScanPage() {
                 <SidebarClose className="h-4 w-4" />
               </Button>
             </Link>
+            {clientConfig.data?.desktopManaged && <Link href="/desktop/configuration"><Button variant="outline" className="ml-2">Additional configuration</Button></Link>}
             <ScanInternal />
           </div>
         </ScrollArea>
