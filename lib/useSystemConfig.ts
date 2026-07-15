@@ -8,7 +8,10 @@ export type SystemConfig = components["schemas"]["SystemConfig"]
 
 // Shared read/modify/write access to the per-DB scan configuration.
 // changeConfig refetches the latest config before applying the change so
-// concurrent edits from other components don't get clobbered.
+// concurrent edits from other components don't get clobbered. The gateway
+// applies the typed before/after delta to the concrete TOML document, so this
+// full object never causes unrelated comments, ordering, or advanced keys to
+// be rewritten.
 export function useSystemConfig() {
     const [dbs] = useSelectedDBs()
     const queryClient = useQueryClient()

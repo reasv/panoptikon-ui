@@ -1285,7 +1285,7 @@ export interface components {
              *     (Relay is enabled when the key is absent). */
             client: unknown;
             /** @description True only when this Server process is the bundled sidecar owned by
-             *     Panoptikon Desktop. API semantics are otherwise identical. */
+             *     Panoptikon Desktop and the matched policy opts into Desktop authority. */
             desktop_managed: boolean;
             /** @description True only for a policy explicitly marked as the local Desktop client
              *     while the private parent-shell bridge is configured. */

@@ -88,6 +88,17 @@ export function Config() {
     const runCronJob = async () => {
         cronjobRunMut.mutate({ params: { query: dbs } })
     }
+    const guiKnownKeys = new Set([
+        "remove_unavailable_files", "scan_images", "scan_video", "scan_audio", "scan_html", "scan_pdf",
+        "enable_cron_job", "cron_schedule", "cron_jobs", "job_settings", "included_folders", "excluded_folders",
+        "preload_embedding_models", "prewarm_embedding_models", "continuous_filescan", "job_filters", "filescan_filter",
+    ])
+    const tomlOnlyKeys = data
+        ? Object.keys(data as Record<string, unknown>).filter((key) => !guiKnownKeys.has(key))
+        : []
+    const hasTomlOnlyConfiguration = Boolean(
+        data && (data.job_filters.length > 0 || data.filescan_filter || tomlOnlyKeys.length > 0),
+    )
     return (
         <FilterContainer
             label="Scan Configuration"
@@ -95,6 +106,11 @@ export function Config() {
             storageKey="scanConfig"
         >
             {data ? <>
+                {hasTomlOnlyConfiguration && <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
+                    <p className="font-medium">This database also has advanced TOML configuration.</p>
+                    <p className="mt-1 text-muted-foreground">These controls apply only the setting you change. Filters, comments, key order, and settings this UI does not understand are left in place.</p>
+                    {tomlOnlyKeys.length > 0 && <p className="mt-2 font-mono text-xs text-muted-foreground">Additional keys: {tomlOnlyKeys.join(", ")}</p>}
+                </div>}
                 <div className='grid gap-4 grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 4xl:grid-cols-4'>
                     <SwitchFilter
                         label="Image Files"
@@ -151,8 +167,8 @@ export function Config() {
                         }))}
                     />
                     <SwitchFilter
-                        label="Embedding Model Preload"
-                        description="Keep any models with embeddings inside the database persistently loaded in memory"
+                        label="Keep embedding models loaded"
+                        description="Fastest searches, but keeps full model weights in system or GPU memory even while idle"
                         value={data.preload_embedding_models}
                         onChange={(value) => changeConfig((currentConfig) => ({
                             ...currentConfig,
@@ -160,8 +176,8 @@ export function Config() {
                         }))}
                     />
                     <SwitchFilter
-                        label="Embedding Model Prewarm"
-                        description="Load this database's embedding model code eagerly at startup so the first search doesn't wait for it"
+                        label="Prepare embedding worker code"
+                        description="Reduces first-search import delay without loading model weights; still uses some system memory"
                         value={data.prewarm_embedding_models}
                         onChange={(value) => changeConfig((currentConfig) => ({
                             ...currentConfig,

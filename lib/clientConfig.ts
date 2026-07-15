@@ -47,8 +47,7 @@ export function deriveClientConfig(response: ClientConfigResponse): ClientConfig
     restrictedMode: capabilities.scan_jobs === false,
     searchThrottleMs: typeof throttle === "number" ? throttle : 500,
     homeRedirect: normalizeHomeRedirect(client["home_redirect"]),
-    desktopManaged:
-      response.desktop_managed === true || client["desktop"] === true,
+    desktopManaged: response.desktop_managed === true,
     desktopShellAvailable: response.desktop_shell_available === true,
     relayEnabled: client["relay_enabled"] !== false,
   }
