@@ -17,19 +17,19 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioG
 
 function RelayTargetSelector({ actions, floatingClass }: { actions: ReturnType<typeof useFileOpenActions>, floatingClass?: string }) {
     if (!actions.relayDetected) return null
-    return <DropdownMenu>
+    return <DropdownMenu onOpenChange={open => { if (open) void actions.refreshRelay() }}>
         <DropdownMenuTrigger asChild>
             <Button aria-label="Choose where file actions run" title="Choose where file actions run" variant="ghost" size="icon" className={cn("h-6 w-6", floatingClass)}>
                 <ChevronDown className="h-3 w-3" />
             </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
-            {actions.relayPaired ? <DropdownMenuRadioGroup value={actions.actionTarget} onValueChange={value => actions.setActionTarget(value as "relay" | "host")}>
+            {actions.relayPaired ? <DropdownMenuRadioGroup value={actions.actionTarget} onValueChange={value => actions.setActionTarget(value as "relay" | "existing")}>
                 <DropdownMenuRadioItem value="relay">This computer (Relay)</DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="host">{actions.disableBackendOpen ? "Browser" : "Panoptikon server host"}</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="existing">{actions.disableBackendOpen ? "Browser" : "Panoptikon server host"}</DropdownMenuRadioItem>
             </DropdownMenuRadioGroup> : <>
                 <DropdownMenuItem disabled>{actions.disableBackendOpen ? "Browser" : "Panoptikon server host"}</DropdownMenuItem>
-                <DropdownMenuItem onSelect={actions.pairRelay}>Pair local Relay…</DropdownMenuItem>
+                <DropdownMenuItem disabled={actions.relayPairing} onSelect={() => void actions.pairRelay()}>{actions.relayPairing ? "Waiting for Desktop approval…" : "Pair local Relay…"}</DropdownMenuItem>
             </>}
         </DropdownMenuContent>
     </DropdownMenu>
@@ -213,7 +213,9 @@ export const OpenFile = (
     const actions = useFileOpenActions({ sha256, path })
     const { openFile, disableBackendOpen } = actions
     const handleClick = openFile
-    const buttonTitle = disableBackendOpen ? "Open file in new tab" : "Open file with your system's default application"
+    const buttonTitle = actions.relayPaired && actions.actionTarget === "relay"
+        ? "Open file on this computer using Relay"
+        : disableBackendOpen ? "Open file in new tab" : "Open file on the Panoptikon server host"
     return (
         <>
             {buttonVariant ?
@@ -267,9 +269,9 @@ export const OpenFolder = (
         )
     }
     return (<>
-        buttonVariant ?
+        {buttonVariant ?
             <Button
-                title="Show file in folder"
+                title={actions.relayPaired && actions.actionTarget === "relay" ? "Show file on this computer using Relay" : "Show file on the Panoptikon server host"}
                 onClick={() => handleClick()}
                 variant="ghost"
                 size="icon"
@@ -292,7 +294,7 @@ export const OpenFolder = (
                 >
                     <path d="M10 4H4c-1.1 0-2 0.9-2 2v12c0 1.1 0.9 2 2 2h16c1.1 0 2-0.9 2-2V8c0-1.1-0.9-2-2-2h-8l-2-2z" />
                 </svg>
-            </button>
+            </button>}
         <RelayTargetSelector actions={actions} floatingClass={buttonVariant ? undefined : "absolute bottom-10 left-16 bg-white opacity-0 group-hover:opacity-100"} />
     </>)
 }

@@ -7,6 +7,7 @@ import {
     QueryClient,
     QueryClientProvider,
 } from '@tanstack/react-query'
+import { RelayPolicyGate } from "@/lib/RelayPolicyGate"
 
 function makeQueryClient() {
     return new QueryClient({
@@ -48,7 +49,7 @@ export default function Providers({ children }: Readonly<{ children: ReactNode }
     return (
         <NuqsAdapter>
             <QueryClientProvider client={queryClient}>
-                {children}
+                <RelayPolicyGate>{children}</RelayPolicyGate>
                 <ReactQueryDevtools initialIsOpen={false} />
             </QueryClientProvider>
         </NuqsAdapter>

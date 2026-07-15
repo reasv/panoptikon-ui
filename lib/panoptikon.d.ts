@@ -1281,7 +1281,8 @@ export interface components {
             capabilities: components["schemas"]["ClientCapabilities"];
             /** @description The policy's `[policies.client]` table, verbatim (empty object when
              *     unset). Free-form; recognized-by-convention keys include
-             *     `search_throttle_ms` and `disable_backend_open`. */
+             *     `search_throttle_ms`, `disable_backend_open`, and `relay_enabled`
+             *     (Relay is enabled when the key is absent). */
             client: unknown;
             /** @description True only when this Server process is the bundled sidecar owned by
              *     Panoptikon Desktop. API semantics are otherwise identical. */
