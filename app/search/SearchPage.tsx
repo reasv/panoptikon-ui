@@ -30,28 +30,34 @@ import { useItemSelection } from "@/lib/state/itemSelection"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { components } from "@/lib/panoptikon"
 import { useGridScrollAnchor } from "@/lib/state/gridScroll"
+import { DesktopUpdateRibbon } from "@/components/DesktopUpdateRibbon"
 
 export function SearchPageContent({ initialQuery, isRestrictedMode }:
     { initialQuery: SearchQueryArgs, isRestrictedMode: boolean }) {
     const [sidebarOpen, _] = useSideBarOpen()
+    const [updateRibbonVisible, setUpdateRibbonVisible] = useState(false)
     return (
-        <div className="flex w-full h-screen">
-            <SideBar />
-            {!isRestrictedMode && <ScanDrawer />}
-            <div className={cn('p-4 transition-all duration-300 mx-auto',
-                sidebarOpen ? 'w-full lg:w-1/2 xl:w-2/3 2xl:w-3/4 4xl:w-[80%] 5xl:w-[82%]' : 'w-full'
-            )}>
-                <MultiSearchView
-                    initialQuery={initialQuery}
-                    isRestrictedMode={isRestrictedMode}
-                />
+        <div className="flex h-screen w-full flex-col">
+            <DesktopUpdateRibbon onVisibilityChange={setUpdateRibbonVisible} />
+            <div className="flex min-h-0 flex-1">
+                <SideBar />
+                {!isRestrictedMode && <ScanDrawer />}
+                <div className={cn('p-4 transition-all duration-300 mx-auto',
+                    sidebarOpen ? 'w-full lg:w-1/2 xl:w-2/3 2xl:w-3/4 4xl:w-[80%] 5xl:w-[82%]' : 'w-full'
+                )}>
+                    <MultiSearchView
+                        initialQuery={initialQuery}
+                        isRestrictedMode={isRestrictedMode}
+                        updateRibbonVisible={updateRibbonVisible}
+                    />
+                </div>
             </div>
         </div>
     )
 }
 
-export function MultiSearchView({ initialQuery, isRestrictedMode }:
-    { initialQuery: SearchQueryArgs, isRestrictedMode: boolean }) {
+export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVisible = false }:
+    { initialQuery: SearchQueryArgs, isRestrictedMode: boolean, updateRibbonVisible?: boolean }) {
     const { data, error, isError, refetch, isFetching, nResults, page, pageSize, setPage, searchEnabled, getPageURL } = useSearch({ initialQuery })
     const { toast } = useToast()
     const onRefresh = async () => {
@@ -165,6 +171,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode }:
                         isLoading={loading}
                         showPagination={showPagination}
                         savedScrollOffsetRef={gridScrollOffsetRef}
+                        updateRibbonVisible={updateRibbonVisible}
                     />
             }
             {
@@ -234,6 +241,7 @@ export function ResultGrid({
     isLoading,
     showPagination = true,
     savedScrollOffsetRef,
+    updateRibbonVisible = false,
 }: {
     results: SearchResult[],
     resultMetrics?: components["schemas"]["SearchMetrics"],
@@ -243,6 +251,7 @@ export function ResultGrid({
     isLoading?: boolean,
     showPagination?: boolean,
     savedScrollOffsetRef?: React.MutableRefObject<number>,
+    updateRibbonVisible?: boolean,
 }) {
     // TanStack Virtual v3 triggers re-renders by mutating internal state,
     // which the React Compiler's memoization breaks — same as the gallery view.
@@ -425,7 +434,9 @@ export function ResultGrid({
                     // Radix injects — table layout also sizes to content, which breaks the
                     // width measurement the column count is derived from
                     className={cn('w-full rounded-[inherit] [&>div]:!block',
-                        showPagination ? 'max-h-[calc(100vh-225px)]' : 'max-h-[calc(100vh-163px)]'
+                        showPagination
+                            ? (updateRibbonVisible ? 'max-h-[calc(100vh-273px)]' : 'max-h-[calc(100vh-225px)]')
+                            : (updateRibbonVisible ? 'max-h-[calc(100vh-211px)]' : 'max-h-[calc(100vh-163px)]')
                     )}
                 >
                     <div

@@ -5,6 +5,7 @@ import { components } from "@/lib/panoptikon"
 // ruleset, and the policy's free-form [policies.client] TOML table verbatim.
 export type ClientConfigResponse = components["schemas"]["ClientConfigResponse"] & {
   desktop_managed?: boolean
+  desktop_shell_available?: boolean
 }
 
 // The derived shape the UI actually consumes. Computed by deriveClientConfig
@@ -16,6 +17,7 @@ export interface ClientConfig {
   searchThrottleMs: number
   homeRedirect: string | null
   desktopManaged: boolean
+  desktopShellAvailable: boolean
 }
 
 // [policies.client] keys are free-form; these are the by-convention keys the
@@ -46,6 +48,7 @@ export function deriveClientConfig(response: ClientConfigResponse): ClientConfig
     homeRedirect: normalizeHomeRedirect(client["home_redirect"]),
     desktopManaged:
       response.desktop_managed === true || client["desktop"] === true,
+    desktopShellAvailable: response.desktop_shell_available === true,
   }
 }
 

@@ -327,6 +327,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/desktop/update-ribbon/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["dismiss_desktop_update_ribbon"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop/update-ribbon/snooze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["snooze_desktop_update_ribbon"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop/update-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["desktop_update_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop/update-window/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["open_desktop_update_window"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/inference/cache": {
         parameters: {
             query?: never;
@@ -1222,6 +1286,9 @@ export interface components {
             /** @description True only when this Server process is the bundled sidecar owned by
              *     Panoptikon Desktop. API semantics are otherwise identical. */
             desktop_managed: boolean;
+            /** @description True only for a policy explicitly marked as the local Desktop client
+             *     while the private parent-shell bridge is configured. */
+            desktop_shell_available: boolean;
             /** @description Name of the policy that matched this request. */
             policy: string;
         };
@@ -1366,6 +1433,9 @@ export interface components {
             index_db: string;
             /** @description True once a current included folder has a corresponding filescan row. */
             ready: boolean;
+        };
+        DesktopUpdateDismissRequest: {
+            version: string;
         };
         /** @enum {string} */
         DistanceAggregation: "MIN" | "MAX" | "AVG";
@@ -3226,6 +3296,84 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DesktopSetupCompleteResponse"];
                 };
+            };
+        };
+    };
+    dismiss_desktop_update_ribbon: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DesktopUpdateDismissRequest"];
+            };
+        };
+        responses: {
+            /** @description Ribbon dismissed for the selected version */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    snooze_desktop_update_ribbon: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ribbon snoozed for 24 hours */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    desktop_update_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Desktop update awareness state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Value"];
+                };
+            };
+        };
+    };
+    open_desktop_update_window: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Update window opened */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
