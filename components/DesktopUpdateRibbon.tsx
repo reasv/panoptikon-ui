@@ -13,9 +13,15 @@ type DesktopUpdateStatus = {
   ribbon_visible: boolean
 }
 
+class DesktopUpdateRequestError extends Error {
+  constructor(readonly status: number) {
+    super("Panoptikon Desktop did not accept the update action")
+  }
+}
+
 async function updateRequest(path: string, init?: RequestInit) {
   const response = await fetch(path, { cache: "no-store", ...init })
-  if (!response.ok) throw new Error("Panoptikon Desktop did not accept the update action")
+  if (!response.ok) throw new DesktopUpdateRequestError(response.status)
   return response
 }
 
@@ -40,9 +46,15 @@ export function DesktopUpdateRibbon({ onVisibilityChange }: { onVisibilityChange
         headers: body ? { "Content-Type": "application/json" } : undefined,
         body: body ? JSON.stringify(body) : undefined,
       })
-      await status.refetch()
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "The Desktop update action failed")
+      setError(reason instanceof DesktopUpdateRequestError && reason.status === 409
+        ? "The available version changed. Review it and try again."
+        : reason instanceof Error ? reason.message : "The Desktop update action failed")
+    } finally {
+      // A stale target returns 409. Refresh even after rejection so this tab
+      // immediately shows the replacement release instead of retrying stale
+      // state until the normal polling interval elapses.
+      await status.refetch()
     }
   }
 
@@ -59,7 +71,7 @@ export function DesktopUpdateRibbon({ onVisibilityChange }: { onVisibilityChange
       </p>
       <Button size="sm" className="h-8 bg-orange-600 text-white hover:bg-orange-500" onClick={() => act("/api/desktop/update-window/open")}>View update</Button>
       <button className="text-xs text-orange-200 underline underline-offset-4 hover:text-white" onClick={() => act("/api/desktop/update-ribbon/dismiss", { version: update.target_version })}>Don&apos;t show again for this version</button>
-      <button className="rounded p-1 text-orange-200 hover:bg-orange-900 hover:text-white" aria-label="Hide until tomorrow" title="Hide until tomorrow" onClick={() => act("/api/desktop/update-ribbon/snooze")}>
+      <button className="rounded p-1 text-orange-200 hover:bg-orange-900 hover:text-white" aria-label="Hide until tomorrow" title="Hide until tomorrow" onClick={() => act("/api/desktop/update-ribbon/snooze", { version: update.target_version })}>
         <X className="h-4 w-4" aria-hidden="true" />
       </button>
     </aside>
