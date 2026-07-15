@@ -78,8 +78,9 @@ users can edit a custom expression, which is previewed by the Desktop API with
 its next local run time. A review step summarizes every staged choice before
 Start Scan commits anything. The final, non-reversible Scan step tracks the
 returned scan/model queue IDs and opens database-scoped Search or Scan pages in
-the system browser. The initial jobs run even when later automatic runs are
-disabled.
+the system browser. Links to the Scan page elsewhere in the Desktop wizard use
+the same native browser-opening path. The initial jobs run even when later
+automatic runs are disabled.
 
 Remote Panoptikon instances can pair with Panoptikon Desktop Relay v1 from the
 file-open settings. Pairing requires local approval in Desktop, issues a unique

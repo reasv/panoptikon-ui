@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { components } from "@/lib/panoptikon"
+import { openPanoptikonPage } from "./open-panoptikon-page"
 
 type Job = components["schemas"]["JobModel"]
 type Completion = components["schemas"]["DesktopSetupCompleteResponse"]
@@ -51,16 +52,9 @@ export function WizardProgress({ completion }: { completion: Completion }) {
 
   function openPage(page: "search" | "scan") {
     setOpenError(null)
-    const invoke = window.__TAURI__?.core?.invoke
-    if (invoke) {
-      void invoke("open_panoptikon_page", { page, indexDb: completion.index_db }).catch((error) => {
-        setOpenError(error instanceof Error ? error.message : String(error))
-      })
-      return
-    }
-    const url = new URL(`/${page}`, window.location.origin)
-    url.searchParams.set("index_db", completion.index_db)
-    window.open(url, "_blank", "noopener,noreferrer")
+    void openPanoptikonPage(page, completion.index_db).catch((error) => {
+      setOpenError(error instanceof Error ? error.message : String(error))
+    })
   }
 
   return (

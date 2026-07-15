@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo, useState } from "react"
+import { type MouseEvent, useCallback, useMemo, useState } from "react"
 import { $api } from "@/lib/api"
 import { components } from "@/lib/panoptikon"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,7 @@ import { WizardModelSelection, WizardModelSettings } from "./models"
 import { WizardSchedule, WizardScheduleSelection, effectiveCronSchedule } from "./schedule"
 import { WizardReview } from "./review"
 import { WizardProgress } from "./progress"
+import { openPanoptikonPage } from "./open-panoptikon-page"
 import { ExternalInputEditor, selectedExternalInputIds, useExternalInputs } from "@/components/external-inputs"
 
 export type DesktopSetupMode = "onboarding" | "new-database"
@@ -240,6 +241,14 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
   const defaultDatabaseName = databases?.index.current ?? "default"
   const exampleDatabaseName = defaultDatabaseName.toLocaleLowerCase() === "photos" ? "family_photos" : "photos"
 
+  function openCurrentDatabaseScan(event: MouseEvent<HTMLAnchorElement>) {
+    event.preventDefault()
+    setSaveError(null)
+    void openPanoptikonPage("scan", defaultDatabaseName).catch((error) => {
+      setSaveError(`The browser could not be opened: ${error instanceof Error ? error.message : String(error)}`)
+    })
+  }
+
   return (
     <main className="mx-auto flex h-screen w-full flex-col overflow-hidden px-4 sm:px-6">
       <div className="shrink-0 py-4 sm:py-6" aria-label="Setup progress">
@@ -307,7 +316,7 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
             </div>
             <p className="text-sm text-muted-foreground">
               To change the folders or settings of an existing database, open the{" "}
-              <a className="font-medium text-primary underline underline-offset-4" href="/scan" target="_blank" rel="noreferrer">Scan page</a>.
+              <a className="font-medium text-primary underline underline-offset-4" href={`/scan?index_db=${encodeURIComponent(defaultDatabaseName)}`} target="_blank" rel="noreferrer" onClick={openCurrentDatabaseScan}>Scan page</a>.
             </p>
           </section>
         )}
