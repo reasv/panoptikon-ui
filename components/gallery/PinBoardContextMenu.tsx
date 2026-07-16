@@ -46,7 +46,7 @@ export function PinBoardCtx({
     trim: TrimRange | null,
     onTrimChange: (trim: TrimRange | null) => void,
     onDuplicate: () => void,
-    pinboardRef: React.RefObject<HTMLDivElement>,
+    pinboardRef: React.RefObject<HTMLDivElement | null>,
     grid: GridParams,
     isV1: boolean,
     onUpgradeGrid: () => void,

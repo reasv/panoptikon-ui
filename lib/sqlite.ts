@@ -28,10 +28,7 @@ export const initializeSQLite = async () => {
   try {
     console.log("Loading and initializing SQLite3 module...")
     const sqlite3Module = await import("@sqlite.org/sqlite-wasm")
-    const sqlite3 = await sqlite3Module.default({
-      print: console.log,
-      printErr: console.error,
-    })
+    const sqlite3 = await sqlite3Module.default()
     return start(sqlite3)
   } catch (err) {
     console.error(

@@ -34,7 +34,7 @@ export function usePinboardLayoutActions({
         user_data_db: string | null
     },
     grid: GridParams,
-    pinboardRef: RefObject<HTMLDivElement>,
+    pinboardRef: RefObject<HTMLDivElement | null>,
     // autoCropOverrides ride along with the layout so both land in one
     // record write (one URL update, one history entry)
     onLayoutChange: (
@@ -364,7 +364,7 @@ async function getLayoutBuildData(
             user_data_db: string | null,
         },
         grid: GridParams,
-        pinboardRef: RefObject<HTMLDivElement>,
+        pinboardRef: RefObject<HTMLDivElement | null>,
     }
 ): Promise<LayoutBuildData | null> {
     const keys = layout.map(l => l.i)

@@ -65,7 +65,7 @@ export function VideoTimeline({
     onTrimChange,
     className,
 }: {
-    videoRef: React.RefObject<HTMLVideoElement>
+    videoRef: React.RefObject<HTMLVideoElement | null>
     trim: TrimRange | null
     onTrimChange: (trim: TrimRange | null) => void
     className?: string

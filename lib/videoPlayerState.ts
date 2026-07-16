@@ -3,7 +3,7 @@ import React from "react"
 export function useVideoPlayerState({
   videoRef,
 }: {
-  videoRef: React.RefObject<HTMLVideoElement>
+  videoRef: React.RefObject<HTMLVideoElement | null>
 }) {
   const [showVideo, setShowVideo] = React.useState(false)
   const [videoIsPlaying, setVideoIsPlaying] = React.useState(false)

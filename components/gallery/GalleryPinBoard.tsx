@@ -721,7 +721,7 @@ function PinBoardPin({
     onCropChange: (crop: CropRect | null) => void
     onTrimChange: (trim: TrimRange | null) => void
     onDuplicate: () => void
-    scrollAreaRef: React.RefObject<HTMLDivElement>
+    scrollAreaRef: React.RefObject<HTMLDivElement | null>
     grid: GridParams
     isV1: boolean
     onUpgradeGrid: () => void

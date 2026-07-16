@@ -24,7 +24,7 @@ export function useVideoTrim({
   trim,
   active,
 }: {
-  videoRef: React.RefObject<HTMLVideoElement>
+  videoRef: React.RefObject<HTMLVideoElement | null>
   trim: TrimRange | null
   active: boolean
 }) {
