@@ -28,7 +28,7 @@ async function errorFor(response: Response, fallback: string) {
 }
 
 export async function discoverRelayHealth(): Promise<RelaySession | null> {
-  for (const port of [17600, 17601]) {
+  for (const port of [16341, 17601]) {
     const relayURL = `http://127.0.0.1:${port}`
     try {
       const response = await fetch(`${relayURL}/v1/health`, {
