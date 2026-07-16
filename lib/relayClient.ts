@@ -120,7 +120,8 @@ export async function cancelPairingOperation(session: RelaySession, operationId:
 }
 
 export async function forgetServerPairing(relayId: string) {
-  await fetch(`/api/relay/pairings/${relayId}`, { method: "DELETE" })
+  const response = await fetch(`/api/relay/pairings/${relayId}`, { method: "DELETE" })
+  if (!response.ok) throw await errorFor(response, "Panoptikon could not clear the stale Relay pairing")
 }
 
 export async function validateRelayCredential(session: RelaySession) {

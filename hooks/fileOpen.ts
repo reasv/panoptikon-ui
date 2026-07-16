@@ -68,6 +68,7 @@ export function useFileOpenActions({ sha256, path }: { sha256: string, path?: st
     relayDetected: relay.detected,
     relayPaired: relay.paired,
     relayPairing: relay.pairing,
+    relayPairingPending: relay.pairingPending,
     actionTarget: relay.target,
     setActionTarget: relay.setTarget,
     pairRelay,

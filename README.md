@@ -86,4 +86,11 @@ Remote Panoptikon instances can pair with Panoptikon Desktop Relay v1 from the
 file-open settings. Pairing requires local approval in Desktop, issues a unique
 origin-bound credential, and replaces the retired global API-key `/open` and
 `/config` protocol. Old browser-local Relay settings are intentionally not
-migrated.
+migrated. The UI does not probe or offer Relay on a Desktop-managed Server's
+own endpoint: its existing file actions already run on that same computer.
+Before pairing, Relay is exposed as a small corner action attached to each
+Open button and shown only while that button is hovered or keyboard-focused;
+it disappears after pairing. Paired file actions use Relay by default; their
+right-click context menu provides a session-local switch to the existing
+action. A restored pending request stays actionable so it can foreground
+Desktop's dedicated pairing window again.

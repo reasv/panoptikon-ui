@@ -8,6 +8,7 @@ export type RelayContextValue = {
   detected: boolean
   paired: boolean
   pairing: boolean
+  pairingPending: boolean
   target: FileActionTarget
   setTarget: (target: FileActionTarget) => void
   pair: () => Promise<void>
@@ -19,6 +20,7 @@ export const inertRelayContext: RelayContextValue = {
   detected: false,
   paired: false,
   pairing: false,
+  pairingPending: false,
   target: "existing",
   setTarget: () => {},
   pair: async () => {},

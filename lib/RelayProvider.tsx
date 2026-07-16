@@ -8,7 +8,6 @@ import { RelayContext, type FileActionTarget } from "@/lib/relayContext"
 import * as client from "@/lib/relayClient"
 
 const queryKey = ["relay", "session", typeof location === "undefined" ? "server" : location.origin]
-const targetKey = "panoptikon-file-action-target"
 
 async function reconcile(): Promise<client.RelaySession | null> {
   const session = await client.discoverRelayHealth()
@@ -28,7 +27,10 @@ async function reconcile(): Promise<client.RelaySession | null> {
       return ready
     } catch (error) {
       if (error instanceof client.RelayRequestError && error.code === "invalid_credential") {
-        await client.forgetServerPairing(session.relay_id)
+        // Relay revocation and the Server registry are independent. A stale
+        // Server record must never hide the pairing affordance; cleanup is
+        // retried by the next explicit pairing if this request fails.
+        await client.forgetServerPairing(session.relay_id).catch(() => {})
         return session
       }
       throw error
@@ -61,9 +63,7 @@ async function reconcile(): Promise<client.RelaySession | null> {
 export function RelayProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
   const selectedDBs = useSelectedDBs()[0]
-  const [target, setTargetState] = useState<FileActionTarget>(() =>
-    typeof localStorage !== "undefined" && localStorage.getItem(targetKey) === "existing" ? "existing" : "relay"
-  )
+  const [target, setTarget] = useState<FileActionTarget>("relay")
   const session = useQuery({
     queryKey,
     queryFn: reconcile,
@@ -74,23 +74,17 @@ export function RelayProvider({ children }: { children: ReactNode }) {
     retry: false,
   })
 
+  // Relay is the default whenever it is available. A context-menu override is
+  // intentionally session-local and resets after revocation or re-pairing.
   useEffect(() => {
-    const sync = (event: StorageEvent) => {
-      if (event.key === targetKey) setTargetState(event.newValue === "existing" ? "existing" : "relay")
-    }
-    window.addEventListener("storage", sync)
-    return () => window.removeEventListener("storage", sync)
-  }, [])
-
-  const setTarget = useCallback((value: FileActionTarget) => {
-    setTargetState(value)
-    localStorage.setItem(targetKey, value)
-  }, [])
+    if (!session.data?.credential) setTarget("relay")
+  }, [session.data?.credential])
 
   const pairing = useMutation({
     mutationFn: async () => {
       const relay = session.data
       if (!relay) throw new Error("Local Relay is unavailable")
+      if (!relay.operationId) await client.forgetServerPairing(relay.relay_id)
       const stats = await fetchClient.GET("/api/search/stats", { params: { query: selectedDBs } })
       const roots = new Set(stats.data?.folders ?? [])
       const operation = await client.beginServerOperation(relay.relay_id)
@@ -125,13 +119,14 @@ export function RelayProvider({ children }: { children: ReactNode }) {
   const value = useMemo(() => ({
     detected: !!session.data,
     paired: !!session.data?.credential,
-    pairing: pairing.isPending || session.data?.pairingStatus === "pending",
+    pairing: pairing.isPending,
+    pairingPending: session.data?.pairingStatus === "pending",
     target,
     setTarget,
     pair: async () => { await pairing.mutateAsync() },
     run,
     refresh: async () => { await session.refetch() },
-  }), [pairing, run, session, setTarget, target])
+  }), [pairing, run, session, target])
 
   return <RelayContext.Provider value={value}>{children}</RelayContext.Provider>
 }

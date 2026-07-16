@@ -7,7 +7,13 @@ import { RelayContext, inertRelayContext } from "@/lib/relayContext"
 type Provider = ComponentType<{ children: ReactNode }>
 
 export function RelayPolicyGate({ children }: { children: ReactNode }) {
-  const enabled = useClientConfig().data?.relayEnabled === true
+  const clientConfig = useClientConfig().data
+  // Desktop's managed server and its Relay are the same local installation.
+  // Offering to pair them can never add a second file-action destination, so
+  // do not even load the discovery bundle on that endpoint. A Desktop Relay
+  // remains available when this UI belongs to a remote Server, whose client
+  // config is not desktop-managed.
+  const enabled = clientConfig?.relayEnabled === true && clientConfig.desktopManaged !== true
   const [Provider, setProvider] = useState<Provider | null>(null)
 
   useEffect(() => {

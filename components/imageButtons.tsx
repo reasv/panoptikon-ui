@@ -1,9 +1,10 @@
 "use client"
+import { useState, type ReactNode } from "react"
 import { $api } from "@/lib/api"
 import { useBookmarkNs, } from "@/lib/state/zust"
 import { useQueryClient } from "@tanstack/react-query"
 import { useToast } from "@/components/ui/use-toast"
-import { File, FolderOpen, BookmarkPlus, BookmarkX, ChevronDown } from "lucide-react"
+import { File, FolderOpen, BookmarkPlus, BookmarkX, Cable } from "lucide-react"
 import { Button } from "./ui/button"
 import { Toggle } from "./ui/toggle"
 import { cn } from "@/lib/utils"
@@ -11,28 +12,53 @@ import { useSelectedDBs } from "@/lib/state/database"
 import { useAlwaysShowBookmarkBtn } from "@/lib/state/alwaysShowBookmarks"
 import { FindButton } from "./gallery/FindButton"
 import { FileBookmarksSetter } from "./sidebar/details/FileBookmarks"
-import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "./ui/context-menu"
+import { ContextMenu, ContextMenuContent, ContextMenuLabel, ContextMenuRadioGroup, ContextMenuRadioItem, ContextMenuTrigger } from "./ui/context-menu"
 import { useFileOpenActions } from "@/hooks/fileOpen"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "./ui/dropdown-menu"
 
-function RelayTargetSelector({ actions, floatingClass }: { actions: ReturnType<typeof useFileOpenActions>, floatingClass?: string }) {
-    if (!actions.relayDetected) return null
-    return <DropdownMenu onOpenChange={open => { if (open) void actions.refreshRelay() }}>
-        <DropdownMenuTrigger asChild>
-            <Button aria-label="Choose where file actions run" title="Choose where file actions run" variant="ghost" size="icon" className={cn("h-6 w-6", floatingClass)}>
-                <ChevronDown className="h-3 w-3" />
-            </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
-            {actions.relayPaired ? <DropdownMenuRadioGroup value={actions.actionTarget} onValueChange={value => actions.setActionTarget(value as "relay" | "existing")}>
-                <DropdownMenuRadioItem value="relay">This computer (Relay)</DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="existing">{actions.disableBackendOpen ? "Browser" : "Panoptikon server host"}</DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup> : <>
-                <DropdownMenuItem disabled>{actions.disableBackendOpen ? "Browser" : "Panoptikon server host"}</DropdownMenuItem>
-                <DropdownMenuItem disabled={actions.relayPairing} onSelect={() => void actions.pairRelay()}>{actions.relayPairing ? "Waiting for Desktop approval…" : "Pair local Relay…"}</DropdownMenuItem>
-            </>}
-        </DropdownMenuContent>
-    </DropdownMenu>
+export function RelayTargetSelector({
+    actions,
+}: {
+    actions: ReturnType<typeof useFileOpenActions>
+}) {
+    if (!actions.relayDetected || actions.relayPaired) return null
+    const pairLabel = actions.relayPairing
+        ? "Opening Relay pairing…"
+        : actions.relayPairingPending ? "Review Relay pairing request" : "Pair local Relay"
+    return <Button
+        aria-label={pairLabel}
+        title={pairLabel}
+        variant="ghost"
+        size="icon"
+        className="invisible absolute -bottom-1 -right-1 z-10 h-4 w-4 rounded-full border border-border bg-background p-0 text-foreground opacity-0 shadow-sm transition-opacity group-hover/file-action:visible group-hover/file-action:opacity-100 group-focus-within/file-action:visible group-focus-within/file-action:opacity-100"
+        disabled={actions.relayPairing}
+        onClick={() => void actions.pairRelay()}
+    >
+        <Cable className="h-2.5 w-2.5" />
+    </Button>
+}
+
+function FileActionTargetMenu({
+    actions,
+    existingLabel,
+    children,
+}: {
+    actions: ReturnType<typeof useFileOpenActions>
+    existingLabel: string
+    children: (open: boolean) => ReactNode
+}) {
+    const [open, setOpen] = useState(false)
+    const trigger = children(open)
+    if (!actions.relayPaired) return trigger
+    return <ContextMenu onOpenChange={setOpen}>
+        <ContextMenuTrigger asChild>{trigger}</ContextMenuTrigger>
+        <ContextMenuContent className="min-w-52">
+            <ContextMenuLabel>File action destination</ContextMenuLabel>
+            <ContextMenuRadioGroup value={actions.actionTarget} onValueChange={value => actions.setActionTarget(value as "relay" | "existing")}>
+                <ContextMenuRadioItem value="relay">This computer</ContextMenuRadioItem>
+                <ContextMenuRadioItem value="existing">{existingLabel}</ContextMenuRadioItem>
+            </ContextMenuRadioGroup>
+        </ContextMenuContent>
+    </ContextMenu>
 }
 
 export const BookmarkBtn = (
@@ -216,8 +242,14 @@ export const OpenFile = (
     const buttonTitle = actions.relayPaired && actions.actionTarget === "relay"
         ? "Open file on this computer using Relay"
         : disableBackendOpen ? "Open file in new tab" : "Open file on the Panoptikon server host"
-    return (
-        <>
+    return <FileActionTargetMenu
+        actions={actions}
+        existingLabel={disableBackendOpen ? "Browser" : "Panoptikon server host"}
+    >{menuOpen => <span className={cn(
+            "relative inline-flex group/file-action",
+            !buttonVariant && "absolute bottom-3 left-1 opacity-0 transition-opacity duration-300 group-hover:opacity-100",
+            !buttonVariant && menuOpen && "opacity-100",
+        )}>
             {buttonVariant ?
                 <Button
                     title={buttonTitle}
@@ -233,7 +265,7 @@ export const OpenFile = (
                 <button
                     onClick={() => handleClick()}
                     title={buttonTitle}
-                    className="hover:scale-105 absolute bottom-3 left-1 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                    className="rounded-full bg-white p-2 hover:scale-105"
                 >
                     <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -244,9 +276,9 @@ export const OpenFile = (
                         <path d="M14 2H6C4.9 2 4 2.9 4 4v16c0 1.1 0.9 2 2 2h12c1.1 0 2-0.9 2-2V8l-6-6zm1 7V3.5L18.5 9H15z" />
                     </svg>
                 </button>}
-            <RelayTargetSelector actions={actions} floatingClass={buttonVariant ? undefined : "absolute bottom-10 left-7 bg-white opacity-0 group-hover:opacity-100"} />
-        </>
-    )
+            <RelayTargetSelector actions={actions} />
+        </span>}
+    </FileActionTargetMenu>
 }
 export const OpenFolder = (
     {
@@ -263,12 +295,29 @@ export const OpenFolder = (
     const { showInFolder, disableBackendOpen } = actions
     const handleClick = showInFolder
     if (disableBackendOpen && !(actions.relayPaired && actions.actionTarget === "relay")) {
-        return (
-            <><FindButton id={sha256} id_type="sha256" path={path || ""} buttonVariant={buttonVariant} buttonClassName={!buttonVariant ? "bottom-3 left-12" : undefined} />
-            <RelayTargetSelector actions={actions} floatingClass={buttonVariant ? undefined : "absolute bottom-10 left-16 bg-white opacity-0 group-hover:opacity-100"} /></>
-        )
+        return <FileActionTargetMenu actions={actions} existingLabel="Panoptikon search">
+            {menuOpen => <span className={cn(
+            "relative inline-flex group/file-action",
+            !buttonVariant && "absolute bottom-3 left-12 opacity-0 transition-opacity duration-300 group-hover:opacity-100",
+            !buttonVariant && menuOpen && "opacity-100",
+        )}>
+            <FindButton
+                id={sha256}
+                id_type="sha256"
+                path={path || ""}
+                buttonVariant={buttonVariant}
+                buttonClassName={!buttonVariant ? "static opacity-100" : undefined}
+            />
+            <RelayTargetSelector actions={actions} />
+        </span>}
+        </FileActionTargetMenu>
     }
-    return (<>
+    return <FileActionTargetMenu actions={actions} existingLabel="Panoptikon server host">
+        {menuOpen => <span className={cn(
+        "relative inline-flex group/file-action",
+        !buttonVariant && "absolute bottom-3 left-12 opacity-0 transition-opacity duration-300 group-hover:opacity-100",
+        !buttonVariant && menuOpen && "opacity-100",
+    )}>
         {buttonVariant ?
             <Button
                 title={actions.relayPaired && actions.actionTarget === "relay" ? "Show file on this computer using Relay" : "Show file on the Panoptikon server host"}
@@ -284,7 +333,7 @@ export const OpenFolder = (
             <button
                 title="Show file in folder"
                 onClick={() => handleClick()}
-                className="hover:scale-105 absolute bottom-3 left-12 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                className="rounded-full bg-white p-2 hover:scale-105"
             >
                 <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -295,8 +344,9 @@ export const OpenFolder = (
                     <path d="M10 4H4c-1.1 0-2 0.9-2 2v12c0 1.1 0.9 2 2 2h16c1.1 0 2-0.9 2-2V8c0-1.1-0.9-2-2-2h-8l-2-2z" />
                 </svg>
             </button>}
-        <RelayTargetSelector actions={actions} floatingClass={buttonVariant ? undefined : "absolute bottom-10 left-16 bg-white opacity-0 group-hover:opacity-100"} />
-    </>)
+        <RelayTargetSelector actions={actions} />
+    </span>}
+    </FileActionTargetMenu>
 }
 
 export const FilePathComponent = ({ path }: { path: string }) => {
