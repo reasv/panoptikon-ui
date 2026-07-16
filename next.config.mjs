@@ -11,9 +11,7 @@ const nextConfig = {
   // platform binaries — so a standalone build only runs on the OS/arch it
   // was assembled on.
   output: process.env.BUILD_STANDALONE === "true" ? "standalone" : undefined,
-  experimental: {
-    reactCompiler: true,
-  },
+  reactCompiler: true,
   images: {
     remotePatterns: [
       {

@@ -3,10 +3,11 @@
   "version": "0.1.5",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbo",
+    "predev": "node scripts/sync-sqlite-wasm.mjs",
+    "dev": "next dev",
+    "prebuild": "node scripts/sync-sqlite-wasm.mjs",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
     "gen:api": "openapi-typescript ../panoptikon/openapi.json -o lib/panoptikon.d.ts --default-non-nullable=false"
   },
   "dependencies": {
@@ -37,7 +38,7 @@
     "cmdk": "^1.0.0",
     "framer-motion": "^11.3.30",
     "lucide-react": "^0.435.0",
-    "next": "^15.5.20",
+    "next": "^16.2.10",
     "nuqs": "^2.9.0",
     "openapi-fetch": "^0.13.0",
     "openapi-react-query": "^0.2.4",

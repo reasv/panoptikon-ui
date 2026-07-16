@@ -1,5 +1,5 @@
 "use client"
-import { Database, Sqlite3Static } from "@sqlite.org/sqlite-wasm"
+import type { Database, Sqlite3Static } from "@sqlite.org/sqlite-wasm"
 
 function stripErrorMessage(errorMessage: string): string {
   const fts5Index = errorMessage.indexOf("fts5:")
@@ -27,8 +27,14 @@ export const initializeSQLite = async () => {
   console.time("SQlite3Init")
   try {
     console.log("Loading and initializing SQLite3 module...")
-    const sqlite3Module = await import("@sqlite.org/sqlite-wasm")
-    const sqlite3 = await sqlite3Module.default()
+    // Imported natively by the browser from public/ (see
+    // scripts/sync-sqlite-wasm.mjs) — bundlers can't handle the package's
+    // dynamic worker URLs, and this module only ever runs client-side.
+    const sqlite3ModuleUrl = "/sqlite-wasm/index.mjs"
+    const sqlite3Module = await import(
+      /* webpackIgnore: true */ sqlite3ModuleUrl
+    )
+    const sqlite3: Sqlite3Static = await sqlite3Module.default()
     return start(sqlite3)
   } catch (err) {
     console.error(
