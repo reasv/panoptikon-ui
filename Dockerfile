@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install necessary packages: curl, Nginx, gettext (for envsubst), Node.js, and npm
 RUN apt-get update && \
     apt-get install -y curl nginx gettext && \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y nodejs && \
     npm install -g npm@latest && \
     rm -rf /var/lib/apt/lists/*
