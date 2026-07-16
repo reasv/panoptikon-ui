@@ -1,6 +1,7 @@
 import { createJSONStorage, persist } from "zustand/middleware"
 import { persistLocalStorage } from "./store"
 import { create } from "zustand"
+import { useShallow } from "zustand/react/shallow"
 import { VisibilityState } from "@tanstack/react-table"
 
 interface TableState {
@@ -40,11 +41,15 @@ export const useColumnVisibility = (
   storageKey: string,
   defaultValues?: VisibilityState
 ) =>
-  useTableStore((state) => {
-    const columnVisibility = state.tables[storageKey]?.columnVisibility || {}
-    // Merge the default values with the stored columnVisibility
-    return {
-      ...defaultValues,
-      ...columnVisibility,
-    }
-  })
+  // useShallow: the selector builds a fresh object; zustand v5 needs the
+  // snapshot result stabilized or SSR hydration loops.
+  useTableStore(
+    useShallow((state) => {
+      const columnVisibility = state.tables[storageKey]?.columnVisibility || {}
+      // Merge the default values with the stored columnVisibility
+      return {
+        ...defaultValues,
+        ...columnVisibility,
+      }
+    })
+  )

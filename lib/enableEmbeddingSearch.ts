@@ -4,6 +4,7 @@ import { splitByFirstSlash } from "@/components/SearchTypeSelector"
 import { useToast } from "@/components/ui/use-toast"
 import { useLastModelSelection } from "./state/lastModel"
 import { useEffect } from "react"
+import { useShallow } from "zustand/react/shallow"
 
 export function useEnableEmbeddingSearch({
   setEnable,
@@ -18,10 +19,14 @@ export function useEnableEmbeddingSearch({
   models: string[]
   type: "image" | "text" | "audio"
 }) {
-  const [getLastModel, setLastModel] = useLastModelSelection((state) => [
-    state.getLastSelectedModel,
-    state.setLastSelectedModel,
-  ])
+  // zustand v5: selectors returning fresh arrays/objects need useShallow,
+  // or the uncached snapshot loops SSR hydration.
+  const [getLastModel, setLastModel] = useLastModelSelection(
+    useShallow((state) => [
+      state.getLastSelectedModel,
+      state.setLastSelectedModel,
+    ])
+  )
   useEffect(() => {
     const lastModel = getLastModel(type)
     if (model.length > 0 && lastModel !== model) {

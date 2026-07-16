@@ -1,7 +1,7 @@
 import { createJSONStorage, persist } from "zustand/middleware"
 import { persistLocalStorage } from "./store"
 import { create } from "zustand"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 
 // Define the shape of the state, where keys are strings and values are booleans.
 interface FilterContainerState {
@@ -43,7 +43,14 @@ export const useFilterContainerOpen = (
   const storedIsExpanded = useFilterContainerState((state) =>
     state.getOpen(key, defaultOpen)
   )
-  const setOpen = useFilterContainerState((state) => state.setOpen(key))
+  // Select the stable store function and bind the key locally: selecting
+  // state.setOpen(key) would mint a new closure per snapshot read, which
+  // zustand v5's uncached-snapshot check rejects during SSR hydration.
+  const setOpenForKey = useFilterContainerState((state) => state.setOpen)
+  const setOpen = useCallback(
+    (open: boolean) => setOpenForKey(key)(open),
+    [setOpenForKey, key]
+  )
 
   // Synchronize with the stored state after the initial render
   useEffect(() => {

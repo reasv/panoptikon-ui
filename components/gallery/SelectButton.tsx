@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react'
 import { Square, SquareCheckBig } from 'lucide-react'
 import { useItemSelection } from '@/lib/state/itemSelection'
+import { useShallow } from 'zustand/react/shallow'
 import { components } from '@/lib/panoptikon'
 
 export function SelectButton({
@@ -12,7 +13,7 @@ export function SelectButton({
     item?: components["schemas"]["ItemRecordResponse"],
     files?: components["schemas"]["FileRecordResponse"][]
 }) {
-    const [selected, setSelected] = useItemSelection((state) => [state.getSelected(), state.setItem])
+    const [selected, setSelected] = useItemSelection(useShallow((state) => [state.getSelected(), state.setItem]))
     // Match on the prefix of the sha256 hash
     const isSelected = useMemo(() => selected?.sha256.startsWith(sha256), [selected, sha256])
 

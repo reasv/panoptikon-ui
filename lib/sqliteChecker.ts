@@ -2,13 +2,15 @@ import { useEffect, useState, useCallback } from "react"
 import { initializeSQLite, testFTS5Query } from "@/lib/sqlite"
 import { Database } from "@sqlite.org/sqlite-wasm"
 import { useSQLiteInstanceStore } from "./state/sqlite"
+import { useShallow } from "zustand/react/shallow"
 
 export const useSQLite = (enabled: boolean) => {
-  const [db, setDb] = useSQLiteInstanceStore((state) => [state.db, state.setDb])
-  const [loading, setLoading] = useSQLiteInstanceStore((state) => [
-    state.loading,
-    state.setLoading,
-  ])
+  const [db, setDb] = useSQLiteInstanceStore(
+    useShallow((state) => [state.db, state.setDb])
+  )
+  const [loading, setLoading] = useSQLiteInstanceStore(
+    useShallow((state) => [state.loading, state.setLoading])
+  )
   const [error, setError] = useState<string | null>(null)
 
   // Initialize the database if enabled is true

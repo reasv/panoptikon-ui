@@ -4,6 +4,7 @@ import { Toggle } from "@/components/ui/toggle"
 import { X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useCallback, useEffect, useMemo, useRef } from "react"
+import { useShallow } from "zustand/react/shallow"
 import { cn, getFileURL, getLocale } from "@/lib/utils"
 import { ScrollBar } from "@/components/ui/scroll-area"
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
@@ -78,7 +79,7 @@ export function ImageGallery({
 
     const [thumbnailsOpen, setThumbnailsOpen] = useGalleryThumbnail()
 
-    const [selectedItem, setSelectedItem] = useItemSelection((state) => [state.getSelected(), state.setItem])
+    const [selectedItem, setSelectedItem] = useItemSelection(useShallow((state) => [state.getSelected(), state.setItem]))
     useEffect(() => {
         // items[index] can be undefined while results and the gallery index
         // are transiently out of sync (setItem would throw on undefined)
