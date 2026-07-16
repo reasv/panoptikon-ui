@@ -22,7 +22,7 @@
 // (the current arrangement) and only resizes each row to span the full
 // width at its natural height.
 
-import type ReactGridLayout from "react-grid-layout"
+import type { LayoutItem } from "react-grid-layout/legacy"
 import { GridParams, rowStep } from "./pinboardGrid"
 
 export interface PackItem {
@@ -100,7 +100,7 @@ function rowColumnCounts(
 // Append one row's items to the layout, centered when it doesn't span the
 // full width; returns the row's grid height for the caller's y cursor
 function emitRow(
-    layout: ReactGridLayout.Layout[],
+    layout: LayoutItem[],
     row: PackItem[],
     hGrid: number,
     y: number,
@@ -261,7 +261,7 @@ export function packRows({
     // lets the cutting board below the fold compact up into view, which is
     // worse than any letterbox.
     forceFill?: boolean,
-}): ReactGridLayout.Layout[] {
+}): LayoutItem[] {
     if (items.length === 0) return []
     const total = Math.max(1, totalGridRows)
     const step = rowStep(grid)
@@ -310,7 +310,7 @@ export function packRows({
     if (chosen !== total && (forceFill || rowCount !== "auto" || stretch <= 1.35)) {
         heights = apportionToTotal(heights!, total)
     }
-    const layout: ReactGridLayout.Layout[] = []
+    const layout: LayoutItem[] = []
     let y = 0
     rows.forEach((row, r) => {
         emitRow(layout, row, heights![r], y, grid, columnWidth)
@@ -330,9 +330,9 @@ export function justifyRows({
     groups: PackItem[][],
     grid: GridParams,
     columnWidth: number,
-}): ReactGridLayout.Layout[] {
+}): LayoutItem[] {
     const step = rowStep(grid)
-    const layout: ReactGridLayout.Layout[] = []
+    const layout: LayoutItem[] = []
     let y = 0
     for (const row of groups) {
         if (row.length === 0) continue
@@ -423,7 +423,7 @@ export function packMosaic({
     columnWidth: number,
     totalGridRows: number,
     fill: "force" | "auto",
-}): ReactGridLayout.Layout[] {
+}): LayoutItem[] {
     const n = items.length
     if (n === 0) return []
     if (n > MOSAIC_MAX_ITEMS) {
@@ -528,7 +528,7 @@ export function packMosaic({
         }
     }
 
-    const layout: ReactGridLayout.Layout[] = []
+    const layout: LayoutItem[] = []
     const emit = (i: number, j: number, bk: number, x: number, y: number, w: number, h: number) => {
         const entry = sets[i][j].get(bk)!
         if (entry.k === -1) {
@@ -569,14 +569,14 @@ export function packMosaic({
 // Group items into logical rows by y-overlap: a row is seeded by the
 // topmost remaining item and collects every item whose top edge is above
 // that item's vertical center. Same grouping the sort/shift actions use.
-export function groupRowsByOverlap(layout: ReactGridLayout.Layout[]): ReactGridLayout.Layout[][] {
+export function groupRowsByOverlap(layout: LayoutItem[]): LayoutItem[][] {
     const heightSorted = [...layout].sort((a, b) => a.y - b.y)
-    const groups: ReactGridLayout.Layout[][] = []
+    const groups: LayoutItem[][] = []
     let startIdx = 0
     while (startIdx < heightSorted.length) {
         const lowestYItem = heightSorted[startIdx]
         const centerY = lowestYItem.y + Math.floor(lowestYItem.h / 2)
-        const currentRow: ReactGridLayout.Layout[] = []
+        const currentRow: LayoutItem[] = []
         let i = startIdx
         for (; i < heightSorted.length; i++) {
             if (heightSorted[i].y > centerY) break

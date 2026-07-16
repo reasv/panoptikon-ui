@@ -7,7 +7,7 @@ import { usePinBoard } from '@/lib/state/pinboard'
 import { GridParams, v1ScaleFactors } from '@/lib/pinboardGrid'
 import { PinButton } from './PinButton'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import ReactGridLayout, { Responsive, WidthProvider } from "react-grid-layout"
+import { Responsive, WidthProvider, type LayoutItem } from "react-grid-layout/legacy"
 import "react-grid-layout/css/styles.css"
 import "react-resizable/css/styles.css"
 import { ScrollArea } from '../ui/scroll-area'
@@ -30,7 +30,7 @@ import { ArrowRightFromLine, ArrowRightToLine, Check, Crop } from 'lucide-react'
 import { usePinboardLayoutActions } from '@/hooks/pinboardLayout'
 const ResponsiveGridLayout = WidthProvider(Responsive)
 
-const ALL_RESIZE_HANDLES: ReactGridLayout.Layout["resizeHandles"] =
+const ALL_RESIZE_HANDLES: LayoutItem["resizeHandles"] =
     ["s", "w", "e", "n", "sw", "nw", "se", "ne"]
 
 // Faint overlay of react-grid-layout's cells, for eyeballing item sizes while
@@ -96,13 +96,13 @@ export function PinBoard(
     // Getter for the crop-mode image's viewport extent, set by its CropView
     const cropImageExtentRef = useRef<(() => CropGeometry | null) | null>(null)
     const [layout, pinnedFiles, crops, autoCrops, trims]: [
-        ReactGridLayout.Layout[],
+        LayoutItem[],
         [string, string, string, string][],
         Record<string, CropRect | null>,
         Record<string, CropRect | null>,
         Record<string, TrimRange | null>,
     ] = useMemo(() => {
-        const newLayout: ReactGridLayout.Layout[] = []
+        const newLayout: LayoutItem[] = []
         const pinned: [string, string, string, string][] = []
         const cropsMap: Record<string, CropRect | null> = {}
         const autoCropsMap: Record<string, CropRect | null> = {}
@@ -163,7 +163,7 @@ export function PinBoard(
     // the second write rebuilds from the first one's base and clobbers it.
     const rebuildRecords = (
         prev: string[],
-        currentLayout: ReactGridLayout.Layout[],
+        currentLayout: LayoutItem[],
         autoCropOverrides?: Record<string, CropRect | null>,
         manualCropOverrides?: Record<string, CropRect | null>,
     ) => {
@@ -211,7 +211,7 @@ export function PinBoard(
     // RGL's own resize-stop layout report) in the same tick
     const pendingManualCropRef = useRef<Record<string, CropRect | null> | null>(null)
     const onLayoutChange = (
-        currentLayout: ReactGridLayout.Layout[],
+        currentLayout: LayoutItem[],
         autoCropOverrides?: Record<string, CropRect | null>,
     ) => {
         const manualCropOverrides = pendingManualCropRef.current ?? undefined
@@ -455,17 +455,17 @@ export function PinBoard(
                     rowHeight={grid.rowHeight}
                     margin={[grid.margin, grid.margin]}
                     containerPadding={[grid.padding, grid.padding]}
-                    onLayoutChange={(currentLayout) => onLayoutChange(currentLayout)}
+                    onLayoutChange={(currentLayout) => onLayoutChange([...currentLayout])}
                     draggableHandle=".drag-handle"
                     isResizable={true}
                     isDraggable={true}
                     isDroppable={true}
                     // Size of the grey preview box (10x10 in v1 units)
-                    droppingItem={{ i: '__preview', w: Math.round(10 * sx), h: Math.round(10 * sy) }}
+                    droppingItem={{ i: '__preview', x: 0, y: 0, w: Math.round(10 * sx), h: Math.round(10 * sy) }}
                     compactType="vertical" // Compacts items vertically to keep them visible on screen
                     preventCollision={false}
                     onResizeStart={(_currentLayout, oldItem, newItem, _placeholder, e, node) => {
-                        if (oldItem.i !== cropKey) return
+                        if (!oldItem || !newItem || oldItem.i !== cropKey) return
                         setCropResizing(true)
                         // In crop mode the box is the crop window: clamp its
                         // growth at the image's edges. A window past the image
@@ -597,6 +597,7 @@ export function PinBoard(
                         item.h -= Math.min(cells(box.bottom - image.bottom, unitY), item.h - 1)
                     }}
                     onDrop={(layout, layoutItem, e) => {
+                        if (!layoutItem) return
                         const event = e as unknown as React.DragEvent<HTMLDivElement>
                         if (event.dataTransfer && event.dataTransfer.getData("text/plain")) {
                             const sha256 = event.dataTransfer.getData("text/plain")
@@ -704,10 +705,10 @@ function PinBoardPin({
     thumbnail: string
     file: string
     onLayoutChange: (
-        currentLayout: ReactGridLayout.Layout[],
+        currentLayout: LayoutItem[],
         autoCropOverrides?: Record<string, CropRect | null>,
     ) => void
-    layout: ReactGridLayout.Layout[]
+    layout: LayoutItem[]
     crops: Record<string, CropRect | null>
     autoCrops: Record<string, CropRect | null>
     // Manual crop (the editable base) and the derived fit-to-cell auto crop

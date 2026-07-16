@@ -1,4 +1,5 @@
 "use client"
+import type { LayoutItem } from "react-grid-layout/legacy";
 import { fetchClient } from "@/lib/api";
 import { components } from "@/lib/panoptikon";
 import { RefObject, useEffect, useRef } from "react";
@@ -25,7 +26,7 @@ export function usePinboardLayoutActions({
     pinboardRef,
     onLayoutChange,
 }: {
-    layout: ReactGridLayout.Layout[],
+    layout: LayoutItem[],
     // Manual crops (the layout-math base) and derived fit-to-cell auto crops
     crops: Record<string, CropRect | null>,
     autoCrops: Record<string, CropRect | null>,
@@ -38,7 +39,7 @@ export function usePinboardLayoutActions({
     // autoCropOverrides ride along with the layout so both land in one
     // record write (one URL update, one history entry)
     onLayoutChange: (
-        layout: ReactGridLayout.Layout[],
+        layout: LayoutItem[],
         autoCropOverrides?: Record<string, CropRect | null>,
     ) => void,
 }) {
@@ -71,7 +72,7 @@ export function usePinboardLayoutActions({
         ))
     }
 
-    function toPackItem(buildData: LayoutBuildData, l: ReactGridLayout.Layout): PackItem {
+    function toPackItem(buildData: LayoutBuildData, l: LayoutItem): PackItem {
         const [width, height] = croppedDimensions(buildData, l.i)
         return { key: l.i, width, height }
     }
@@ -102,7 +103,7 @@ export function usePinboardLayoutActions({
     // Items without an auto slot are left alone.
     function stickyAutoCrops(
         buildData: LayoutBuildData,
-        newLayout: ReactGridLayout.Layout[],
+        newLayout: LayoutItem[],
     ): Record<string, CropRect | null> {
         const overrides: Record<string, CropRect | null> = {}
         for (const l of newLayout) {
@@ -119,7 +120,7 @@ export function usePinboardLayoutActions({
     // to its cells in the same write as the geometry.
     function allAutoCrops(
         buildData: LayoutBuildData,
-        newLayout: ReactGridLayout.Layout[],
+        newLayout: LayoutItem[],
     ): Record<string, CropRect | null> {
         const overrides: Record<string, CropRect | null> = {}
         for (const l of newLayout) {
@@ -332,7 +333,7 @@ interface LayoutBuildData {
     columnWidth: number,
     grid: GridParams,
     containerHeight: number,
-    sortedLayout: ReactGridLayout.Layout[],
+    sortedLayout: LayoutItem[],
 }
 
 // Effective source dimensions of an item: the image size scaled by its
@@ -357,7 +358,7 @@ async function getLayoutBuildData(
         grid,
         pinboardRef,
     }: {
-        layout: ReactGridLayout.Layout[],
+        layout: LayoutItem[],
         crops: Record<string, CropRect | null>,
         dbs: {
             index_db: string | null,
@@ -383,16 +384,16 @@ async function getLayoutBuildData(
     return { metadata, crops, columnWidth, grid, containerHeight, sortedLayout }
 }
 
-function sortLayout(layout: ReactGridLayout.Layout[]): ReactGridLayout.Layout[] {
+function sortLayout(layout: LayoutItem[]): LayoutItem[] {
     // Copy and sort layout by `y` coordinate
     const heightSorted = [...layout].sort((a, b) => a.y - b.y);
-    const sortedLayout: ReactGridLayout.Layout[] = [];
+    const sortedLayout: LayoutItem[] = [];
     let startIdx = 0;
 
     while (sortedLayout.length < layout.length) {
         const lowestYItem = heightSorted[startIdx];
         const centerY = lowestYItem.y + Math.floor(lowestYItem.h / 2);
-        const currentRow: ReactGridLayout.Layout[] = [];
+        const currentRow: LayoutItem[] = [];
 
         // Collect items that are within the same logical row
         let i = startIdx;
@@ -418,18 +419,18 @@ export type ShiftMode = "left" | "right" | "center"
 // left-to-right order and are packed flush with no gaps, like horizontal
 // gravity applied once.
 function shiftLayoutHorizontally(
-    layout: ReactGridLayout.Layout[],
+    layout: LayoutItem[],
     mode: ShiftMode,
     columns: number,
-): ReactGridLayout.Layout[] {
+): LayoutItem[] {
     const heightSorted = [...layout].sort((a, b) => a.y - b.y)
-    const result: ReactGridLayout.Layout[] = []
+    const result: LayoutItem[] = []
     let startIdx = 0
 
     while (result.length < layout.length) {
         const lowestYItem = heightSorted[startIdx]
         const centerY = lowestYItem.y + Math.floor(lowestYItem.h / 2)
-        const currentRow: ReactGridLayout.Layout[] = []
+        const currentRow: LayoutItem[] = []
 
         let i = startIdx
         for (; i < heightSorted.length; i++) {
@@ -465,9 +466,9 @@ export type MirrorAxis = "horizontal" | "vertical"
 // composes with the Shift actions for a grid-wide flip. Vertical mirroring is
 // effectively a row swap since the grid re-compacts everything upward.
 function mirrorLayoutArrangement(
-    layout: ReactGridLayout.Layout[],
+    layout: LayoutItem[],
     axis: MirrorAxis,
-): ReactGridLayout.Layout[] {
+): LayoutItem[] {
     if (layout.length === 0) return layout
     if (axis === "horizontal") {
         const min = Math.min(...layout.map(l => l.x))
@@ -479,7 +480,7 @@ function mirrorLayoutArrangement(
     return layout.map(l => ({ ...l, y: min + max - (l.y + l.h) }))
 }
 
-function buildLayout(buildData: LayoutBuildData, itemsPerRow: number, restrictToVisible: boolean): ReactGridLayout.Layout[] {
+function buildLayout(buildData: LayoutBuildData, itemsPerRow: number, restrictToVisible: boolean): LayoutItem[] {
     return buildRowLayout(
         itemsPerRow,
         buildData.sortedLayout.map(l => {
@@ -504,7 +505,7 @@ function buildRowLayout(
     columnWidth: number,
     containerHeight: number,
     restrictToVisible = false,
-): ReactGridLayout.Layout[] {
+): LayoutItem[] {
     if (items.length === 0) return []
     const { columns, margin, padding } = grid
     // Split the items into rows
@@ -523,7 +524,7 @@ function buildRowLayout(
     // row simply extends a little past the fold, which reads better than one
     // visibly undersized row.
     const uniformRowBudget = Math.max(1, Math.round(totalRowBudget / rows.length))
-    const layout: ReactGridLayout.Layout[] = []
+    const layout: LayoutItem[] = []
     let currentY = 0
     rows.forEach((row) => {
         const heightBudget = uniformRowBudget

@@ -1,3 +1,4 @@
+import type { LayoutItem } from "react-grid-layout/legacy";
 import { ContextMenuCheckboxItem, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger } from "../ui/context-menu";
 import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid } from "@/lib/state/gallery";
 import { CropRect, TrimRange } from "@/lib/pinboardCrop";
@@ -32,10 +33,10 @@ export function PinBoardCtx({
     // autoCropOverrides ride along with the layout so both land in one
     // record write (one URL update, one history entry)
     onLayoutChange: (
-        layout: ReactGridLayout.Layout[],
+        layout: LayoutItem[],
         autoCropOverrides?: Record<string, CropRect | null>,
     ) => void
-    layout: ReactGridLayout.Layout[],
+    layout: LayoutItem[],
     // Manual crops (the layout-math base) and derived fit-to-cell auto crops
     crops: Record<string, CropRect | null>,
     autoCrops: Record<string, CropRect | null>,
