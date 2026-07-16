@@ -197,7 +197,10 @@ export const TagAutoComplete = ({
                         ) : null}
                         {data && !isLoading ? (
                             <CommandGroup>
-                                {data.tags.map((tag) =>
+                                {/* Cast restores the schema's tuple type:
+                                    openapi-fetch >=0.17 flattens tuples via
+                                    Readable<T>. */}
+                                {(data.tags as [string, string, number][]).map((tag) =>
                                     <CommandItem
                                         key={tag[1]}
                                         value={tag[1]}

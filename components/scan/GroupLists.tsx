@@ -226,7 +226,9 @@ export function ExistingDataTab({ groups }: { groups: Group[] }) {
             placeholderData: keepPreviousData,
         },
     )
-    const setters = setterData.data?.total_counts || []
+    // Cast restores the schema's tuple type: openapi-fetch >=0.17 runs
+    // response data through Readable<T>, which flattens tuples to unions.
+    const setters = (setterData.data?.total_counts || []) as [string, number][]
     const selectedValues = setters.filter(
         (_, index) => selected[index] === true,
     )

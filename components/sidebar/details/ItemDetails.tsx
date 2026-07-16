@@ -346,7 +346,9 @@ function ItemTags(
             placeholderData: keepPreviousData
         }
     )
-    const tags = data?.tags || []
+    // Cast restores the schema's tuple type: openapi-fetch >=0.17 runs
+    // response data through Readable<T>, which flattens tuples to unions.
+    const tags = (data?.tags || []) as [string, string, number, string][]
     const mergedTags = mergeTags(tags)
     return (
         <div className="mt-4">
