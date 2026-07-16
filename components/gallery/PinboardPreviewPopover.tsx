@@ -118,7 +118,7 @@ export function useDelayedHover<T>(
 
 export function PreviewPopover({ src, box }: { src: string; box: PopoverBox }) {
     return createPortal(
-        <div className="pointer-events-none fixed z-[70]" style={box}>
+        <div className="pointer-events-none fixed z-70" style={box}>
             <img
                 src={src}
                 alt=""

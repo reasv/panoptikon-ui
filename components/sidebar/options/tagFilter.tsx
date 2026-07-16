@@ -224,8 +224,8 @@ export function TagListInput({
             placeholder={placeholder}
             value={value}
             onChange={setValue}
-            inputClassName="flex-grow"
-            className="flex-grow"
+            inputClassName="grow"
+            className="grow"
             onSubmit={onSubmit}
         />
     )

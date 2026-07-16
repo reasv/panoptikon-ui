@@ -79,7 +79,7 @@ export function SearchResultImage({
                     }}
                     // onDragStart={handleDragStart}
                     rel="noopener noreferrer"
-                    className={cn("block relative mb-2 h-96 4xl:h-[30rem] 5xl:h-[38rem]", imageContainerClassName)}
+                    className={cn("block relative mb-2 h-96 4xl:h-120 5xl:h-152", imageContainerClassName)}
                 >
                     <Image
                         src={thumbnailUrl}

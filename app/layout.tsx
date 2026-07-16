@@ -7,7 +7,7 @@ import { Toaster } from "@/components/ui/toaster"
 
 const fontSans = FontSans({
   subsets: ["latin"],
-  variable: "--font-sans",
+  variable: "--font-inter",
 })
 export const metadata: Metadata = {
   title: "Panoptikon",

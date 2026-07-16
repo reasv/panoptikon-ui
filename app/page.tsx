@@ -21,7 +21,7 @@ export default async function Home() {
   }
   return (
     <ScrollArea className="overflow-y-auto">
-      <div className="max-h-[100vh]">
+      <div className="max-h-screen">
         <div className="font-sans flex flex-col items-center justify-center min-h-screen p-8 pb-20 sm:p-20">
           <main className="flex flex-col gap-8 items-center text-center sm:text-left max-w-lg">
 

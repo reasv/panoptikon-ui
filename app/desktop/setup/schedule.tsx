@@ -100,7 +100,7 @@ export function WizardScheduleSelection({
       <div className="space-y-4">
         <div className="grid gap-2 sm:grid-cols-4">
           {([['daily', 'Daily'], ['hours', 'Every few hours'], ['weekly', 'Weekly'], ['custom', 'Custom cron']] as [ScheduleMode, string][]).map(([mode, label]) => (
-            <button key={mode} type="button" onClick={() => patch({ mode })} className={`rounded-md border px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-0 ${value.mode === mode ? "border-primary bg-primary/5" : ""}`}>{label}</button>
+            <button key={mode} type="button" onClick={() => patch({ mode })} className={`rounded-md border px-3 py-2 text-sm font-medium focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-0 ${value.mode === mode ? "border-primary bg-primary/5" : ""}`}>{label}</button>
           ))}
         </div>
 

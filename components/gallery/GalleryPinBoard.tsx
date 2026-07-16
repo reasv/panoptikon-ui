@@ -425,7 +425,7 @@ export function PinBoard(
         <ScrollArea ref={scrollAreaRef} data-pinboard-area className="overflow-y-auto">
             <div
                 ref={gridAreaRef}
-                className={`relative flex-grow ${rglSettling ? "rgl-mount-still " : ""}${fs ? "h-[97vh]" : (
+                className={`relative grow ${rglSettling ? "rgl-mount-still " : ""}${fs ? "h-[97vh]" : (
                     showPagination ?
                         (thumbnailsOpen ? "h-[calc(100vh-567px)]" : "h-[calc(100vh-213px)]")
                         :
@@ -634,7 +634,7 @@ export function PinBoard(
                         <div
                             key={i}
                             className={cn(
-                                "relative bg-gray-800 border rounded shadow group",
+                                "relative bg-gray-800 border rounded shadow-sm group",
                                 cropKey === i && "z-30 pinboard-crop-item",
                             )}
                         >
@@ -969,7 +969,7 @@ function PinBoardPin({
                         ? `Loop end: ${trim.end.toFixed(2)}s — click to move here, shift-click to clear`
                         : "Set loop end to current time"}
                     className={cn(
-                        "hover:scale-105 absolute bottom-[6.5rem] left-2 rounded-full p-2 transition-opacity duration-300 opacity-0 group-hover:opacity-100",
+                        "hover:scale-105 absolute bottom-26 left-2 rounded-full p-2 transition-opacity duration-300 opacity-0 group-hover:opacity-100",
                         trim?.end != null ? "bg-blue-200" : "bg-white",
                     )}
                     onClick={(e) => setTrimPoint("end", e)}

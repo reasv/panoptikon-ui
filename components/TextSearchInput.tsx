@@ -125,7 +125,7 @@ export function TextSearchInput({
                         value={value}
                         onChange={onTextInputChange}
                         onSubmit={onSubmit}
-                        inputClassName="flex-grow"
+                        inputClassName="grow"
                         popoverClassName={showError ? "top-12" : ""}
                     />
                     :
@@ -135,7 +135,7 @@ export function TextSearchInput({
                         value={value}
                         onChange={(e) => onTextInputChange(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        className="flex-grow"
+                        className="grow"
                     />
                 }
                 {showError && (

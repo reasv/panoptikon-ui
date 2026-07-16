@@ -54,7 +54,7 @@ export function VirtualGalleryHorizontalScroll({
                 className="h-full w-full rounded-[inherit]"
             >
                 <div
-                    className="flex h-[22rem]"
+                    className="flex h-88"
                     style={{
                         width: `${virtualizer.getTotalSize()}px`,
                         position: 'relative',
@@ -131,7 +131,7 @@ function VirtualHorizontalScrollElement({
         >
             <figure
                 className={cn(
-                    "w-[240px] h-80 relative rounded-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none cursor-pointer group",
+                    "w-[240px] h-80 relative rounded-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-hidden cursor-pointer group",
                     isSelected ? "scale-105 ring-2 ring-blue-500" : "scale-100"
                 )}
                 onDragStart={handleDragStart}

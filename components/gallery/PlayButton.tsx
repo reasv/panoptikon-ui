@@ -40,7 +40,7 @@ export function MediaControls({
             title={
                 isPlaying ? "Pause video" : "Play video"
             }
-            className={`hover:scale-105 absolute right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${showControls && isShown ? "bottom-[12.5rem]" : "bottom-2"}`}
+            className={`hover:scale-105 absolute right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${showControls && isShown ? "bottom-50" : "bottom-2"}`}
             onClick={() => setPlaying(!isPlaying)}
         >
             {isPlaying ?
@@ -97,7 +97,7 @@ export function MediaControls({
         )}
         {isShown && <button
             title={"Close Video"}
-            className={"hover:scale-105 absolute right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bottom-[6.5rem] "}
+            className={"hover:scale-105 absolute right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bottom-26 "}
             onClick={() => stopVideo()}
         >
             <X className="w-6 h-6 text-gray-800 fill-gray-800" />
@@ -105,7 +105,7 @@ export function MediaControls({
 
         {isShown && <button
             title={showControls ? "Hide Native Controls" : "Show Native Controls"}
-            className={"hover:scale-105 absolute bottom-[9.5rem] right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"}
+            className={"hover:scale-105 absolute bottom-38 right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"}
             onClick={() => setShowControls(!showControls)}
         >
             {showControls ?

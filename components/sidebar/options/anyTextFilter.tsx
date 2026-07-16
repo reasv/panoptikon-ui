@@ -34,7 +34,7 @@ export function AnyTextFilter() {
                         type="text"
                         placeholder="Type your query in the main search bar"
                         value={options.at_query}
-                        className="flex-grow"
+                        className="grow"
                         disabled
                     />
                 </div>

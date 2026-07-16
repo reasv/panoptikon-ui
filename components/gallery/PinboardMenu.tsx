@@ -70,7 +70,7 @@ export function PinboardMenu() {
                     <button
                         title="Pinboard actions"
                         aria-label="Pinboard actions"
-                        className="inline-flex shrink-0 items-center justify-center rounded-sm rounded-l-none px-1 transition-colors hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="inline-flex shrink-0 items-center justify-center rounded-sm rounded-l-none px-1 transition-colors hover:bg-foreground/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                     >
                         <ChevronDown className="h-4 w-4" />
                     </button>
@@ -81,7 +81,7 @@ export function PinboardMenu() {
                     <DropdownMenuItem onClick={() => save(false)}>
                         Save
                         {pbid != null && (
-                            <span className="ml-auto text-xs text-muted-foreground truncate max-w-[8rem]">
+                            <span className="ml-auto text-xs text-muted-foreground truncate max-w-32">
                                 {board?.name || `board ${pbid}`}
                             </span>
                         )}

@@ -218,7 +218,7 @@ export function PinboardTabs({ itemPath }: { itemPath: string }) {
                 <div
                     className={cn(
                         "flex shrink-0 items-stretch rounded-sm",
-                        !hidePinBoard && "bg-background text-foreground shadow-sm"
+                        !hidePinBoard && "bg-background text-foreground shadow-xs"
                     )}
                 >
                     <TabsTrigger
@@ -283,7 +283,7 @@ export function GalleryImageLarge(
     };
     return (
         <div
-            className={cn("relative flex-grow flex justify-center items-center overflow-hidden group",
+            className={cn("relative grow flex justify-center items-center overflow-hidden group",
                 showPagination ? // Set height to fill the remaining space
                     (thumbnailsOpen ? "h-[calc(100vh-567px)]" : "h-[calc(100vh-213px)]") // Set height based on whether thumbnails are open
                     : (thumbnailsOpen ? "h-[calc(100vh-505px)]" : "h-[calc(100vh-151px)]")
@@ -433,7 +433,7 @@ export function HorizontalScrollElement({
     return (
         <figure
             key={item.file_id}
-            className={cn("w-60 h-80 relative rounded-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none cursor-pointer group",
+            className={cn("w-60 h-80 relative rounded-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-hidden cursor-pointer group",
                 isSelected ? "scale-105 ring-2 ring-blue-500" : "scale-100"
             )}
             onDragStart={handleDragStart}

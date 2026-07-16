@@ -367,7 +367,7 @@ export function PinboardCard({
                     <div className="absolute inset-0 bg-muted" />
                 )}
                 {canPan && pan < maxPan && (
-                    <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-background/80 to-transparent pointer-events-none" />
+                    <div className="absolute bottom-0 left-0 right-0 h-8 bg-linear-to-t from-background/80 to-transparent pointer-events-none" />
                 )}
                 {canPan && (
                     <div className="absolute right-0.5 top-1 bottom-1 w-1 rounded bg-foreground/10">

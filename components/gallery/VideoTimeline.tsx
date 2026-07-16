@@ -262,7 +262,7 @@ export function VideoTimeline({
                 onPointerMove={onMarkerPointerMove}
                 onPointerUp={onMarkerPointerUp}
             >
-                <div className="w-1.5 h-4 rounded-sm bg-blue-400 border border-white/90 shadow" />
+                <div className="w-1.5 h-4 rounded-sm bg-blue-400 border border-white/90 shadow-sm" />
                 {showBubble && (
                     <TimeBubble>
                         {formatTime(value, true)}
@@ -305,7 +305,7 @@ export function VideoTimeline({
                         )}
                         {/* playhead */}
                         <div
-                            className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-white border border-black/30 shadow pointer-events-none"
+                            className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-white border border-black/30 shadow-sm pointer-events-none"
                             style={{ left: pct(currentTime) }}
                         />
                         {hoverTime != null && !scrubbing && drag == null && hoveredMarker == null && (

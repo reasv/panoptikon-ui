@@ -218,7 +218,7 @@ function OptionList({
                                             )}
                                         />}
                                     {option.removable && removeOption && (
-                                        <Button className="ml-1 mr-4 h-5 w-5 hover:outline" onClick={(e) => {
+                                        <Button className="ml-1 mr-4 h-5 w-5 hover:outline-solid" onClick={(e) => {
                                             e.stopPropagation()
                                             removeOption(option.value)
                                         }} title="Remove custom value" variant="ghost" size="icon">

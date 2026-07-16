@@ -76,7 +76,7 @@ export function WizardProgress({ completion }: { completion: Completion }) {
               const status = outcome?.status ?? (queue === null ? "checking" : current?.running ? "running" : current ? "queued" : "checking")
               return (
                 <div key={job.queue_id} className="flex items-start justify-between gap-3 rounded-md border p-3">
-                  <div className="min-w-0"><p className="truncate font-medium">{jobName(job)}</p><p className="text-xs text-muted-foreground">Job {job.queue_id}</p>{outcome?.error && <p className="mt-1 break-words text-xs text-destructive">{outcome.error}</p>}</div>
+                  <div className="min-w-0"><p className="truncate font-medium">{jobName(job)}</p><p className="text-xs text-muted-foreground">Job {job.queue_id}</p>{outcome?.error && <p className="mt-1 wrap-break-word text-xs text-destructive">{outcome.error}</p>}</div>
                   {status === "running" && <Badge><LoaderCircle className="mr-1 h-3 w-3 animate-spin" />Running</Badge>}
                   {status === "queued" && <Badge variant="secondary"><Timer className="mr-1 h-3 w-3" />Queued</Badge>}
                   {status === "completed" && <Badge variant="outline"><Check className="mr-1 h-3 w-3" />Completed</Badge>}

@@ -21,7 +21,7 @@ export function ScanPage() {
     <div className="flex w-full h-screen">
       <div className={"p-4 mx-auto w-full"}>
         <ScrollArea className="overflow-y-auto">
-          <div className="max-h-[100vh] mr-4">
+          <div className="max-h-screen mr-4">
             <Link
               href={searchLink}
             >

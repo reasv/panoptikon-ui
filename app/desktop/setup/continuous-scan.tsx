@@ -60,7 +60,7 @@ export function WizardContinuousScan({
         <fieldset disabled={!enabled} className="space-y-3">
           <legend className="font-medium">How should Panoptikon detect changes?</legend>
 
-          <label className="flex cursor-pointer gap-3 rounded-lg border p-4 has-[:checked]:border-primary has-[:checked]:bg-primary/5">
+          <label className="flex cursor-pointer gap-3 rounded-lg border p-4 has-checked:border-primary has-checked:bg-primary/5">
             <input
               type="radio"
               name="continuous-scan-mode"
@@ -77,7 +77,7 @@ export function WizardContinuousScan({
             </span>
           </label>
 
-          <label className="flex cursor-pointer gap-3 rounded-lg border p-4 has-[:checked]:border-primary has-[:checked]:bg-primary/5">
+          <label className="flex cursor-pointer gap-3 rounded-lg border p-4 has-checked:border-primary has-checked:bg-primary/5">
             <input
               type="radio"
               name="continuous-scan-mode"

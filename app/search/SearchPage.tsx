@@ -205,7 +205,7 @@ const GRID_BREAKPOINTS = [
  * Uses matchMedia (the same engine that applies the classes) rather than reading
  * window.innerWidth in a resize handler, which can observe a stale width.
  * rowEstimate tracks the card height, which is fixed per breakpoint: the image
- * container (h-96 / 4xl:h-[30rem] / 5xl:h-[38rem]) plus text lines, paddings,
+ * container (h-96 / 4xl:h-120 / 5xl:h-[38rem]) plus text lines, paddings,
  * borders and the row's pb-4. Accurate estimates matter: scrollToIndex navigates
  * by estimated offsets for rows that haven't been measured yet.
  */
@@ -430,10 +430,10 @@ export function ResultGrid({
             <ScrollAreaPrimitive.Root className="relative overflow-hidden">
                 <ScrollAreaPrimitive.Viewport
                     ref={parentRef}
-                    // [&>div]:!block overrides the `display: table` on the content wrapper
+                    // [&>div]:block! overrides the `display: table` on the content wrapper
                     // Radix injects — table layout also sizes to content, which breaks the
                     // width measurement the column count is derived from
-                    className={cn('w-full rounded-[inherit] [&>div]:!block',
+                    className={cn('w-full rounded-[inherit] [&>div]:block!',
                         showPagination
                             ? (updateRibbonVisible ? 'max-h-[calc(100vh-273px)]' : 'max-h-[calc(100vh-225px)]')
                             : (updateRibbonVisible ? 'max-h-[calc(100vh-211px)]' : 'max-h-[calc(100vh-163px)]')
