@@ -27,6 +27,8 @@ yarn-error.log*
 
 # env files (can opt-in for commiting if needed)
 .env*
+# committed: wires `next dev` to the gateway's test listener (stdtest DBs)
+!.env.development
 
 # vercel
 .vercel
