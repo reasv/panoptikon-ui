@@ -462,7 +462,19 @@ export function PinBoard(
                     isDroppable={true}
                     // Size of the grey preview box (10x10 in v1 units)
                     droppingItem={{ i: '__preview', x: 0, y: 0, w: Math.round(10 * sx), h: Math.round(10 * sy) }}
-                    compactType="vertical" // Compacts items vertically to keep them visible on screen
+                    // Compacts items vertically to keep them visible on
+                    // screen — EXCEPT in crop mode. RGL v2's GridItem
+                    // re-anchors every resize event to the item's current
+                    // layout position (v1 curried the live in-resize
+                    // position into its handlers), so with compaction on,
+                    // a north/west shrink is snapped back to the compacted
+                    // edge after the first event and the box shrinks from
+                    // the wrong side. With compaction off, the mid-gesture
+                    // layout matches the visual box and the anchor holds;
+                    // leaving crop mode re-compacts, which is where v1
+                    // ended up too (the crop committed at release is
+                    // immune to that move, see onResizeStop).
+                    compactType={cropKey !== null ? null : "vertical"}
                     preventCollision={false}
                     onResizeStart={(_currentLayout, oldItem, newItem, _placeholder, e, node) => {
                         if (!oldItem || !newItem || oldItem.i !== cropKey) return
