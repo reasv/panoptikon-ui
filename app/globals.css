@@ -203,6 +203,35 @@
   transition: none !important;
 }
 
+/* Pinboard pin overlay fit: the overlay controls (pin/crop/select/find
+   buttons, media controls, trim buttons, timeline) are laid out in fixed
+   Tailwind spacing units and would intersect once a pin shrinks below that
+   fixed footprint. Tailwind v4 resolves every spacing utility through
+   var(--spacing) at the element that uses it, so scoping a shrunken
+   --spacing to the pin scales the whole overlay — sizes, offsets and gaps
+   together — while pins above the threshold stay pixel-identical.
+   container-type: size makes cqw/cqh track the pin's own box (RGL sizes
+   items explicitly, so size containment can't collapse them; RGL's
+   transform also already makes each item a stacking context, so the
+   containment adds no new stacking behavior). --spacing is unregistered,
+   so descendants inherit the token stream and the cq units resolve against
+   this container at each element that uses a spacing utility.
+   Thresholds are the fixed layout's footprint in spacing units: 38 wide
+   (pin + crop buttons then the select button across the top row) and 26
+   tall (top row over the find/play row). The clamp floor keeps buttons at
+   >= 16px on degenerate tiny pins, where fitting is hopeless anyway and
+   hit-target size wins over overlap. */
+.pinboard-pin {
+  container-type: size;
+  --spacing: clamp(0.1rem, min(100cqw / 38, 100cqh / 26), 0.25rem);
+}
+/* An open video adds the right-hand control column — mute (bottom-14),
+   close (bottom-26), native-controls toggle (bottom-38) and the play
+   button's bottom-50 position while native controls show: taller footprint */
+.pinboard-pin:has(video) {
+  --spacing: clamp(0.1rem, min(100cqw / 38, 100cqh / 74), 0.25rem);
+}
+
 /* Pinboard crop mode: make all 8 resize handles on the active item stand out */
 .pinboard-crop-item > .react-resizable-handle {
   opacity: 1 !important;

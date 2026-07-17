@@ -637,7 +637,7 @@ export function PinBoard(
                         <div
                             key={i}
                             className={cn(
-                                "relative bg-gray-800 border rounded shadow-sm group",
+                                "relative bg-gray-800 border rounded shadow-sm group pinboard-pin",
                                 cropKey === i && "z-30 pinboard-crop-item",
                             )}
                         >
