@@ -49,6 +49,28 @@ export function rowStep(grid: GridParams): number {
   return grid.rowHeight + grid.margin
 }
 
+// Minimum useful pin size. Below ~60px even the floor-scaled overlay
+// controls (see .pinboard-pin in globals.css) stop fitting, so a smaller
+// pin is effectively non-interactable. Enforced at mutation time only —
+// resize gestures and layout actions — never against records being loaded:
+// clamping on load would rewrite a board just by viewing it.
+export const MIN_PIN_PX = 60
+
+// The minimum in grid units at the current column width. Width depends on
+// the measured container (columns are container-relative); height only on
+// the grid's fixed vertical step. An item spanning n cells measures
+// n*(cell+margin) - margin px, hence the +margin in the rounding.
+export function minPinUnits(
+  grid: GridParams,
+  columnWidth: number
+): { minW: number; minH: number } {
+  return {
+    minW: Math.min(grid.columns, Math.max(1,
+      Math.ceil((MIN_PIN_PX + grid.margin) / (columnWidth + grid.margin)))),
+    minH: Math.max(1, Math.ceil((MIN_PIN_PX + grid.margin) / rowStep(grid))),
+  }
+}
+
 const TOKEN_RE = /^v(\d+)(?:\.(\d+)\.(\d+)\.(\d+)\.(\d+))?$/
 
 export function parseVersionToken(token: string | undefined): GridParams | null {

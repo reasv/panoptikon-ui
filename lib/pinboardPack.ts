@@ -50,11 +50,14 @@ function rowNaturalHeight(row: PackItem[], grid: GridParams, columnWidth: number
 }
 
 // Largest-remainder apportionment: integers proportional to `ideal` summing
-// exactly to `total`, each at least 1 (assumes total >= ideal.length)
-function apportionToTotal(ideal: number[], total: number): number[] {
+// exactly to `total`, each at least `minEach` — capped at what `total` can
+// actually give every entry, so an unsatisfiable minimum degrades instead
+// of overflowing (assumes total >= ideal.length)
+function apportionToTotal(ideal: number[], total: number, minEach = 1): number[] {
+    const effMin = Math.max(1, Math.min(minEach, Math.floor(total / ideal.length)))
     const sum = ideal.reduce((acc, v) => acc + v, 0) || 1
     const scaled = ideal.map(v => (v * total) / sum)
-    const counts = scaled.map(v => Math.max(1, Math.floor(v)))
+    const counts = scaled.map(v => Math.max(effMin, Math.floor(v)))
     let used = counts.reduce((acc, v) => acc + v, 0)
     const byRemainder = scaled
         .map((v, i) => ({ i, frac: v - Math.floor(v) }))
@@ -62,11 +65,11 @@ function apportionToTotal(ideal: number[], total: number): number[] {
     for (let k = 0; used < total; k = (k + 1) % byRemainder.length, used++) {
         counts[byRemainder[k].i]++
     }
-    // The 1-minimum can push the total over; take back from the largest
+    // The minimum can push the total over; take back from the largest
     while (used > total) {
         let largest = -1
         for (let i = 0; i < counts.length; i++) {
-            if (counts[i] > 1 && (largest < 0 || counts[i] > counts[largest])) largest = i
+            if (counts[i] > effMin && (largest < 0 || counts[i] > counts[largest])) largest = i
         }
         if (largest < 0) break
         counts[largest]--
@@ -75,26 +78,54 @@ function apportionToTotal(ideal: number[], total: number): number[] {
     return counts
 }
 
+// Escape hatch for boards where the minimum item size is unsatisfiable
+// (too many items for the target rectangle): halve the larger minimum
+// until the pessimistic capacity check passes or the 1-cell floor is
+// reached. Monotone and bounded (a handful of halvings), never a search —
+// the degenerate case degrades to the historical 1-cell floors instead of
+// failing, looping, or pushing content far past the fold.
+function relaxMinimums(
+    n: number,
+    columns: number,
+    totalRows: number,
+    minW: number,
+    minH: number,
+): { minW: number; minH: number } {
+    let w = Math.max(1, Math.min(minW, columns))
+    let h = Math.max(1, Math.min(minH, totalRows))
+    // Pessimistic capacity: full rows of minimum-width items, each row at
+    // the minimum height, must fit the target rectangle
+    const fits = () => Math.ceil(n / Math.floor(columns / w)) * h <= totalRows
+    while (!fits() && (w > 1 || h > 1)) {
+        if (w >= h) w = Math.max(1, Math.floor(w / 2))
+        else h = Math.max(1, Math.floor(h / 2))
+    }
+    return { minW: w, minH: h }
+}
+
 // Column counts for one row at a fixed pixel height: round every item up
 // when the row has room (so images reach the shared row height instead of
 // sitting narrow-and-letterboxed), otherwise apportion proportionally
-// within the width cap
+// within the width cap. minW floors every count, capped at the width the
+// row can actually give each item.
 function rowColumnCounts(
     row: PackItem[],
     targetHeightPx: number,
     grid: GridParams,
     columnWidth: number,
+    minW = 1,
 ): number[] {
+    const effMin = Math.max(1, Math.min(minW, Math.floor(grid.columns / row.length)))
     const idealColumns = row.map(it =>
         (ratio(it) * targetHeightPx + grid.margin) / (columnWidth + grid.margin)
     )
-    const ceilColumns = idealColumns.map(v => Math.max(1, Math.ceil(v)))
+    const ceilColumns = idealColumns.map(v => Math.max(effMin, Math.ceil(v)))
     if (ceilColumns.reduce((acc, v) => acc + v, 0) <= grid.columns) return ceilColumns
     const total = Math.min(grid.columns, Math.max(
         idealColumns.length,
         Math.round(idealColumns.reduce((acc, v) => acc + v, 0)),
     ))
-    return apportionToTotal(idealColumns, total)
+    return apportionToTotal(idealColumns, total, effMin)
 }
 
 // Append one row's items to the layout, centered when it doesn't span the
@@ -106,9 +137,10 @@ function emitRow(
     y: number,
     grid: GridParams,
     columnWidth: number,
+    minW = 1,
 ) {
     const targetPx = hGrid * rowStep(grid) - grid.margin
-    const counts = rowColumnCounts(row, targetPx, grid, columnWidth)
+    const counts = rowColumnCounts(row, targetPx, grid, columnWidth, minW)
     const used = counts.reduce((acc, v) => acc + v, 0)
     let x = Math.max(0, Math.floor((grid.columns - used) / 2))
     row.forEach((it, i) => {
@@ -174,6 +206,7 @@ function breakIntoRowsByTotal(
     totalGridRows: number,
     grid: GridParams,
     columnWidth: number,
+    minH = 1,
 ): { rows: PackItem[][], heights: number[] } | null {
     const n = items.length
     const step = rowStep(grid)
@@ -199,7 +232,7 @@ function breakIntoRowsByTotal(
     for (let j = 1; j <= n; j++) {
         for (let i = 0; i < j; i++) {
             const heightPx = heightPxOf(i, j)
-            const q = Math.max(1, Math.round((heightPx + margin) / step))
+            const q = Math.max(minH, Math.round((heightPx + margin) / step))
             const dev = (heightPx - targetPx) / targetPx
             const cost = dev * dev
             if (q > maxB) continue
@@ -232,7 +265,8 @@ function breakIntoRowsByTotal(
     let b = bestB
     while (j > 0) {
         const i = fromI[j][b]
-        const q = Math.max(1, Math.round((heightPxOf(i, j) + margin) / step))
+        // Must quantize exactly like the DP above or the b bookkeeping drifts
+        const q = Math.max(minH, Math.round((heightPxOf(i, j) + margin) / step))
         rows.unshift(items.slice(i, j))
         heights.unshift(q)
         j = i
@@ -250,6 +284,8 @@ export function packRows({
     totalGridRows,
     rowCount,
     forceFill = false,
+    minW = 1,
+    minH = 1,
 }: {
     items: PackItem[],
     grid: GridParams,
@@ -261,15 +297,20 @@ export function packRows({
     // lets the cutting board below the fold compact up into view, which is
     // worse than any letterbox.
     forceFill?: boolean,
+    // Minimum item size in grid units; relaxed (see relaxMinimums) when the
+    // board can't give every item that much
+    minW?: number,
+    minH?: number,
 }): LayoutItem[] {
     if (items.length === 0) return []
     const total = Math.max(1, totalGridRows)
     const step = rowStep(grid)
     const maxRows = Math.min(items.length, total)
+    const mins = relaxMinimums(items.length, grid.columns, total, minW, minH)
     let rows: PackItem[][] | null = null
     let heights: number[] | null = null
     if (rowCount === "auto") {
-        const byTotal = breakIntoRowsByTotal(items, total, grid, columnWidth)
+        const byTotal = breakIntoRowsByTotal(items, total, grid, columnWidth, mins.minH)
         if (byTotal) {
             rows = byTotal.rows
             heights = byTotal.heights
@@ -292,7 +333,7 @@ export function packRows({
         if (!best) return []
         rows = best.rows
         heights = rows.map(row =>
-            Math.max(1, Math.round((rowNaturalHeight(row, grid, columnWidth) + grid.margin) / step))
+            Math.max(mins.minH, Math.round((rowNaturalHeight(row, grid, columnWidth) + grid.margin) / step))
         )
     }
     // Force the quantized heights to sum exactly to the target so the block
@@ -308,12 +349,12 @@ export function packRows({
     const chosen = heights!.reduce((acc, v) => acc + v, 0)
     const stretch = total / chosen
     if (chosen !== total && (forceFill || rowCount !== "auto" || stretch <= 1.35)) {
-        heights = apportionToTotal(heights!, total)
+        heights = apportionToTotal(heights!, total, mins.minH)
     }
     const layout: LayoutItem[] = []
     let y = 0
     rows.forEach((row, r) => {
-        emitRow(layout, row, heights![r], y, grid, columnWidth)
+        emitRow(layout, row, heights![r], y, grid, columnWidth, mins.minW)
         y += heights![r]
     })
     return layout
@@ -326,10 +367,14 @@ export function justifyRows({
     groups,
     grid,
     columnWidth,
+    minW = 1,
+    minH = 1,
 }: {
     groups: PackItem[][],
     grid: GridParams,
     columnWidth: number,
+    minW?: number,
+    minH?: number,
 }): LayoutItem[] {
     const step = rowStep(grid)
     const layout: LayoutItem[] = []
@@ -337,8 +382,10 @@ export function justifyRows({
     for (const row of groups) {
         if (row.length === 0) continue
         const natural = rowNaturalHeight(row, grid, columnWidth)
-        const hGrid = Math.max(1, Math.round((natural + grid.margin) / step))
-        emitRow(layout, row, hGrid, y, grid, columnWidth)
+        // No fold budget here, so no relaxation: an over-min row height just
+        // makes the block taller and it scrolls
+        const hGrid = Math.max(minH, Math.round((natural + grid.margin) / step))
+        emitRow(layout, row, hGrid, y, grid, columnWidth, minW)
         y += hGrid
     }
     return layout
@@ -417,20 +464,28 @@ export function packMosaic({
     // is within ~35% of the viewport aspect, otherwise render it undistorted
     // and leave the viewport partially empty.
     fill,
+    minW = 1,
+    minH = 1,
 }: {
     items: PackItem[],
     grid: GridParams,
     columnWidth: number,
     totalGridRows: number,
     fill: "force" | "auto",
+    // Minimum leaf size in grid units; relaxed (see relaxMinimums) when the
+    // board can't give every item that much, and best-effort within a split
+    // whose box is too thin in both directions
+    minW?: number,
+    minH?: number,
 }): LayoutItem[] {
     const n = items.length
     if (n === 0) return []
     if (n > MOSAIC_MAX_ITEMS) {
-        return packRows({ items, grid, columnWidth, totalGridRows, rowCount: "auto", forceFill: fill === "force" })
+        return packRows({ items, grid, columnWidth, totalGridRows, rowCount: "auto", forceFill: fill === "force", minW, minH })
     }
     const step = rowStep(grid)
     const total = Math.max(1, totalGridRows)
+    const mins = relaxMinimums(n, grid.columns, total, minW, minH)
     const widthPx = pixelWidth(grid.columns, columnWidth, grid.margin)
     const heightPx = total * step - grid.margin
     const targetA = widthPx / heightPx
@@ -517,12 +572,14 @@ export function packMosaic({
     const chosenDist = Math.abs(Math.log(root.a / targetA))
     let box = { x: 0, y: 0, w: grid.columns, h: total }
     if (fill !== "force" && chosenDist > Math.log(1.35)) {
+        // The relaxed minimums also floor the undistorted box, so a lone
+        // item (or a thin composition) can't come out below minimum size
         if (root.a >= targetA) {
             const hPx = widthPx / root.a
-            box.h = Math.max(1, Math.min(total, Math.round((hPx + grid.margin) / step)))
+            box.h = Math.max(mins.minH, Math.min(total, Math.round((hPx + grid.margin) / step)))
         } else {
             const wPx = heightPx * root.a
-            const w = Math.max(1, Math.min(grid.columns,
+            const w = Math.max(mins.minW, Math.min(grid.columns,
                 Math.round((wPx + grid.margin) / (columnWidth + grid.margin))))
             box = { x: Math.floor((grid.columns - w) / 2), y: 0, w, h: total }
         }
@@ -537,27 +594,40 @@ export function packMosaic({
         }
         const left = sets[i][entry.k].get(entry.lb)!
         const right = sets[entry.k][j].get(entry.rb)!
-        // A box too thin to split in the tree's direction degrades to the
-        // other one rather than emitting zero-sized children
-        const dir = entry.dir === 0 && w < 2 ? 1 : entry.dir === 1 && h < 2 ? 0 : entry.dir
+        // A box that can't give both children the minimum in the tree's
+        // direction degrades to the other direction when that one can;
+        // failing both, it keeps the tree's direction with the historical
+        // 1-cell floors — the best-effort residue of the escape hatch
+        // (relaxMinimums keeps boxes this tight rare). A box too thin to
+        // split AT ALL in the tree's direction always degrades, as before,
+        // rather than emitting zero-sized children.
+        const sideOk = w >= 2 * mins.minW
+        const stackOk = h >= 2 * mins.minH
+        let dir = entry.dir
+        if (dir === 0 && !sideOk && stackOk) dir = 1
+        else if (dir === 1 && !stackOk && sideOk) dir = 0
+        if (dir === 0 && w < 2) dir = 1
+        else if (dir === 1 && h < 2) dir = 0
         // Split positions are computed in pixels and then snapped to the
         // lattice: a box spanning w cells is w*(unit) - margin pixels wide
         // and the split consumes one margin, so apportioning cell counts
         // directly would drift by a margin's worth per level of nesting —
         // enough to visibly distort small leaves in deep trees.
         if (dir === 0) {
+            const lo = sideOk ? mins.minW : 1
             const unit = columnWidth + grid.margin
             const boxPx = w * unit - grid.margin
             const leftPx = (boxPx - grid.margin) * (left.a / (left.a + right.a))
-            const wl = Math.min(w - 1, Math.max(1, Math.round((leftPx + grid.margin) / unit)))
+            const wl = Math.min(w - lo, Math.max(lo, Math.round((leftPx + grid.margin) / unit)))
             emit(i, entry.k, entry.lb, x, y, wl, h)
             emit(entry.k, j, entry.rb, x + wl, y, w - wl, h)
         } else {
+            const lo = stackOk ? mins.minH : 1
             const unit = step
             const boxPx = h * unit - grid.margin
             // Stacked: heights inversely proportional to aspects
             const topPx = (boxPx - grid.margin) * (right.a / (left.a + right.a))
-            const hl = Math.min(h - 1, Math.max(1, Math.round((topPx + grid.margin) / unit)))
+            const hl = Math.min(h - lo, Math.max(lo, Math.round((topPx + grid.margin) / unit)))
             emit(i, entry.k, entry.lb, x, y, w, hl)
             emit(entry.k, j, entry.rb, x, y + hl, w, h - hl)
         }

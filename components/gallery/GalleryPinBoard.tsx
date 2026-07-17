@@ -4,7 +4,7 @@ import { useSelectedDBs } from "@/lib/state/database"
 import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid } from '@/lib/state/gallery'
 import { consumePinboardNavigation, consumePinboardPendingEdit } from '@/lib/pinboardNavigation'
 import { usePinBoard } from '@/lib/state/pinboard'
-import { GridParams, v1ScaleFactors } from '@/lib/pinboardGrid'
+import { GridParams, minPinUnits, v1ScaleFactors } from '@/lib/pinboardGrid'
 import { PinButton } from './PinButton'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { GridLayout, noCompactor, useContainerWidth, type LayoutItem } from "react-grid-layout"
@@ -66,6 +66,12 @@ export function PinBoard(
     const [cropResizing, setCropResizing] = useState(false)
     // Getter for the crop-mode image's viewport extent, set by its CropView
     const cropImageExtentRef = useRef<(() => CropGeometry | null) | null>(null)
+    // Width of the grid area, observed by RGL's own hook (the successor of
+    // the WidthProvider HOC: same 1280 SSR default, rAF-throttled observer).
+    // The grid renders ungated so SSR still paints items (at percentage
+    // positions, see rglSettling below). Declared above the layout memo
+    // because the minimum-size floors depend on the measured column width.
+    const { width: gridWidth, containerRef: gridAreaRef } = useContainerWidth()
     const [layout, pinnedFiles, crops, autoCrops, trims]: [
         LayoutItem[],
         [string, string, string, string][],
@@ -78,6 +84,15 @@ export function PinBoard(
         const cropsMap: Record<string, CropRect | null> = {}
         const autoCropsMap: Record<string, CropRect | null> = {}
         const trimsMap: Record<string, TrimRange | null> = {}
+        // Minimum-size floors for resize gestures. RGL applies minW/minH
+        // through gesture-time constraints only — the layout sync never
+        // clamps — so records already below the minimum (legacy boards,
+        // relaxed degenerate layouts) render untouched and only snap up to
+        // the minimum when actually resized. The crop-mode item is exempt:
+        // its box is the crop window, which may legitimately be tiny.
+        const colWidth = (gridWidth - 2 * grid.padding
+            - (grid.columns - 1) * grid.margin) / grid.columns
+        const { minW, minH } = minPinUnits(grid, colWidth)
         for (let i = 0; i < records.length; i += 5) {
             const [sha256, x, y, w, hField] = records.slice(i, i + 5)
             const index = `${i}-${sha256}`
@@ -91,7 +106,9 @@ export function PinBoard(
                 y: parseInt(y),
                 w: parseInt(w),
                 h,
-                ...(index === cropKey ? { resizeHandles: ALL_RESIZE_HANDLES } : {}),
+                ...(index === cropKey
+                    ? { resizeHandles: ALL_RESIZE_HANDLES }
+                    : { minW, minH }),
             })
             if (sha256 === "__preview") {
                 pinned.push([
@@ -110,7 +127,7 @@ export function PinBoard(
             ])
         }
         return [newLayout, pinned, cropsMap, autoCropsMap, trimsMap]
-    }, [records, cropKey, dbs])
+    }, [records, cropKey, dbs, grid, gridWidth])
 
     // Rebuilds the packed records from RGL's reported layout, in the EXISTING
     // record order: the item keys embed each record's offset, so persisting in
@@ -256,11 +273,6 @@ export function PinBoard(
     // consistent pre-migration; on the finer v2 grid the same physical size
     // is these units times the lattice scale factors
     const { sx, sy } = v1ScaleFactors(grid)
-    // Width of the grid area, observed by RGL's own hook (the successor of
-    // the WidthProvider HOC: same 1280 SSR default, rAF-throttled observer).
-    // The grid renders ungated so SSR still paints items (at percentage
-    // positions, see rglSettling below).
-    const { width: gridWidth, containerRef: gridAreaRef } = useContainerWidth()
     // Grid measurement config for RGL; identity keyed on the scalar params so
     // unrelated re-renders don't churn the grid's internal position memos
     const gridConfig = useMemo(() => ({

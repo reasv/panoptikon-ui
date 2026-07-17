@@ -4,7 +4,7 @@ import { fetchClient } from "@/lib/api";
 import { components } from "@/lib/panoptikon";
 import { RefObject, useEffect, useRef } from "react";
 import { CropRect, computeAutoCrop } from "@/lib/pinboardCrop";
-import { GridParams, rowStep } from "@/lib/pinboardGrid";
+import { GridParams, minPinUnits, rowStep } from "@/lib/pinboardGrid";
 import { PackItem, groupRowsByOverlap, justifyRows, packMosaic, packRows } from "@/lib/pinboardPack";
 
 // Layout keys are `${recordIndex}-${sha256Prefix}` (the same image can be
@@ -164,6 +164,7 @@ export function usePinboardLayoutActions({
             columnWidth: buildData.columnWidth,
             totalGridRows: total,
             fill: rest.length > 0 ? "force" : "auto",
+            ...minPinUnits(grid, buildData.columnWidth),
         })
         // A packer that can't produce a composition returns [] — committing
         // that would erase the packed items' records (rebuildRecords drops
@@ -185,6 +186,7 @@ export function usePinboardLayoutActions({
             columnWidth: buildData.columnWidth,
             totalGridRows: foldRows(buildData),
             rowCount,
+            ...minPinUnits(grid, buildData.columnWidth),
         })
         if (packed.length === 0) return
         onLayoutChange(packed, stickyAutoCrops(buildData, packed))
@@ -197,20 +199,25 @@ export function usePinboardLayoutActions({
         if (!buildData) return
         const groups = groupRowsByOverlap(buildData.sortedLayout)
             .map(row => row.map(l => toPackItem(buildData, l)))
-        const newLayout = justifyRows({ groups, grid, columnWidth: buildData.columnWidth })
+        const newLayout = justifyRows({
+            groups, grid, columnWidth: buildData.columnWidth,
+            ...minPinUnits(grid, buildData.columnWidth),
+        })
         onLayoutChange(newLayout, stickyAutoCrops(buildData, newLayout))
     }
 
     async function changeItemSize(layoutKey: string, increase: number) {
         const buildData = await ensureBuildData()
         if (!buildData) return
+        const { minW, minH } = minPinUnits(grid, buildData.columnWidth)
         const newLayout = layout.map(l => {
             if (l.i === layoutKey) {
                 const [w, h] = croppedDimensions(buildData, l.i)
+                const newW = Math.max(minW, l.w + increase)
                 return {
                     ...l,
-                    w: l.w + increase,
-                    h: findOptimalHeight(l.w + increase, grid, buildData.columnWidth, w, h),
+                    w: newW,
+                    h: findOptimalHeight(newW, grid, buildData.columnWidth, w, h, minH),
                 }
             }
             return l
@@ -220,13 +227,15 @@ export function usePinboardLayoutActions({
     async function setItemSize(layoutKey: string, size: number) {
         const buildData = await ensureBuildData()
         if (!buildData) return
+        const { minW, minH } = minPinUnits(grid, buildData.columnWidth)
         const newLayout = layout.map(l => {
             if (l.i === layoutKey) {
                 const [w, h] = croppedDimensions(buildData, l.i)
+                const newW = Math.max(minW, size)
                 return {
                     ...l,
-                    w: size,
-                    h: findOptimalHeight(size, grid, buildData.columnWidth, w, h),
+                    w: newW,
+                    h: findOptimalHeight(newW, grid, buildData.columnWidth, w, h, minH),
                 }
             }
             return l
@@ -495,6 +504,7 @@ function buildLayout(buildData: LayoutBuildData, itemsPerRow: number, restrictTo
         buildData.columnWidth,
         buildData.containerHeight,
         restrictToVisible,
+        minPinUnits(buildData.grid, buildData.columnWidth),
     )
 }
 
@@ -505,9 +515,14 @@ function buildRowLayout(
     columnWidth: number,
     containerHeight: number,
     restrictToVisible = false,
+    mins: { minW: number, minH: number } = { minW: 1, minH: 1 },
 ): LayoutItem[] {
     if (items.length === 0) return []
     const { columns, margin, padding } = grid
+    // Minimum width each item in a full row can actually get; an explicit
+    // items-per-row beyond that capacity relaxes rather than overflowing
+    const effMinW = Math.max(1, Math.min(mins.minW,
+        Math.floor(columns / Math.min(itemsPerRow, items.length))))
     // Split the items into rows
     const rows: { sha256: string, width: number, height: number }[][] = []
     for (let i = 0; i < items.length; i += itemsPerRow) {
@@ -550,10 +565,10 @@ function buildRowLayout(
         // height rather than being left narrow-and-letterboxed. Fall back to
         // proportional apportionment only when the row is width-bound and the
         // columns must be squeezed to fit.
-        const ceilColumns = idealColumns.map(v => Math.max(1, Math.ceil(v)))
+        const ceilColumns = idealColumns.map(v => Math.max(effMinW, Math.ceil(v)))
         const columnCounts = ceilColumns.reduce((acc, curr) => acc + curr, 0) <= columns
             ? ceilColumns
-            : apportionColumns(idealColumns, columns)
+            : apportionColumns(idealColumns, columns, effMinW)
         const usedColumns = columnCounts.reduce((acc, curr) => acc + curr, 0)
         // Center rows that don't span the full width
         let currentX = Math.floor((columns - usedColumns) / 2)
@@ -561,7 +576,9 @@ function buildRowLayout(
         // each item's height independently from its rounded column count let
         // siblings disagree, leaving the shorter ones undersized with a gap
         // below. Round the shared target height to grid rows once instead.
-        let rowGridHeight = Math.max(1, Math.round((targetHeight + margin) / rowStep(grid)))
+        // The restrict-to-visible budget cap deliberately wins over the
+        // minimum: fitting the requested rows on screen is a direct order
+        let rowGridHeight = Math.max(mins.minH, Math.round((targetHeight + margin) / rowStep(grid)))
         if (restrictToVisible) rowGridHeight = Math.min(rowGridHeight, heightBudget)
         for (let i = 0; i < row.length; i++) {
             layout.push({
@@ -580,13 +597,14 @@ function buildRowLayout(
 
 // Round fractional column shares to integers with largest-remainder
 // apportionment, so rounding error is spread out instead of dumped on one
-// item. Every item gets at least 1 column and the total stays <= maxColumns.
-function apportionColumns(ideal: number[], maxColumns: number): number[] {
+// item. Every item gets at least minEach columns (assumed already capped to
+// what maxColumns can give each) and the total stays <= maxColumns.
+function apportionColumns(ideal: number[], maxColumns: number, minEach = 1): number[] {
     const total = Math.min(maxColumns, Math.max(
         ideal.length,
         Math.round(ideal.reduce((acc, curr) => acc + curr, 0)),
     ))
-    const counts = ideal.map(v => Math.max(1, Math.floor(v)))
+    const counts = ideal.map(v => Math.max(minEach, Math.floor(v)))
     let used = counts.reduce((acc, curr) => acc + curr, 0)
     const byRemainder = ideal
         .map((v, i) => ({ i, frac: v - Math.floor(v) }))
@@ -594,12 +612,12 @@ function apportionColumns(ideal: number[], maxColumns: number): number[] {
     for (let k = 0; used < total; k = (k + 1) % byRemainder.length, used++) {
         counts[byRemainder[k].i]++
     }
-    // The 1-column minimum can push the total over the cap; take columns back
-    // from the widest items until it fits
+    // The minimum can push the total over the cap; take columns back from
+    // the widest items until it fits
     while (used > total) {
         let widest = -1
         for (let i = 0; i < counts.length; i++) {
-            if (counts[i] > 1 && (widest < 0 || counts[i] > counts[widest])) widest = i
+            if (counts[i] > minEach && (widest < 0 || counts[i] > counts[widest])) widest = i
         }
         if (widest < 0) break
         counts[widest]--
@@ -614,8 +632,9 @@ function findOptimalHeight(
     columnWidth: number,
     itemWidth: number,
     itemHeight: number,
+    minH = 1,
 ) {
     // Grid rows whose pixel height best matches the item's aspect at this width
     const idealPx = pixelWidth(w, columnWidth, grid.margin) * itemHeight / itemWidth
-    return Math.max(1, Math.round((idealPx + grid.margin) / rowStep(grid)))
+    return Math.max(minH, Math.round((idealPx + grid.margin) / rowStep(grid)))
 }
