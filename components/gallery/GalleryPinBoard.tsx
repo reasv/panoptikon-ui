@@ -37,7 +37,13 @@ const ALL_RESIZE_HANDLES: LayoutItem["resizeHandles"] =
 // don't churn). The board's own drags start only from .drag-handle layers;
 // resize handles come from react-resizable with the default 'se' unless an
 // item overrides resizeHandles (the crop-mode item gets all eight).
-const DRAG_CONFIG = { enabled: true, handle: ".drag-handle" }
+// threshold: 0 is v1 drag semantics (drag starts on mousedown) and is NOT
+// optional: RGL v2's external-drop placeholder drives its grid item through a
+// synthetic drag whose fake events never move, so a nonzero threshold leaves
+// that drag stuck in the pending state and the hover machinery loops React
+// into a nested-update crash. Clicks on the overlay buttons are unaffected —
+// they sit outside the .drag-handle layer.
+const DRAG_CONFIG = { enabled: true, handle: ".drag-handle", threshold: 0 }
 const RESIZE_CONFIG = { enabled: true }
 const DROP_CONFIG = { enabled: true }
 
@@ -112,6 +118,17 @@ export function PinBoard(
     // remount every pin (with its ContextMenu popper) and re-fire this handler
     // — feeding the layout back into itself through the URL until React's
     // nested-update limit crashes the page.
+    // GEOMETRY ONLY: records whose key is absent from the reported layout are
+    // kept untouched, and layout items without a record are ignored. RGL v2
+    // syncs our layout prop into its internal state in a post-paint effect,
+    // so every layout report is one commit BEHIND the records that produced
+    // it; a report racing a structural record write (pin drop, unpin) is
+    // simply missing/carrying that item. Inferring deletions or additions
+    // from such a report echoes the stale layout back into the records,
+    // which flips the next report the other way — an infinite drop↔re-add
+    // write loop (nested-update crash on pin drop). Structural changes go
+    // through explicit updateRecords calls only; the layout sync integrates
+    // them on the next commit.
     // autoCropOverrides, when given, replaces the auto-crop slot of the keys
     // it contains (null clears the slot); keys absent from the map keep their
     // existing auto crop. Layout actions pass it so the recomputed fit-to-cell
@@ -139,8 +156,10 @@ export function PinBoard(
         for (let i = 0; i < prev.length; i += 5) {
             const key = `${i}-${prev[i]}`
             const item = byKey.get(key)
-            if (!item) continue
-            byKey.delete(key)
+            if (!item) {
+                next.push(...prev.slice(i, i + 5))
+                continue
+            }
             const { crop, autoCrop, trim } = parseHField(prev[i + 4])
             const hasManual = manualCropOverrides && key in manualCropOverrides
             const nextCrop = hasManual ? manualCropOverrides[key] : crop
@@ -156,16 +175,6 @@ export function PinBoard(
                 item.w.toString(),
                 // Crop/trim suffixes stored in the h field survive box moves/resizes
                 packHField(item.h, nextCrop, nextAuto, trim),
-            )
-        }
-        // Items RGL reports that have no record yet
-        for (const item of byKey.values()) {
-            next.push(
-                item.i.split("-")[1],
-                item.x.toString(),
-                item.y.toString(),
-                item.w.toString(),
-                packHField(item.h, null),
             )
         }
         return next
