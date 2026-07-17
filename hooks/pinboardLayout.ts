@@ -1,5 +1,5 @@
 "use client"
-import type { LayoutItem } from "react-grid-layout/legacy";
+import type { LayoutItem } from "react-grid-layout";
 import { fetchClient } from "@/lib/api";
 import { components } from "@/lib/panoptikon";
 import { RefObject, useEffect, useRef } from "react";

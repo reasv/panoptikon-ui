@@ -22,7 +22,7 @@
 // (the current arrangement) and only resizes each row to span the full
 // width at its natural height.
 
-import type { LayoutItem } from "react-grid-layout/legacy"
+import type { LayoutItem } from "react-grid-layout"
 import { GridParams, rowStep } from "./pinboardGrid"
 
 export interface PackItem {

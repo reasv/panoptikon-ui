@@ -7,7 +7,8 @@ import { usePinBoard } from '@/lib/state/pinboard'
 import { GridParams, v1ScaleFactors } from '@/lib/pinboardGrid'
 import { PinButton } from './PinButton'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Responsive, WidthProvider, type LayoutItem } from "react-grid-layout/legacy"
+import { GridLayout, noCompactor, useContainerWidth, type LayoutItem } from "react-grid-layout"
+import { GridBackground, fastVerticalCompactor } from "react-grid-layout/extras"
 import "react-grid-layout/css/styles.css"
 import "react-resizable/css/styles.css"
 import { ScrollArea } from '../ui/scroll-area'
@@ -28,53 +29,17 @@ import { CropGeometry, CropView } from './CropView'
 import { VideoTimeline } from './VideoTimeline'
 import { ArrowRightFromLine, ArrowRightToLine, Check, Crop } from 'lucide-react'
 import { usePinboardLayoutActions } from '@/hooks/pinboardLayout'
-const ResponsiveGridLayout = WidthProvider(Responsive)
 
 const ALL_RESIZE_HANDLES: LayoutItem["resizeHandles"] =
     ["s", "w", "e", "n", "sw", "nw", "se", "ne"]
 
-// Faint overlay of react-grid-layout's cells, for eyeballing item sizes while
-// debugging layouts. Each cell's left/right and top/bottom edges are drawn at
-// their exact computed positions (the gaps between the paired lines are the
-// grid's margins). Positions are placed explicitly rather than via a
-// repeating gradient, whose fractional column period would accumulate rounding
-// error across the columns and smear into overlapping/uneven lines.
-function GridOverlay({ width, height, grid }: {
-    width: number
-    height: number
-    grid: GridParams
-}) {
-    const { columns, rowHeight, margin, padding } = grid
-    const columnWidth = (width - 2 * padding - (columns - 1) * margin) / columns
-    if (!(columnWidth > 0) || height <= 0) return null
-
-    const xs: number[] = []
-    for (let i = 0; i < columns; i++) {
-        const left = padding + i * (columnWidth + margin)
-        xs.push(left, left + columnWidth)
-    }
-    const ys: number[] = []
-    for (let top = padding; top < height; top += rowHeight + margin) {
-        ys.push(top, top + rowHeight)
-    }
-
-    const stroke = "rgba(128,128,128,0.35)"
-    return (
-        <svg
-            className="absolute top-0 left-0 z-0 pointer-events-none"
-            width={width}
-            height={height}
-            shapeRendering="crispEdges"
-        >
-            {xs.map((x, i) => (
-                <line key={`v${i}`} x1={x} y1={0} x2={x} y2={height} stroke={stroke} strokeWidth={1} />
-            ))}
-            {ys.map((y, i) => (
-                <line key={`h${i}`} x1={0} y1={y} x2={width} y2={y} stroke={stroke} strokeWidth={1} />
-            ))}
-        </svg>
-    )
-}
+// Static grid configs (referentially stable so the grid's internal memos
+// don't churn). The board's own drags start only from .drag-handle layers;
+// resize handles come from react-resizable with the default 'se' unless an
+// item overrides resizeHandles (the crop-mode item gets all eight).
+const DRAG_CONFIG = { enabled: true, handle: ".drag-handle" }
+const RESIZE_CONFIG = { enabled: true }
+const DROP_CONFIG = { enabled: true }
 
 export function PinBoard(
     {
@@ -275,9 +240,6 @@ export function PinBoard(
         })
     }
 
-    // Stable layouts object: a fresh identity on every render makes RGL
-    // re-sync (and re-fire onLayoutChange) on unrelated parent re-renders
-    const rglLayouts = useMemo(() => ({ lg: layout }), [layout])
     const [fs, setFs] = useGalleryFullscreen()
     const [showGrid] = useGalleryPinGrid()
     const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -285,27 +247,37 @@ export function PinBoard(
     // consistent pre-migration; on the finer v2 grid the same physical size
     // is these units times the lattice scale factors
     const { sx, sy } = v1ScaleFactors(grid)
-    // Measure the grid area so the debug grid overlay can match react-grid-layout's
-    // column width (from the container width) and cover the full grid height,
-    // which grows past the viewport when an item extends below the fold. The
-    // grid content height comes from RGL's own root element rather than the
-    // fixed-height container, and we observe it so the overlay follows resizes.
-    const gridAreaRef = useRef<HTMLDivElement>(null)
-    const [gridAreaSize, setGridAreaSize] = useState({ width: 0, height: 0 })
+    // Width of the grid area, observed by RGL's own hook (the successor of
+    // the WidthProvider HOC: same 1280 SSR default, rAF-throttled observer).
+    // The grid renders ungated so SSR still paints items (at percentage
+    // positions, see rglSettling below).
+    const { width: gridWidth, containerRef: gridAreaRef } = useContainerWidth()
+    // Grid measurement config for RGL; identity keyed on the scalar params so
+    // unrelated re-renders don't churn the grid's internal position memos
+    const gridConfig = useMemo(() => ({
+        cols: grid.columns,
+        rowHeight: grid.rowHeight,
+        margin: [grid.margin, grid.margin] as [number, number],
+        containerPadding: [grid.padding, grid.padding] as [number, number],
+    }), [grid.columns, grid.rowHeight, grid.margin, grid.padding])
+    // Height of the grid content for the debug grid background, which must
+    // cover the full grid height — it grows past the viewport when an item
+    // extends below the fold. Comes from RGL's own root element rather than
+    // the fixed-height container, observed so it follows resizes.
+    const [gridContentHeight, setGridContentHeight] = useState(0)
     useEffect(() => {
         const el = gridAreaRef.current
         if (!el) return
         const gridEl = el.querySelector<HTMLElement>(".react-grid-layout")
-        const measure = () => setGridAreaSize({
-            width: el.clientWidth,
-            height: Math.max(el.clientHeight, gridEl?.offsetHeight ?? 0),
-        })
+        const measure = () => setGridContentHeight(
+            Math.max(el.clientHeight, gridEl?.offsetHeight ?? 0)
+        )
         measure()
         const ro = new ResizeObserver(measure)
         ro.observe(el)
         if (gridEl) ro.observe(gridEl)
         return () => ro.disconnect()
-    }, [records])
+    }, [records, gridAreaRef])
     const gridKey = `grid-${grid.columns}-${grid.rowHeight}-${grid.margin}-${grid.padding}`
     // Keep RGL's transitions off while HYDRATING only (see globals.css:
     // .rgl-mount-still): the SSR HTML paints items at percentage positions,
@@ -434,32 +406,40 @@ export function PinBoard(
                     }`}
             >
                 {showGrid && (
-                    <GridOverlay
-                        width={gridAreaSize.width}
-                        height={gridAreaSize.height}
-                        grid={grid}
+                    // Faint overlay of react-grid-layout's cells, for
+                    // eyeballing item sizes while debugging layouts. RGL's own
+                    // GridBackground shares the grid's exact cell math, so it
+                    // can't drift from the real cell positions.
+                    <GridBackground
+                        className="z-0"
+                        width={gridWidth}
+                        cols={grid.columns}
+                        rowHeight={grid.rowHeight}
+                        margin={[grid.margin, grid.margin]}
+                        containerPadding={[grid.padding, grid.padding]}
+                        rows="auto"
+                        height={gridContentHeight}
+                        color="rgba(128,128,128,0.18)"
+                        borderRadius={2}
                     />
                 )}
-                <ResponsiveGridLayout
+                <GridLayout
                     // Remount when the grid parameters change (v1 -> v2
-                    // migration, future per-board settings): Responsive RGL
-                    // otherwise reconciles the new layouts against its stale
-                    // internal cols, clamping x+w to the old column count and
-                    // compacting items into the wrong places before the new
-                    // cols prop is applied.
+                    // migration, future per-board settings): GridLayout keeps
+                    // an internal layout state that only re-syncs from props
+                    // in a post-paint effect, so without the remount one
+                    // frame renders the old layout against the new column
+                    // width. Remounting re-initializes the state from the new
+                    // props atomically.
                     key={gridKey}
                     className="layout"
-                    layouts={rglLayouts}
-                    breakpoints={{ lg: 0, }}
-                    cols={{ lg: grid.columns, }}
-                    rowHeight={grid.rowHeight}
-                    margin={[grid.margin, grid.margin]}
-                    containerPadding={[grid.padding, grid.padding]}
+                    width={gridWidth}
+                    layout={layout}
+                    gridConfig={gridConfig}
+                    dragConfig={DRAG_CONFIG}
+                    resizeConfig={RESIZE_CONFIG}
+                    dropConfig={DROP_CONFIG}
                     onLayoutChange={(currentLayout) => onLayoutChange([...currentLayout])}
-                    draggableHandle=".drag-handle"
-                    isResizable={true}
-                    isDraggable={true}
-                    isDroppable={true}
                     // Size of the grey preview box (10x10 in v1 units)
                     droppingItem={{ i: '__preview', x: 0, y: 0, w: Math.round(10 * sx), h: Math.round(10 * sy) }}
                     // Compacts items vertically to keep them visible on
@@ -473,9 +453,11 @@ export function PinBoard(
                     // layout matches the visual box and the anchor holds;
                     // leaving crop mode re-compacts, which is where v1
                     // ended up too (the crop committed at release is
-                    // immune to that move, see onResizeStop).
-                    compactType={cropKey !== null ? null : "vertical"}
-                    preventCollision={false}
+                    // immune to that move, see onResizeStop). The vertical
+                    // compactor is the skyline O(n log n) one from extras;
+                    // same semantics as the classic quadratic compactor for
+                    // non-overlapping, non-static layouts like ours.
+                    compactor={cropKey !== null ? noCompactor : fastVerticalCompactor}
                     onResizeStart={(_currentLayout, oldItem, newItem, _placeholder, e, node) => {
                         if (!oldItem || !newItem || oldItem.i !== cropKey) return
                         setCropResizing(true)
@@ -681,7 +663,7 @@ export function PinBoard(
                                 />}
                         </div>
                     ))}
-                </ResponsiveGridLayout>
+                </GridLayout>
             </div>
         </ScrollArea>
     )

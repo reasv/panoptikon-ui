@@ -1,4 +1,4 @@
-import type { LayoutItem } from "react-grid-layout/legacy";
+import type { LayoutItem } from "react-grid-layout";
 import { ContextMenuCheckboxItem, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger } from "../ui/context-menu";
 import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid } from "@/lib/state/gallery";
 import { CropRect, TrimRange } from "@/lib/pinboardCrop";
