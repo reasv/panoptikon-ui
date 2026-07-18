@@ -216,20 +216,22 @@
    containment adds no new stacking behavior). --spacing is unregistered,
    so descendants inherit the token stream and the cq units resolve against
    this container at each element that uses a spacing utility.
-   Thresholds are the fixed layout's footprint in spacing units: 38 wide
-   (pin + crop buttons then the select button across the top row) and 26
-   tall (top row over the find/play row). The clamp floor keeps buttons at
-   >= 16px on degenerate tiny pins, where fitting is hopeless anyway and
-   hit-target size wins over overlap. */
+   Thresholds are the fixed layout's footprint in spacing units: 62 wide
+   (pin + crop + the two lock toggles at left-26/left-38, then the select
+   button across the top row) and 26 tall (top row over the find/play
+   row). The lock toggles are usually hidden, but they appear exactly on
+   hover — when overlap would show — so they always count. The clamp
+   floor keeps buttons at >= 16px on degenerate tiny pins, where fitting
+   is hopeless anyway and hit-target size wins over overlap. */
 .pinboard-pin {
   container-type: size;
-  --spacing: clamp(0.1rem, min(100cqw / 38, 100cqh / 26), 0.25rem);
+  --spacing: clamp(0.1rem, min(100cqw / 62, 100cqh / 26), 0.25rem);
 }
 /* An open video adds the right-hand control column — mute (bottom-14),
    close (bottom-26), native-controls toggle (bottom-38) and the play
    button's bottom-50 position while native controls show: taller footprint */
 .pinboard-pin:has(video) {
-  --spacing: clamp(0.1rem, min(100cqw / 38, 100cqh / 74), 0.25rem);
+  --spacing: clamp(0.1rem, min(100cqw / 62, 100cqh / 74), 0.25rem);
 }
 
 /* Pinboard crop mode: make all 8 resize handles on the active item stand out */

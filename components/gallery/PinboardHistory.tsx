@@ -192,6 +192,7 @@ export function PinboardHistoryPanel({
     return (
         <div
             ref={panelRef}
+            data-pinboard-history
             className="fixed z-50 w-80 flex flex-col bg-background border rounded-md shadow-lg"
             style={panelStyle(corner, areaRect)}
         >

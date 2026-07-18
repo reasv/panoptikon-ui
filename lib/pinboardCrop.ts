@@ -25,14 +25,19 @@
 //
 // Serialization piggybacks on the existing pinboard layout query param,
 // which is a flat array of 5-string records [sha256, x, y, w, h]. All are
-// appended to the `h` slot: "<h>[c<8>][a<8>][t<start>.<end>]" — "c" + 8
-// chars for the manual crop, "a" + 8 chars for the auto crop (same
+// appended to the `h` slot: "<h>[c<8>][a<8>][t<start>.<end>][L<a|s>]" —
+// "c" + 8 chars for the manual crop, "a" + 8 chars for the auto crop (same
 // encoding), then "t<start>.<end>" for the trim (either side empty when
-// unset), e.g. "12c00zzzz00a0899zz0it5k.8a". parseInt() reads the leading
-// digits and ignores the suffix, so old clients see the correct height and
-// simply drop the suffixes, while new clients reading old URLs get no
-// suffix and default to the full image (fields without an `a` segment
-// parse with autoCrop: null).
+// unset), then "L" plus a flag for the layout lock ("a" = anchored in
+// place, "s" = size locked; the uppercase L keeps the flag from colliding
+// with the base36 segments — "p" is accepted as a legacy alias of "a"
+// from before the anchor rename), e.g. "12c00zzzz00a0899zz0it5k.8aLa".
+// parseInt() reads the
+// leading digits and ignores the suffix, so old clients see the correct
+// height and simply drop the suffixes, while new clients reading old URLs
+// get no suffix and default to the full image (fields without an `a`
+// segment parse with autoCrop: null, without an `L` segment with
+// lock: null).
 
 export interface CropRect {
   x: number
@@ -163,11 +168,19 @@ function decodeCrop(s: string | undefined): CropRect | null {
   return isFullCrop(parsed) ? null : parsed
 }
 
+// Layout lock: "anchor" fixes position AND size (layout actions treat the
+// item as an obstacle and pack around it; manual drags can't displace it
+// either), "size" keeps the item's w x h but lets layout actions and drags
+// move it. Named "anchor" rather than "pin" because pinning already means
+// adding an item to the board.
+export type PinLock = "anchor" | "size" | null
+
 export function packHField(
   h: number,
   crop: CropRect | null,
   autoCrop: CropRect | null = null,
-  trim: TrimRange | null = null
+  trim: TrimRange | null = null,
+  lock: PinLock = null
 ): string {
   let field = h.toString()
   field += encodeCrop("c", crop)
@@ -177,6 +190,7 @@ export function packHField(
     const end = trim!.end != null ? encodeTime(trim!.end) : ""
     field += `t${start}.${end}`
   }
+  if (lock) field += `L${lock === "anchor" ? "a" : "s"}`
   return field
 }
 
@@ -185,14 +199,15 @@ export function parseHField(field: string): {
   crop: CropRect | null
   autoCrop: CropRect | null
   trim: TrimRange | null
+  lock: PinLock
 } {
   const h = parseInt(field)
   const match =
-    /^\d+(?:c([0-9a-z]{8}))?(?:a([0-9a-z]{8}))?(?:t([0-9a-z]*)\.([0-9a-z]*))?$/.exec(
+    /^\d+(?:c([0-9a-z]{8}))?(?:a([0-9a-z]{8}))?(?:t([0-9a-z]*)\.([0-9a-z]*))?(?:L([aps]))?$/.exec(
       field
     )
   if (!match) {
-    return { h, crop: null, autoCrop: null, trim: null }
+    return { h, crop: null, autoCrop: null, trim: null, lock: null }
   }
   const crop = decodeCrop(match[1])
   const autoCrop = decodeCrop(match[2])
@@ -200,5 +215,6 @@ export function parseHField(field: string): {
   if (match[3] || match[4]) {
     trim = { start: decodeTime(match[3]), end: decodeTime(match[4]) }
   }
-  return { h, crop, autoCrop, trim }
+  const lock: PinLock = match[5] === "s" ? "size" : match[5] ? "anchor" : null
+  return { h, crop, autoCrop, trim, lock }
 }

@@ -3,9 +3,29 @@ import type { LayoutItem } from "react-grid-layout";
 import { fetchClient } from "@/lib/api";
 import { components } from "@/lib/panoptikon";
 import { RefObject, useEffect, useRef } from "react";
-import { CropRect, computeAutoCrop } from "@/lib/pinboardCrop";
+import { CropRect, PinLock, computeAutoCrop } from "@/lib/pinboardCrop";
 import { GridParams, minPinUnits, rowStep } from "@/lib/pinboardGrid";
-import { PackItem, groupRowsByOverlap, justifyRows, packMosaic, packRows } from "@/lib/pinboardPack";
+import {
+    ArrangedItem,
+    GridRect,
+    PackItem,
+    evictFromBox,
+    groupRowsByOverlap,
+    growToFill,
+    justifyRows,
+    packMosaic,
+    packRegion,
+    packRegionInBox,
+    packRows,
+    packRowsAroundObstacles,
+} from "@/lib/pinboardPack";
+
+// Session-wide reroll counter: every fill-type action renders the variant
+// this counter selects, so a rerolled composition is what later auto-fills
+// continue from instead of snapping back to variant 0. Module-level on
+// purpose — the hook is instantiated once per pin menu plus once for the
+// board, and they must agree.
+let mosaicVariant = 0
 
 // Layout keys are `${recordIndex}-${sha256Prefix}` (the same image can be
 // pinned more than once); the sha256 part is what the API understands
@@ -21,6 +41,8 @@ export function usePinboardLayoutActions({
     layout,
     crops,
     autoCrops,
+    locks = {},
+    highWater = 0,
     dbs,
     grid,
     pinboardRef,
@@ -30,6 +52,12 @@ export function usePinboardLayoutActions({
     // Manual crops (the layout-math base) and derived fit-to-cell auto crops
     crops: Record<string, CropRect | null>,
     autoCrops: Record<string, CropRect | null>,
+    // Per-item layout locks: "anchor" (position+size fixed, an obstacle
+    // every fill packs around) or "size" (treated the same by layout
+    // actions; only manual drags distinguish them)
+    locks?: Record<string, PinLock>,
+    // The board's layout-height ratchet in grid rows (see pinboardGrid.ts)
+    highWater?: number,
     dbs: {
         index_db: string | null
         user_data_db: string | null
@@ -37,10 +65,12 @@ export function usePinboardLayoutActions({
     grid: GridParams,
     pinboardRef: RefObject<HTMLDivElement | null>,
     // autoCropOverrides ride along with the layout so both land in one
-    // record write (one URL update, one history entry)
+    // record write (one URL update, one history entry); newHighWater, when
+    // given, updates the board's ratchet in that same write
     onLayoutChange: (
         layout: LayoutItem[],
         autoCropOverrides?: Record<string, CropRect | null>,
+        newHighWater?: number,
     ) => void,
 }) {
     const layoutBuildData = useRef<LayoutBuildData | null>(null)
@@ -57,7 +87,13 @@ export function usePinboardLayoutActions({
         return layoutBuildData.current
     }
 
+    const isLocked = (key: string) => !!locks[key]
+    const hasLocks = layout.some(l => isLocked(l.i))
+
     async function changeLayout(itemsPerRow: number, restrictToVisible = false) {
+        // Rebuilds the whole board row by row from scratch; it cannot hold
+        // a locked item in place, so with locks present it must not run
+        if (hasLocks) return
         const buildData = await ensureBuildData()
         if (!buildData) return
         const newLayout = buildLayout(buildData, itemsPerRow, restrictToVisible)
@@ -130,42 +166,84 @@ export function usePinboardLayoutActions({
         return overrides
     }
 
-    // Repack into a 2D mosaic filling the viewport. With visibleOnly, items
-    // whose top edge is below the fold (the cutting board) are left
-    // untouched and settle back just under the packed block — and only in
-    // that case (something actually parked below) is the block forced to
-    // span the fold exactly even at the cost of distortion, because an
-    // under-filled block would let the cutting board compact up into view.
-    // When everything is visible the two actions are equivalent.
-    async function fillViewport(visibleOnly: boolean, cropToCells = false, skipIfCovered = false) {
+    // The rectangle a fill action targets: the current fold or the board's
+    // ratcheted high water, whichever is larger. Fills report the height
+    // they targeted back through onLayoutChange, so the ratchet only ever
+    // moves when a fill actually runs.
+    function targetRows(buildData: LayoutBuildData): number {
+        return Math.max(foldRows(buildData), highWater)
+    }
+
+    // Locked items inside the target rectangle, as obstacles to pack around
+    function lockedObstacles(total: number): GridRect[] {
+        return layout
+            .filter(l => isLocked(l.i) && l.y < total)
+            .map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h }))
+    }
+
+    // Repack into a 2D mosaic filling the target rectangle, around any
+    // locked items. With visibleOnly, items whose top edge is below the
+    // target (the cutting board) are left untouched and settle back just
+    // under the packed block — and only in that case (something actually
+    // parked below) is the block forced to span the target exactly even at
+    // the cost of distortion, because an under-filled block would let the
+    // cutting board compact up into view. When everything is visible the
+    // two actions are equivalent.
+    async function doFill({
+        visibleOnly = false,
+        cropToCells = false,
+        skipIfCovered = false,
+        keepProportions = false,
+        resetRatchet = false,
+    }: {
+        visibleOnly?: boolean,
+        cropToCells?: boolean,
+        skipIfCovered?: boolean,
+        // Aim each item at its CURRENT share of the board area instead of
+        // uniform shares: reflow freely, keep the proportions the user made
+        keepProportions?: boolean,
+        // Refit to the current view: target the fold even when the ratchet
+        // is higher, and lower the ratchet to it
+        resetRatchet?: boolean,
+    }) {
         const buildData = await ensureBuildData()
         if (!buildData) return
-        const total = foldRows(buildData)
-        // A layout already reaching the fold was made for this viewport or a
-        // bigger one (both viewport-growth triggers are height-only, so the
+        const total = resetRatchet ? foldRows(buildData) : targetRows(buildData)
+        // A layout already reaching the target was made for this viewport or
+        // a bigger one (both viewport-growth triggers are height-only, so the
         // width can't have changed under it) — repainting it would make
         // shrink-and-regrow a destructive round trip. >= rather than >: a
-        // fill spans the fold exactly, it doesn't overshoot. Only the
+        // fill spans the target exactly, it doesn't overshoot. Only the
         // viewport-growth trigger passes this; pin edits must relayout even
         // a covering board to integrate the new item.
         if (skipIfCovered) {
             const maxY = buildData.sortedLayout.reduce((acc, l) => Math.max(acc, l.y + l.h), 0)
             if (maxY >= total) return
         }
-        const participants = visibleOnly
-            ? buildData.sortedLayout.filter(l => l.y < total)
-            : buildData.sortedLayout
+        const participants = buildData.sortedLayout.filter(l =>
+            !isLocked(l.i) && (!visibleOnly || l.y < total))
         if (participants.length === 0) return
         const packedKeys = new Set(participants.map(l => l.i))
         const rest = layout.filter(l => !packedKeys.has(l.i))
-        const packed = packMosaic({
-            items: participants.map(l => toPackItem(buildData, l)),
-            grid,
-            columnWidth: buildData.columnWidth,
-            totalGridRows: total,
-            fill: rest.length > 0 ? "force" : "auto",
-            ...minPinUnits(grid, buildData.columnWidth),
-        })
+        const obstacles = lockedObstacles(total)
+        const items = participants.map(l => toPackItem(buildData, l))
+        const weights = keepProportions ? participants.map(l => l.w * l.h) : undefined
+        const packed = obstacles.length > 0
+            ? packRegion({
+                items, obstacles, grid,
+                columnWidth: buildData.columnWidth,
+                totalGridRows: total,
+                variant: mosaicVariant, weights,
+                ...minPinUnits(grid, buildData.columnWidth),
+            })
+            : packMosaic({
+                items, grid,
+                columnWidth: buildData.columnWidth,
+                totalGridRows: total,
+                fill: rest.length > 0 ? "force" : "auto",
+                variant: mosaicVariant, weights,
+                ...minPinUnits(grid, buildData.columnWidth),
+            })
         // A packer that can't produce a composition returns [] — committing
         // that would erase the packed items' records (rebuildRecords drops
         // records absent from the reported layout). No layout beats data loss.
@@ -173,28 +251,72 @@ export function usePinboardLayoutActions({
         const newLayout = [...packed, ...rest]
         onLayoutChange(newLayout, cropToCells
             ? allAutoCrops(buildData, newLayout)
-            : stickyAutoCrops(buildData, newLayout))
+            : stickyAutoCrops(buildData, newLayout), total)
     }
 
-    // "Split the space evenly among N rows" — explicitly row-based
+    function fillViewport(visibleOnly: boolean, cropToCells = false, skipIfCovered = false) {
+        return doFill({ visibleOnly, cropToCells, skipIfCovered })
+    }
+
+    // Cycle to the next distinct near-best composition and re-fill. The
+    // counter is session-wide, so subsequent auto-fills keep the chosen
+    // variant instead of snapping back to the first one.
+    function rerollLayout(cropToCells = false) {
+        mosaicVariant++
+        return doFill({ cropToCells })
+    }
+
+    // Reset the ratchet to the current viewport and fill it — the explicit
+    // opt-out for a board that moved to a smaller screen for good
+    function refitToView(cropToCells = false) {
+        return doFill({ cropToCells, resetRatchet: true })
+    }
+
+    // Reflow freely but aim every item at its current share of the board:
+    // importance is expressed by how you've already sized things
+    function reflowKeepProportions(cropToCells = false) {
+        return doFill({ cropToCells, keepProportions: true })
+    }
+
+    // "Split the space evenly among N rows" — explicitly row-based. With
+    // locked items on the board the rows instead flow around them like text
+    // around floats (the packer chooses row counts per free segment; the
+    // requested count doesn't survive that geometry).
     async function fillViewportRows(rowCount: number) {
         const buildData = await ensureBuildData()
         if (!buildData) return
-        const packed = packRows({
-            items: buildData.sortedLayout.map(l => toPackItem(buildData, l)),
-            grid,
-            columnWidth: buildData.columnWidth,
-            totalGridRows: foldRows(buildData),
-            rowCount,
-            ...minPinUnits(grid, buildData.columnWidth),
-        })
+        const total = targetRows(buildData)
+        const participants = buildData.sortedLayout.filter(l => !isLocked(l.i))
+        if (participants.length === 0) return
+        const packedKeys = new Set(participants.map(l => l.i))
+        const rest = layout.filter(l => !packedKeys.has(l.i))
+        const obstacles = lockedObstacles(total)
+        const items = participants.map(l => toPackItem(buildData, l))
+        const packed = obstacles.length > 0
+            ? packRowsAroundObstacles({
+                items, obstacles, grid,
+                columnWidth: buildData.columnWidth,
+                total,
+                ...minPinUnits(grid, buildData.columnWidth),
+            })
+            : packRows({
+                items, grid,
+                columnWidth: buildData.columnWidth,
+                totalGridRows: total,
+                rowCount,
+                ...minPinUnits(grid, buildData.columnWidth),
+            })
         if (packed.length === 0) return
-        onLayoutChange(packed, stickyAutoCrops(buildData, packed))
+        const newLayout = [...packed, ...rest]
+        onLayoutChange(newLayout, stickyAutoCrops(buildData, newLayout), total)
     }
 
     // Resize-only: keep the current row groupings and reading order, give
-    // each row its natural full-width justified height
+    // each row its natural full-width justified height. Re-emits every row
+    // stacked from the top, which cannot hold a locked item in place — so
+    // with locks present it must not run.
     async function justifyCurrentRows() {
+        if (hasLocks) return
         const buildData = await ensureBuildData()
         if (!buildData) return
         const groups = groupRowsByOverlap(buildData.sortedLayout)
@@ -206,7 +328,113 @@ export function usePinboardLayoutActions({
         onLayoutChange(newLayout, stickyAutoCrops(buildData, newLayout))
     }
 
+    // Grow the current arrangement to fill the target rectangle without
+    // rearranging: recover the layout's guillotine structure and re-solve
+    // sizes only. Arrangements that don't decompose exactly fall back to a
+    // row-stack structure INSIDE growToFill — every path goes through the
+    // exact-fill emitter, so growing can never come up short of the target
+    // (a justify-style fallback here once did, shrinking the board).
+    // Structure recovery can't hold a locked rect in place while resizing
+    // everything around it, so with locked items inside the target this
+    // verb no-ops rather than move them.
+    async function growInPlace() {
+        const buildData = await ensureBuildData()
+        if (!buildData) return
+        const total = targetRows(buildData)
+        if (layout.some(l => isLocked(l.i) && l.y < total)) return
+        const participants = buildData.sortedLayout.filter(l => l.y < total)
+        if (participants.length === 0) return
+        const packedKeys = new Set(participants.map(l => l.i))
+        const rest = layout.filter(l => !packedKeys.has(l.i))
+        const arranged: ArrangedItem[] = participants.map(l => ({
+            ...toPackItem(buildData, l), x: l.x, y: l.y, w: l.w, h: l.h,
+        }))
+        const packed = growToFill({
+            items: arranged, grid,
+            columnWidth: buildData.columnWidth,
+            totalGridRows: total,
+            ...minPinUnits(grid, buildData.columnWidth),
+        })
+        if (packed.length === 0) return
+        const newLayout = [...packed, ...rest]
+        onLayoutChange(newLayout, stickyAutoCrops(buildData, newLayout), total)
+    }
+
+    // Exchange two items' rects: each fills exactly the void the other
+    // leaves, nothing else moves, and the sticky auto-crops absorb the
+    // aspect mismatch of the traded cells
+    async function swapItems(keyA: string, keyB: string) {
+        if (isLocked(keyA) || isLocked(keyB)) return
+        const buildData = await ensureBuildData()
+        if (!buildData) return
+        const a = layout.find(l => l.i === keyA)
+        const b = layout.find(l => l.i === keyB)
+        if (!a || !b) return
+        const newLayout = layout.map(l =>
+            l.i === keyA ? { ...l, x: b.x, y: b.y, w: b.w, h: b.h }
+                : l.i === keyB ? { ...l, x: a.x, y: a.y, w: a.w, h: a.h }
+                    : l)
+        onLayoutChange(newLayout, stickyAutoCrops(buildData, newLayout))
+    }
+
+    // Mosaic the selected items within their combined bounding box — the
+    // box is claimed for the selection. Locked items are never rearranged:
+    // selected ones only stretch the box (their spot is part of the region
+    // being arranged), and EVERY locked item intersecting the box —
+    // selected or not — becomes an obstacle the mosaic packs around.
+    // Unselected UNLOCKED items caught inside the box are cleared out first
+    // by evictFromBox's local moves (slide sideways / shrink to the edge /
+    // drop below the box); whatever can't leave cheaply stays put as an
+    // obstacle too. Without the obstacle handling the arrangement would
+    // overlap those rects and RGL's compactor would shove the overlapping
+    // items apart, scattering the board. (The compactor may still settle
+    // the arranged block upward if there is free space above it, as with
+    // every arrangement verb.)
+    async function arrangeSelection(keys: string[]) {
+        const buildData = await ensureBuildData()
+        if (!buildData) return
+        const keySet = new Set(keys)
+        const selectedItems = buildData.sortedLayout.filter(l => keySet.has(l.i))
+        const participants = selectedItems.filter(l => !isLocked(l.i))
+        if (participants.length < 2) return
+        const x0 = Math.min(...selectedItems.map(l => l.x))
+        const y0 = Math.min(...selectedItems.map(l => l.y))
+        const x1 = Math.max(...selectedItems.map(l => l.x + l.w))
+        const y1 = Math.max(...selectedItems.map(l => l.y + l.h))
+        const box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+        const packedKeys = new Set(participants.map(l => l.i))
+        const mins = minPinUnits(grid, buildData.columnWidth)
+        const { rest, extraObstacles } = evictFromBox({
+            layout, box,
+            participantKeys: packedKeys,
+            lockedKeys: new Set(layout.filter(l => isLocked(l.i)).map(l => l.i)),
+            anchoredKeys: new Set(layout.filter(l => locks[l.i] === "anchor").map(l => l.i)),
+            columns: grid.columns,
+            ...mins,
+        })
+        const obstacles = [
+            ...layout
+                .filter(l => isLocked(l.i)
+                    && l.x < x1 && l.x + l.w > x0 && l.y < y1 && l.y + l.h > y0)
+                .map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h })),
+            ...extraObstacles,
+        ]
+        const packed = packRegionInBox({
+            items: participants.map(l => toPackItem(buildData, l)),
+            obstacles,
+            grid,
+            columnWidth: buildData.columnWidth,
+            box,
+            variant: mosaicVariant,
+            ...mins,
+        })
+        if (packed.length === 0) return
+        const newLayout = [...packed, ...rest]
+        onLayoutChange(newLayout, stickyAutoCrops(buildData, newLayout))
+    }
+
     async function changeItemSize(layoutKey: string, increase: number) {
+        if (isLocked(layoutKey)) return
         const buildData = await ensureBuildData()
         if (!buildData) return
         const { minW, minH } = minPinUnits(grid, buildData.columnWidth)
@@ -225,6 +453,7 @@ export function usePinboardLayoutActions({
         onLayoutChange(newLayout, stickyAutoCrops(buildData, newLayout))
     }
     async function setItemSize(layoutKey: string, size: number) {
+        if (isLocked(layoutKey)) return
         const buildData = await ensureBuildData()
         if (!buildData) return
         const { minW, minH } = minPinUnits(grid, buildData.columnWidth)
@@ -268,7 +497,10 @@ export function usePinboardLayoutActions({
     }
     // One-time horizontal "gravity": slide every item to the left/right/center
     // of its row without resizing. Pure x repacking, so no build data needed.
+    // Moves every item in a row, which cannot hold a locked item in place —
+    // so with locks present it must not run (same for mirror below).
     function shiftLayout(mode: ShiftMode) {
+        if (hasLocks) return
         onLayoutChange(shiftLayoutHorizontally(layout, mode, grid.columns))
     }
     // Mirror the arrangement (not the images) about the centre of the items'
@@ -276,6 +508,7 @@ export function usePinboardLayoutActions({
     // grid-wide flip is this plus a Shift. Vertical is inherently swap-only:
     // the grid re-compacts upward, so the mirrored rows just settle back.
     function mirrorLayout(axis: MirrorAxis) {
+        if (hasLocks) return
         onLayoutChange(mirrorLayoutArrangement(layout, axis))
     }
 
@@ -291,6 +524,15 @@ export function usePinboardLayoutActions({
         setItemSize,
         shiftLayout,
         mirrorLayout,
+        rerollLayout,
+        refitToView,
+        reflowKeepProportions,
+        growInPlace,
+        swapItems,
+        arrangeSelection,
+        // Whether any item is locked — the menu greys out the verbs that
+        // no-op with locks present
+        hasLocks,
     }
 }
 

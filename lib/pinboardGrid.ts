@@ -71,31 +71,43 @@ export function minPinUnits(
   }
 }
 
-const TOKEN_RE = /^v(\d+)(?:\.(\d+)\.(\d+)\.(\d+)\.(\d+))?$/
+// The optional "!<rows>" suffix is the board's layout-height ratchet: the
+// largest grid-row count any fill action has ever targeted. Fill actions
+// target max(current fold, ratchet), so adding items while the board is
+// shown in a smaller view never recompacts a layout made for a bigger one;
+// an explicit "refit to current view" resets it.
+const TOKEN_RE = /^v(\d+)(?:\.(\d+)\.(\d+)\.(\d+)\.(\d+))?(?:!(\d+))?$/
 
-export function parseVersionToken(token: string | undefined): GridParams | null {
+export function parseVersionToken(
+  token: string | undefined
+): { grid: GridParams; highWater: number } | null {
   if (!token) return null
   const m = TOKEN_RE.exec(token)
   if (!m || parseInt(m[1]) < 2) return null
-  if (!m[2]) return V2_GRID
+  const highWater = m[6] ? parseInt(m[6]) : 0
+  if (!m[2]) return { grid: V2_GRID, highWater }
   return {
-    columns: parseInt(m[2]),
-    rowHeight: parseInt(m[3]),
-    margin: parseInt(m[4]),
-    padding: parseInt(m[5]),
+    grid: {
+      columns: parseInt(m[2]),
+      rowHeight: parseInt(m[3]),
+      margin: parseInt(m[4]),
+      padding: parseInt(m[5]),
+    },
+    highWater,
   }
 }
 
-export function formatVersionToken(grid: GridParams): string {
+export function formatVersionToken(grid: GridParams, highWater = 0): string {
+  const suffix = highWater > 0 ? `!${highWater}` : ""
   if (
     grid.columns === V2_GRID.columns &&
     grid.rowHeight === V2_GRID.rowHeight &&
     grid.margin === V2_GRID.margin &&
     grid.padding === V2_GRID.padding
   ) {
-    return "v2"
+    return `v2${suffix}`
   }
-  return `v2.${grid.columns}.${grid.rowHeight}.${grid.margin}.${grid.padding}`
+  return `v2.${grid.columns}.${grid.rowHeight}.${grid.margin}.${grid.padding}${suffix}`
 }
 
 export interface ParsedBoard {
@@ -105,19 +117,23 @@ export interface ParsedBoard {
   // across the v1 -> v2 migration.
   records: string[]
   isV1: boolean
+  // Layout-height ratchet in grid rows (0 = never filled / v1 board)
+  highWater: number
 }
 
 export function parseBoard(param: string[]): ParsedBoard {
-  const grid = parseVersionToken(param[0])
-  if (grid) return { grid, records: param.slice(1), isV1: false }
-  return { grid: V1_GRID, records: param, isV1: true }
+  const parsed = parseVersionToken(param[0])
+  if (parsed) {
+    return { grid: parsed.grid, records: param.slice(1), isV1: false, highWater: parsed.highWater }
+  }
+  return { grid: V1_GRID, records: param, isV1: true, highWater: 0 }
 }
 
 // An empty board serializes to [] so nuqs clears the param entirely and the
 // next board starts fresh (on the v2 grid)
-export function serializeBoard(grid: GridParams, records: string[]): string[] {
+export function serializeBoard(grid: GridParams, records: string[], highWater = 0): string[] {
   if (records.length === 0) return []
-  return [formatVersionToken(grid), ...records]
+  return [formatVersionToken(grid, highWater), ...records]
 }
 
 // Integer factors mapping v1 lattice coordinates onto another grid: x and w
@@ -139,13 +155,13 @@ export function migrateRecords(records: string[], to: GridParams): string[] {
   for (let i = 0; i < records.length; i += 5) {
     const [sha256, x, y, w, hField] = records.slice(i, i + 5)
     if (hField === undefined) break
-    const { h, crop, autoCrop, trim } = parseHField(hField)
+    const { h, crop, autoCrop, trim, lock } = parseHField(hField)
     next.push(
       sha256,
       Math.round(parseInt(x) * sx).toString(),
       Math.round(parseInt(y) * sy).toString(),
       Math.max(1, Math.round(parseInt(w) * sx)).toString(),
-      packHField(Math.max(1, Math.round(h * sy)), crop, autoCrop, trim)
+      packHField(Math.max(1, Math.round(h * sy)), crop, autoCrop, trim, lock)
     )
   }
   return next

@@ -1,10 +1,11 @@
 import type { LayoutItem } from "react-grid-layout";
 import { ContextMenuCheckboxItem, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger } from "../ui/context-menu";
 import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid } from "@/lib/state/gallery";
-import { CropRect, TrimRange } from "@/lib/pinboardCrop";
+import { CropRect, PinLock, TrimRange } from "@/lib/pinboardCrop";
 import { GridParams } from "@/lib/pinboardGrid";
 import { useFileOpenActions } from "@/hooks/fileOpen";
 import { usePinboardLayoutActions } from "@/hooks/pinboardLayout";
+import { usePinSelection } from "@/lib/state/pinboardSelection";
 
 export function PinBoardCtx({
     layoutKey,
@@ -14,6 +15,8 @@ export function PinBoardCtx({
     layout,
     crops,
     autoCrops,
+    locks,
+    highWater,
     cropMode,
     hasCrop,
     onToggleCrop,
@@ -21,6 +24,8 @@ export function PinBoardCtx({
     trim,
     onTrimChange,
     onDuplicate,
+    lock,
+    onLockChange,
     pinboardRef,
     dbs,
     grid,
@@ -31,15 +36,19 @@ export function PinBoardCtx({
     sha256: string
     file_url: string
     // autoCropOverrides ride along with the layout so both land in one
-    // record write (one URL update, one history entry)
+    // record write (one URL update, one history entry); newHighWater
+    // updates the board's layout-height ratchet in the same write
     onLayoutChange: (
         layout: LayoutItem[],
         autoCropOverrides?: Record<string, CropRect | null>,
+        newHighWater?: number,
     ) => void
     layout: LayoutItem[],
     // Manual crops (the layout-math base) and derived fit-to-cell auto crops
     crops: Record<string, CropRect | null>,
     autoCrops: Record<string, CropRect | null>,
+    locks: Record<string, PinLock>,
+    highWater: number,
     cropMode: boolean,
     hasCrop: boolean,
     onToggleCrop: () => void,
@@ -47,6 +56,9 @@ export function PinBoardCtx({
     trim: TrimRange | null,
     onTrimChange: (trim: TrimRange | null) => void,
     onDuplicate: () => void,
+    // This pin's layout lock and its setter
+    lock: PinLock,
+    onLockChange: (lock: PinLock) => void,
     pinboardRef: React.RefObject<HTMLDivElement | null>,
     grid: GridParams,
     isV1: boolean,
@@ -78,7 +90,15 @@ export function PinBoardCtx({
         setItemSize: setItemSizeByKey,
         shiftLayout,
         mirrorLayout,
-    } = usePinboardLayoutActions({ layout, crops, autoCrops, dbs, grid, pinboardRef, onLayoutChange })
+        rerollLayout,
+        refitToView,
+        reflowKeepProportions,
+        growInPlace,
+        swapItems,
+        arrangeSelection,
+        hasLocks,
+    } = usePinboardLayoutActions({ layout, crops, autoCrops, locks, highWater, dbs, grid, pinboardRef, onLayoutChange })
+    const selected = usePinSelection(s => s.selected)
 
     function layoutFixedRows(rows: number) {
         fillViewportRows(rows)
@@ -116,6 +136,47 @@ export function PinBoardCtx({
                 </ContextMenuSub>
             )}
             <ContextMenuItem onClick={onDuplicate}>Duplicate</ContextMenuItem>
+            {/* Mouse-only path into the multi-selection (and the place that
+                teaches the modifier-click shortcuts) */}
+            <ContextMenuCheckboxItem
+                checked={selected.includes(layoutKey)}
+                onCheckedChange={() => usePinSelection.getState().toggle(layoutKey)}
+            >
+                Select
+                <ContextMenuShortcut>Ctrl+Click</ContextMenuShortcut>
+            </ContextMenuCheckboxItem>
+            {selected.length > 0 && (
+                <ContextMenuItem onClick={() => usePinSelection.getState().clear()}>
+                    Clear Selection
+                    <ContextMenuShortcut>Esc</ContextMenuShortcut>
+                </ContextMenuItem>
+            )}
+            {/* Layout locks for this pin; the same toggles exist as overlay
+                buttons. Anchored = position+size fixed (RGL static, an
+                obstacle every fill packs around); size-locked = keeps w x h
+                but may be moved. */}
+            <ContextMenuCheckboxItem
+                checked={lock === "anchor"}
+                onCheckedChange={(checked) => onLockChange(checked ? "anchor" : null)}
+            >
+                Anchor in Place
+            </ContextMenuCheckboxItem>
+            <ContextMenuCheckboxItem
+                checked={lock === "size"}
+                onCheckedChange={(checked) => onLockChange(checked ? "size" : null)}
+            >
+                Lock Size
+            </ContextMenuCheckboxItem>
+            {selected.length >= 2 && (
+                <ContextMenuItem onClick={() => arrangeSelection(selected)}>
+                    Arrange Selection ({selected.length})
+                </ContextMenuItem>
+            )}
+            {selected.length === 2 && (
+                <ContextMenuItem onClick={() => swapItems(selected[0], selected[1])}>
+                    Swap Selected
+                </ContextMenuItem>
+            )}
             <ContextMenuItem onClick={onToggleCrop}>
                 {cropMode ? "Finish Cropping" : "Crop Image"}
             </ContextMenuItem>
@@ -201,14 +262,34 @@ export function PinBoardCtx({
                 <ContextMenuSubContent className="w-56">
                     <ContextMenuItem onClick={() => fillViewport(false)}>Fill Viewport</ContextMenuItem>
                     <ContextMenuItem onClick={() => fillViewport(true)}>Fill Viewport (Visible Only)</ContextMenuItem>
-                    <ContextMenuItem onClick={() => justifyCurrentRows()}>Justify Rows</ContextMenuItem>
+                    {/* Cycle through the packer's near-best alternative
+                        compositions; later auto-fills keep the chosen one */}
+                    <ContextMenuItem onClick={() => rerollLayout()}>Reroll Layout</ContextMenuItem>
+                    {/* Re-solve sizes only: the arrangement keeps its
+                        structure and grows to fill the viewport. No-ops when
+                        locked items sit inside the target area. */}
+                    <ContextMenuItem onClick={() => growInPlace()}>Grow to Fill (In Place)</ContextMenuItem>
+                    {/* Reflow freely but keep each item's current share of
+                        the board area */}
+                    <ContextMenuItem onClick={() => reflowKeepProportions()}>Reflow (Keep Proportions)</ContextMenuItem>
+                    {/* Reset the layout-height ratchet to the current
+                        viewport (see pinboardGrid.ts) and fill it */}
+                    {highWater > 0 && (
+                        <ContextMenuItem onClick={() => refitToView()}>Refit to Current View</ContextMenuItem>
+                    )}
+                    <ContextMenuItem disabled={hasLocks} onClick={() => justifyCurrentRows()}>Justify Rows</ContextMenuItem>
                     <ContextMenuSeparator />
                     <ContextMenuItem onClick={() => autoCropToCells(false)}>Auto-Crop to Cells</ContextMenuItem>
                     <ContextMenuItem onClick={() => autoCropToCells(true)}>Auto-Crop to Cells (Visible Only)</ContextMenuItem>
                     <ContextMenuItem onClick={() => clearAutoCrops()}>Clear Auto-Crops</ContextMenuItem>
                     <ContextMenuSeparator />
+                    {/* Items-per-Row, Shift and Mirror rebuild or slide whole
+                        rows and cannot hold a locked item in place, so their
+                        whole submenus grey out while any lock exists (the
+                        caption below says why). Rows stays enabled: with
+                        locks it flows rows around them instead. */}
                     <ContextMenuSub>
-                        <ContextMenuSubTrigger>Items per Row</ContextMenuSubTrigger>
+                        <ContextMenuSubTrigger disabled={hasLocks}>Items per Row</ContextMenuSubTrigger>
                         <ContextMenuSubContent className="w-48">
                             {[3, 4, 5, 6].map(n => (
                                 <ContextMenuItem key={n} onClick={() => changeLayout(n)}>
@@ -228,7 +309,7 @@ export function PinBoardCtx({
                         </ContextMenuSubContent>
                     </ContextMenuSub>
                     <ContextMenuSub>
-                        <ContextMenuSubTrigger>Shift</ContextMenuSubTrigger>
+                        <ContextMenuSubTrigger disabled={hasLocks}>Shift</ContextMenuSubTrigger>
                         <ContextMenuSubContent className="w-48">
                             <ContextMenuItem onClick={() => shiftLayout("left")}>Shift Left</ContextMenuItem>
                             <ContextMenuItem onClick={() => shiftLayout("center")}>Center</ContextMenuItem>
@@ -238,6 +319,15 @@ export function PinBoardCtx({
                             <ContextMenuItem onClick={() => mirrorLayout("vertical")}>Mirror Vertically</ContextMenuItem>
                         </ContextMenuSubContent>
                     </ContextMenuSub>
+                    {hasLocks && (
+                        <>
+                            <ContextMenuSeparator />
+                            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                                Greyed actions rebuild whole rows and can't
+                                work around anchored or size-locked items.
+                            </div>
+                        </>
+                    )}
                 </ContextMenuSubContent>
             </ContextMenuSub>
         </ContextMenuContent>

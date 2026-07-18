@@ -23,12 +23,15 @@ import { $api } from '@/lib/api'
 import { MediaControls } from './PlayButton'
 import React from 'react'
 import { useVideoPlayerState } from '@/lib/videoPlayerState'
-import { CropRect, TrimRange, clampCrop, composeCrops, isEmptyTrim, packHField, parseHField } from '@/lib/pinboardCrop'
+import { CropRect, PinLock, TrimRange, clampCrop, composeCrops, isEmptyTrim, packHField, parseHField } from '@/lib/pinboardCrop'
 import { useVideoTrim } from '@/lib/videoTrim'
 import { CropGeometry, CropView } from './CropView'
 import { VideoTimeline } from './VideoTimeline'
-import { ArrowRightFromLine, ArrowRightToLine, Check, Crop } from 'lucide-react'
+import { Anchor, ArrowRightFromLine, ArrowRightToLine, Check, Crop, Ruler, X } from 'lucide-react'
 import { usePinboardLayoutActions } from '@/hooks/pinboardLayout'
+import { usePinSelection } from '@/lib/state/pinboardSelection'
+import { useItemSelection } from '@/lib/state/itemSelection'
+import { groupRowsByOverlap } from '@/lib/pinboardPack'
 
 const ALL_RESIZE_HANDLES: LayoutItem["resizeHandles"] =
     ["s", "w", "e", "n", "sw", "nw", "se", "ne"]
@@ -47,6 +50,10 @@ const DRAG_CONFIG = { enabled: true, handle: ".drag-handle", threshold: 0 }
 const RESIZE_CONFIG = { enabled: true }
 const DROP_CONFIG = { enabled: true }
 
+// Order-preserving set union, for additive selection gestures
+const union = (a: string[], b: string[]) =>
+    [...a, ...b.filter((k) => !a.includes(k))]
+
 export function PinBoard(
     {
         thumbnailsOpen,
@@ -59,7 +66,7 @@ export function PinBoard(
     const dbs = useSelectedDBs()[0]
     // Token-stripped records plus the board's grid parameters; writes migrate
     // v1 boards to the v2 grid (see lib/pinboardGrid.ts)
-    const { grid, records, isV1, updateRecords, upgradeGrid } = usePinBoard()
+    const { grid, records, isV1, highWater, updateRecords, upgradeGrid } = usePinBoard()
     // Key of the item currently in crop mode, if any
     const [cropKey, setCropKey] = useState<string | null>(null)
     // True while the crop-mode item's box is being resized via a grid handle
@@ -72,18 +79,20 @@ export function PinBoard(
     // positions, see rglSettling below). Declared above the layout memo
     // because the minimum-size floors depend on the measured column width.
     const { width: gridWidth, containerRef: gridAreaRef } = useContainerWidth()
-    const [layout, pinnedFiles, crops, autoCrops, trims]: [
+    const [layout, pinnedFiles, crops, autoCrops, trims, itemLocks]: [
         LayoutItem[],
         [string, string, string, string][],
         Record<string, CropRect | null>,
         Record<string, CropRect | null>,
         Record<string, TrimRange | null>,
+        Record<string, PinLock>,
     ] = useMemo(() => {
         const newLayout: LayoutItem[] = []
         const pinned: [string, string, string, string][] = []
         const cropsMap: Record<string, CropRect | null> = {}
         const autoCropsMap: Record<string, CropRect | null> = {}
         const trimsMap: Record<string, TrimRange | null> = {}
+        const locksMap: Record<string, PinLock> = {}
         // Minimum-size floors for resize gestures. RGL applies minW/minH
         // through gesture-time constraints only — the layout sync never
         // clamps — so records already below the minimum (legacy boards,
@@ -96,10 +105,11 @@ export function PinBoard(
         for (let i = 0; i < records.length; i += 5) {
             const [sha256, x, y, w, hField] = records.slice(i, i + 5)
             const index = `${i}-${sha256}`
-            const { h, crop, autoCrop, trim } = parseHField(hField)
+            const { h, crop, autoCrop, trim, lock } = parseHField(hField)
             cropsMap[index] = crop
             autoCropsMap[index] = autoCrop
             trimsMap[index] = trim
+            locksMap[index] = lock
             newLayout.push({
                 i: index,
                 x: parseInt(x),
@@ -109,6 +119,13 @@ export function PinBoard(
                 ...(index === cropKey
                     ? { resizeHandles: ALL_RESIZE_HANDLES }
                     : { minW, minH }),
+                // An anchored item is a native RGL static: drags can't
+                // displace it and the compactor treats it as a wall.
+                // Size-locked items just lose their resize handles. The
+                // crop-mode item is exempt from both — its box is the crop
+                // window.
+                ...(lock === "anchor" && index !== cropKey ? { static: true } : {}),
+                ...(lock === "size" && index !== cropKey ? { isResizable: false } : {}),
             })
             if (sha256 === "__preview") {
                 pinned.push([
@@ -126,7 +143,7 @@ export function PinBoard(
                 getFileURL(dbs, "file", "sha256", sha256),
             ])
         }
-        return [newLayout, pinned, cropsMap, autoCropsMap, trimsMap]
+        return [newLayout, pinned, cropsMap, autoCropsMap, trimsMap, locksMap]
     }, [records, cropKey, dbs, grid, gridWidth])
 
     // Rebuilds the packed records from RGL's reported layout, in the EXISTING
@@ -177,7 +194,7 @@ export function PinBoard(
                 next.push(...prev.slice(i, i + 5))
                 continue
             }
-            const { crop, autoCrop, trim } = parseHField(prev[i + 4])
+            const { crop, autoCrop, trim, lock } = parseHField(prev[i + 4])
             const hasManual = manualCropOverrides && key in manualCropOverrides
             const nextCrop = hasManual ? manualCropOverrides[key] : crop
             const nextAuto = hasManual
@@ -190,8 +207,9 @@ export function PinBoard(
                 item.x.toString(),
                 item.y.toString(),
                 item.w.toString(),
-                // Crop/trim suffixes stored in the h field survive box moves/resizes
-                packHField(item.h, nextCrop, nextAuto, trim),
+                // Crop/trim/lock suffixes stored in the h field survive box
+                // moves/resizes
+                packHField(item.h, nextCrop, nextAuto, trim, lock),
             )
         }
         return next
@@ -201,9 +219,21 @@ export function PinBoard(
     // set by the crop-mode resize release, which fires onLayoutChange (via
     // RGL's own resize-stop layout report) in the same tick
     const pendingManualCropRef = useRef<Record<string, CropRect | null> | null>(null)
+    // True between a completed drag/resize gesture and the layout report it
+    // produces. RGL's onLayoutChange also fires WITHOUT a gesture — on
+    // mount and whenever the layouts prop re-syncs — reporting the
+    // compacted form of whatever the URL held. Those normalization reports
+    // still need writing (the records must match what's on screen), but as
+    // history REPLACE, not push: pushing parks the normalized entry in
+    // front of the one just navigated to, so back-navigating onto any
+    // un-compacted entry (a pre-fix layout, a hand-crafted link) re-pushes
+    // forever and the back button can never get past it.
+    const gestureRef = useRef(false)
     const onLayoutChange = (
         currentLayout: LayoutItem[],
         autoCropOverrides?: Record<string, CropRect | null>,
+        newHighWater?: number,
+        echo = false,
     ) => {
         const manualCropOverrides = pendingManualCropRef.current ?? undefined
         pendingManualCropRef.current = null
@@ -212,15 +242,37 @@ export function PinBoard(
         // equal value back would push a redundant history entry and re-trigger
         // this handler — the write must only happen on real changes. This
         // guard is also what keeps merely *viewing* a v1 board from migrating
-        // it: updateRecords only converts on writes.
+        // it: updateRecords only converts on writes. A fill that changed only
+        // the ratchet still writes (updateRecords compares the ratchet too).
         const candidate = rebuildRecords(records, currentLayout, autoCropOverrides, manualCropOverrides)
         if (
             candidate.length === records.length &&
-            candidate.every((v, i) => v === records[i])
+            candidate.every((v, i) => v === records[i]) &&
+            newHighWater === undefined
         ) {
             return
         }
-        updateRecords((prev) => rebuildRecords(prev, currentLayout, autoCropOverrides, manualCropOverrides))
+        updateRecords(
+            (prev) => rebuildRecords(prev, currentLayout, autoCropOverrides, manualCropOverrides),
+            {
+                ...(newHighWater !== undefined ? { highWater: newHighWater } : {}),
+                ...(echo ? { history: "replace" as const } : {}),
+            },
+        )
+    }
+
+    // Set or clear the layout lock of the given items — one record write
+    const setLockForKeys = (keys: string[], lock: PinLock) => {
+        const keySet = new Set(keys)
+        updateRecords((prev) => {
+            const next = [...prev]
+            for (let i = 0; i < prev.length; i += 5) {
+                if (!keySet.has(`${i}-${prev[i]}`)) continue
+                const parsed = parseHField(prev[i + 4])
+                next[i + 4] = packHField(parsed.h, parsed.crop, parsed.autoCrop, parsed.trim, lock)
+            }
+            return next
+        })
     }
 
     // Append an identical copy of the pin's 5-string record (sha256, x, y, w,
@@ -244,7 +296,7 @@ export function PinBoard(
             for (let i = 0; i < prev.length; i += 5) {
                 if (`${i}-${prev[i]}` === key) {
                     const parsed = parseHField(prev[i + 4])
-                    next[i + 4] = packHField(parsed.h, crop, null, parsed.trim)
+                    next[i + 4] = packHField(parsed.h, crop, null, parsed.trim, parsed.lock)
                     break
                 }
             }
@@ -258,7 +310,7 @@ export function PinBoard(
             for (let i = 0; i < prev.length; i += 5) {
                 if (`${i}-${prev[i]}` === key) {
                     const parsed = parseHField(prev[i + 4])
-                    next[i + 4] = packHField(parsed.h, parsed.crop, parsed.autoCrop, trim)
+                    next[i + 4] = packHField(parsed.h, parsed.crop, parsed.autoCrop, trim, parsed.lock)
                     break
                 }
             }
@@ -331,11 +383,249 @@ export function PinBoard(
     // the context menu uses.
     const [autoLayout] = useGalleryPinAutoLayout()
     const [autoLayoutCrop] = useGalleryPinAutoCrop()
-    const { fillViewport } = usePinboardLayoutActions({
-        layout, crops, autoCrops, dbs, grid,
+    const { fillViewport, arrangeSelection, swapItems } = usePinboardLayoutActions({
+        layout, crops, autoCrops, locks: itemLocks, highWater, dbs, grid,
         pinboardRef: scrollAreaRef,
         onLayoutChange,
     })
+    // Transient multi-selection, following file-manager conventions: plain
+    // click selects just the clicked item, ctrl/cmd+click toggles items,
+    // shift+click selects the reading-order range from the anchor (see
+    // pinboardSelection.ts), and dragging from the board background — or
+    // from anywhere with ctrl/shift held — rubber-band selects. Clicking
+    // the background or anywhere outside the board deselects. Stale keys
+    // are pruned whenever the board's records change (offsets shift on
+    // add/remove).
+    const selected = usePinSelection(s => s.selected)
+    const selectedSet = useMemo(() => new Set(selected), [selected])
+    useEffect(() => {
+        usePinSelection.getState().prune(new Set(layout.map(l => l.i)))
+    }, [layout])
+    // Reading order for shift+click range selection — same y-overlap
+    // grouping the layout actions use
+    const readingOrder = useMemo(
+        () => groupRowsByOverlap(layout).flat().map(l => l.i),
+        [layout],
+    )
+    const rangeSelectTo = (key: string, additive: boolean) => {
+        const sel = usePinSelection.getState()
+        const anchor = sel.anchor && readingOrder.includes(sel.anchor) ? sel.anchor : null
+        if (!anchor) {
+            sel.replace([key], key)
+            return
+        }
+        const a = readingOrder.indexOf(anchor)
+        const b = readingOrder.indexOf(key)
+        const [lo, hi] = a <= b ? [a, b] : [b, a]
+        const range = readingOrder.slice(lo, hi + 1)
+        // Plain shift+click REPLACES the selection with the anchor..item
+        // range — so shift+clicking inside the current range shrinks it
+        // back to that point instead of doing nothing. Ctrl+shift+click
+        // adds the range to the existing selection. The anchor stays put
+        // either way; only plain clicks and ctrl+clicks rebase it.
+        sel.replace(additive ? union(sel.selected, range) : range, anchor)
+    }
+    // Active lock badges (the pin/size toggles of LOCKED items) are shown
+    // while the user is interacting with the board — hovering over any pin
+    // — and linger for a grace period after the pointer leaves before
+    // fading, so locks are visible at a glance during layout work without
+    // the badges permanently sitting over the images while just viewing.
+    // Inactive lock toggles stay per-item hover-reveal like the other
+    // overlay buttons.
+    const [lockBadgesVisible, setLockBadgesVisible] = useState(false)
+    const lockBadgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const onBoardHover = () => {
+        if (lockBadgeTimerRef.current) clearTimeout(lockBadgeTimerRef.current)
+        lockBadgeTimerRef.current = null
+        setLockBadgesVisible(true)
+    }
+    const onBoardHoverEnd = () => {
+        if (lockBadgeTimerRef.current) clearTimeout(lockBadgeTimerRef.current)
+        lockBadgeTimerRef.current = setTimeout(() => setLockBadgesVisible(false), 2500)
+    }
+    useEffect(() => () => {
+        if (lockBadgeTimerRef.current) clearTimeout(lockBadgeTimerRef.current)
+    }, [])
+    // Marquee (rubber-band) drag-select. Armed by pointerdown on the board
+    // background, or anywhere — including on top of items — with ctrl or
+    // shift held (which is also what keeps RGL from starting an item
+    // drag). Live-updates the selection while dragging: a plain marquee
+    // replaces the selection outright (the background press already
+    // cleared it), a modifier marquee unions its hits with the selection
+    // it started from, which is how several rectangular areas can be
+    // gathered one after the other. An item counts as hit once the
+    // marquee reaches its central 50% region — grazing an edge is not
+    // enough.
+    const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+    const marqueeRef = useRef<{
+        startX: number
+        startY: number
+        active: boolean
+        onMove: (e: PointerEvent) => void
+        onUp: () => void
+    } | null>(null)
+    const endMarquee = () => {
+        const m = marqueeRef.current
+        if (!m) return
+        window.removeEventListener("pointermove", m.onMove)
+        window.removeEventListener("pointerup", m.onUp)
+        marqueeRef.current = null
+        setMarquee(null)
+    }
+    const endMarqueeRef = useRef(endMarquee)
+    endMarqueeRef.current = endMarquee
+    useEffect(() => () => endMarqueeRef.current(), [])
+    const beginMarquee = (start: { clientX: number; clientY: number }, additive: boolean) => {
+        endMarquee()
+        const sel = usePinSelection.getState()
+        const base = additive ? sel.selected : []
+        const baseAnchor = additive ? sel.anchor : null
+        const m = {
+            startX: start.clientX,
+            startY: start.clientY,
+            active: false,
+            onMove: (e: PointerEvent) => {
+                const area = gridAreaRef.current
+                if (!area || marqueeRef.current !== m) return
+                // Same threshold as the click movement guard below, so a
+                // modifier press-and-release is a click XOR a marquee
+                if (!m.active && Math.hypot(e.clientX - m.startX, e.clientY - m.startY) <= 5) return
+                m.active = true
+                const left = Math.min(m.startX, e.clientX)
+                const top = Math.min(m.startY, e.clientY)
+                const right = Math.max(m.startX, e.clientX)
+                const bottom = Math.max(m.startY, e.clientY)
+                const areaRect = area.getBoundingClientRect()
+                setMarquee({ x: left - areaRect.left, y: top - areaRect.top, w: right - left, h: bottom - top })
+                const hits: string[] = []
+                for (const el of area.querySelectorAll<HTMLElement>("[data-pin-key]")) {
+                    const key = el.dataset.pinKey
+                    if (!key || key.endsWith("__preview")) continue
+                    const r = el.getBoundingClientRect()
+                    const ix = r.width / 4
+                    const iy = r.height / 4
+                    if (left < r.right - ix && right > r.left + ix
+                        && top < r.bottom - iy && bottom > r.top + iy) hits.push(key)
+                }
+                hits.sort((a, b) => readingOrder.indexOf(a) - readingOrder.indexOf(b))
+                usePinSelection.getState().replace(union(base, hits), baseAnchor ?? hits[0] ?? null)
+            },
+            onUp: () => endMarqueeRef.current(),
+        }
+        marqueeRef.current = m
+        window.addEventListener("pointermove", m.onMove)
+        window.addEventListener("pointerup", m.onUp)
+    }
+    const beginMarqueeRef = useRef(beginMarquee)
+    beginMarqueeRef.current = beginMarquee
+    // The grid's own padding is only a few px, so "drag from outside the
+    // items" needs more surface: presses landing on the surrounding
+    // gallery panel's frame (its padding and the gaps around the board,
+    // tagged data-pinboard-frame in ImageGallery) arm the marquee too.
+    // Only presses hitting the frame element ITSELF qualify — anything
+    // inside the header, the thumbnail strip or other panel children
+    // handles its own events and never targets the frame directly.
+    // In fullscreen the board effectively IS the screen, so the surface
+    // widens to the whole viewport: any press not claimed by the board
+    // itself (whose background handler already arms), a pin, an overlay
+    // control or a floating panel starts a marquee.
+    useEffect(() => {
+        const onDown = (e: PointerEvent) => {
+            if (e.button !== 0) return
+            const t = e.target as HTMLElement | null
+            if (!t) return
+            const onFrame = t.hasAttribute?.("data-pinboard-frame")
+            const fromViewport = fs && !isInteractiveTarget(t) && !t.closest?.(
+                '[data-pinboard-area], [data-pin-key], [data-selection-toolbar],'
+                + ' [data-pinboard-history], [data-radix-popper-content-wrapper],'
+                + ' [role="menu"], [role="dialog"]'
+            )
+            if (!onFrame && !fromViewport) return
+            e.preventDefault()
+            beginMarqueeRef.current(e, e.ctrlKey || e.metaKey || e.shiftKey)
+        }
+        document.addEventListener("pointerdown", onDown)
+        return () => document.removeEventListener("pointerdown", onDown)
+    }, [fs])
+    // Esc clears the selection and cancels an in-progress marquee
+    const escActive = selected.length > 0 || marquee !== null
+    useEffect(() => {
+        if (!escActive) return
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key !== "Escape") return
+            endMarqueeRef.current()
+            usePinSelection.getState().clear()
+        }
+        window.addEventListener("keydown", onKey)
+        return () => window.removeEventListener("keydown", onKey)
+    }, [escActive])
+    // Pressing anywhere that isn't a pin, the selection toolbar or a popup
+    // menu — the board background, the rest of the app — deselects, the
+    // way every file manager does. Ctrl/shift presses are exempt so
+    // additive marquees and range clicks can start anywhere. Capture
+    // phase on document, so this runs before any React handler.
+    useEffect(() => {
+        if (selected.length === 0) return
+        const onDown = (e: PointerEvent) => {
+            if (e.ctrlKey || e.metaKey || e.shiftKey) return
+            const t = e.target as HTMLElement | null
+            if (t?.closest?.(
+                '[data-pin-key], [data-selection-toolbar], [data-scroll-area-scrollbar],'
+                + ' [data-radix-popper-content-wrapper], [role="menu"]'
+            )) return
+            usePinSelection.getState().clear()
+        }
+        document.addEventListener("pointerdown", onDown, true)
+        return () => document.removeEventListener("pointerdown", onDown, true)
+    }, [selected.length])
+    // Overlay controls handle their own (modifier-)clicks — those are
+    // never selection gestures
+    const isInteractiveTarget = (t: EventTarget | null) =>
+        !!(t as HTMLElement | null)?.closest?.("button, a, input, .react-resizable-handle")
+    // Selection gestures on the pins themselves, in the capture phase so
+    // modifier presses never reach RGL's drag machinery (both the pointer-
+    // and mouse-event layers are stopped — RGL starts its drags on
+    // mousedown). The movement guard separates clicks from plain drags,
+    // which still move the item.
+    const selectionMouseDownRef = useRef<{ x: number; y: number } | null>(null)
+    const onPinPointerDownCapture = (e: React.PointerEvent) => {
+        if (cropKey !== null || e.button !== 0 || isInteractiveTarget(e.target)) return
+        if (e.ctrlKey || e.metaKey || e.shiftKey) {
+            // If the pointer moves this becomes an additive marquee; a
+            // release in place falls through to the click handler below
+            e.stopPropagation()
+            beginMarquee(e, true)
+        }
+    }
+    const onPinMouseDownCapture = (e: React.MouseEvent) => {
+        selectionMouseDownRef.current = { x: e.clientX, y: e.clientY }
+        if (cropKey !== null || e.button !== 0 || isInteractiveTarget(e.target)) return
+        if (e.ctrlKey || e.metaKey || e.shiftKey) {
+            e.stopPropagation()
+            // No native text/image selection during the gesture
+            e.preventDefault()
+        }
+    }
+    const onPinClickCapture = (key: string) => (e: React.MouseEvent) => {
+        if (cropKey !== null || isInteractiveTarget(e.target)) return
+        const d = selectionMouseDownRef.current
+        if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 5) return
+        const sel = usePinSelection.getState()
+        if (e.shiftKey) {
+            e.preventDefault()
+            e.stopPropagation()
+            rangeSelectTo(key, e.ctrlKey || e.metaKey)
+        } else if (e.ctrlKey || e.metaKey) {
+            e.preventDefault()
+            e.stopPropagation()
+            sel.toggle(key)
+        } else {
+            // Plain click: a fresh single-item selection replacing any
+            // previous one, file-manager style. Deliberately not stopped —
+            // nothing else on the pin consumes plain clicks.
+            sel.replace([key], key)
+        }
+    }
     // Refs so the effects below read the CURRENT flags and action at fire
     // time while only reacting to their own trigger conditions
     const autoLayoutRef = useRef(autoLayout)
@@ -418,6 +708,17 @@ export function PinBoard(
         <ScrollArea ref={scrollAreaRef} data-pinboard-area className="overflow-y-auto">
             <div
                 ref={gridAreaRef}
+                // Rubber-band start from the board background (presses on
+                // pins are handled by their own capture handlers and, when
+                // unmodified, never reach the marquee)
+                onPointerDown={(e) => {
+                    if (e.button !== 0) return
+                    const t = e.target as HTMLElement
+                    if (t.closest("[data-pin-key], [data-selection-toolbar]")
+                        || isInteractiveTarget(t)) return
+                    e.preventDefault()
+                    beginMarquee(e, e.ctrlKey || e.metaKey || e.shiftKey)
+                }}
                 className={`relative grow ${rglSettling ? "rgl-mount-still " : ""}${fs ? "h-[97vh]" : (
                     showPagination ?
                         (thumbnailsOpen ? "h-[calc(100vh-567px)]" : "h-[calc(100vh-213px)]")
@@ -460,7 +761,14 @@ export function PinBoard(
                     dragConfig={DRAG_CONFIG}
                     resizeConfig={RESIZE_CONFIG}
                     dropConfig={DROP_CONFIG}
-                    onLayoutChange={(currentLayout) => onLayoutChange([...currentLayout])}
+                    onLayoutChange={(currentLayout) => {
+                        // A report not claimed by a just-finished gesture is
+                        // RGL's own normalization — write it as replace
+                        const echo = !gestureRef.current
+                        gestureRef.current = false
+                        onLayoutChange([...currentLayout], undefined, undefined, echo)
+                    }}
+                    onDragStop={() => { gestureRef.current = true }}
                     // Size of the grey preview box (10x10 in v1 units)
                     droppingItem={{ i: '__preview', x: 0, y: 0, w: Math.round(10 * sx), h: Math.round(10 * sy) }}
                     // Compacts items vertically to keep them visible on
@@ -525,6 +833,7 @@ export function PinBoard(
                         if (handle.includes('n')) newItem.maxH = cap(box.bottom - image.top, unitY, newItem.h)
                     }}
                     onResizeStop={(currentLayout, oldItem, newItem) => {
+                        gestureRef.current = true
                         setCropResizing(false)
                         if (newItem) {
                             newItem.maxW = undefined
@@ -648,10 +957,17 @@ export function PinBoard(
                     {pinnedFiles.map(([i, sha256, thumbnail, file]) => (
                         <div
                             key={i}
+                            data-pin-key={i}
                             className={cn(
                                 "relative bg-gray-800 border rounded shadow-sm group pinboard-pin",
                                 cropKey === i && "z-30 pinboard-crop-item",
+                                selectedSet.has(i) && "ring-2 ring-blue-400",
                             )}
+                            onPointerDownCapture={onPinPointerDownCapture}
+                            onMouseDownCapture={onPinMouseDownCapture}
+                            onClickCapture={onPinClickCapture(i)}
+                            onMouseEnter={onBoardHover}
+                            onMouseLeave={onBoardHoverEnd}
                         >
                             {sha256 === "__preview" ?
                                 <div key={i} className="drag-handle cursor-move absolute top-0 left-0 w-full h-full" />
@@ -666,9 +982,14 @@ export function PinBoard(
                                     layout={layout}
                                     crops={crops}
                                     autoCrops={autoCrops}
+                                    locks={itemLocks}
+                                    highWater={highWater}
                                     crop={crops[i] ?? null}
                                     autoCrop={autoCrops[i] ?? null}
                                     trim={trims[i] ?? null}
+                                    lock={itemLocks[i] ?? null}
+                                    lockBadgesVisible={lockBadgesVisible}
+                                    onLockChange={(lock) => setLockForKeys([i], lock)}
                                     cropMode={cropKey === i}
                                     boxResizing={cropKey === i && cropResizing}
                                     imageExtentRef={cropImageExtentRef}
@@ -685,8 +1006,72 @@ export function PinBoard(
                         </div>
                     ))}
                 </GridLayout>
+                {marquee && (
+                    <div
+                        className="absolute z-40 pointer-events-none border border-blue-400 bg-blue-400/10 rounded-xs"
+                        style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }}
+                    />
+                )}
+                {selected.length > 0 && (
+                    <SelectionToolbar
+                        count={selected.length}
+                        onArrange={() => void arrangeSelection(selected)}
+                        onSwap={() => void swapItems(selected[0], selected[1])}
+                        onLock={(lock) => setLockForKeys(selected, lock)}
+                        onClear={() => usePinSelection.getState().clear()}
+                    />
+                )}
             </div>
         </ScrollArea>
+    )
+}
+
+// Floating verb bar shown while a selection exists. Lock/unlock apply to
+// every selected item in one record write; Arrange mosaics the selection
+// within its own bounding box; Swap needs exactly two items.
+function SelectionToolbar({
+    count,
+    onArrange,
+    onSwap,
+    onLock,
+    onClear,
+}: {
+    count: number
+    onArrange: () => void
+    onSwap: () => void
+    onLock: (lock: PinLock) => void
+    onClear: () => void
+}) {
+    const btn = "rounded-full px-2.5 py-1 hover:bg-gray-200 disabled:opacity-40 disabled:hover:bg-transparent"
+    return (
+        <div
+            data-selection-toolbar
+            className="absolute top-2 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 rounded-full bg-white/95 shadow-lg px-3 py-1 text-sm text-gray-800"
+        >
+            <span className="font-medium mr-1 select-none">{count} selected</span>
+            <button className={btn} disabled={count < 2} onClick={onArrange}
+                title="Rearrange the selected items within their combined bounding box">
+                Arrange
+            </button>
+            <button className={btn} disabled={count !== 2} onClick={onSwap}
+                title="Selected items exchange position and size (select exactly two)">
+                Swap
+            </button>
+            <button className={btn} onClick={() => onLock("anchor")}
+                title="Anchor in place: position and size fixed, layouts pack around them">
+                Anchor
+            </button>
+            <button className={btn} onClick={() => onLock("size")}
+                title="Lock size: items keep their size but may be moved">
+                Lock Size
+            </button>
+            <button className={btn} onClick={() => onLock(null)} title="Remove locks">
+                Unlock
+            </button>
+            <button className={btn} onClick={onClear} title="Clear selection (Esc)">
+                <X className="w-4 h-4" />
+            </button>
+        </div>
     )
 }
 
@@ -699,9 +1084,14 @@ function PinBoardPin({
     layout,
     crops,
     autoCrops,
+    locks,
+    highWater,
     crop,
     autoCrop,
     trim,
+    lock,
+    lockBadgesVisible,
+    onLockChange,
     cropMode,
     boxResizing,
     imageExtentRef,
@@ -722,14 +1112,23 @@ function PinBoardPin({
     onLayoutChange: (
         currentLayout: LayoutItem[],
         autoCropOverrides?: Record<string, CropRect | null>,
+        newHighWater?: number,
     ) => void
     layout: LayoutItem[]
     crops: Record<string, CropRect | null>
     autoCrops: Record<string, CropRect | null>
+    locks: Record<string, PinLock>
+    highWater: number
     // Manual crop (the editable base) and the derived fit-to-cell auto crop
     crop: CropRect | null
     autoCrop: CropRect | null
     trim: TrimRange | null
+    // This pin's layout lock and its single-item setter
+    lock: PinLock
+    // While true (the board was recently hovered), ACTIVE lock toggles are
+    // shown on every locked pin so locks are visible at a glance
+    lockBadgesVisible: boolean
+    onLockChange: (lock: PinLock) => void
     cropMode: boolean
     boxResizing: boolean
     imageExtentRef?: React.MutableRefObject<(() => CropGeometry | null) | null>
@@ -758,6 +1157,26 @@ function PinBoardPin({
     const isPlayable = data?.item?.type === "video/mp4" || data?.item?.type === "video/webm"
     const videoRef = React.useRef<HTMLVideoElement>(null)
     const videoState = useVideoPlayerState({ videoRef })
+
+    // Double-click makes this pin the app-level current item — the same
+    // thing the corner select button does. Independent of the board's own
+    // multi-selection: the two clicks it is made of just select the pin
+    // there, which double-clicking implies anyway.
+    const setCurrentItem = useItemSelection((s) => s.setItem)
+    const selectAsCurrentItem = () => {
+        if (!data?.item || !data.files?.length) return
+        const file = data.files[0]
+        setCurrentItem({
+            file_id: file.id,
+            path: file.path,
+            sha256: data.item.sha256,
+            item_id: data.item.id,
+            last_modified: file.last_modified,
+            type: data.item.type,
+            width: data.item.width,
+            height: data.item.height,
+        })
+    }
 
     // Natural dimensions read off the media element itself. The item query
     // above is the authoritative source, but on a fresh page load it races
@@ -837,10 +1256,13 @@ function PinBoardPin({
         <>
             <ContextMenu>
                 <ContextMenuTrigger>
-                    <div className={cn(
-                        "absolute top-0 left-0 w-full h-full",
-                        !cropMode && "drag-handle cursor-move",
-                    )}>
+                    <div
+                        className={cn(
+                            "absolute top-0 left-0 w-full h-full",
+                            !cropMode && "drag-handle cursor-move",
+                        )}
+                        onDoubleClick={cropMode ? undefined : selectAsCurrentItem}
+                    >
                         {/* Playing videos always render through CropView (even
                             uncropped: rest mode with a null crop is a plain
                             contain fit) so toggling crop mode only restyles the
@@ -911,6 +1333,8 @@ function PinBoardPin({
                     layout={layout}
                     crops={crops}
                     autoCrops={autoCrops}
+                    locks={locks}
+                    highWater={highWater}
                     cropMode={cropMode}
                     hasCrop={!!(crop || autoCrop)}
                     onToggleCrop={onCropModeToggle}
@@ -918,6 +1342,8 @@ function PinBoardPin({
                     trim={trim}
                     onTrimChange={onTrimChange}
                     onDuplicate={onDuplicate}
+                    lock={lock}
+                    onLockChange={onLockChange}
                     pinboardRef={scrollAreaRef}
                     grid={grid}
                     isV1={isV1}
@@ -941,6 +1367,42 @@ function PinBoardPin({
                 ) : (
                     <Crop className="w-6 h-6 text-gray-800" />
                 )}
+            </button>
+            {/* Layout locks. An ACTIVE lock doubles as the item's badge: it
+                shows whenever the board was recently hovered (see
+                lockBadgesVisible), so locks are visible at a glance while
+                laying out but fade away during plain viewing. Inactive
+                toggles only appear on this pin's own hover like the other
+                overlay controls. */}
+            <button
+                title={lock === "anchor"
+                    ? "Anchored in place: position and size fixed, layouts pack around it — click to release"
+                    : "Anchor in place (lock position and size)"}
+                className={cn(
+                    "hover:scale-105 absolute top-2 left-26 rounded-full p-2 transition-opacity duration-300",
+                    lock === "anchor" ? "bg-blue-200" : "bg-white",
+                    lock === "anchor" && lockBadgesVisible
+                        ? "opacity-100"
+                        : "opacity-0 group-hover:opacity-100",
+                )}
+                onClick={() => onLockChange(lock === "anchor" ? null : "anchor")}
+            >
+                <Anchor className="w-6 h-6 text-gray-800" />
+            </button>
+            <button
+                title={lock === "size"
+                    ? "Size locked: keeps this size, may still be moved — click to unlock"
+                    : "Lock size (item keeps its size, can still be moved)"}
+                className={cn(
+                    "hover:scale-105 absolute top-2 left-38 rounded-full p-2 transition-opacity duration-300",
+                    lock === "size" ? "bg-blue-200" : "bg-white",
+                    lock === "size" && lockBadgesVisible
+                        ? "opacity-100"
+                        : "opacity-0 group-hover:opacity-100",
+                )}
+                onClick={() => onLockChange(lock === "size" ? null : "size")}
+            >
+                <Ruler className="w-6 h-6 text-gray-800" />
             </button>
             <SelectButton
                 sha256={sha256}

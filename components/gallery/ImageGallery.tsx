@@ -145,7 +145,10 @@ export function ImageGallery({
     const hidePinBoard = useGalleryHidePinBoard()[0]
 
     return (
-        <div className="flex flex-col border rounded p-2">
+        // data-pinboard-frame: presses landing on this panel's own padding
+        // and gaps (not on any child) can start a pinboard marquee select —
+        // see the frame listener in GalleryPinBoard
+        <div data-pinboard-frame className="flex flex-col border rounded p-2">
             {!fs && <div className="flex justify-between items-center mb-2">
                 <div className="flex items-center">
                     <BookmarkBtn sha256={currentItem.sha256} buttonVariant />
