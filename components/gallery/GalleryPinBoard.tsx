@@ -139,6 +139,12 @@ const DEFAULT_TOOLBAR_VERBS = ["arrange", "swap"]
 // Pinnable non-verb: the Send to Region submenu. On the bar it becomes an
 // icon button opening the preset menu rather than acting directly.
 const REGION_MENU_ID = "region"
+// Bar display order for pinned controls: the dropdown's own verb order,
+// with the region menu slotted right after Swap. Rendering follows this
+// list rather than pin-toggle order, so the bar is stable no matter when
+// each control was pinned.
+const BAR_ORDER = SELECTION_VERBS.flatMap(v =>
+    v.id === "swap" ? [v.id, REGION_MENU_ID] : [v.id])
 
 export function PinBoard(
     {
@@ -1530,34 +1536,38 @@ function SelectionToolbar({
                     </DropdownMenuSub>
                 </DropdownMenuContent>
             </DropdownMenu>
-            {SELECTION_VERBS.filter(v => pinned.includes(v.id)).map(v => (
-                <button key={v.id} className={btn} disabled={verbDisabled(v)}
-                    onClick={() => onVerb(v.id)} title={v.title}>
-                    <v.icon className="w-4 h-4" />
-                </button>
-            ))}
-            {/* The pinned Send to Region opens its preset menu in place —
-                an icon button can't carry seven targets directly */}
-            {pinned.includes(REGION_MENU_ID) && (
-                <DropdownMenu modal={false}>
-                    <DropdownMenuTrigger asChild>
-                        <button className={menuBtn}
-                            title="Send the selection to a region of the board">
-                            <Columns3 className="w-4 h-4" />
-                        </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-48">
-                        {REGION_PRESETS.map(([preset, label]) => (
-                            <DropdownMenuItem key={preset} onSelect={() => onRegion(preset)}>
-                                <span className="flex items-center gap-2">
-                                    <RegionIcon preset={preset} className="w-4 h-4" />
-                                    {label}
-                                </span>
-                            </DropdownMenuItem>
-                        ))}
-                    </DropdownMenuContent>
-                </DropdownMenu>
-            )}
+            {BAR_ORDER.filter(id => pinned.includes(id)).map(id => {
+                // The pinned Send to Region opens its preset menu in
+                // place — an icon button can't carry eight targets directly
+                if (id === REGION_MENU_ID) return (
+                    <DropdownMenu modal={false} key={id}>
+                        <DropdownMenuTrigger asChild>
+                            <button className={menuBtn}
+                                title="Send the selection to a region of the board">
+                                <Columns3 className="w-4 h-4" />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-48">
+                            {REGION_PRESETS.map(([preset, label]) => (
+                                <DropdownMenuItem key={preset} onSelect={() => onRegion(preset)}>
+                                    <span className="flex items-center gap-2">
+                                        <RegionIcon preset={preset} className="w-4 h-4" />
+                                        {label}
+                                    </span>
+                                </DropdownMenuItem>
+                            ))}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                )
+                const v = SELECTION_VERBS.find(v => v.id === id)
+                if (!v) return null
+                return (
+                    <button key={id} className={btn} disabled={verbDisabled(v)}
+                        onClick={() => onVerb(v.id)} title={v.title}>
+                        <v.icon className="w-4 h-4" />
+                    </button>
+                )
+            })}
             <button
                 className={cn(btn, cropOn && "bg-blue-100 text-blue-700 hover:bg-blue-200")}
                 onClick={onCropToggle}
