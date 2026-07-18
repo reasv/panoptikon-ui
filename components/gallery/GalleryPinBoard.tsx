@@ -2,7 +2,7 @@ import Image from 'next/image'
 import { cn, getFileURL } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid, useGalleryPinSelectionCrop } from '@/lib/state/gallery'
-import { consumePinboardNavigation, consumePinboardPendingEdit } from '@/lib/pinboardNavigation'
+import { consumePinboardExplicitPlacement, consumePinboardNavigation, consumePinboardPendingEdit, markPinboardExplicitPlacement } from '@/lib/pinboardNavigation'
 import { usePinBoard } from '@/lib/state/pinboard'
 import { GridParams, minPinUnits, rowStep, v1ScaleFactors } from '@/lib/pinboardGrid'
 import { PinButton } from './PinButton'
@@ -27,7 +27,7 @@ import { CropRect, PinLock, TrimRange, clampCrop, composeCrops, isEmptyTrim, pac
 import { useVideoTrim } from '@/lib/videoTrim'
 import { CropGeometry, CropView } from './CropView'
 import { VideoTimeline } from './VideoTimeline'
-import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightFromLine, ArrowRightToLine, Check, ChevronDown, Columns3, Crop, Dices, Expand, FlipHorizontal2, FlipVertical2, FoldHorizontal, GripVertical, LayoutDashboard, LockOpen, Maximize, Ruler, Scaling, X, type LucideIcon } from 'lucide-react'
+import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightFromLine, ArrowRightToLine, Check, ChevronDown, Columns3, Crop, Dices, Expand, FlipHorizontal2, FlipVertical2, FoldHorizontal, GripVertical, LayoutDashboard, LockOpen, Maximize, Ruler, Scaling, SquareDashed, X, type LucideIcon } from 'lucide-react'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -43,7 +43,10 @@ import { RegionIcon } from './RegionIcon'
 import { usePinSelection } from '@/lib/state/pinboardSelection'
 import { useToast } from '@/components/ui/use-toast'
 import { useItemSelection } from '@/lib/state/itemSelection'
-import { groupRowsByOverlap } from '@/lib/pinboardPack'
+import { GridRect, groupRowsByOverlap } from '@/lib/pinboardPack'
+import { maximalFreeRects, pickRectAt, rectsOverlap } from '@/lib/pinboardHoles'
+import { usePinboardCarry } from '@/lib/state/pinboardCarry'
+import { HoleTargetOverlay } from './HoleTargetOverlay'
 
 const ALL_RESIZE_HANDLES: LayoutItem["resizeHandles"] =
     ["s", "w", "e", "n", "sw", "nw", "se", "ne"]
@@ -60,7 +63,14 @@ const ALL_RESIZE_HANDLES: LayoutItem["resizeHandles"] =
 // they sit outside the .drag-handle layer.
 const DRAG_CONFIG = { enabled: true, handle: ".drag-handle", threshold: 0 }
 const RESIZE_CONFIG = { enabled: true }
-const DROP_CONFIG = { enabled: true }
+// Shift-held external drags switch to hole mode: rejecting the dragover
+// here removes RGL's placeholder and its live cascade — the board's own
+// dragover tracking and HoleTargetOverlay take over (and its onDropCapture
+// commits the drop). Releasing Shift hands the drag straight back to RGL.
+const DROP_CONFIG = {
+    enabled: true,
+    onDragOver: (e: DragEvent) => (e.shiftKey ? false as const : undefined),
+}
 
 // Order-preserving set union, for additive selection gestures
 const union = (a: string[], b: string[]) =>
@@ -96,6 +106,10 @@ const SELECTION_VERBS: SelectionVerb[] = [
     {
         id: "swap", label: "Swap", icon: ArrowLeftRight, exact: 2,
         title: "Selected items exchange position and size (select exactly two)",
+    },
+    {
+        id: "hole", label: "Move to Hole", icon: SquareDashed,
+        title: "Pick an empty area to move the selection into — click a hole, or drag to carve a spot",
     },
     {
         id: "reflow", label: "Reflow (Keep Proportions)", icon: Scaling, min: 2,
@@ -479,7 +493,7 @@ export function PinBoard(
     const {
         fillViewport, arrangeSelection, swapItems, autoCropSelection,
         clearAutoCropSelection, growSelection, mirrorSelection, shiftSelection,
-        sendSelectionToRegion,
+        sendSelectionToRegion, sendSelectionToRect,
     } = usePinboardLayoutActions({
         layout, crops, autoCrops, locks: itemLocks, highWater, dbs, grid,
         layoutAutoCrop: autoLayoutCrop,
@@ -533,6 +547,195 @@ export function PinBoard(
         // either way; only plain clicks and ctrl+clicks rebase it.
         sel.replace(additive ? union(sel.selected, range) : range, anchor)
     }
+    // ---- Hole targeting -------------------------------------------------
+    // Three gestures share the HoleTargetOverlay: the Move to Hole verb
+    // (move the selection into a hole), sticky carry (shift+click a
+    // gallery pin button, drop by clicking the board) and shift-held
+    // external drags. This block owns the mode state, the hole geometry
+    // the overlay renders from, and the commit writes.
+    const [holeVerb, setHoleVerb] = useState(false)
+    const carrySha = usePinboardCarry(s => s.sha256)
+    const holeRequest = usePinboardCarry(s => s.holeRequest)
+    // Cursor of a shift-held HTML5 drag over the board, in container px
+    const [dragHole, setDragHole] = useState<{ x: number, y: number } | null>(null)
+    const holeMode: "verb" | "carry" | "drag" | null =
+        carrySha ? "carry" : holeVerb ? "verb" : dragHole ? "drag" : null
+    // For the board's own Esc handler: targeting owns Esc while active
+    const holeActiveRef = useRef(false)
+    holeActiveRef.current = holeMode !== null
+    // Register with the carry store so shift+click pin buttons know a
+    // carry has somewhere to land; unmounting drops any carry in flight
+    useEffect(() => {
+        usePinboardCarry.getState().setBoardMounted(true)
+        return () => {
+            usePinboardCarry.getState().setBoardMounted(false)
+            usePinboardCarry.getState().cancel()
+        }
+    }, [])
+    // Free-mask bound in grid rows: the ratchet, the content bottom or the
+    // fold, whichever is deepest — the band between the last item and the
+    // fold is legitimately targetable empty board
+    const holeRows = useMemo(() => {
+        if (!holeMode) return 0
+        const contentBottom = layout.reduce((a, l) => Math.max(a, l.y + l.h), 0)
+        const areaH = gridAreaRef.current?.clientHeight ?? 0
+        const fold = Math.max(1, Math.floor(
+            (areaH - 2 * grid.padding + grid.margin) / rowStep(grid)))
+        return Math.max(highWater, contentBottom, fold)
+    }, [holeMode, layout, highWater, grid, gridAreaRef])
+    // Occupancy for the free mask. The verb MOVES the selection, so it
+    // counts as lifted — its own cells are free to land back onto (e.g.
+    // merging with an adjacent hole). Carried/dragged items are new;
+    // everything on the board is solid for them.
+    const holeOccupied = useMemo(() => {
+        if (!holeMode) return []
+        const lifted = holeMode === "verb" ? selectedSet : null
+        return layout
+            .filter(l => !lifted?.has(l.i))
+            .map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h }))
+    }, [holeMode, layout, selectedSet])
+    const holeRects = useMemo(
+        () => holeMode ? maximalFreeRects(holeOccupied, grid.columns, holeRows) : [],
+        [holeMode, holeOccupied, grid.columns, holeRows])
+    // Feasibility, kept light — the placement itself re-checks exactly and
+    // toasts. For the verb: every size-locked item must fit at its exact
+    // size and the rect must have room for everyone at minimum size; for
+    // single-item drops just the minimum pin size.
+    const holeColW = (gridWidth - 2 * grid.padding
+        - (grid.columns - 1) * grid.margin) / grid.columns
+    const { minW: holeMinW, minH: holeMinH } = minPinUnits(grid, holeColW)
+    const validHole = (r: GridRect): boolean => {
+        if (holeMode !== "verb") return r.w >= holeMinW && r.h >= holeMinH
+        const sel = layout.filter(l => selectedSet.has(l.i))
+        const travellers = sel.filter(l => itemLocks[l.i] === "size")
+        const flexible = sel.filter(l => !itemLocks[l.i])
+        if (!travellers.every(t => t.w <= r.w && t.h <= r.h)) return false
+        if (flexible.length > 0 && (r.w < holeMinW || r.h < holeMinH)) return false
+        const need = travellers.reduce((a, t) => a + t.w * t.h, 0)
+            + flexible.length * holeMinW * holeMinH
+        return r.w * r.h >= need
+    }
+    const validFree = (r: GridRect): boolean =>
+        !layout.some(l => itemLocks[l.i] === "anchor"
+            && rectsOverlap({ x: l.x, y: l.y, w: l.w, h: l.h }, r))
+    // Verb entry: anchored items can't travel — refuse up front, same
+    // policy and strings as Send to Region
+    const enterHoleTarget = () => {
+        const anchoredCount = selected.filter(k => itemLocks[k] === "anchor").length
+        if (anchoredCount > 0) {
+            toast({
+                title: "Move to Hole",
+                description: anchoredCount === 1
+                    ? "An anchored item is selected — unanchor or deselect it first"
+                    : `${anchoredCount} anchored items are selected — unanchor or deselect them first`,
+                duration: 4000,
+            })
+            return
+        }
+        setHoleVerb(true)
+    }
+    // The context menu requests targeting through the store — it lives in
+    // a distant subtree (per-pin popper) with no prop path to this state
+    const holeRequestSeen = useRef(holeRequest)
+    useEffect(() => {
+        if (holeRequest === holeRequestSeen.current) return
+        holeRequestSeen.current = holeRequest
+        enterHoleTarget()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [holeRequest])
+    // Targeting is FOR the selection: it can't outlive it
+    useEffect(() => {
+        if (selected.length === 0) setHoleVerb(false)
+    }, [selected.length])
+    const holeToast = (msg: string) => toast({
+        title: holeMode === "verb" ? "Move to Hole" : "Place",
+        description: msg,
+        duration: 4000,
+    })
+    // Carry free placement: the new pin claims the rect and whatever it
+    // lands on drops straight down below it (the same cascade Send to
+    // Region uses for evictees) — one record write, so one history entry.
+    const placeCarryFree = (sha256: string, r: GridRect) => {
+        const overlapped = layout
+            .filter(l => rectsOverlap({ x: l.x, y: l.y, w: l.w, h: l.h }, r))
+            .sort((a, b) => a.y - b.y || a.x - b.x)
+        const evictKeys = new Set(overlapped.map(l => l.i))
+        const solid: GridRect[] = layout
+            .filter(l => !evictKeys.has(l.i))
+            .map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h }))
+        solid.push({ ...r })
+        const moves = new Map<string, number>()
+        for (const l of overlapped) {
+            const probe = { x: l.x, y: r.y + r.h, w: l.w, h: l.h }
+            for (; ;) {
+                const hit = solid.find(o => rectsOverlap(probe, o))
+                if (!hit) break
+                probe.y = hit.y + hit.h
+            }
+            moves.set(l.i, probe.y)
+            solid.push(probe)
+        }
+        markPinboardExplicitPlacement()
+        updateRecords((prev) => {
+            const next = [...prev]
+            for (const [key, y] of moves) {
+                const offset = parseInt(key.split("-")[0])
+                next[offset + 2] = y.toString()
+            }
+            return [
+                ...next,
+                sha256.slice(0, 10),
+                r.x.toString(), r.y.toString(), r.w.toString(), r.h.toString(),
+            ]
+        })
+    }
+    const onHoleCommit = (r: GridRect, kind: "hole" | "free") => {
+        if (holeMode === "verb") {
+            void sendSelectionToRect(selected, r).then(err => {
+                if (err) holeToast(err)
+                else setHoleVerb(false)
+            })
+            return
+        }
+        if (holeMode === "carry" && carrySha) {
+            if (kind === "hole") {
+                markPinboardExplicitPlacement()
+                pinItem.pinItem(carrySha, r)
+            } else {
+                placeCarryFree(carrySha, r)
+            }
+            usePinboardCarry.getState().cancel()
+        }
+    }
+    // Sticky-carry chrome: the thumbnail riding the cursor, plus the
+    // cancel gestures that land outside the overlay — Esc, right-click
+    // anywhere, and clicks that miss the board entirely (a drop has to
+    // land ON the board). Clicks on pin buttons are exempt: shift+click
+    // on another button re-starts the carry with that image.
+    const [carryPoint, setCarryPoint] = useState<{ x: number, y: number } | null>(null)
+    useEffect(() => {
+        if (!carrySha) { setCarryPoint(null); return }
+        const cancel = () => usePinboardCarry.getState().cancel()
+        const onMove = (e: PointerEvent) => setCarryPoint({ x: e.clientX, y: e.clientY })
+        const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") cancel() }
+        const onCtx = (e: MouseEvent) => { e.preventDefault(); cancel() }
+        const onClick = (e: MouseEvent) => {
+            const t = e.target as HTMLElement | null
+            if (t?.closest?.("[data-hole-overlay], [data-pin-carry]")) return
+            cancel()
+        }
+        window.addEventListener("pointermove", onMove)
+        window.addEventListener("keydown", onKey)
+        window.addEventListener("contextmenu", onCtx)
+        window.addEventListener("click", onClick)
+        return () => {
+            window.removeEventListener("pointermove", onMove)
+            window.removeEventListener("keydown", onKey)
+            window.removeEventListener("contextmenu", onCtx)
+            window.removeEventListener("click", onClick)
+        }
+    }, [carrySha])
+    // ---------------------------------------------------------------------
     // Floating toolbar placement, in CONTENT coordinates (it scrolls with
     // the board, staying glued to the selection). The bar hangs just above
     // the selection's bounding box — except with exactly two items at
@@ -841,6 +1044,9 @@ export function PinBoard(
         if (!escActive) return
         const onKey = (e: KeyboardEvent) => {
             if (e.key !== "Escape") return
+            // While hole targeting is active Esc belongs to it (its own
+            // listener cancels the targeting); the selection survives
+            if (holeActiveRef.current) return
             endMarqueeRef.current()
             usePinSelection.getState().clear()
         }
@@ -882,7 +1088,7 @@ export function PinBoard(
             if (!t || t === document.documentElement || t === document.body) return
             if (t.closest?.(
                 '[data-pin-key], [data-selection-toolbar], [data-scroll-area-scrollbar],'
-                + ' [data-radix-popper-content-wrapper], [role="menu"]'
+                + ' [data-radix-popper-content-wrapper], [role="menu"], [data-hole-overlay]'
             )) return
             usePinSelection.getState().clear()
         }
@@ -956,6 +1162,7 @@ export function PinBoard(
         // write they were set for and misfire on a later real pin add/remove
         const wasNavigation = consumePinboardNavigation()
         const pendingEdit = consumePinboardPendingEdit()
+        const explicitPlacement = consumePinboardExplicitPlacement()
         if (prev === null) {
             // First observation is normally just the baseline — but a
             // pending-edit mark means pins were added/removed from outside
@@ -977,6 +1184,9 @@ export function PinBoard(
         // own record write preserves the count, as do drags, resizes, crops
         // and the v1->v2 migration — none of them can re-trigger this.
         if (count === 0) return // board emptied: nothing to lay out
+        // The whole point of a positioned add (drag-drop, carry, hole
+        // drop) is its position — auto-layout sits that one out
+        if (explicitPlacement) return
         if (!autoLayoutRef.current) return
         // Fire-and-forget: fillViewport is async (fetches metadata) and
         // no-ops on its own when the container can't be measured
@@ -1027,6 +1237,51 @@ export function PinBoard(
                         || isInteractiveTarget(t)) return
                     e.preventDefault()
                     beginMarquee(e, e.ctrlKey || e.metaKey || e.shiftKey)
+                }}
+                // Shift-held external drags run in hole mode: RGL's
+                // dropConfig rejected the dragover (no placeholder, no
+                // cascade), so this tracker drives the overlay instead —
+                // and must preventDefault to keep the drop alive. CAPTURE
+                // phase everywhere: RGL's own dragover/dragleave handlers
+                // stopPropagation unconditionally, so bubble handlers on
+                // this wrapper would never fire over the grid.
+                onDragOverCapture={(e) => {
+                    if (e.shiftKey) {
+                        e.preventDefault()
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        setDragHole({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+                    } else if (dragHole) {
+                        setDragHole(null)
+                    }
+                }}
+                onDragLeaveCapture={(e) => {
+                    if (dragHole
+                        && !e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                        setDragHole(null)
+                    }
+                }}
+                // Capture phase so a hole-mode drop never reaches RGL's
+                // own drop handler on the grid below
+                onDropCapture={(e) => {
+                    if (!dragHole) return
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setDragHole(null)
+                    const sha256 = e.dataTransfer?.getData("text/plain")
+                    if (!sha256) {
+                        holeToast("Only gallery images can be dropped into holes")
+                        return
+                    }
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    const gx = (e.clientX - rect.left - grid.padding) / (holeColW + grid.margin)
+                    const gy = (e.clientY - rect.top - grid.padding) / rowStep(grid)
+                    const r = pickRectAt(holeRects, gx, gy)
+                    if (!r || !validHole(r)) {
+                        holeToast("No hole under the drop — nothing was added")
+                        return
+                    }
+                    markPinboardExplicitPlacement()
+                    pinItem.pinItem(sha256, r)
                 }}
                 className={`relative grow ${rglSettling ? "rgl-mount-still " : ""}${fs ? "h-[97vh]" : (
                     showPagination ?
@@ -1247,6 +1502,9 @@ export function PinBoard(
                     }}
                     onDrop={(layout, layoutItem, e) => {
                         if (!layoutItem) return
+                        // The user chose this position — auto-layout must
+                        // not immediately repaint it away
+                        markPinboardExplicitPlacement()
                         const event = e as unknown as React.DragEvent<HTMLDivElement>
                         if (event.dataTransfer && event.dataTransfer.getData("text/plain")) {
                             const sha256 = event.dataTransfer.getData("text/plain")
@@ -1337,6 +1595,46 @@ export function PinBoard(
                         style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }}
                     />
                 )}
+                {holeMode && gridWidth > 0 && (
+                    <HoleTargetOverlay
+                        grid={grid}
+                        gridWidth={gridWidth}
+                        // Cover the full free mask even when the grid
+                        // content ends above it (the empty bottom band)
+                        contentHeight={Math.max(gridContentHeight,
+                            grid.padding + holeRows * rowStep(grid))}
+                        rows={holeRows}
+                        occupied={holeOccupied}
+                        freeRects={holeRects}
+                        mode={holeMode}
+                        dragPoint={dragHole}
+                        carryGhost={{ w: Math.round(10 * sx), h: Math.round(10 * sy) }}
+                        validHole={validHole}
+                        validFree={validFree}
+                        onCommit={onHoleCommit}
+                        onMiss={holeToast}
+                        onCancel={() => {
+                            setHoleVerb(false)
+                            setDragHole(null)
+                            usePinboardCarry.getState().cancel()
+                        }}
+                    />
+                )}
+                {carrySha && carryPoint && (
+                    // The carried image's thumbnail rides the cursor
+                    // (fixed: it follows over the gallery strip too)
+                    <div
+                        className="fixed z-[60] pointer-events-none"
+                        style={{ left: carryPoint.x + 14, top: carryPoint.y + 10 }}
+                    >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                            src={getFileURL(dbs, "thumbnail", "sha256", carrySha)}
+                            alt=""
+                            className="w-20 h-20 object-cover rounded shadow-lg opacity-80 border border-white/40"
+                        />
+                    </div>
+                )}
                 {selected.length > 0 && toolbarPos && (
                     <SelectionToolbar
                         innerRef={toolbarRef}
@@ -1345,10 +1643,12 @@ export function PinBoard(
                         count={selected.length}
                         cropOn={selectionCrop}
                         selHasAnchor={selected.some(k => itemLocks[k] === "anchor")}
+                        holeActive={holeVerb}
                         onVerb={(id) => {
                             switch (id) {
                                 case "arrange": runVerb("Arrange", arrangeSelection(selected)); break
                                 case "swap": runVerb("Swap", swapItems(selected[0], selected[1])); break
+                                case "hole": holeVerb ? setHoleVerb(false) : enterHoleTarget(); break
                                 case "reflow": runVerb("Reflow", arrangeSelection(selected, true)); break
                                 case "shuffle": runVerb("Shuffle", arrangeSelection(selected, false, true)); break
                                 case "grow": runVerb("Grow to Fill", growSelection(selected)); break
@@ -1391,6 +1691,7 @@ function SelectionToolbar({
     count,
     cropOn,
     selHasAnchor,
+    holeActive = false,
     onVerb,
     onRegion,
     onLock,
@@ -1404,6 +1705,9 @@ function SelectionToolbar({
     cropOn: boolean
     // Whether the selection contains an anchored item (greys the mirrors)
     selHasAnchor: boolean
+    // Whether Move-to-Hole targeting is live (lights its button up; the
+    // verb toggles, so the lit button is also the off switch)
+    holeActive?: boolean
     onVerb: (id: string) => void
     onRegion: (preset: RegionPreset) => void
     onLock: (lock: PinLock) => void
@@ -1563,7 +1867,10 @@ function SelectionToolbar({
                 const v = SELECTION_VERBS.find(v => v.id === id)
                 if (!v) return null
                 return (
-                    <button key={id} className={btn} disabled={verbDisabled(v)}
+                    <button key={id}
+                        className={cn(btn, v.id === "hole" && holeActive
+                            && "bg-blue-100 text-blue-700 hover:bg-blue-200")}
+                        disabled={verbDisabled(v)}
                         onClick={() => onVerb(v.id)} title={v.title}>
                         <v.icon className="w-4 h-4" />
                     </button>

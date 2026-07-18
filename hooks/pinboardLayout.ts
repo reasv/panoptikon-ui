@@ -826,6 +826,61 @@ export function usePinboardLayoutActions({
         return null
     }
 
+    // Move-to-Hole commit: place the selection into an explicit free rect
+    // chosen by the targeting overlay. Same semantics as a region send with
+    // the box handed in — except no eviction: the overlay only offers rects
+    // that are free of non-selected items (the selection itself counts as
+    // lifted), so anything intersecting the box here is a stale-mask
+    // straggler and is flowed around as an obstacle rather than moved.
+    // The rect is local, so the write never moves the height ratchet.
+    async function sendSelectionToRect(
+        keys: string[], box: GridRect,
+    ): Promise<string | null> {
+        const buildData = await ensureBuildData()
+        if (!buildData) return null
+        const keySet = new Set(keys)
+        const selectedItems = buildData.sortedLayout.filter(l => keySet.has(l.i))
+        if (selectedItems.length === 0) return null
+        const anchoredCount = selectedItems.filter(l => isAnchored(l.i)).length
+        if (anchoredCount > 0) {
+            return anchoredCount === 1
+                ? "An anchored item is selected — unanchor or deselect it first"
+                : `${anchoredCount} anchored items are selected — unanchor or deselect them first`
+        }
+        const sizeLocked = selectedItems.filter(l => isSizeLocked(l.i))
+        const flexible = selectedItems.filter(l => !isLocked(l.i))
+        const overlapping = (a: GridRect, b: GridRect) =>
+            a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+        const rest = layout.filter(l => !keySet.has(l.i))
+        const obstacles = rest
+            .filter(l => overlapping({ x: l.x, y: l.y, w: l.w, h: l.h }, box))
+            .map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h }))
+        const placement = placeTravellers(sizeLocked, box, obstacles,
+            l => ({ x: l.x, y: l.y }))
+        if (typeof placement === "string") return placement
+        const { placed: placedItems, rects: placedRects } = placement
+        const packed = flexible.length > 0
+            ? packRegionInBox({
+                items: flexible.map(l => toPackItem(buildData, l)),
+                obstacles: [...obstacles, ...placedRects],
+                grid,
+                columnWidth: buildData.columnWidth,
+                box,
+                variant: mosaicVariant,
+                weights: flexible.map(l => l.w * l.h),
+                ...minPinUnits(grid, buildData.columnWidth),
+            })
+            : []
+        if (flexible.length > 0 && packed.length === 0) {
+            return "Couldn't fit the selection into that hole — try a bigger one"
+        }
+        const newLayout = [...packed, ...placedItems, ...rest]
+        onLayoutChange(newLayout,
+            verbAutoCrops(buildData, newLayout,
+                new Set(flexible.map(l => l.i)), selectionAutoCrop))
+        return null
+    }
+
     // Fit each given item to its current cell — the selection toolbar's
     // crop-now action, fired when its auto-crop toggle turns on
     async function autoCropSelection(keys: string[]) {
@@ -1144,6 +1199,7 @@ export function usePinboardLayoutActions({
         swapItems,
         arrangeSelection,
         sendSelectionToRegion,
+        sendSelectionToRect,
         autoCropSelection,
         clearAutoCropSelection,
         // Lock presence flags for the menus: hasLocks greys the verbs that

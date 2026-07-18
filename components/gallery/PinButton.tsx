@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils"
 import { usePinBoard } from "@/lib/state/pinboard"
 import { v1ScaleFactors } from "@/lib/pinboardGrid"
 import { markPinboardPendingEdit } from "@/lib/pinboardNavigation"
+import { usePinboardCarry } from "@/lib/state/pinboardCarry"
 
 import { Pin, PinOff } from 'lucide-react'
 
@@ -28,7 +29,17 @@ export function PinButton({
         () => records.filter((id, i) => i % 5 === 0 && sha256.slice(0, prefixLength) === id.slice(0, prefixLength)).length > 0,
         [records, sha256]
     )
-    const handlePinClick = () => {
+    const handlePinClick = (e: React.MouseEvent) => {
+        // Shift+click on a gallery-side pin button picks the image up
+        // instead of pinning it: a sticky carry that rides the cursor
+        // until dropped on the board with a click (see pinboardCarry.ts).
+        // Only when a board is mounted to land on — and never for the
+        // board-bound unpin buttons, which keep their exact-copy removal.
+        if (e.shiftKey && layoutKey === undefined
+            && usePinboardCarry.getState().boardMounted) {
+            usePinboardCarry.getState().start(sha256)
+            return
+        }
         // This button also renders where the board is unmounted (search
         // grid, gallery image tab): leave a mark so the auto-layout trigger
         // picks the edit up on the board's next mount. A mounted board
@@ -70,8 +81,15 @@ export function PinButton({
         })
     }
     return <button
+        // data-pin-carry: the carry's click-outside cancel exempts these
+        // buttons so shift+clicking another one re-starts the carry
+        data-pin-carry
         title={
-            isPinned ? "Unpin this image" : "Pin this image"
+            isPinned
+                ? (layoutKey !== undefined
+                    ? "Unpin this image"
+                    : "Unpin this image (Shift: carry a copy to a spot)")
+                : "Pin this image (Shift: carry it to a spot on the board)"
         }
         className={
             cn("hover:scale-105 absolute top-2 left-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300",

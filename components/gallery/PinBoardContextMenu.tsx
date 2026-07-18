@@ -8,6 +8,7 @@ import { REGION_PRESETS, usePinboardLayoutActions } from "@/hooks/pinboardLayout
 import { RegionIcon } from "./RegionIcon";
 import { useToast } from "@/components/ui/use-toast";
 import { usePinSelection } from "@/lib/state/pinboardSelection";
+import { usePinboardCarry } from "@/lib/state/pinboardCarry";
 
 export function PinBoardCtx({
     layoutKey,
@@ -224,6 +225,14 @@ export function PinBoardCtx({
                                     ))}
                                 </ContextMenuSubContent>
                             </ContextMenuSub>
+                            {/* Enters the board's targeting mode (via the
+                                carry store — the board owns that state):
+                                hover highlights holes, click places the
+                                selection there */}
+                            <ContextMenuItem
+                                onClick={() => usePinboardCarry.getState().requestHoleTarget()}>
+                                Move to Hole…
+                            </ContextMenuItem>
                             <ContextMenuSeparator />
                             <ContextMenuItem onClick={() => shiftSelection(selected, "left")}>
                                 Shift Left

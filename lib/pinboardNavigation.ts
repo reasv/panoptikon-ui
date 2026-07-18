@@ -45,3 +45,24 @@ export function consumePinboardPendingEdit(): boolean {
   pendingEdit = false
   return wasPending
 }
+
+// A pin add whose position the user chose explicitly (a drag-and-drop, a
+// sticky-carry drop, a hole drop). The whole point of a positioned add is
+// the position, so the auto-layout trigger must not immediately relayout
+// it away — this mark tells it to sit that one add out.
+
+let explicitPlacement = false
+
+// Call immediately before a record write that adds a pin at a
+// user-chosen position.
+export function markPinboardExplicitPlacement() {
+  explicitPlacement = true
+}
+
+// Consumed by the auto-layout trigger on every records observation: true
+// means the add it is reacting to was explicitly placed — skip the fill.
+export function consumePinboardExplicitPlacement(): boolean {
+  const was = explicitPlacement
+  explicitPlacement = false
+  return was
+}
