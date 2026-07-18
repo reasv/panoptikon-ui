@@ -89,17 +89,22 @@ export function PinBoardCtx({
         justifyCurrentRows,
         autoCropToCells,
         clearAutoCrops,
+        clearAutoCropSelection,
         changeItemSize: changeItemSizeByKey,
         setItemSize: setItemSizeByKey,
         shiftLayout,
+        shiftSelection,
         mirrorLayout,
+        mirrorSelection,
         rerollLayout,
         refitToView,
         reflowKeepProportions,
         growInPlace,
+        growSelection,
         swapItems,
         arrangeSelection,
         hasLocks,
+        hasAnchors,
     } = usePinboardLayoutActions({
         layout, crops, autoCrops, locks, highWater, dbs, grid, pinboardRef, onLayoutChange,
         layoutAutoCrop: autoLayoutCrop,
@@ -141,21 +146,6 @@ export function PinBoardCtx({
                 </ContextMenuSub>
             )}
             <ContextMenuItem onClick={onDuplicate}>Duplicate</ContextMenuItem>
-            {/* Mouse-only path into the multi-selection (and the place that
-                teaches the modifier-click shortcuts) */}
-            <ContextMenuCheckboxItem
-                checked={selected.includes(layoutKey)}
-                onCheckedChange={() => usePinSelection.getState().toggle(layoutKey)}
-            >
-                Select
-                <ContextMenuShortcut>Ctrl+Click</ContextMenuShortcut>
-            </ContextMenuCheckboxItem>
-            {selected.length > 0 && (
-                <ContextMenuItem onClick={() => usePinSelection.getState().clear()}>
-                    Clear Selection
-                    <ContextMenuShortcut>Esc</ContextMenuShortcut>
-                </ContextMenuItem>
-            )}
             {/* Layout locks for this pin; the same toggles exist as overlay
                 buttons. Anchored = position+size fixed (RGL static, an
                 obstacle every fill packs around); size-locked = keeps w x h
@@ -172,16 +162,67 @@ export function PinBoardCtx({
             >
                 Lock Size
             </ContextMenuCheckboxItem>
-            {selected.length >= 2 && (
-                <ContextMenuItem onClick={() => arrangeSelection(selected)}>
-                    Arrange Selection ({selected.length})
-                </ContextMenuItem>
-            )}
-            {selected.length === 2 && (
-                <ContextMenuItem onClick={() => swapItems(selected[0], selected[1])}>
-                    Swap Selected
-                </ContextMenuItem>
-            )}
+            {/* Every multi-select verb, mirroring the selection toolbar.
+                Deliberately shown whenever a selection exists, whether or
+                not THIS pin is part of it (the submenu names its target, so
+                there's no ambiguity) — and right-clicking never changes the
+                selection: most of this menu is board-global, and clobbering
+                the selection on the way to a global action would make every
+                use of the menu destructive. */}
+            {selected.length > 0 && (() => {
+                const selHasAnchor = selected.some(k => locks[k] === "anchor")
+                return (
+                    <ContextMenuSub>
+                        <ContextMenuSubTrigger inset>Selection ({selected.length})</ContextMenuSubTrigger>
+                        <ContextMenuSubContent className="w-56">
+                            <ContextMenuItem disabled={selected.length < 2}
+                                onClick={() => arrangeSelection(selected)}>
+                                Arrange
+                            </ContextMenuItem>
+                            <ContextMenuItem disabled={selected.length !== 2}
+                                onClick={() => swapItems(selected[0], selected[1])}>
+                                Swap
+                            </ContextMenuItem>
+                            <ContextMenuItem disabled={selected.length < 2}
+                                onClick={() => arrangeSelection(selected, true)}>
+                                Reflow (Keep Proportions)
+                            </ContextMenuItem>
+                            <ContextMenuItem onClick={() => growSelection(selected)}>
+                                Grow to Fill
+                            </ContextMenuItem>
+                            <ContextMenuSeparator />
+                            <ContextMenuItem onClick={() => shiftSelection(selected, "left")}>
+                                Shift Left
+                            </ContextMenuItem>
+                            <ContextMenuItem onClick={() => shiftSelection(selected, "right")}>
+                                Shift Right
+                            </ContextMenuItem>
+                            <ContextMenuItem disabled={selHasAnchor}
+                                onClick={() => mirrorSelection(selected, "horizontal")}>
+                                Mirror Horizontally
+                            </ContextMenuItem>
+                            <ContextMenuItem disabled={selHasAnchor}
+                                onClick={() => mirrorSelection(selected, "vertical")}>
+                                Mirror Vertically
+                            </ContextMenuItem>
+                            <ContextMenuItem onClick={() => clearAutoCropSelection(selected)}>
+                                Clear Auto-Crops
+                            </ContextMenuItem>
+                            {selHasAnchor && (
+                                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                                    Mirroring can't hold an anchored item in
+                                    place; release the anchors in the selection.
+                                </div>
+                            )}
+                            <ContextMenuSeparator />
+                            <ContextMenuItem onClick={() => usePinSelection.getState().clear()}>
+                                Clear Selection
+                                <ContextMenuShortcut>Esc</ContextMenuShortcut>
+                            </ContextMenuItem>
+                        </ContextMenuSubContent>
+                    </ContextMenuSub>
+                )
+            })()}
             <ContextMenuItem onClick={onToggleCrop}>
                 {cropMode ? "Finish Cropping" : "Crop Image"}
             </ContextMenuItem>
@@ -288,11 +329,14 @@ export function PinBoardCtx({
                     <ContextMenuItem onClick={() => autoCropToCells(true)}>Auto-Crop to Cells (Visible Only)</ContextMenuItem>
                     <ContextMenuItem onClick={() => clearAutoCrops()}>Clear Auto-Crops</ContextMenuItem>
                     <ContextMenuSeparator />
-                    {/* Items-per-Row, Shift and Mirror rebuild or slide whole
-                        rows and cannot hold a locked item in place, so their
-                        whole submenus grey out while any lock exists (the
-                        caption below says why). Rows stays enabled: with
-                        locks it flows rows around them instead. */}
+                    {/* Items-per-Row rebuilds whole rows and cannot hold a
+                        locked item in place, so it greys out while any lock
+                        exists (the caption below says why). Rows stays
+                        enabled: with locks it flows rows around them.
+                        Shift Left/Right are gravity now — anchors just hold
+                        their ground — so only Center (a whole-row flush
+                        repack) and the Mirrors (a rigid flip, broken by any
+                        fixed point off the axis) need an anchor-free board. */}
                     <ContextMenuSub>
                         <ContextMenuSubTrigger disabled={hasLocks}>Items per Row</ContextMenuSubTrigger>
                         <ContextMenuSubContent className="w-48">
@@ -314,22 +358,22 @@ export function PinBoardCtx({
                         </ContextMenuSubContent>
                     </ContextMenuSub>
                     <ContextMenuSub>
-                        <ContextMenuSubTrigger disabled={hasLocks}>Shift</ContextMenuSubTrigger>
+                        <ContextMenuSubTrigger>Shift</ContextMenuSubTrigger>
                         <ContextMenuSubContent className="w-48">
                             <ContextMenuItem onClick={() => shiftLayout("left")}>Shift Left</ContextMenuItem>
-                            <ContextMenuItem onClick={() => shiftLayout("center")}>Center</ContextMenuItem>
+                            <ContextMenuItem disabled={hasAnchors} onClick={() => shiftLayout("center")}>Center</ContextMenuItem>
                             <ContextMenuItem onClick={() => shiftLayout("right")}>Shift Right</ContextMenuItem>
                             <ContextMenuSeparator />
-                            <ContextMenuItem onClick={() => mirrorLayout("horizontal")}>Mirror Horizontally</ContextMenuItem>
-                            <ContextMenuItem onClick={() => mirrorLayout("vertical")}>Mirror Vertically</ContextMenuItem>
+                            <ContextMenuItem disabled={hasAnchors} onClick={() => mirrorLayout("horizontal")}>Mirror Horizontally</ContextMenuItem>
+                            <ContextMenuItem disabled={hasAnchors} onClick={() => mirrorLayout("vertical")}>Mirror Vertically</ContextMenuItem>
                         </ContextMenuSubContent>
                     </ContextMenuSub>
-                    {hasLocks && (
+                    {(hasLocks || hasAnchors) && (
                         <>
                             <ContextMenuSeparator />
                             <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                                Greyed actions rebuild whole rows and can't
-                                work around anchored or size-locked items.
+                                {hasLocks && "Greyed row actions rebuild whole rows and can't work around locked items."}
+                                {hasAnchors && " Center and Mirror can't hold anchored items in place."}
                             </div>
                         </>
                     )}

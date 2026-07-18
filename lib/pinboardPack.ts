@@ -1129,6 +1129,37 @@ export function growToFill({
     return layout
 }
 
+// growToFill in an arbitrary sub-rectangle of the grid — the same
+// virtual-grid trick as packMosaicInBox. The items' current positions are
+// translated into the box's frame so structure recovery sees the real
+// arrangement, and the re-solved sizes span the box exactly. Used by
+// "grow selection": the box is the selection's bounding box expanded into
+// the empty space around it.
+export function growToFillInBox({
+    items,
+    grid,
+    columnWidth,
+    box,
+    minW = 1,
+    minH = 1,
+}: {
+    items: ArrangedItem[],
+    grid: GridParams,
+    columnWidth: number,
+    box: GridRect,
+    minW?: number,
+    minH?: number,
+}): LayoutItem[] {
+    const virtual: GridParams = { ...grid, columns: Math.max(1, box.w) }
+    const packed = growToFill({
+        items: items.map(it => ({ ...it, x: it.x - box.x, y: it.y - box.y })),
+        grid: virtual, columnWidth,
+        totalGridRows: Math.max(1, box.h),
+        minW, minH,
+    })
+    return packed.map(l => ({ ...l, x: l.x + box.x, y: l.y + box.y }))
+}
+
 // ---------------------------------------------------------------------------
 // Region packing: fill the target rectangle AROUND fixed obstacles
 // (anchored items). The free space is decomposed into rectangles — all

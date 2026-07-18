@@ -27,7 +27,13 @@ import { CropRect, PinLock, TrimRange, clampCrop, composeCrops, isEmptyTrim, pac
 import { useVideoTrim } from '@/lib/videoTrim'
 import { CropGeometry, CropView } from './CropView'
 import { VideoTimeline } from './VideoTimeline'
-import { Anchor, ArrowRightFromLine, ArrowRightToLine, Check, Crop, GripVertical, Ruler, X } from 'lucide-react'
+import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightFromLine, ArrowRightToLine, Check, ChevronDown, Crop, Expand, FlipHorizontal2, FlipVertical2, GripVertical, LayoutDashboard, LockOpen, Maximize, Ruler, Scaling, X, type LucideIcon } from 'lucide-react'
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { usePinboardLayoutActions } from '@/hooks/pinboardLayout'
 import { usePinSelection } from '@/lib/state/pinboardSelection'
 import { useItemSelection } from '@/lib/state/itemSelection'
@@ -58,6 +64,64 @@ const union = (a: string[], b: string[]) =>
 // gap between the bar's bottom edge and the item top edge it hangs above
 const TOOLBAR_EDGE = 4
 const TOOLBAR_GAP = 6
+
+// The selection verbs. All of them live in the toolbar's dropdown; each
+// row's pin toggle additionally puts that verb directly on the bar, a user
+// preference persisted in localStorage (not board state, so not in the
+// URL). Lock management and the crop toggle aren't verbs and always sit on
+// the bar. Availability: `exact`/`min` constrain the selection count, and
+// `noAnchors` greys the verb while the selection contains an anchored item
+// (a mirror is a rigid flip — a fixed point off the axis breaks it; the
+// other verbs just work around anchors).
+interface SelectionVerb {
+    id: string
+    label: string
+    icon: LucideIcon
+    title: string
+    min?: number
+    exact?: number
+    noAnchors?: boolean
+}
+const SELECTION_VERBS: SelectionVerb[] = [
+    {
+        id: "arrange", label: "Arrange", icon: LayoutDashboard, min: 2,
+        title: "Rearrange the selected items within their combined bounding box",
+    },
+    {
+        id: "swap", label: "Swap", icon: ArrowLeftRight, exact: 2,
+        title: "Selected items exchange position and size (select exactly two)",
+    },
+    {
+        id: "reflow", label: "Reflow (Keep Proportions)", icon: Scaling, min: 2,
+        title: "Rearrange within the bounding box, keeping each item's share of the space",
+    },
+    {
+        id: "grow", label: "Grow to Fill", icon: Expand,
+        title: "Grow the selection into the empty space around it",
+    },
+    {
+        id: "shiftLeft", label: "Shift Left", icon: ArrowLeftToLine,
+        title: "Slide the selected items left until they hit something",
+    },
+    {
+        id: "shiftRight", label: "Shift Right", icon: ArrowRightToLine,
+        title: "Slide the selected items right until they hit something",
+    },
+    {
+        id: "mirrorH", label: "Mirror Horizontally", icon: FlipHorizontal2, min: 2, noAnchors: true,
+        title: "Mirror the selected items' arrangement about their vertical middle",
+    },
+    {
+        id: "mirrorV", label: "Mirror Vertically", icon: FlipVertical2, min: 2, noAnchors: true,
+        title: "Mirror the selected items' arrangement about their horizontal middle",
+    },
+    {
+        id: "clearCrop", label: "Clear Auto-Crops", icon: Maximize,
+        title: "Remove the selected items' auto crops, letterboxing the full image",
+    },
+]
+const TOOLBAR_VERBS_KEY = "pinboardToolbarVerbs"
+const DEFAULT_TOOLBAR_VERBS = ["arrange", "swap"]
 
 export function PinBoard(
     {
@@ -389,7 +453,10 @@ export function PinBoard(
     const [autoLayout] = useGalleryPinAutoLayout()
     const [autoLayoutCrop] = useGalleryPinAutoCrop()
     const [selectionCrop, setSelectionCrop] = useGalleryPinSelectionCrop()
-    const { fillViewport, arrangeSelection, swapItems, autoCropSelection } = usePinboardLayoutActions({
+    const {
+        fillViewport, arrangeSelection, swapItems, autoCropSelection,
+        clearAutoCropSelection, growSelection, mirrorSelection, shiftSelection,
+    } = usePinboardLayoutActions({
         layout, crops, autoCrops, locks: itemLocks, highWater, dbs, grid,
         layoutAutoCrop: autoLayoutCrop,
         selectionAutoCrop: selectionCrop,
@@ -444,13 +511,22 @@ export function PinBoard(
     // selection — the drag grip below is the escape hatch for that).
     const toolbarRef = useRef<HTMLDivElement | null>(null)
     const [toolbarSize, setToolbarSize] = useState({ w: 320, h: 34 })
+    // ResizeObserver rather than a one-shot measure: the bar's width also
+    // changes while mounted (verbs pinned/unpinned from its dropdown), and
+    // the clamping math must always work with the real size
     useEffect(() => {
         const el = toolbarRef.current
         if (!el) return
-        const w = el.offsetWidth
-        const h = el.offsetHeight
-        setToolbarSize(s => (s.w === w && s.h === h) ? s : { w, h })
-    }, [selected.length])
+        const measure = () => {
+            const w = el.offsetWidth
+            const h = el.offsetHeight
+            setToolbarSize(s => (s.w === w && s.h === h) ? s : { w, h })
+        }
+        measure()
+        const ro = new ResizeObserver(measure)
+        ro.observe(el)
+        return () => ro.disconnect()
+    }, [selected.length > 0])
     // Manually parked position (from the drag grip). Any change to the
     // selection SET discards it and the automatic anchor takes over; pure
     // layout changes of the same selection keep it — the user moved the
@@ -1150,8 +1226,20 @@ export function PinBoard(
                         onGripDown={onToolbarGripDown}
                         count={selected.length}
                         cropOn={selectionCrop}
-                        onArrange={() => void arrangeSelection(selected)}
-                        onSwap={() => void swapItems(selected[0], selected[1])}
+                        selHasAnchor={selected.some(k => itemLocks[k] === "anchor")}
+                        onVerb={(id) => {
+                            switch (id) {
+                                case "arrange": void arrangeSelection(selected); break
+                                case "swap": void swapItems(selected[0], selected[1]); break
+                                case "reflow": void arrangeSelection(selected, true); break
+                                case "grow": void growSelection(selected); break
+                                case "shiftLeft": shiftSelection(selected, "left"); break
+                                case "shiftRight": shiftSelection(selected, "right"); break
+                                case "mirrorH": void mirrorSelection(selected, "horizontal"); break
+                                case "mirrorV": void mirrorSelection(selected, "vertical"); break
+                                case "clearCrop": clearAutoCropSelection(selected); break
+                            }
+                        }}
                         onLock={(lock) => setLockForKeys(selected, lock)}
                         onCropToggle={() => {
                             const next = !selectionCrop
@@ -1168,18 +1256,21 @@ export function PinBoard(
     )
 }
 
-// Floating verb bar shown while a selection exists. Lock/unlock apply to
-// every selected item in one record write; Arrange mosaics the selection
-// within its own bounding box; Swap needs exactly two items. Positioned by
-// the parent (anchored above the selection, or wherever the grip parked it).
+// Floating verb bar shown while a selection exists. All buttons are
+// icon-only (hover for the name — the icons match the ones used on the pin
+// overlays and menus): the pinned verbs first, then the crop toggle, the
+// lock management, the all-verbs dropdown and the clear button. Which
+// verbs are pinned onto the bar is chosen from the dropdown's per-row pin
+// toggles. Positioned by the parent (anchored above the selection, or
+// wherever the grip parked it).
 function SelectionToolbar({
     innerRef,
     style,
     onGripDown,
     count,
     cropOn,
-    onArrange,
-    onSwap,
+    selHasAnchor,
+    onVerb,
     onLock,
     onCropToggle,
     onClear,
@@ -1189,12 +1280,34 @@ function SelectionToolbar({
     onGripDown: (e: React.PointerEvent) => void
     count: number
     cropOn: boolean
-    onArrange: () => void
-    onSwap: () => void
+    // Whether the selection contains an anchored item (greys the mirrors)
+    selHasAnchor: boolean
+    onVerb: (id: string) => void
     onLock: (lock: PinLock) => void
     onCropToggle: () => void
     onClear: () => void
 }) {
+    const [pinned, setPinned] = useState<string[]>(DEFAULT_TOOLBAR_VERBS)
+    // localStorage is read after mount (the initializer also runs during
+    // SSR, where there is no storage); the bar only exists while a
+    // selection does, so the default never visibly flashes
+    useEffect(() => {
+        try {
+            const ids = JSON.parse(localStorage.getItem(TOOLBAR_VERBS_KEY) ?? "")
+            if (Array.isArray(ids)) {
+                setPinned(ids.filter(id => SELECTION_VERBS.some(v => v.id === id)))
+            }
+        } catch { /* absent or corrupted preference: keep the default */ }
+    }, [])
+    const togglePin = (id: string) => setPinned(prev => {
+        const next = prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
+        try { localStorage.setItem(TOOLBAR_VERBS_KEY, JSON.stringify(next)) } catch { }
+        return next
+    })
+    const verbDisabled = (v: SelectionVerb) =>
+        (v.exact !== undefined && count !== v.exact)
+        || (v.min !== undefined && count < v.min)
+        || (!!v.noAnchors && selHasAnchor)
     const btn = "rounded-full px-2.5 py-1 hover:bg-gray-200 disabled:opacity-40 disabled:hover:bg-transparent"
     return (
         <div
@@ -1215,33 +1328,102 @@ function SelectionToolbar({
                 <GripVertical className="w-4 h-4" />
             </div>
             <span className="font-medium mr-1 select-none">{count} selected</span>
-            <button className={btn} disabled={count < 2} onClick={onArrange}
-                title="Rearrange the selected items within their combined bounding box">
-                Arrange
-            </button>
-            <button className={btn} disabled={count !== 2} onClick={onSwap}
-                title="Selected items exchange position and size (select exactly two)">
-                Swap
-            </button>
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <button className={btn} title="All selection verbs">
+                        <ChevronDown className="w-4 h-4" />
+                    </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-64">
+                    {SELECTION_VERBS.map(v => {
+                        const disabled = verbDisabled(v)
+                        const isPinned = pinned.includes(v.id)
+                        return (
+                            // Not Radix-disabled even when the verb is: that
+                            // would make the row inert and unpinnable (e.g.
+                            // Swap could never leave the bar except with
+                            // exactly two items selected). The row just
+                            // looks disabled and ignores selects instead.
+                            <DropdownMenuItem key={v.id} title={v.title}
+                                onSelect={(e) => {
+                                    // A select that originated on the pin
+                                    // toggle is never a verb invocation —
+                                    // Radix fires select from pointerup, so
+                                    // this guard backs up the toggle's own
+                                    // propagation stops
+                                    const t = (e as CustomEvent<{ originalEvent?: Event }>)
+                                        .detail?.originalEvent?.target as HTMLElement | null
+                                    if (t?.closest?.("[data-pin-toggle]")) { e.preventDefault(); return }
+                                    if (disabled) { e.preventDefault(); return }
+                                    onVerb(v.id)
+                                }}
+                            >
+                                <span className={cn(
+                                    "flex items-center gap-2",
+                                    disabled && "opacity-40",
+                                )}>
+                                    <v.icon className="w-4 h-4" />
+                                    {v.label}
+                                </span>
+                                {/* A real checkbox look: empty outlined box
+                                    when unpinned, filled box with a check
+                                    when pinned — a same-glyph color change
+                                    alone reads as enabled either way */}
+                                <button
+                                    data-pin-toggle
+                                    className="ml-auto rounded p-0.5 hover:bg-gray-200"
+                                    title={isPinned
+                                        ? "Shown on the toolbar — click to remove"
+                                        : "Show directly on the toolbar"}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onPointerUp={(e) => { e.preventDefault(); e.stopPropagation() }}
+                                    onClick={(e) => {
+                                        // Keep the menu open: the click must
+                                        // not reach the row's select handling
+                                        e.preventDefault()
+                                        e.stopPropagation()
+                                        togglePin(v.id)
+                                    }}
+                                >
+                                    <span className={cn(
+                                        "flex h-4 w-4 items-center justify-center rounded border",
+                                        isPinned
+                                            ? "border-blue-600 bg-blue-600 text-white"
+                                            : "border-gray-400 text-transparent hover:border-gray-600",
+                                    )}>
+                                        <Check className="w-3 h-3" />
+                                    </span>
+                                </button>
+                            </DropdownMenuItem>
+                        )
+                    })}
+                </DropdownMenuContent>
+            </DropdownMenu>
+            {SELECTION_VERBS.filter(v => pinned.includes(v.id)).map(v => (
+                <button key={v.id} className={btn} disabled={verbDisabled(v)}
+                    onClick={() => onVerb(v.id)} title={v.title}>
+                    <v.icon className="w-4 h-4" />
+                </button>
+            ))}
             <button
                 className={cn(btn, cropOn && "bg-blue-100 text-blue-700 hover:bg-blue-200")}
                 onClick={onCropToggle}
                 title={cropOn
-                    ? "Arrange and Swap crop items to their cells. Click to turn off (existing crops stay until a verb resizes their cell)"
-                    : "Arrange and Swap leave items letterboxed. Click to turn on and crop the selection to its cells now"}
+                    ? "Selection verbs crop items to their cells. Click to turn off (existing crops stay until a verb resizes their cell)"
+                    : "Selection verbs leave items letterboxed. Click to turn on and crop the selection to its cells now"}
             >
                 <Crop className="w-4 h-4" />
             </button>
             <button className={btn} onClick={() => onLock("anchor")}
                 title="Anchor in place: position and size fixed, layouts pack around them">
-                Anchor
+                <Anchor className="w-4 h-4" />
             </button>
             <button className={btn} onClick={() => onLock("size")}
                 title="Lock size: items keep their size but may be moved">
-                Lock Size
+                <Ruler className="w-4 h-4" />
             </button>
             <button className={btn} onClick={() => onLock(null)} title="Remove locks">
-                Unlock
+                <LockOpen className="w-4 h-4" />
             </button>
             <button className={btn} onClick={onClear} title="Clear selection (Esc)">
                 <X className="w-4 h-4" />

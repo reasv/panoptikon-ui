@@ -12,6 +12,7 @@ import {
     evictFromBox,
     groupRowsByOverlap,
     growToFill,
+    growToFillInBox,
     justifyRows,
     packMosaic,
     packRegion,
@@ -97,7 +98,9 @@ export function usePinboardLayoutActions({
     }
 
     const isLocked = (key: string) => !!locks[key]
+    const isAnchored = (key: string) => locks[key] === "anchor"
     const hasLocks = layout.some(l => isLocked(l.i))
+    const hasAnchors = layout.some(l => isAnchored(l.i))
 
     async function changeLayout(itemsPerRow: number, restrictToVisible = false) {
         // Rebuilds the whole board row by row from scratch; it cannot hold
@@ -401,7 +404,9 @@ export function usePinboardLayoutActions({
     // items apart, scattering the board. (The compactor may still settle
     // the arranged block upward if there is free space above it, as with
     // every arrangement verb.)
-    async function arrangeSelection(keys: string[]) {
+    // With keepProportions ("Reflow Selection") each item aims at its
+    // current share of the box area instead of a uniform share.
+    async function arrangeSelection(keys: string[], keepProportions = false) {
         const buildData = await ensureBuildData()
         if (!buildData) return
         const keySet = new Set(keys)
@@ -437,6 +442,7 @@ export function usePinboardLayoutActions({
             columnWidth: buildData.columnWidth,
             box,
             variant: mosaicVariant,
+            weights: keepProportions ? participants.map(l => l.w * l.h) : undefined,
             ...mins,
         })
         if (packed.length === 0) return
@@ -524,21 +530,202 @@ export function usePinboardLayoutActions({
         for (const l of layout) overrides[l.i] = null
         onLayoutChange(layout, overrides)
     }
-    // One-time horizontal "gravity": slide every item to the left/right/center
-    // of its row without resizing. Pure x repacking, so no build data needed.
-    // Moves every item in a row, which cannot hold a locked item in place —
-    // so with locks present it must not run (same for mirror below).
+    // The same restricted to the selection: the counterpart of the
+    // toolbar's crop-now, for un-cropping just the selected items
+    function clearAutoCropSelection(keys: string[]) {
+        const overrides: Record<string, CropRect | null> = {}
+        for (const key of keys) overrides[key] = null
+        onLayoutChange(layout, overrides)
+    }
+    // One-time horizontal "gravity": items slide left/right until they hit
+    // the board edge, an anchored item, or another settled item — so
+    // anchors just hold their ground and everything else packs against
+    // them. Pure x sliding without resizing, so no build data needed. On an
+    // anchor-free board this lands every row flush, same as the old whole-
+    // row repack. Center has no gravity direction (it packs whole rows
+    // flush about their middle), so it alone still needs an anchor-free
+    // board. Size locks never matter here: nothing changes size.
     function shiftLayout(mode: ShiftMode) {
-        if (hasLocks) return
-        onLayoutChange(shiftLayoutHorizontally(layout, mode, grid.columns))
+        if (mode === "center") {
+            if (hasAnchors) return
+            onLayoutChange(shiftLayoutHorizontally(layout, mode, grid.columns))
+            return
+        }
+        const movable = new Set(layout.filter(l => !isAnchored(l.i)).map(l => l.i))
+        onLayoutChange(gravityShiftLayout(layout, mode, grid.columns, movable))
+    }
+    // The same gravity restricted to the selection: only selected items
+    // fall, and they stop at ANY other item — so nothing outside the
+    // selection ever moves. Anchored items inside the selection simply
+    // stay put as obstacles.
+    function shiftSelection(keys: string[], dir: "left" | "right") {
+        const movable = new Set(keys.filter(k => !isAnchored(k)))
+        if (movable.size === 0) return
+        onLayoutChange(gravityShiftLayout(layout, dir, grid.columns, movable))
     }
     // Mirror the arrangement (not the images) about the centre of the items'
     // own bounding box, so the group stays put and items swap places. A
     // grid-wide flip is this plus a Shift. Vertical is inherently swap-only:
     // the grid re-compacts upward, so the mirrored rows just settle back.
+    // A flip is a rigid bijection — an anchored item is a fixed point off
+    // the axis and breaks it, so anchors disable this. Size locks don't:
+    // mirroring moves items but never resizes them.
     function mirrorLayout(axis: MirrorAxis) {
-        if (hasLocks) return
+        if (hasAnchors) return
         onLayoutChange(mirrorLayoutArrangement(layout, axis))
+    }
+    // Mirror the selected items about the centre of their bounding box,
+    // touching nothing outside the selection. The flip keeps the selected
+    // rects disjoint from EACH OTHER (it's rigid), so the only conflicts
+    // are with non-selected geometry poking into the mirrored silhouette —
+    // the flipped puzzle piece needn't fit its old hole. Conflicts are
+    // resolved per item and only ever at the selection's expense: clip the
+    // mirrored rect away from whatever it overlaps, edge by edge, keeping
+    // the largest remainder; when clipping can't reach the minimum size
+    // (or the item is size-locked and may not shrink), drop it straight
+    // down from its mirrored spot to the first free row instead. Anchored
+    // items IN the selection can't flip (fixed point off the axis), so
+    // they disable the verb; anchors outside the selection are irrelevant.
+    async function mirrorSelection(keys: string[], axis: MirrorAxis) {
+        const keySet = new Set(keys)
+        const selectedItems = layout.filter(l => keySet.has(l.i))
+        if (selectedItems.length < 2) return
+        if (selectedItems.some(l => isAnchored(l.i))) return
+        const buildData = await ensureBuildData()
+        if (!buildData) return
+        const { minW, minH } = minPinUnits(grid, buildData.columnWidth)
+        const lo = axis === "horizontal"
+            ? Math.min(...selectedItems.map(l => l.x))
+            : Math.min(...selectedItems.map(l => l.y))
+        const hi = axis === "horizontal"
+            ? Math.max(...selectedItems.map(l => l.x + l.w))
+            : Math.max(...selectedItems.map(l => l.y + l.h))
+        const flip = (l: LayoutItem): LayoutItem => axis === "horizontal"
+            ? { ...l, x: lo + hi - (l.x + l.w) }
+            : { ...l, y: lo + hi - (l.y + l.h) }
+        const overlapping = (a: GridRect, b: GridRect) =>
+            a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+        // Everything already placed is solid: non-selected items always,
+        // plus each mirrored item once it's resolved
+        const solid: GridRect[] = layout
+            .filter(l => !keySet.has(l.i))
+            .map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h }))
+        const resolved: LayoutItem[] = []
+        const mirrored = selectedItems.map(flip)
+            .sort((a, b) => a.y - b.y || a.x - b.x)
+        for (const m of mirrored) {
+            const r = { x: m.x, y: m.y, w: m.w, h: m.h }
+            const canResize = locks[m.i] !== "size"
+            let fits = false
+            for (; ;) {
+                const hit = solid.find(o => overlapping(r, o))
+                if (!hit) { fits = true; break }
+                if (!canResize) break
+                // Four ways to clear this conflict; keep the biggest rect
+                // that still meets the minimums
+                const options = [
+                    { x: hit.x + hit.w, y: r.y, w: r.x + r.w - (hit.x + hit.w), h: r.h },
+                    { x: r.x, y: r.y, w: hit.x - r.x, h: r.h },
+                    { x: r.x, y: hit.y + hit.h, w: r.w, h: r.y + r.h - (hit.y + hit.h) },
+                    { x: r.x, y: r.y, w: r.w, h: hit.y - r.y },
+                ].filter(o => o.w >= minW && o.h >= minH)
+                if (options.length === 0) break
+                const best = options.reduce((a, b) => a.w * a.h >= b.w * b.h ? a : b)
+                r.x = best.x; r.y = best.y; r.w = best.w; r.h = best.h
+            }
+            if (!fits) {
+                // Drop: keep the mirrored x and size, slide down past every
+                // conflict to the first free row (the board is open-ended
+                // below, so this always succeeds)
+                r.w = m.w; r.h = m.h; r.x = m.x; r.y = m.y
+                for (; ;) {
+                    const hit = solid.find(o => overlapping(r, o))
+                    if (!hit) break
+                    r.y = hit.y + hit.h
+                }
+            }
+            resolved.push({ ...m, ...r })
+            solid.push(r)
+        }
+        const byKey = new Map(resolved.map(l => [l.i, l]))
+        const newLayout = layout.map(l => byKey.get(l.i) ?? l)
+        onLayoutChange(newLayout,
+            verbAutoCrops(buildData, newLayout, keySet, selectionAutoCrop))
+    }
+    // Grow the selection into the empty space around it. The bounding box
+    // expands sideways along the selection's own rows until it meets the
+    // board edge or a non-selected item, then up and down over that full
+    // width the same way — so by construction the added bands are empty,
+    // and the only obstacles are things that already poked into the
+    // original bbox (plus locked selected items, which stay exactly in
+    // place). The bottom edge, where the board is open-ended, grows to the
+    // fills' own target line (fold or ratchet) instead of forever.
+    // Obstacle-free selections keep their arrangement: structure recovery
+    // re-solves sizes only. With obstacles the structure can't survive, so
+    // the selection reflows around them in reading order, each item aiming
+    // at its current share of the area.
+    async function growSelection(keys: string[]) {
+        const buildData = await ensureBuildData()
+        if (!buildData) return
+        const keySet = new Set(keys)
+        const selectedItems = buildData.sortedLayout.filter(l => keySet.has(l.i))
+        const participants = selectedItems.filter(l => !isLocked(l.i))
+        if (participants.length === 0) return
+        const x0 = Math.min(...selectedItems.map(l => l.x))
+        const y0 = Math.min(...selectedItems.map(l => l.y))
+        const x1 = Math.max(...selectedItems.map(l => l.x + l.w))
+        const y1 = Math.max(...selectedItems.map(l => l.y + l.h))
+        const fixed = layout.filter(l => !keySet.has(l.i))
+        // Sideways: bounded by items overlapping the bbox's own rows
+        let left = 0, right = grid.columns
+        for (const o of fixed) {
+            if (o.y < y1 && y0 < o.y + o.h) {
+                if (o.x + o.w <= x0) left = Math.max(left, o.x + o.w)
+                else if (o.x >= x1) right = Math.min(right, o.x)
+            }
+        }
+        // Vertically: bounded by items overlapping the EXPANDED width, so
+        // diagonal neighbors bound the bands rather than sit inside them
+        let top = 0
+        let bottom = Math.max(targetRows(buildData), y1)
+        for (const o of fixed) {
+            if (o.x < right && o.x + o.w > left) {
+                if (o.y + o.h <= y0) top = Math.max(top, o.y + o.h)
+                else if (o.y >= y1) bottom = Math.min(bottom, o.y)
+            }
+        }
+        bottom = Math.max(bottom, y1)
+        const box = { x: left, y: top, w: right - left, h: bottom - top }
+        const mins = minPinUnits(grid, buildData.columnWidth)
+        const obstacles = [
+            ...selectedItems.filter(l => isLocked(l.i)),
+            ...fixed.filter(l =>
+                l.x < x1 && l.x + l.w > x0 && l.y < y1 && l.y + l.h > y0),
+        ].map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h }))
+        const packedKeys = new Set(participants.map(l => l.i))
+        const rest = layout.filter(l => !packedKeys.has(l.i))
+        const packed = obstacles.length > 0
+            ? packRegionInBox({
+                items: participants.map(l => toPackItem(buildData, l)),
+                obstacles, grid,
+                columnWidth: buildData.columnWidth,
+                box, variant: mosaicVariant,
+                weights: participants.map(l => l.w * l.h),
+                ...mins,
+            })
+            : growToFillInBox({
+                items: participants.map(l => ({
+                    ...toPackItem(buildData, l), x: l.x, y: l.y, w: l.w, h: l.h,
+                })),
+                grid,
+                columnWidth: buildData.columnWidth,
+                box,
+                ...mins,
+            })
+        if (packed.length === 0) return
+        const newLayout = [...packed, ...rest]
+        onLayoutChange(newLayout,
+            verbAutoCrops(buildData, newLayout, packedKeys, selectionAutoCrop))
     }
 
     return {
@@ -552,17 +739,23 @@ export function usePinboardLayoutActions({
         changeItemSize,
         setItemSize,
         shiftLayout,
+        shiftSelection,
         mirrorLayout,
+        mirrorSelection,
         rerollLayout,
         refitToView,
         reflowKeepProportions,
         growInPlace,
+        growSelection,
         swapItems,
         arrangeSelection,
         autoCropSelection,
-        // Whether any item is locked — the menu greys out the verbs that
-        // no-op with locks present
+        clearAutoCropSelection,
+        // Lock presence flags for the menus: hasLocks greys the verbs that
+        // rebuild whole rows (any lock breaks them), hasAnchors the ones
+        // that only a fixed position breaks (center, mirror)
         hasLocks,
+        hasAnchors,
     }
 }
 
@@ -735,6 +928,48 @@ function shiftLayoutHorizontally(
         }
     }
     return result
+}
+
+// One-time horizontal gravity: each movable item slides toward the given
+// edge until it hits the board border, a non-movable item, or a movable one
+// that already settled. Sizes and rows never change, and non-movable items
+// never move — which makes the same routine serve both the global shift
+// (movable = everything not anchored) and the selection shift (movable =
+// the selection, so everything else is an obstacle). Movers are processed
+// edge-first so they can't leapfrog each other; within a row that
+// preserves their order, since disjoint rects are ordered both by x and by
+// their leading edge.
+function gravityShiftLayout(
+    layout: LayoutItem[],
+    dir: "left" | "right",
+    columns: number,
+    movableKeys: Set<string>,
+): LayoutItem[] {
+    const settled = layout.filter(l => !movableKeys.has(l.i)).map(l => ({ ...l }))
+    const movers = layout.filter(l => movableKeys.has(l.i)).map(l => ({ ...l }))
+        .sort((a, b) => dir === "left" ? a.x - b.x : b.x - a.x)
+    for (const l of movers) {
+        if (dir === "left") {
+            let edge = 0
+            for (const o of settled) {
+                if (o.y < l.y + l.h && l.y < o.y + o.h && o.x + o.w <= l.x) {
+                    edge = Math.max(edge, o.x + o.w)
+                }
+            }
+            l.x = edge
+        } else {
+            let edge = columns
+            for (const o of settled) {
+                if (o.y < l.y + l.h && l.y < o.y + o.h && o.x >= l.x + l.w) {
+                    edge = Math.min(edge, o.x)
+                }
+            }
+            l.x = edge - l.w
+        }
+        settled.push(l)
+    }
+    const byKey = new Map(settled.map(l => [l.i, l]))
+    return layout.map(l => byKey.get(l.i)!)
 }
 
 export type MirrorAxis = "horizontal" | "vertical"
