@@ -1019,6 +1019,7 @@ export interface paths {
         /**
          * Save a new version of a pinboard
          * @description Appends a new version and moves the board's head to it. If the layout is byte-identical to the current head, no version is created and the response has `no_op: true`.
+         *     Board-level `flags` are stored on the board itself in either case (never creating a version); `flags_updated` reports whether they changed, so a settings-only save is a flag update with `no_op: true`.
          *     The version snapshots the board's current name as its name-at-save.
          */
         post: operations["save_pinboard_version"];
@@ -1237,8 +1238,10 @@ export interface components {
         };
         /** @description Response of `GET /cache/{cache_key}`. */
         CacheKeyResponse: {
-            /** @description inference_id -> ISO-8601 expiration; never-expiring entries
-             *     (ttl -1) render as `9999-12-31T23:59:59.999999`. */
+            /**
+             * @description inference_id -> ISO-8601 expiration; never-expiring entries
+             *     (ttl -1) render as `9999-12-31T23:59:59.999999`.
+             */
             expirations: {
                 [key: string]: string;
             };
@@ -1253,11 +1256,13 @@ export interface components {
         CancelResponse: {
             detail: string;
         };
-        /** @description Coarse feature switches derived from the matched policy's ruleset. Each
+        /**
+         * @description Coarse feature switches derived from the matched policy's ruleset. Each
          *     capability is one representative probe from the real route list in
          *     main.rs, evaluated with the exact rule-matching code enforcement uses
          *     (`policy::ruleset_allows`) — true means the probe request would pass the
-         *     ruleset gate. */
+         *     ruleset gate.
+         */
         ClientCapabilities: {
             /** @description PUT /api/bookmarks/ns/{namespace}/{sha256} */
             bookmarks: boolean;
@@ -1279,16 +1284,22 @@ export interface components {
         ClientConfigResponse: {
             /** @description Ruleset-derived feature switches (see ClientCapabilities). */
             capabilities: components["schemas"]["ClientCapabilities"];
-            /** @description The policy's `[policies.client]` table, verbatim (empty object when
+            /**
+             * @description The policy's `[policies.client]` table, verbatim (empty object when
              *     unset). Free-form; recognized-by-convention keys include
              *     `search_throttle_ms`, `disable_backend_open`, and `relay_enabled`
-             *     (Relay is enabled when the key is absent). */
+             *     (Relay is enabled when the key is absent).
+             */
             client: unknown;
-            /** @description True only when this Server process is the bundled sidecar owned by
-             *     Panoptikon Desktop and the matched policy opts into Desktop authority. */
+            /**
+             * @description True only when this Server process is the bundled sidecar owned by
+             *     Panoptikon Desktop and the matched policy opts into Desktop authority.
+             */
             desktop_managed: boolean;
-            /** @description True only for a policy explicitly marked as the local Desktop client
-             *     while the private parent-shell bridge is configured. */
+            /**
+             * @description True only for a policy explicitly marked as the local Desktop client
+             *     while the private parent-shell bridge is configured.
+             */
             desktop_shell_available: boolean;
             /** @description Name of the policy that matched this request. */
             policy: string;
@@ -1311,30 +1322,40 @@ export interface components {
          */
         ContinuousScanMode: "watcher" | "poller";
         ContinuousScanStatusResponse: {
-            /** @description Whether the scanner is currently watching for changes. False when
+            /**
+             * @description Whether the scanner is currently watching for changes. False when
              *     disabled, while paused for a running job, or when the configured
-             *     watched folders produced no valid watch roots. */
+             *     watched folders produced no valid watch roots.
+             */
             active: boolean;
             /** @description Whether continuous scanning is enabled in this database's config. */
             enabled: boolean;
-            /** @description Configured watched folders that were rejected because they are not
-             *     inside an included folder or fall under an excluded folder. */
+            /**
+             * @description Configured watched folders that were rejected because they are not
+             *     inside an included folder or fall under an excluded folder.
+             */
             invalid_includes: string[];
             /** @description Change-detection mode from the configuration. */
             mode: components["schemas"]["ContinuousScanMode"];
-            /** @description Whether the scanner is temporarily paused while a job runs on this
-             *     database. It resumes automatically when the job finishes. */
+            /**
+             * @description Whether the scanner is temporarily paused while a job runs on this
+             *     database. It resumes automatically when the job finishes.
+             */
             paused_for_job: boolean;
             /**
              * Format: int64
              * @description Poll interval in effect when `mode` is `poller`.
              */
             poll_interval_secs?: number | null;
-            /** @description False when every configured watched folder was rejected; continuous
-             *     scanning is inactive in that case even when enabled. */
+            /**
+             * @description False when every configured watched folder was rejected; continuous
+             *     scanning is inactive in that case even when enabled.
+             */
             roots_valid: boolean;
-            /** @description The folder roots being watched for changes (the global included
-             *     folders when no continuous watched folders are configured). */
+            /**
+             * @description The folder roots being watched for changes (the global included
+             *     folders when no continuous watched folders are configured).
+             */
             watch_roots: string[];
         };
         CreatePinboardRequest: components["schemas"]["SaveVersionRequest"] & {
@@ -1356,8 +1377,10 @@ export interface components {
             cron_schedule: string;
             /** @description Whether automatic cron runs are enabled for this database. */
             enabled: boolean;
-            /** @description Last automatic run fired by this process (RFC 3339, local time).
-             *     Manual triggers are not included. */
+            /**
+             * @description Last automatic run fired by this process (RFC 3339, local time).
+             *     Manual triggers are not included.
+             */
             last_run?: string | null;
             /** @description Next automatic run (RFC 3339, local time), when scheduling is active. */
             next_run?: string | null;
@@ -1425,8 +1448,10 @@ export interface components {
         };
         DesktopSetupCompleteResponse: {
             index_db: string;
-            /** @description The immediate first run: full rescan followed by configured models.
-             *     Empty only when an earlier cron-style run for this DB is still active. */
+            /**
+             * @description The immediate first run: full rescan followed by configured models.
+             *     Empty only when an earlier cron-style run for this DB is still active.
+             */
             jobs: components["schemas"]["JobModel"][];
         };
         DesktopSetupStatus: {
@@ -1446,9 +1471,11 @@ export interface components {
         /** @enum {string} */
         DistanceFunction: "L2" | "COSINE";
         EmbedArgs: {
-            /** @description Cache Key
+            /**
+             * @description Cache Key
              *
-             *     The cache key to use for the inference *model* */
+             *     The cache key to use for the inference *model*
+             */
             cache_key?: string;
             /**
              * Format: int64
@@ -1479,9 +1506,11 @@ export interface components {
         };
         /** @enum {string} */
         EntityType: "file" | "text";
-        /** @description The single error body shape every gateway error path serializes.
+        /**
+         * @description The single error body shape every gateway error path serializes.
          *     (Unlike FastAPI there is no structured 422 validation body: axum
-         *     extractor rejections and all `ApiError`s use this `detail` string.) */
+         *     extractor rejections and all `ApiError`s use this `detail` string.)
+         */
         ErrorBody: {
             detail: string;
         };
@@ -1586,20 +1615,26 @@ export interface components {
             /** @description Item must have item_data of given types that has not been processed by the given setter name */
             has_data_unprocessed: components["schemas"]["DerivedDataArgs"];
         };
-        /** @description `GET /health` response (design §7, additive — Python has no such
+        /**
+         * @description `GET /health` response (design §7, additive — Python has no such
          *     endpoint, so this shape is ours to define). Serialized as-is by the HTTP
-         *     layer; `Deserialize` exists so tests can round-trip the wire shape. */
+         *     layer; `Deserialize` exists so tests can round-trip the wire shape.
+         */
         HealthReport: {
             /** @description Number of loaded models (== `models.len()`). */
             model_count: number;
             /** @description Per loaded model liveness/queue snapshot, sorted by inference_id. */
             models: components["schemas"]["ModelHealth"][];
-            /** @description Prewarm pool snapshot (design §8): master/lazy switches plus one
+            /**
+             * @description Prewarm pool snapshot (design §8): master/lazy switches plus one
              *     entry per impl class held (state "warm" | "spawning" |
-             *     "failed_prepare"). */
+             *     "failed_prepare").
+             */
             prewarm: components["schemas"]["PrewarmHealth"];
-            /** @description Whether the inference registry currently loads (see `health()` docs
-             *     for exactly what this checks). */
+            /**
+             * @description Whether the inference registry currently loads (see `health()` docs
+             *     for exactly what this checks).
+             */
             registry_ok: boolean;
             /** @description Same signal as `status`, machine-friendly. */
             shutting_down: boolean;
@@ -1607,40 +1642,54 @@ export interface components {
             status: string;
         };
         InBookmarks: components["schemas"]["SortableOptions"] & {
-            /** @description Restrict search to Bookmarks
+            /**
+             * @description Restrict search to Bookmarks
              *
-             *     Only include items that are bookmarked. */
+             *     Only include items that are bookmarked.
+             */
             in_bookmarks: components["schemas"]["InBookmarksArgs"];
         };
         InBookmarksArgs: {
-            /** @description Enable the filter
+            /**
+             * @description Enable the filter
              *
              *     Must be set to True, this option only exists to make sure the filter is not empty,
-             *     given that that all fields are optional. */
+             *     given that that all fields are optional.
+             */
             filter?: boolean;
-            /** @description Include Wildcard User
+            /**
+             * @description Include Wildcard User
              *
-             *     Include bookmarks set to the wildcard user ('*'). */
+             *     Include bookmarks set to the wildcard user ('*').
+             */
             include_wildcard?: boolean;
-            /** @description Bookmark Namespaces
+            /**
+             * @description Bookmark Namespaces
              *
              *     List of bookmark namespaces to filter by. If sub_ns is set to True, the filter will also
              *     include all sub-namespaces of the given namespaces (ie, namespace.*).
-             *     If empty, all bookmarks will be included. */
+             *     If empty, all bookmarks will be included.
+             */
             namespaces?: string[];
-            /** @description Include Sub-namespaces
+            /**
+             * @description Include Sub-namespaces
              *
-             *     Include all sub-namespaces of the given namespaces (namespace.*). */
+             *     Include all sub-namespaces of the given namespaces (namespace.*).
+             */
             sub_ns?: boolean;
             user?: string;
         };
         /** @description Multipart form body of `POST /predict/{group}/{inference_id}`. */
         InferencePredictRequest: {
-            /** @description JSON string of the batch: `{"inputs": [...]}` where each entry is an
-             *     object, a string, or null (null = file-only input). */
+            /**
+             * @description JSON string of the batch: `{"inputs": [...]}` where each entry is an
+             *     object, a string, or null (null = file-only input).
+             */
             data: string;
-            /** @description Binary batch inputs. Each part's *filename* must be the integer
-             *     index of the `inputs` entry it attaches to. */
+            /**
+             * @description Binary batch inputs. Each part's *filename* must be the integer
+             *     index of the `inputs` entry it attaches to.
+             */
             files?: components["schemas"]["BinaryBlob"][] | null;
         };
         ItemBookmarks: {
@@ -1756,10 +1805,12 @@ export interface components {
             video_files: number;
         };
         Match: {
-            /** @description The match operations to apply. Match filters operate on key-value pairs representing
+            /**
+             * @description The match operations to apply. Match filters operate on key-value pairs representing
              *     the primitive attributes of items, files, and extracted data.
              *     For example, a match filter can be used to filter items
-             *     based on their type, size, or the path of the file they are associated with. */
+             *     based on their type, size, or the path of the file they are associated with.
+             */
             match: components["schemas"]["Matches"];
         };
         MatchAnd: {
@@ -1788,35 +1839,44 @@ export interface components {
             or_: components["schemas"]["MatchOps"][];
         };
         MatchPath: components["schemas"]["SortableOptions"] & {
-            /** @description Match Path
+            /**
+             * @description Match Path
              *
-             *     Match a query against file paths */
+             *     Match a query against file paths
+             */
             match_path: components["schemas"]["MatchPathArgs"];
         };
         MatchPathArgs: {
             /** @description Match on filenames Only */
             filename_only?: boolean;
-            /** @description Match
+            /**
+             * @description Match
              *
-             *     The query to match against file paths */
+             *     The query to match against file paths
+             */
             match: string;
-            /** @description Allow raw FTS5 MATCH Syntax
+            /**
+             * @description Allow raw FTS5 MATCH Syntax
              *
-             *     If set to False, the query will be escaped before being passed to the FTS5 MATCH function */
+             *     If set to False, the query will be escaped before being passed to the FTS5 MATCH function
+             */
             raw_fts5_match?: boolean;
         };
         MatchTags: components["schemas"]["SortableOptions"] & {
             match_tags: components["schemas"]["TagsArgs"];
         };
         MatchText: components["schemas"]["SortableOptions"] & {
-            /** @description Match Extracted Text
+            /**
+             * @description Match Extracted Text
              *
              *     Match a query against text extracted from files or associated with them,
-             *     including tags and OCR text */
+             *     including tags and OCR text
+             */
             match_text: components["schemas"]["MatchTextArgs"];
         };
         MatchTextArgs: {
-            /** @description Filter Only
+            /**
+             * @description Filter Only
              *
              *     Only filter out text based on the other criteria,
              *     without actually matching the query.
@@ -1825,15 +1885,20 @@ export interface components {
              *     Order by, select_as, and row_n will also be ignored.
              *
              *     If set to False (default), and the match field is empty,
-             *     this filter will be skipped entirely. */
+             *     this filter will be skipped entirely.
+             */
             filter_only?: boolean;
-            /** @description Included languages
+            /**
+             * @description Included languages
              *
-             *     Filter out text that is not in these languages */
+             *     Filter out text that is not in these languages
+             */
             languages?: string[];
-            /** @description Match
+            /**
+             * @description Match
              *
-             *     The query to match against text */
+             *     The query to match against text
+             */
             match: string;
             /**
              * Format: int64
@@ -1868,17 +1933,23 @@ export interface components {
              *     Filter out text that is shorter than this. Inclusive.
              */
             min_length?: number | null;
-            /** @description Allow raw FTS5 MATCH Syntax
+            /**
+             * @description Allow raw FTS5 MATCH Syntax
              *
-             *     If set to False, the query will be escaped before being passed to the FTS5 MATCH function */
+             *     If set to False, the query will be escaped before being passed to the FTS5 MATCH function
+             */
             raw_fts5_match?: boolean;
-            /** @description Snippet Ellipsis
+            /**
+             * @description Snippet Ellipsis
              *
-             *     The ellipsis to use when truncating the snippet */
+             *     The ellipsis to use when truncating the snippet
+             */
             s_ellipsis?: string;
-            /** @description Snippet End Tag
+            /**
+             * @description Snippet End Tag
              *
-             *     The tag to use at the end of the snippet */
+             *     The tag to use at the end of the snippet
+             */
             s_end_tag?: string;
             /**
              * Format: int64
@@ -1887,22 +1958,28 @@ export interface components {
              *     The maximum length (in tokens) of the snippet returned by select_snippet_as
              */
             s_max_len?: number;
-            /** @description Snippet Start Tag
+            /**
+             * @description Snippet Start Tag
              *
-             *     The tag to use at the beginning of the snippet */
+             *     The tag to use at the beginning of the snippet
+             */
             s_start_tag?: string;
-            /** @description Return matching text snippet
+            /**
+             * @description Return matching text snippet
              *
              *     If set, the best matching text *snippet* will be included in the `extra` dict of each result under this key.
              *     Works with any type of query, but it's best used with text-* queries.
              *
-             *     Otherwise, it's somewhat slow because of the contortions needed to get the best snippet per file. */
+             *     Otherwise, it's somewhat slow because of the contortions needed to get the best snippet per file.
+             */
             select_snippet_as?: string | null;
-            /** @description Include text from these setters
+            /**
+             * @description Include text from these setters
              *
              *     Filter out text that is was not set by these setters.
              *     The setters are usually the names of the models that extracted or generated the text.
-             *     For example, the OCR model, the Whisper STT model, the captioning model or the tagger model. */
+             *     For example, the OCR model, the Whisper STT model, the captioning model or the tagger model.
+             */
             setters?: string[];
         };
         MatchValue: {
@@ -1982,9 +2059,11 @@ export interface components {
             video_tracks?: null | components["schemas"]["OneOrMany_i64"];
             width?: null | components["schemas"]["OneOrMany_i64"];
         };
-        /** @description Untagged: variants are tried in order, so `Ops` must come last and deny
+        /**
+         * @description Untagged: variants are tried in order, so `Ops` must come last and deny
          *     unknown fields — it would otherwise match any JSON object (all its fields
-         *     are optional) and swallow `and_`/`or_`/`not_` trees as an empty no-op. */
+         *     are optional) and swallow `and_`/`or_`/`not_` trees as an empty no-op.
+         */
         Matches: components["schemas"]["MatchAnd"] | components["schemas"]["MatchOr"] | components["schemas"]["MatchNot"] | components["schemas"]["MatchOps"];
         MessageResult: {
             message: string;
@@ -2009,8 +2088,10 @@ export interface components {
             last_effective_cap?: number | null;
             /** @description Requests waiting in the model's FIFO queue. */
             queue_depth: number;
-            /** @description WorkerSet occupancy: `free < total` means replicas are running
-             *     windows right now. */
+            /**
+             * @description WorkerSet occupancy: `free < total` means replicas are running
+             *     windows right now.
+             */
             replicas: components["schemas"]["ReplicaHealth"];
             /**
              * Format: int64
@@ -2054,8 +2135,10 @@ export interface components {
         /** @enum {string} */
         OrderDirection: "asc" | "desc";
         PinboardDeleteResponse: {
-            /** @description True when the operation removed the board itself (deleting its last
-             *     version, or DELETE on the board). */
+            /**
+             * @description True when the operation removed the board itself (deleting its last
+             *     version, or DELETE on the board).
+             */
             deleted_board: boolean;
             message: string;
             /**
@@ -2065,6 +2148,12 @@ export interface components {
             new_head_version_id?: number | null;
         };
         PinboardDetailResponse: {
+            /**
+             * @description The board's stored editing-behavior flags, verbatim as last saved.
+             *     Null for boards saved before flags existed; the UI treats that as
+             *     its codec defaults.
+             */
+            flags?: unknown;
             head?: null | components["schemas"]["PinboardVersionResponse"];
             /** Format: int64 */
             id: number;
@@ -2117,16 +2206,20 @@ export interface components {
             versions: components["schemas"]["PinboardVersionResponse"][];
         };
         PqlBuildResponse: {
-            /** @description Check Paths Exist
+            /**
+             * @description Check Paths Exist
              *
-             *     Whether to validate paths after executing search queries. */
+             *     Whether to validate paths after executing search queries.
+             */
             check_path?: boolean;
             compiled_count_query?: null | components["schemas"]["CompiledQuery"];
             compiled_query?: null | components["schemas"]["CompiledQuery"];
             count_metrics: components["schemas"]["SearchMetrics"];
-            /** @description Extra Column Aliases
+            /**
+             * @description Extra Column Aliases
              *
-             *     Mapping of SQL column labels to their user-facing aliases. */
+             *     Mapping of SQL column labels to their user-facing aliases.
+             */
             extra_columns?: {
                 [key: string]: string;
             };
@@ -2223,11 +2316,15 @@ export interface components {
              */
             select?: components["schemas"]["Column"][];
         };
-        /** @description JSON envelope of a predict response (used whenever the outputs are not
-         *     all binary). */
+        /**
+         * @description JSON envelope of a predict response (used whenever the outputs are not
+         *     all binary).
+         */
         PredictJsonResponse: {
-            /** @description One output per input; binary outputs are wrapped as
-             *     `{"__type__": "base64", "content": "<base64>"}`. */
+            /**
+             * @description One output per input; binary outputs are wrapped as
+             *     `{"__type__": "base64", "content": "<base64>"}`.
+             */
             outputs: components["schemas"]["Value"][];
         };
         /** @description `prewarm` section of the `GET /health` report. */
@@ -2239,9 +2336,11 @@ export interface components {
         };
         PrewarmWorkerHealth: {
             impl_class: string;
-            /** @description `"warm"` (parked, prepare() succeeded or was absent), `"spawning"`
+            /**
+             * @description `"warm"` (parked, prepare() succeeded or was absent), `"spawning"`
              *     (background warm-up in flight), or `"failed_prepare"` (parked, but
-             *     prepare() raised — claims still work, load pays the imports). */
+             *     prepare() raised — claims still work, load pays the imports).
+             */
             state: string;
         };
         ProcessedBy: {
@@ -2259,9 +2358,11 @@ export interface components {
         };
         RenamePinboardRequest: {
             name?: string | null;
-            /** @description When true, the head version's name-at-save snapshot is rewritten too.
+            /**
+             * @description When true, the head version's name-at-save snapshot is rewritten too.
              *     The client passes true when the current layout equals the head's
-             *     ("a rename labels what you're looking at"). */
+             *     ("a rename labels what you're looking at").
+             */
             relabel_head?: boolean;
         };
         /** @description Replica occupancy of one model's WorkerSet. */
@@ -2299,18 +2400,35 @@ export interface components {
             weight?: number;
         };
         SavePinboardResponse: {
-            /** @description True when the layout was byte-identical to the head version and no
-             *     new version was created; version_id is the existing head. */
+            /**
+             * @description True when the board's stored flags changed as part of this save.
+             *     With `no_op: true` this distinguishes a settings-only save ("Settings
+             *     updated") from a save with nothing to do ("No changes to save").
+             */
+            flags_updated: boolean;
+            /**
+             * @description True when the layout was byte-identical to the head version and no
+             *     new version was created; version_id is the existing head.
+             */
             no_op: boolean;
             /** Format: int64 */
             pinboard_id: number;
             /** Format: int64 */
             version_id: number;
         };
-        /** @description The saved state of a pinboard: the UI's `pinboard` URL param verbatim
+        /**
+         * @description The saved state of a pinboard: the UI's `pinboard` URL param verbatim
          *     (`layout`), the distinct full-sha256 items on the board for search
-         *     indexing (`items`), and an optional client-composited preview image. */
+         *     indexing (`items`), and an optional client-composited preview image.
+         */
         SaveVersionRequest: {
+            /**
+             * @description Board-level editing-behavior flags (auto-layout & co.): an opaque
+             *     JSON object owned by the UI, stored on the BOARD rather than the
+             *     version — flag changes never create versions and never make a board
+             *     "unsaved". Omitted = leave the stored flags unchanged.
+             */
+            flags?: unknown;
             /** @description Full sha256 hashes of the distinct items on the board. */
             items?: string[];
             /** @description The pinboard URL param, verbatim: version token + 5-string records. */
@@ -2363,9 +2481,11 @@ export interface components {
             data_index?: number | null;
             /** Format: double */
             duration?: number | null;
-            /** @description Extra Fields
+            /**
+             * @description Extra Fields
              *
-             *     Extra fields retrieved from filters that are not part of the main result object. */
+             *     Extra fields retrieved from filters that are not part of the main result object.
+             */
             extra?: {
                 [key: string]: unknown;
             } | null;
@@ -2416,54 +2536,68 @@ export interface components {
             text_stats: components["schemas"]["ExtractedTextStats"];
         };
         SemanticImageArgs: {
-            /** @description If true, will search among text embeddings as well as image embeddings created by the same CLIP model.
+            /**
+             * @description If true, will search among text embeddings as well as image embeddings created by the same CLIP model.
              *
              *     Note that you must have both image and text embeddings with the same CLIP model for this setting to work.
              *     Text embeddings are derived from text which must have been already previously produced by another model, such as an OCR model or a tagger.
              *     They are generated *separately* from the image embeddings, using a different job (Under 'CLIP Text Embeddings').
-             *     Run a batch job with the same clip model for both image and text embeddings to use this setting. */
+             *     Run a batch job with the same clip model for both image and text embeddings to use this setting.
+             */
             clip_xmodal?: boolean;
             /** @description The method to aggregate distances when an item has multiple embeddings. Default is MIN. */
             distance_aggregation?: components["schemas"]["DistanceAggregation"];
             embed?: null | components["schemas"]["EmbedArgs"];
-            /** @description The image embedding model to use
+            /**
+             * @description The image embedding model to use
              *
              *     The image embedding model to use for the semantic search.
-             *     Will search embeddings produced by this model. */
+             *     Will search embeddings produced by this model.
+             */
             model: string;
-            /** @description Query
+            /**
+             * @description Query
              *
              *     Semantic query to match against the image.
              *     Can be a string or a base64 encoded numpy array
-             *     to supply an embedding directly. */
+             *     to supply an embedding directly.
+             */
             query: string;
             src_text?: null | components["schemas"]["SourceArgs"];
         };
         SemanticImageSearch: components["schemas"]["SortableOptions"] & {
-            /** @description Search Image Embeddings
+            /**
+             * @description Search Image Embeddings
              *
-             *     Search for image using semantic search on image embeddings. */
+             *     Search for image using semantic search on image embeddings.
+             */
             image_embeddings: components["schemas"]["SemanticImageArgs"];
         };
         SemanticTextArgs: {
             /** @description The method to aggregate distances when an item has multiple embeddings. Default is MIN. */
             distance_aggregation?: components["schemas"]["DistanceAggregation"];
             embed?: null | components["schemas"]["EmbedArgs"];
-            /** @description The text embedding model to use
+            /**
+             * @description The text embedding model to use
              *
              *     The text embedding model to use for the semantic search.
-             *     Will search embeddings produced by this model. */
+             *     Will search embeddings produced by this model.
+             */
             model: string;
-            /** @description Query
+            /**
+             * @description Query
              *
-             *     Semantic query to match against the text */
+             *     Semantic query to match against the text
+             */
             query: string;
             src_text?: null | components["schemas"]["SourceArgs"];
         };
         SemanticTextSearch: components["schemas"]["SortableOptions"] & {
-            /** @description Search Text Embeddings
+            /**
+             * @description Search Text Embeddings
              *
-             *     Search for text using semantic search on text embeddings. */
+             *     Search for text using semantic search on text embeddings.
+             */
             text_embeddings: components["schemas"]["SemanticTextArgs"];
         };
         SetterDataStats: {
@@ -2473,7 +2607,8 @@ export interface components {
             ][];
         };
         SimilarTo: components["schemas"]["SortableOptions"] & {
-            /** @description Item Similarity Search
+            /**
+             * @description Item Similarity Search
              *
              *     Search for items similar to a target item using similarity search on embeddings.
              *     The search is based on the image or text embeddings of the provided item.
@@ -2490,26 +2625,31 @@ export interface components {
              *     Remember that tagging models also produce text by concatenating the tags,
              *      and are therefore also returned as "text" models by the stats endpoint.
              *     Restricting similarity to a tagger model or a set of tagger models
-             *      is recommended for item similarity search based on text embeddings. */
+             *      is recommended for item similarity search based on text embeddings.
+             */
             similar_to: components["schemas"]["SimilarityArgs"];
         };
         SimilarityArgs: {
-            /** @description Whether to use cross-modal similarity for CLIP models.
+            /**
+             * @description Whether to use cross-modal similarity for CLIP models.
              *     Default is False. What this means is that the similarity is calculated between image and text embeddings,
              *     rather than just between image embeddings. By default will also use text-to-text similarity.
              *
              *     Note that you must have both image and text embeddings with the same CLIP model for this setting to work.
              *     Text embeddings are derived from text which must have been already previously produced by another model, such as an OCR model or a tagger.
              *     They are generated *separately* from the image embeddings, using a different job (Under 'CLIP Text Embeddings').
-             *     Run a batch job with the same clip model for both image and text embeddings to use this setting. */
+             *     Run a batch job with the same clip model for both image and text embeddings to use this setting.
+             */
             clip_xmodal?: boolean;
             /** @description The method to aggregate distances when an item has multiple embeddings. Default is AVG. */
             distance_aggregation?: components["schemas"]["DistanceAggregation"];
             /** @description The distance function to use for similarity search. Default is L2. */
             distance_function?: components["schemas"]["DistanceFunction"];
-            /** @description Force the use of the distance function specified in the `distance_function` field.
+            /**
+             * @description Force the use of the distance function specified in the `distance_function` field.
              *     If set to True, the distance function specified in the `distance_function` field will be used,
-             *     even if the model used for similarity search has a different distance function override specified in its config. */
+             *     even if the model used for similarity search has a different distance function override specified in its config.
+             */
             force_distance_function?: boolean | null;
             /** @description The name of the embedding model used for similarity search */
             model: string;
@@ -2528,16 +2668,20 @@ export interface components {
         /** @enum {string} */
         SortOrder: "asc" | "desc";
         SortableOptions: {
-            /** @description Order Direction
+            /**
+             * @description Order Direction
              *
              *     The order direction for this filter.
-             *     If not set, the default order direction for this field is used. */
+             *     If not set, the default order direction for this field is used.
+             */
             direction?: components["schemas"]["OrderDirection"];
             gt?: null | components["schemas"]["ScalarValue"];
             lt?: null | components["schemas"]["ScalarValue"];
-            /** @description Order by this filter's rank output
+            /**
+             * @description Order by this filter's rank output
              *
-             *     This filter generates a value that can be used for ordering. */
+             *     This filter generates a value that can be used for ordering.
+             */
             order_by?: boolean;
             /**
              * Format: int32
@@ -2554,7 +2698,8 @@ export interface components {
              *     they will have the same order direction.
              */
             priority?: number;
-            /** @description Use Row Number for rank column
+            /**
+             * @description Use Row Number for rank column
              *
              *     Only applied if either order_by is True, or select_as is set.
              *
@@ -2567,21 +2712,26 @@ export interface components {
              *     rank_order types that may not be directly comparable,
              *     such as text search and embeddings search.
              *
-             *     See `RRF` for a way to combine heterogeneous rank_order filters when using row_n = True. */
+             *     See `RRF` for a way to combine heterogeneous rank_order filters when using row_n = True.
+             */
             row_n?: boolean;
-            /** @description Order Direction For Row Number
+            /**
+             * @description Order Direction For Row Number
              *
              *     The order direction (asc or desc) for the internal row number calculation.
              *     Only used if `order_by_row_n` is True.
              *     When `order_by_row_n` is True, the filter's output is sorted by its rank_order column
              *     following this direction, and a row number is assigned to each row.
              *     This row number is used to order the final query.
-             *     You should generally leave this as the default value. */
+             *     You should generally leave this as the default value.
+             */
             row_n_direction?: components["schemas"]["OrderDirection"];
             rrf?: null | components["schemas"]["Rrf"];
-            /** @description Order By Select As
+            /**
+             * @description Order By Select As
              *
-             *     If set, the order_rank column will be returned with the results as this alias under the "extra" object. */
+             *     If set, the order_rank column will be returned with the results as this alias under the "extra" object.
+             */
             select_as?: string | null;
         };
         SourceArgs: {
@@ -2616,9 +2766,11 @@ export interface components {
              *     ```
              */
             language_confidence_weight?: number;
-            /** @description The source languages to restrict the search to.
+            /**
+             * @description The source languages to restrict the search to.
              *
-             *     These are the languages of the text produced by the source models. */
+             *     These are the languages of the text produced by the source models.
+             */
             languages?: string[] | null;
             /**
              * Format: int64
@@ -2650,11 +2802,13 @@ export interface components {
              * @description Filter out text that is shorter than this. Inclusive.
              */
             min_length?: number;
-            /** @description Include text from these setters
+            /**
+             * @description Include text from these setters
              *
              *     Filter out text that is was not set by these setters.
              *     The setters are usually the names of the models that extracted or generated the text.
-             *     For example, the OCR model, the Whisper STT model, the captioning model or the tagger model. */
+             *     For example, the OCR model, the Whisper STT model, the captioning model or the tagger model.
+             */
             setters?: string[];
         };
         /** @description `{"status": "loaded" | "unloaded" | "cleared"}` (Python parity). */
@@ -2673,13 +2827,15 @@ export interface components {
             job_filters?: components["schemas"]["JobFilter"][];
             job_settings?: components["schemas"]["JobSettings"][];
             preload_embedding_models?: boolean;
-            /** @description Whether this DB's search-usable embedding setters contribute their
+            /**
+             * @description Whether this DB's search-usable embedding setters contribute their
              *     impl classes to the gateway's eager prewarm set (design §8). Default
              *     true. Rust-only field like `continuous_filescan`; both survive
              *     round-trips through either server — the gateway preserves unknown
              *     keys via its `extra` flatten, and Python's SystemConfig uses
              *     pydantic `extra="allow"` so its saves keep them too (before that,
-             *     a Python-side save silently dropped Rust-only keys). */
+             *     a Python-side save silently dropped Rust-only keys).
+             */
             prewarm_embedding_models?: boolean;
             remove_unavailable_files?: boolean;
             scan_audio?: boolean;
@@ -2719,18 +2875,22 @@ export interface components {
             namespaces: string[];
         };
         TagsArgs: {
-            /** @description Require all setters to match
+            /**
+             * @description Require all setters to match
              *
              *     Only consider tags that have been set by all of the given setters.
              *     If match_any is true, and there is more than one tag, this will be ignored.
              *
              *     If you really want to match any tag set by all of the given setters,
-             *     you can combine this with a separate filter for each tag in an OrOperator. */
+             *     you can combine this with a separate filter for each tag in an OrOperator.
+             */
             all_setters_required?: boolean;
-            /** @description Match any tag
+            /**
+             * @description Match any tag
              *
              *     If true, match items with at least one of the given tags.
-             *     If false (default), only match items with all of the given tags. */
+             *     If false (default), only match items with all of the given tags.
+             */
             match_any?: boolean;
             /**
              * Format: double
@@ -3586,9 +3746,11 @@ export interface operations {
                 cache_key: string;
                 lru_size: number;
                 ttl_seconds: number;
-                /** @description Additive over Python: lazy prewarm hint (design §8). Absent = true;
+                /**
+                 * @description Additive over Python: lazy prewarm hint (design §8). Absent = true;
                  *     `prewarm=false` suppresses keeping a warm worker of this model's
-                 *     impl class after the load. */
+                 *     impl class after the load.
+                 */
                 prewarm?: boolean;
             };
             header?: never;
@@ -4709,8 +4871,10 @@ export interface operations {
                 user_data_db?: string | null;
                 /** @description The user the pinboard belongs to. */
                 user?: string;
-                /** @description Downscale the preview to at most this width (pixels), preserving
-                 *     aspect ratio. Omit for the stored full-resolution image. */
+                /**
+                 * @description Downscale the preview to at most this width (pixels), preserving
+                 *     aspect ratio. Omit for the stored full-resolution image.
+                 */
                 maxw?: number;
             };
             header?: never;

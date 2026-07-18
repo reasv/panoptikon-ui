@@ -50,6 +50,21 @@ export const PINBOARD_DEFAULTABLE_FLAGS: Record<
 
 const STORAGE_KEY = "pinboardUserDefaults"
 
+// Only allowlisted keys with boolean values survive, so neither stale
+// localStorage nor junk in the database's stored board flags can stamp
+// junk into the URL. Null when the value isn't an object at all.
+export function sanitizeBoardFlags(
+  value: unknown
+): Partial<Record<PinboardDefaultableKey, boolean>> | null {
+  if (typeof value !== "object" || value === null) return null
+  const out: Partial<Record<PinboardDefaultableKey, boolean>> = {}
+  for (const key of PINBOARD_DEFAULTABLE_KEYS) {
+    const v = (value as Record<string, unknown>)[key]
+    if (typeof v === "boolean") out[key] = v
+  }
+  return out
+}
+
 export function loadUserDefaults(): Partial<
   Record<PinboardDefaultableKey, boolean>
 > {
@@ -57,16 +72,7 @@ export function loadUserDefaults(): Partial<
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return {}
-    const parsed: unknown = JSON.parse(raw)
-    if (typeof parsed !== "object" || parsed === null) return {}
-    // Only allowlisted keys with boolean values survive, so stale or
-    // hand-edited storage can't stamp junk into new boards
-    const out: Partial<Record<PinboardDefaultableKey, boolean>> = {}
-    for (const key of PINBOARD_DEFAULTABLE_KEYS) {
-      const v = (parsed as Record<string, unknown>)[key]
-      if (typeof v === "boolean") out[key] = v
-    }
-    return out
+    return sanitizeBoardFlags(JSON.parse(raw)) ?? {}
   } catch {
     return {}
   }

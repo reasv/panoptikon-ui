@@ -18,6 +18,8 @@ import {
   useGalleryPinBoardLoad,
 } from "@/lib/state/gallery"
 import { markPinboardNavigation } from "@/lib/pinboardNavigation"
+import { PINBOARD_DEFAULTABLE_KEYS } from "@/lib/pinboardDefaults"
+import { useStampBoardFlags } from "@/lib/state/pinboard"
 import { useToast } from "@/components/ui/use-toast"
 
 /**
@@ -35,6 +37,9 @@ export function pinboardOpenHref(
   params.set("pbid", String(pinboardId))
   params.set("pbl", String(target))
   params.delete("pinboard")
+  // The source tab's board-scoped flags must not ride along: the loader
+  // stamps the target board's stored flags when it resolves `pbl`.
+  for (const key of PINBOARD_DEFAULTABLE_KEYS) params.delete(key)
   params.set("ghp", "false")
   // Land on the pinboard tab either way: ghp covers an open gallery, gpb
   // the grid view (a link opened in a fresh tab has no gallery index)
@@ -47,6 +52,7 @@ export function usePinboardURLLoader() {
   const [pbl, setPbl] = useGalleryPinBoardLoad()
   const [pbid] = useGalleryPinBoardId()
   const setSavedLayout = useGalleryPinBoardLayout()[1]
+  const stampFlags = useStampBoardFlags()
   const dbs = useSelectedDBs()[0]
   const { toast } = useToast()
 
@@ -57,13 +63,20 @@ export function usePinboardURLLoader() {
       return
     }
     let stale = false
-    const resolve = async (): Promise<string[] | null> => {
+    // Flags are board-level, so both targets stamp the board's stored
+    // flags; only the layout depends on which version the link addressed.
+    const resolve = async (): Promise<{
+      layout: string[]
+      flags: unknown
+    } | null> => {
+      const { data: board } = await fetchClient.GET(
+        "/api/pinboards/{pinboard_id}",
+        { params: { path: { pinboard_id: pbid }, query: { ...dbs } } }
+      )
+      if (!board) return null
       if (pbl === "head") {
-        const { data } = await fetchClient.GET(
-          "/api/pinboards/{pinboard_id}",
-          { params: { path: { pinboard_id: pbid }, query: { ...dbs } } }
-        )
-        return data?.head?.layout ?? null
+        const layout = board.head?.layout
+        return layout ? { layout, flags: board.flags } : null
       }
       const versionId = Number(pbl)
       if (!Number.isInteger(versionId)) return null
@@ -71,13 +84,15 @@ export function usePinboardURLLoader() {
         "/api/pinboards/{pinboard_id}/versions",
         { params: { path: { pinboard_id: pbid }, query: { ...dbs } } }
       )
-      return data?.versions.find((v) => v.id === versionId)?.layout ?? null
+      const layout = data?.versions.find((v) => v.id === versionId)?.layout
+      return layout ? { layout, flags: board.flags } : null
     }
-    void resolve().then((layout) => {
+    void resolve().then((loaded) => {
       if (stale) return
-      if (layout) {
+      if (loaded) {
         markPinboardNavigation()
-        setSavedLayout(layout, { history: "replace" })
+        setSavedLayout(loaded.layout, { history: "replace" })
+        stampFlags(loaded.flags, { history: "replace" })
       } else {
         toast({
           title: "Error",

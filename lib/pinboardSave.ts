@@ -16,6 +16,10 @@ import {
   useGalleryPinBoardLayout,
 } from "@/lib/state/gallery"
 import { useSelectedDBs } from "@/lib/state/database"
+import {
+  usePinboardFlagValues,
+  useStampBoardFlags,
+} from "@/lib/state/pinboard"
 import { useToast } from "@/components/ui/use-toast"
 import { parseBoard } from "@/lib/pinboardGrid"
 import {
@@ -63,7 +67,11 @@ async function resolveItems(
   return [...items]
 }
 
-async function buildSaveBody(savedLayout: string[], dbs: Dbs) {
+async function buildSaveBody(
+  savedLayout: string[],
+  dbs: Dbs,
+  flags: Record<string, boolean>
+) {
   const items = await resolveItems(distinctPrefixes(savedLayout), dbs)
   const boardWidth = findBoardElement()?.clientWidth ?? window.innerWidth
   const background =
@@ -83,6 +91,10 @@ async function buildSaveBody(savedLayout: string[], dbs: Dbs) {
     preview_w: preview?.width ?? null,
     preview_h: preview?.height ?? null,
     screenful_h: preview?.screenfulH ?? null,
+    // Board-level editing-behavior flags ride every save; the gateway
+    // stores them on the board (never a version), so a flags-only save
+    // updates them under a layout no-op.
+    flags,
   }
 }
 
@@ -94,6 +106,8 @@ export function usePinboardActions() {
   const [savedLayout, setSavedLayout] = useGalleryPinBoardLayout()
   const [pbid, setPbid] = useGalleryPinBoardId()
   const setHidePinBoard = useGalleryHidePinBoard()[1]
+  const flagValues = usePinboardFlagValues()
+  const stampFlags = useStampBoardFlags()
   const dbs = useSelectedDBs()[0]
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -124,7 +138,7 @@ export function usePinboardActions() {
   const save = async (forkNew: boolean) => {
     if (savedLayout.length === 0) return
     try {
-      const body = await buildSaveBody(savedLayout, dbs)
+      const body = await buildSaveBody(savedLayout, dbs, flagValues)
       if (!forkNew && pbid != null) {
         const { data, error, response } = await fetchClient.POST(
           "/api/pinboards/{pinboard_id}/versions",
@@ -139,8 +153,14 @@ export function usePinboardActions() {
         if (data) {
           clearStash(pbid)
           invalidate()
+          // Three-way outcome: a layout no-op can still have advanced the
+          // board's flags (a settings-only save).
           toast({
-            title: data.no_op ? "No changes to save" : "Pinboard updated",
+            title: !data.no_op
+              ? "Pinboard updated"
+              : data.flags_updated
+                ? "Settings updated"
+                : "No changes to save",
             duration: 2000,
           })
           return
@@ -202,11 +222,15 @@ export function usePinboardActions() {
   /**
    * Loads a saved layout into the live board: a pure URL write, so
    * refresh, back/forward, and bookmarks keep working. nuqs batches the
-   * same-tick setters into one history entry.
+   * same-tick setters into one history entry. `flags` is the board's
+   * stored flags value from the gateway (unknown-typed and sanitized;
+   * null/undefined for pre-flags boards) — stamped clear-then-set so the
+   * previous board's flags never leak onto the loaded one.
    */
   const loadBoard = (
     pinboardId: number,
     layout: string[],
+    flags: unknown,
     options?: { history?: "push" | "replace" }
   ) => {
     const history = options?.history ?? "push"
@@ -214,6 +238,7 @@ export function usePinboardActions() {
     setSavedLayout(layout, { history })
     setPbid(pinboardId, { history })
     setHidePinBoard(false, { history })
+    stampFlags(flags, { history })
   }
 
   return { save, rename, loadBoard, savedLayout, pbid, dbs }

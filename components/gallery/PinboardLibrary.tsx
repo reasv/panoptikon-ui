@@ -94,7 +94,7 @@ export function PinboardLibraryDialog({
             toast({ title: "Error", description: "Board has no saved version" })
             return
         }
-        loadBoard(board.id, detail.head.layout)
+        loadBoard(board.id, detail.head.layout, detail.flags)
         onOpenChange(false)
     }
 

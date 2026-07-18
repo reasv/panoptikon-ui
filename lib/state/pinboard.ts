@@ -20,7 +20,59 @@ import {
   PINBOARD_DEFAULTABLE_KEYS,
   PinboardDefaultableKey,
   effectiveCreationDefaults,
+  sanitizeBoardFlags,
 } from "@/lib/pinboardDefaults"
+
+type FlagWriteOpts = { history?: "push" | "replace" }
+
+/** The four board-scoped flags' current resolved values, keyed like the
+ * defaults registry — the shape a save sends to the gateway. */
+export function usePinboardFlagValues(): Record<
+  PinboardDefaultableKey,
+  boolean
+> {
+  return {
+    pba: useGalleryPinAutoLayout()[0],
+    pbc: useGalleryPinAutoCrop()[0],
+    psc: useGalleryPinSelectionCrop()[0],
+    pg: useGalleryPinGrid()[0],
+  }
+}
+
+/** The board-scoped flag setters, keyed like the defaults registry. */
+export function usePinboardFlagSetters(): Record<
+  PinboardDefaultableKey,
+  (value: boolean | null, opts?: FlagWriteOpts) => unknown
+> {
+  return {
+    pba: useGalleryPinAutoLayout()[1],
+    pbc: useGalleryPinAutoCrop()[1],
+    psc: useGalleryPinSelectionCrop()[1],
+    pg: useGalleryPinGrid()[1],
+  }
+}
+
+/**
+ * Stamps a loaded board's stored flags into the URL, clear-then-set: every
+ * flag is written, so nothing from the previous board's URL survives a
+ * load. Values equal to the codec default clear the parameter instead
+ * (absent already means that), keeping loaded URLs canonical. A legacy
+ * board (flags null/absent) resolves every flag to its codec default —
+ * pre-flags boards keep their pre-flags behavior. Callers write this in
+ * the same tick as the layout so nuqs folds board + flags into one history
+ * entry.
+ */
+export function useStampBoardFlags() {
+  const setters = usePinboardFlagSetters()
+  return (flags: unknown, opts?: FlagWriteOpts) => {
+    const stored = sanitizeBoardFlags(flags) ?? {}
+    for (const key of PINBOARD_DEFAULTABLE_KEYS) {
+      const codecDefault = PINBOARD_DEFAULTABLE_FLAGS[key].codecDefault
+      const value = stored[key] ?? codecDefault
+      void setters[key](value === codecDefault ? null : value, opts)
+    }
+  }
+}
 
 // Access to the pinboard's records with the version token handled. Reads
 // expose the token-stripped records plus the board's grid parameters.
@@ -34,17 +86,9 @@ export function usePinBoard() {
   const [savedLayout, setSavedLayout] = useGalleryPinBoardLayout()
   const setHidePinBoard = useGalleryHidePinBoard()[1]
   const setGridPinboardTab = useGridPinboardTab()[1]
-  // The board-scoped flag setters, keyed like the defaults registry —
-  // creation stamps them, destruction clears them (see updateRecords)
-  const flagSetters: Record<
-    PinboardDefaultableKey,
-    (value: boolean | null, opts?: { history?: "push" | "replace" }) => unknown
-  > = {
-    pba: useGalleryPinAutoLayout()[1],
-    pbc: useGalleryPinAutoCrop()[1],
-    psc: useGalleryPinSelectionCrop()[1],
-    pg: useGalleryPinGrid()[1],
-  }
+  // Creation stamps the board-scoped flags, destruction clears them (see
+  // updateRecords)
+  const flagSetters = usePinboardFlagSetters()
   const board = useMemo(() => parseBoard(savedLayout), [savedLayout])
   // opts.highWater, when given, is the ABSOLUTE ratchet value to store
   // (callers compute the max themselves — the refit action deliberately
