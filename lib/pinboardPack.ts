@@ -53,7 +53,7 @@ function rowNaturalHeight(row: PackItem[], grid: GridParams, columnWidth: number
 // exactly to `total`, each at least `minEach` — capped at what `total` can
 // actually give every entry, so an unsatisfiable minimum degrades instead
 // of overflowing (assumes total >= ideal.length)
-function apportionToTotal(ideal: number[], total: number, minEach = 1): number[] {
+export function apportionToTotal(ideal: number[], total: number, minEach = 1): number[] {
     const effMin = Math.max(1, Math.min(minEach, Math.floor(total / ideal.length)))
     const sum = ideal.reduce((acc, v) => acc + v, 0) || 1
     const scaled = ideal.map(v => (v * total) / sum)
@@ -890,7 +890,7 @@ export function evictFromBox({
     layout,
     box,
     participantKeys,
-    lockedKeys,
+    sizeLockedKeys,
     anchoredKeys,
     columns,
     minW = 1,
@@ -901,10 +901,11 @@ export function evictFromBox({
     // Selected items being re-packed into the box: excluded from the
     // working set (the pack replaces them, all inside the box)
     participantKeys: Set<string>,
-    // Any lock: never evicted (the caller already packs around them)
-    lockedKeys: Set<string>,
-    // Position locks: immovable even for the drop cascade (size-locked
-    // items keep their size but can be pushed down like anything else)
+    // Size locks: evictable, but only by whole moves — slide fully clear
+    // or drop below; the shrink escapes are off the table, so a rigid
+    // intruder that can't move cheaply stays put as an obstacle
+    sizeLockedKeys: Set<string>,
+    // Position locks: never evicted, immovable even for the drop cascade
     anchoredKeys: Set<string>,
     columns: number,
     minW?: number,
@@ -959,19 +960,20 @@ export function evictFromBox({
     }
 
     const intruders = rest
-        .filter(l => !lockedKeys.has(l.i) && inBox(asRect(l)))
+        .filter(l => !anchoredKeys.has(l.i) && inBox(asRect(l)))
         .sort((a, b) => a.y - b.y || a.x - b.x)
     for (const l of intruders) {
         // A previous intruder's drop cascade may have already pushed this
         // one clear of the box
         if (!inBox(asRect(l))) continue
+        const rigid = sizeLockedKeys.has(l.i)
         const left = l.x < box.x
         const right = l.x + l.w > box.x + box.w
         const top = l.y < box.y
         const bottom = l.y + l.h > box.y + box.h
         const oneSide = left !== right
         const peek = left ? l.x + l.w - box.x : box.x + box.w - l.x
-        if (oneSide && !top && !bottom) {
+        if (oneSide && !top && !bottom && !rigid) {
             // Pure side peeker: slide out as far as free space allows and
             // shrink away the remainder (its edge lands on the box edge)
             const shift = Math.min(peek, left ? gapLeft(l) : gapRight(l))
@@ -983,19 +985,22 @@ export function evictFromBox({
             l.w -= shrink
             l.x = left ? box.x - l.w : box.x + box.w
         } else if (oneSide && (left ? gapLeft(l) : gapRight(l)) >= peek) {
-            // Corner peeker with room: slide fully out, no shrink (a shrink
-            // here would vacate out-of-box cells — a real hole)
+            // Corner peeker with room (or a rigid side peeker): slide fully
+            // out, no shrink (a shrink here would vacate out-of-box cells —
+            // a real hole; a rigid item can't shrink at all)
             l.x += left ? -peek : peek
         } else if (bottom) {
             // Bottom peeker, or a stuck bottom corner: drop below the box
+            // (a whole move, available to rigid intruders too)
             dropTo(l, box.y + box.h)
-        } else if (top && box.y - l.y >= minH) {
+        } else if (top && !rigid && box.y - l.y >= minH) {
             // Top peeker, or a stuck top corner: bottom edge up to the box
             // top — never dropped across the box like a bottom peeker
             l.h = box.y - l.y
         } else {
-            // Fully interior, spanning both sides, or a top peeker too
-            // short to shrink: nowhere to go without a disruptive move
+            // Fully interior, spanning both sides, a top peeker too short
+            // to shrink, or a rigid one that can't slide clear: nowhere to
+            // go without a disruptive move — stays put as an obstacle
             extraObstacles.push(asRect(l))
         }
     }

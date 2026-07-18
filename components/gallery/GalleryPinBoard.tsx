@@ -487,13 +487,14 @@ export function PinBoard(
         pinboardRef: scrollAreaRef,
         onLayoutChange,
     })
-    // Send to Region reports refusals (anchored selection, size-locked
-    // item that can't fit) as messages for the user instead of silently
-    // doing nothing or, worse, sending only part of the group
+    // Layout verbs report refusals (anchored items that can't travel,
+    // size-locked items that can't fit, packer failures) as messages
+    // instead of silently doing nothing — surface them as toasts
     const { toast } = useToast()
-    const sendToRegion = async (keys: string[], preset: RegionPreset) => {
-        const err = await sendSelectionToRegion(keys, preset)
-        if (err) toast({ title: "Send to Region", description: err, duration: 4000 })
+    const runVerb = (label: string, result: Promise<string | null> | void) => {
+        void Promise.resolve(result).then(err => {
+            if (err) toast({ title: label, description: err, duration: 4000 })
+        })
     }
     // Transient multi-selection, following file-manager conventions: plain
     // click selects just the clicked item, ctrl/cmd+click toggles items,
@@ -1346,11 +1347,11 @@ export function PinBoard(
                         selHasAnchor={selected.some(k => itemLocks[k] === "anchor")}
                         onVerb={(id) => {
                             switch (id) {
-                                case "arrange": void arrangeSelection(selected); break
-                                case "swap": void swapItems(selected[0], selected[1]); break
-                                case "reflow": void arrangeSelection(selected, true); break
-                                case "shuffle": void arrangeSelection(selected, false, true); break
-                                case "grow": void growSelection(selected); break
+                                case "arrange": runVerb("Arrange", arrangeSelection(selected)); break
+                                case "swap": runVerb("Swap", swapItems(selected[0], selected[1])); break
+                                case "reflow": runVerb("Reflow", arrangeSelection(selected, true)); break
+                                case "shuffle": runVerb("Shuffle", arrangeSelection(selected, false, true)); break
+                                case "grow": runVerb("Grow to Fill", growSelection(selected)); break
                                 case "shiftLeft": shiftSelection(selected, "left"); break
                                 case "shiftCenter": shiftSelection(selected, "center"); break
                                 case "shiftRight": shiftSelection(selected, "right"); break
@@ -1359,7 +1360,7 @@ export function PinBoard(
                                 case "clearCrop": clearAutoCropSelection(selected); break
                             }
                         }}
-                        onRegion={(preset) => void sendToRegion(selected, preset)}
+                        onRegion={(preset) => runVerb("Send to Region", sendSelectionToRegion(selected, preset))}
                         onLock={(lock) => setLockForKeys(selected, lock)}
                         onCropToggle={() => {
                             const next = !selectionCrop

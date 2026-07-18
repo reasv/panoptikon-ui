@@ -4,7 +4,7 @@ import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, u
 import { CropRect, PinLock, TrimRange } from "@/lib/pinboardCrop";
 import { GridParams } from "@/lib/pinboardGrid";
 import { useFileOpenActions } from "@/hooks/fileOpen";
-import { REGION_PRESETS, RegionPreset, usePinboardLayoutActions } from "@/hooks/pinboardLayout";
+import { REGION_PRESETS, usePinboardLayoutActions } from "@/hooks/pinboardLayout";
 import { RegionIcon } from "./RegionIcon";
 import { useToast } from "@/components/ui/use-toast";
 import { usePinSelection } from "@/lib/state/pinboardSelection";
@@ -114,16 +114,18 @@ export function PinBoardCtx({
         selectionAutoCrop: selectionCrop,
     })
     const selected = usePinSelection(s => s.selected)
-    // Send to Region reports refusals (anchored selection, size-locked
-    // item that can't fit) as messages instead of silent partial sends
+    // Layout verbs report refusals (anchored items that can't travel,
+    // size-locked items that can't fit, packer failures) as messages
+    // instead of silently doing nothing — surface them as toasts
     const { toast } = useToast()
-    const sendToRegion = async (keys: string[], preset: RegionPreset) => {
-        const err = await sendSelectionToRegion(keys, preset)
-        if (err) toast({ title: "Send to Region", description: err, duration: 4000 })
+    const runVerb = (label: string, result: Promise<string | null> | void) => {
+        void Promise.resolve(result).then(err => {
+            if (err) toast({ title: label, description: err, duration: 4000 })
+        })
     }
 
     function layoutFixedRows(rows: number) {
-        fillViewportRows(rows)
+        runVerb("Rows", fillViewportRows(rows))
     }
     // The size actions target this menu's own pin
     const changeItemSize = (increase: number) => changeItemSizeByKey(layoutKey, increase)
@@ -186,24 +188,24 @@ export function PinBoardCtx({
                         <ContextMenuSubTrigger inset>Selection ({selected.length})</ContextMenuSubTrigger>
                         <ContextMenuSubContent className="w-56">
                             <ContextMenuItem disabled={selected.length < 2}
-                                onClick={() => arrangeSelection(selected)}>
+                                onClick={() => runVerb("Arrange", arrangeSelection(selected))}>
                                 Arrange
                             </ContextMenuItem>
                             <ContextMenuItem disabled={selected.length !== 2}
-                                onClick={() => swapItems(selected[0], selected[1])}>
+                                onClick={() => runVerb("Swap", swapItems(selected[0], selected[1]))}>
                                 Swap
                             </ContextMenuItem>
                             <ContextMenuItem disabled={selected.length < 2}
-                                onClick={() => arrangeSelection(selected, true)}>
+                                onClick={() => runVerb("Reflow", arrangeSelection(selected, true))}>
                                 Reflow (Keep Proportions)
                             </ContextMenuItem>
                             {/* Reroll: arrange again in a random order until
                                 the composition actually changes */}
                             <ContextMenuItem disabled={selected.length < 2}
-                                onClick={() => arrangeSelection(selected, false, true)}>
+                                onClick={() => runVerb("Shuffle", arrangeSelection(selected, false, true))}>
                                 Shuffle
                             </ContextMenuItem>
-                            <ContextMenuItem onClick={() => growSelection(selected)}>
+                            <ContextMenuItem onClick={() => runVerb("Grow to Fill", growSelection(selected))}>
                                 Grow to Fill
                             </ContextMenuItem>
                             {/* Clear a preset region and pack the selection
@@ -213,7 +215,7 @@ export function PinBoardCtx({
                                 <ContextMenuSubContent className="w-48">
                                     {REGION_PRESETS.map(([preset, label]) => (
                                         <ContextMenuItem key={preset}
-                                            onClick={() => void sendToRegion(selected, preset)}>
+                                            onClick={() => runVerb("Send to Region", sendSelectionToRegion(selected, preset))}>
                                             <span className="flex items-center gap-2">
                                                 <RegionIcon preset={preset} className="w-4 h-4" />
                                                 {label}
@@ -278,8 +280,10 @@ export function PinBoardCtx({
             {trim?.start != null && trim?.end != null && <ContextMenuItem onClick={() => onTrimChange(null)}>
                 Clear Loop Range
             </ContextMenuItem>}
+            {/* Resizing is the one thing a lock legitimately forbids —
+                greyed instead of silently ignoring the clicks */}
             <ContextMenuSub>
-                <ContextMenuSubTrigger inset>Resize Item</ContextMenuSubTrigger>
+                <ContextMenuSubTrigger inset disabled={lock !== null}>Resize Item</ContextMenuSubTrigger>
                 <ContextMenuSubContent className="w-48">
                     {widthPresets.map(([frac, label]) => {
                         const w = Math.max(1, Math.round(grid.columns * frac))
@@ -314,7 +318,7 @@ export function PinBoardCtx({
                 checked={autoLayout}
                 onCheckedChange={(checked) => {
                     setAutoLayout(!!checked)
-                    if (checked) void fillViewport(false)
+                    if (checked) runVerb("Fill Viewport", fillViewport(false))
                 }}
             >
                 Auto-Layout
@@ -344,24 +348,28 @@ export function PinBoardCtx({
             <ContextMenuSub>
                 <ContextMenuSubTrigger inset>Layout</ContextMenuSubTrigger>
                 <ContextMenuSubContent className="w-56">
-                    <ContextMenuItem onClick={() => fillViewport(false)}>Fill Viewport</ContextMenuItem>
-                    <ContextMenuItem onClick={() => fillViewport(true)}>Fill Viewport (Visible Only)</ContextMenuItem>
+                    <ContextMenuItem onClick={() => runVerb("Fill Viewport", fillViewport(false))}>Fill Viewport</ContextMenuItem>
+                    <ContextMenuItem onClick={() => runVerb("Fill Viewport", fillViewport(true))}>Fill Viewport (Visible Only)</ContextMenuItem>
                     {/* Cycle through the packer's near-best alternative
                         compositions; later auto-fills keep the chosen one */}
-                    <ContextMenuItem onClick={() => rerollLayout()}>Reroll Layout</ContextMenuItem>
+                    <ContextMenuItem onClick={() => runVerb("Reroll Layout", rerollLayout())}>Reroll Layout</ContextMenuItem>
                     {/* Re-solve sizes only: the arrangement keeps its
-                        structure and grows to fill the viewport. No-ops when
-                        locked items sit inside the target area. */}
-                    <ContextMenuItem onClick={() => growInPlace()}>Grow to Fill (In Place)</ContextMenuItem>
+                        structure and grows to fill the viewport. With locks
+                        inside the target it degrades to a proportional
+                        reflow around them. */}
+                    <ContextMenuItem onClick={() => runVerb("Grow to Fill", growInPlace())}>Grow to Fill (In Place)</ContextMenuItem>
                     {/* Reflow freely but keep each item's current share of
                         the board area */}
-                    <ContextMenuItem onClick={() => reflowKeepProportions()}>Reflow (Keep Proportions)</ContextMenuItem>
+                    <ContextMenuItem onClick={() => runVerb("Reflow", reflowKeepProportions())}>Reflow (Keep Proportions)</ContextMenuItem>
                     {/* Reset the layout-height ratchet to the current
                         viewport (see pinboardGrid.ts) and fill it */}
                     {highWater > 0 && (
-                        <ContextMenuItem onClick={() => refitToView()}>Refit to Current View</ContextMenuItem>
+                        <ContextMenuItem onClick={() => runVerb("Refit", refitToView())}>Refit to Current View</ContextMenuItem>
                     )}
-                    <ContextMenuItem disabled={hasLocks} onClick={() => justifyCurrentRows()}>Justify Rows</ContextMenuItem>
+                    {/* Justify re-stacks rows from the top, which only an
+                        anchor breaks; size-locked members keep their size
+                        and their row justifies around them */}
+                    <ContextMenuItem disabled={hasAnchors} onClick={() => runVerb("Justify Rows", justifyCurrentRows())}>Justify Rows</ContextMenuItem>
                     <ContextMenuSeparator />
                     <ContextMenuItem onClick={() => autoCropToCells(false)}>Auto-Crop to Cells</ContextMenuItem>
                     <ContextMenuItem onClick={() => autoCropToCells(true)}>Auto-Crop to Cells (Visible Only)</ContextMenuItem>
@@ -410,8 +418,8 @@ export function PinBoardCtx({
                         <>
                             <ContextMenuSeparator />
                             <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                                {hasLocks && "Greyed row actions rebuild whole rows and can't work around locked items."}
-                                {hasAnchors && " Center and Mirror can't hold anchored items in place."}
+                                {hasLocks && "Items per Row rebuilds rows from scratch and can't work around locked items."}
+                                {hasAnchors && " Justify, Center and Mirror can't hold anchored items in place."}
                             </div>
                         </>
                     )}

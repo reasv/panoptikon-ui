@@ -9,6 +9,7 @@ import {
     ArrangedItem,
     GridRect,
     PackItem,
+    apportionToTotal,
     evictFromBox,
     groupRowsByOverlap,
     growToFill,
@@ -99,6 +100,7 @@ export function usePinboardLayoutActions({
 
     const isLocked = (key: string) => !!locks[key]
     const isAnchored = (key: string) => locks[key] === "anchor"
+    const isSizeLocked = (key: string) => locks[key] === "size"
     const hasLocks = layout.some(l => isLocked(l.i))
     const hasAnchors = layout.some(l => isAnchored(l.i))
 
@@ -187,11 +189,54 @@ export function usePinboardLayoutActions({
         return Math.max(foldRows(buildData), highWater)
     }
 
-    // Locked items inside the target rectangle, as obstacles to pack around
-    function lockedObstacles(total: number): GridRect[] {
+    // Anchored items inside the target rectangle, as obstacles to pack
+    // around (size-locked items are travellers, not obstacles)
+    function anchoredObstacles(total: number): GridRect[] {
         return layout
-            .filter(l => isLocked(l.i) && l.y < total)
+            .filter(l => isAnchored(l.i) && l.y < total)
             .map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h }))
+    }
+
+    // Travellers: size-locked participants of a pack verb. Honoring the
+    // lock's contract (keeps w x h, may move), each is placed into the
+    // target box at its exact size — at the free position nearest its aim
+    // point (ties break top-to-bottom, left-to-right) — and the placed
+    // rect joins the obstacles the flexible items then tile around.
+    // Returns a user-facing refusal message when a traveller can't be
+    // placed; the caller aborts, so the verb is atomic or not at all.
+    function placeTravellers(
+        travellers: LayoutItem[],
+        box: GridRect,
+        obstacles: GridRect[],
+        aimFor: (l: LayoutItem) => { x: number, y: number },
+    ): { placed: LayoutItem[], rects: GridRect[] } | string {
+        const overlapping = (a: GridRect, b: GridRect) =>
+            a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+        const placed: LayoutItem[] = []
+        const rects: GridRect[] = []
+        for (const l of travellers) {
+            if (l.w > box.w || l.h > box.h) {
+                return "A size-locked item is too big for the target area — unlock or deselect it"
+            }
+            const aim = aimFor(l)
+            let best: { x: number, y: number, d: number } | null = null
+            for (let y = box.y; y <= box.y + box.h - l.h; y++) {
+                for (let x = box.x; x <= box.x + box.w - l.w; x++) {
+                    const d = (x - aim.x) ** 2 + (y - aim.y) ** 2
+                    if (best && d >= best.d) continue
+                    const r = { x, y, w: l.w, h: l.h }
+                    if (obstacles.some(o => overlapping(r, o))) continue
+                    if (rects.some(o => overlapping(r, o))) continue
+                    best = { x, y, d }
+                }
+            }
+            if (!best) {
+                return "No room for a size-locked item in the target area — unlock or deselect it"
+            }
+            rects.push({ x: best.x, y: best.y, w: l.w, h: l.h })
+            placed.push({ ...l, x: best.x, y: best.y })
+        }
+        return { placed, rects }
     }
 
     // Repack into a 2D mosaic filling the target rectangle, around any
@@ -216,9 +261,9 @@ export function usePinboardLayoutActions({
         // Refit to the current view: target the fold even when the ratchet
         // is higher, and lower the ratchet to it
         resetRatchet?: boolean,
-    }) {
+    }): Promise<string | null> {
         const buildData = await ensureBuildData()
-        if (!buildData) return
+        if (!buildData) return null
         const total = resetRatchet ? foldRows(buildData) : targetRows(buildData)
         // A layout already reaching the target was made for this viewport or
         // a bigger one (both viewport-growth triggers are height-only, so the
@@ -229,17 +274,28 @@ export function usePinboardLayoutActions({
         // a covering board to integrate the new item.
         if (skipIfCovered) {
             const maxY = buildData.sortedLayout.reduce((acc, l) => Math.max(acc, l.y + l.h), 0)
-            if (maxY >= total) return
+            if (maxY >= total) return null
         }
+        // Size-locked items travel: placed at their exact size near their
+        // current spot (a fill maps the board onto itself, so "where you
+        // put it" is its reading-order home), then the flexible items
+        // tile around the placed rects
+        const travellers = buildData.sortedLayout.filter(l =>
+            isSizeLocked(l.i) && (!visibleOnly || l.y < total))
         const participants = buildData.sortedLayout.filter(l =>
             !isLocked(l.i) && (!visibleOnly || l.y < total))
-        if (participants.length === 0) return
-        const packedKeys = new Set(participants.map(l => l.i))
+        if (participants.length === 0 && travellers.length === 0) return null
+        const packedKeys = new Set([...participants, ...travellers].map(l => l.i))
         const rest = layout.filter(l => !packedKeys.has(l.i))
-        const obstacles = lockedObstacles(total)
+        const anchorObstacles = anchoredObstacles(total)
+        const placement = placeTravellers(travellers,
+            { x: 0, y: 0, w: grid.columns, h: total }, anchorObstacles,
+            l => ({ x: l.x, y: l.y }))
+        if (typeof placement === "string") return placement
+        const obstacles = [...anchorObstacles, ...placement.rects]
         const items = participants.map(l => toPackItem(buildData, l))
         const weights = keepProportions ? participants.map(l => l.w * l.h) : undefined
-        const packed = obstacles.length > 0
+        const packed = items.length === 0 ? [] : obstacles.length > 0
             ? packRegion({
                 items, obstacles, grid,
                 columnWidth: buildData.columnWidth,
@@ -258,10 +314,14 @@ export function usePinboardLayoutActions({
         // A packer that can't produce a composition returns [] — committing
         // that would erase the packed items' records (rebuildRecords drops
         // records absent from the reported layout). No layout beats data loss.
-        if (packed.length === 0) return
-        const newLayout = [...packed, ...rest]
+        if (items.length > 0 && packed.length === 0) {
+            return "Couldn't fill the viewport around the fixed items"
+        }
+        const newLayout = [...packed, ...placement.placed, ...rest]
         onLayoutChange(newLayout,
-            verbAutoCrops(buildData, newLayout, packedKeys, layoutAutoCrop), total)
+            verbAutoCrops(buildData, newLayout,
+                new Set(participants.map(l => l.i)), layoutAutoCrop), total)
+        return null
     }
 
     function fillViewport(visibleOnly: boolean, skipIfCovered = false) {
@@ -292,17 +352,23 @@ export function usePinboardLayoutActions({
     // locked items on the board the rows instead flow around them like text
     // around floats (the packer chooses row counts per free segment; the
     // requested count doesn't survive that geometry).
-    async function fillViewportRows(rowCount: number) {
+    async function fillViewportRows(rowCount: number): Promise<string | null> {
         const buildData = await ensureBuildData()
-        if (!buildData) return
+        if (!buildData) return null
         const total = targetRows(buildData)
+        const travellers = buildData.sortedLayout.filter(l => isSizeLocked(l.i))
         const participants = buildData.sortedLayout.filter(l => !isLocked(l.i))
-        if (participants.length === 0) return
-        const packedKeys = new Set(participants.map(l => l.i))
+        if (participants.length === 0 && travellers.length === 0) return null
+        const packedKeys = new Set([...participants, ...travellers].map(l => l.i))
         const rest = layout.filter(l => !packedKeys.has(l.i))
-        const obstacles = lockedObstacles(total)
+        const anchorObstacles = anchoredObstacles(total)
+        const placement = placeTravellers(travellers,
+            { x: 0, y: 0, w: grid.columns, h: total }, anchorObstacles,
+            l => ({ x: l.x, y: l.y }))
+        if (typeof placement === "string") return placement
+        const obstacles = [...anchorObstacles, ...placement.rects]
         const items = participants.map(l => toPackItem(buildData, l))
-        const packed = obstacles.length > 0
+        const packed = items.length === 0 ? [] : obstacles.length > 0
             ? packRowsAroundObstacles({
                 items, obstacles, grid,
                 columnWidth: buildData.columnWidth,
@@ -316,28 +382,94 @@ export function usePinboardLayoutActions({
                 rowCount,
                 ...minPinUnits(grid, buildData.columnWidth),
             })
-        if (packed.length === 0) return
-        const newLayout = [...packed, ...rest]
+        if (items.length > 0 && packed.length === 0) {
+            return "Couldn't fill the rows around the fixed items"
+        }
+        const newLayout = [...packed, ...placement.placed, ...rest]
         onLayoutChange(newLayout,
-            verbAutoCrops(buildData, newLayout, packedKeys, layoutAutoCrop), total)
+            verbAutoCrops(buildData, newLayout,
+                new Set(participants.map(l => l.i)), layoutAutoCrop), total)
+        return null
     }
 
     // Resize-only: keep the current row groupings and reading order, give
     // each row its natural full-width justified height. Re-emits every row
-    // stacked from the top, which cannot hold a locked item in place — so
-    // with locks present it must not run.
-    async function justifyCurrentRows() {
-        if (hasLocks) return
+    // stacked from the top, which cannot hold an ANCHORED item in place —
+    // so with anchors present it must not run. Size-locked members keep
+    // their w x h: the flexible members of their row justify in the
+    // remaining width, and the row advances by its tallest member — a
+    // size-locked item shorter than its row just sits shorter (obvious,
+    // isolated, and gone the moment it's unlocked), and one taller sets
+    // the pace ("justify around the bigger one").
+    async function justifyCurrentRows(): Promise<string | null> {
+        if (hasAnchors) return null
         const buildData = await ensureBuildData()
-        if (!buildData) return
-        const groups = groupRowsByOverlap(buildData.sortedLayout)
-            .map(row => row.map(l => toPackItem(buildData, l)))
-        const newLayout = justifyRows({
-            groups, grid, columnWidth: buildData.columnWidth,
-            ...minPinUnits(grid, buildData.columnWidth),
-        })
+        if (!buildData) return null
+        const { minW, minH } = minPinUnits(grid, buildData.columnWidth)
+        const rows = groupRowsByOverlap(buildData.sortedLayout)
+        if (!rows.some(row => row.some(l => isSizeLocked(l.i)))) {
+            const newLayout = justifyRows({
+                groups: rows.map(row => row.map(l => toPackItem(buildData, l))),
+                grid, columnWidth: buildData.columnWidth,
+                minW, minH,
+            })
+            onLayoutChange(newLayout,
+                verbAutoCrops(buildData, newLayout, new Set(newLayout.map(l => l.i)), layoutAutoCrop))
+            return null
+        }
+        const step = rowStep(grid)
+        const newLayout: LayoutItem[] = []
+        const touched = new Set<string>()
+        let y = 0
+        for (const row of rows) {
+            if (row.length === 0) continue
+            const fixed = row.filter(l => isSizeLocked(l.i))
+            const flex = row.filter(l => !isSizeLocked(l.i))
+            const fixedCols = fixed.reduce((acc, l) => acc + l.w, 0)
+            const freeCols = grid.columns - fixedCols
+            // Natural justified height for the flexible members over the
+            // width the fixed members leave them (the plain natural-height
+            // formula with the fixed pixel widths subtracted)
+            let hFlex = 0
+            let counts: number[] = []
+            const justifiable = flex.length > 0 && freeCols >= flex.length
+            if (justifiable) {
+                const items = flex.map(l => toPackItem(buildData, l))
+                const aspects = items.map(it => (it.width || 1) / (it.height || 1))
+                const freePx = pixelWidth(grid.columns, buildData.columnWidth, grid.margin)
+                    - (row.length - 1) * grid.margin
+                    - fixed.reduce((acc, l) =>
+                        acc + pixelWidth(l.w, buildData.columnWidth, grid.margin), 0)
+                const naturalPx = freePx / aspects.reduce((acc, v) => acc + v, 0)
+                hFlex = Math.max(minH, Math.round((naturalPx + grid.margin) / step))
+                const targetPx = hFlex * step - grid.margin
+                const ideal = aspects.map(a =>
+                    (a * targetPx + grid.margin) / (buildData.columnWidth + grid.margin))
+                const effMin = Math.max(1, Math.min(minW, Math.floor(freeCols / flex.length)))
+                counts = apportionToTotal(ideal, freeCols, effMin)
+            }
+            // Emit in reading order; non-justifiable rows (all locked, or
+            // the locks leave no width) keep every member's current size
+            // and just reflow at the cursor
+            let x = 0
+            let fi = 0
+            let advance = 1
+            for (const l of row) {
+                const w = isSizeLocked(l.i) || !justifiable ? l.w : counts[fi]
+                const h = isSizeLocked(l.i) || !justifiable ? l.h : hFlex
+                if (!isSizeLocked(l.i)) {
+                    if (justifiable) touched.add(l.i)
+                    fi++
+                }
+                newLayout.push({ ...l, x, y, w, h })
+                advance = Math.max(advance, h)
+                x += w
+            }
+            y += advance
+        }
         onLayoutChange(newLayout,
-            verbAutoCrops(buildData, newLayout, new Set(newLayout.map(l => l.i)), layoutAutoCrop))
+            verbAutoCrops(buildData, newLayout, touched, layoutAutoCrop))
+        return null
     }
 
     // Grow the current arrangement to fill the target rectangle without
@@ -347,15 +479,49 @@ export function usePinboardLayoutActions({
     // exact-fill emitter, so growing can never come up short of the target
     // (a justify-style fallback here once did, shrinking the board).
     // Structure recovery can't hold a locked rect in place while resizing
-    // everything around it, so with locked items inside the target this
-    // verb no-ops rather than move them.
-    async function growInPlace() {
+    // everything around it, so with locks inside the target the grow
+    // degrades to a proportional reflow around them: anchored items stay
+    // put, size-locked items keep their w x h near their current spot,
+    // and everything else re-tiles at its current share of the space —
+    // the arrangement may shift, but the sizes' intent survives.
+    async function growInPlace(): Promise<string | null> {
         const buildData = await ensureBuildData()
-        if (!buildData) return
+        if (!buildData) return null
         const total = targetRows(buildData)
-        if (layout.some(l => isLocked(l.i) && l.y < total)) return
+        const mins = minPinUnits(grid, buildData.columnWidth)
+        if (layout.some(l => isLocked(l.i) && l.y < total)) {
+            const travellers = buildData.sortedLayout.filter(l =>
+                isSizeLocked(l.i) && l.y < total)
+            const participants = buildData.sortedLayout.filter(l =>
+                !isLocked(l.i) && l.y < total)
+            const packedKeys = new Set([...participants, ...travellers].map(l => l.i))
+            const rest = layout.filter(l => !packedKeys.has(l.i))
+            const anchorObstacles = anchoredObstacles(total)
+            const placement = placeTravellers(travellers,
+                { x: 0, y: 0, w: grid.columns, h: total }, anchorObstacles,
+                l => ({ x: l.x, y: l.y }))
+            if (typeof placement === "string") return placement
+            const packed = participants.length === 0 ? [] : packRegion({
+                items: participants.map(l => toPackItem(buildData, l)),
+                obstacles: [...anchorObstacles, ...placement.rects],
+                grid,
+                columnWidth: buildData.columnWidth,
+                totalGridRows: total,
+                variant: mosaicVariant,
+                weights: participants.map(l => l.w * l.h),
+                ...mins,
+            })
+            if (participants.length > 0 && packed.length === 0) {
+                return "Couldn't grow the board around the fixed items"
+            }
+            const newLayout = [...packed, ...placement.placed, ...rest]
+            onLayoutChange(newLayout,
+                verbAutoCrops(buildData, newLayout,
+                    new Set(participants.map(l => l.i)), layoutAutoCrop), total)
+            return null
+        }
         const participants = buildData.sortedLayout.filter(l => l.y < total)
-        if (participants.length === 0) return
+        if (participants.length === 0) return null
         const packedKeys = new Set(participants.map(l => l.i))
         const rest = layout.filter(l => !packedKeys.has(l.i))
         const arranged: ArrangedItem[] = participants.map(l => ({
@@ -365,45 +531,93 @@ export function usePinboardLayoutActions({
             items: arranged, grid,
             columnWidth: buildData.columnWidth,
             totalGridRows: total,
-            ...minPinUnits(grid, buildData.columnWidth),
+            ...mins,
         })
-        if (packed.length === 0) return
+        if (packed.length === 0) return null
         const newLayout = [...packed, ...rest]
         onLayoutChange(newLayout,
             verbAutoCrops(buildData, newLayout, packedKeys, layoutAutoCrop), total)
+        return null
     }
 
     // Exchange two items' rects: each fills exactly the void the other
     // leaves, nothing else moves, and the sticky auto-crops absorb the
-    // aspect mismatch of the traded cells
-    async function swapItems(keyA: string, keyB: string) {
-        if (isLocked(keyA) || isLocked(keyB)) return
+    // aspect mismatch of the traded cells. A size-locked item swaps too —
+    // it keeps its own w x h and lands at the free spot nearest the
+    // partner's old corner (its flexible partner adopts the full vacated
+    // rect, so equal-size locked pairs are a clean position swap). Only
+    // anchors refuse: a position lock can't take the other's place.
+    async function swapItems(keyA: string, keyB: string): Promise<string | null> {
+        if (isAnchored(keyA) || isAnchored(keyB)) {
+            return "An anchored item can't swap — unanchor it first"
+        }
         const buildData = await ensureBuildData()
-        if (!buildData) return
+        if (!buildData) return null
         const a = layout.find(l => l.i === keyA)
         const b = layout.find(l => l.i === keyB)
-        if (!a || !b) return
-        const newLayout = layout.map(l =>
-            l.i === keyA ? { ...l, x: b.x, y: b.y, w: b.w, h: b.h }
-                : l.i === keyB ? { ...l, x: a.x, y: a.y, w: a.w, h: a.h }
-                    : l)
+        if (!a || !b) return null
+        let newA: LayoutItem, newB: LayoutItem
+        if (!isSizeLocked(keyA) && !isSizeLocked(keyB)) {
+            newA = { ...a, x: b.x, y: b.y, w: b.w, h: b.h }
+            newB = { ...b, x: a.x, y: a.y, w: a.w, h: a.h }
+        } else {
+            // The board is open-ended below, so give the placement scan
+            // room past everything — a spot always exists down there
+            const maxY = layout.reduce((acc, l) => Math.max(acc, l.y + l.h), 0)
+            const board = { x: 0, y: 0, w: grid.columns, h: maxY + a.h + b.h }
+            const others = layout
+                .filter(l => l.i !== keyA && l.i !== keyB)
+                .map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h }))
+            // Each item aims at its partner's old corner; a flexible one
+            // simply takes the partner's whole rect first and becomes an
+            // obstacle for the locked one's placement
+            const fixedRects: GridRect[] = []
+            if (!isSizeLocked(keyA)) {
+                newA = { ...a, x: b.x, y: b.y, w: b.w, h: b.h }
+                fixedRects.push({ x: newA.x, y: newA.y, w: newA.w, h: newA.h })
+                const placed = placeTravellers([b], board, [...others, ...fixedRects],
+                    () => ({ x: a.x, y: a.y }))
+                if (typeof placed === "string") return placed
+                newB = placed.placed[0]
+            } else if (!isSizeLocked(keyB)) {
+                newB = { ...b, x: a.x, y: a.y, w: a.w, h: a.h }
+                fixedRects.push({ x: newB.x, y: newB.y, w: newB.w, h: newB.h })
+                const placed = placeTravellers([a], board, [...others, ...fixedRects],
+                    () => ({ x: b.x, y: b.y }))
+                if (typeof placed === "string") return placed
+                newA = placed.placed[0]
+            } else {
+                const placed = placeTravellers([a, b], board, others,
+                    l => l.i === keyA ? { x: b.x, y: b.y } : { x: a.x, y: a.y })
+                if (typeof placed === "string") return placed
+                ;[newA, newB] = placed.placed
+            }
+        }
+        const byKey = new Map([[keyA, newA], [keyB, newB]])
+        const newLayout = layout.map(l => byKey.get(l.i) ?? l)
+        // Only cells that actually changed size need crop maintenance —
+        // a size-locked item's cell never does
+        const touched = new Set([keyA, keyB].filter(k => !isSizeLocked(k)))
         onLayoutChange(newLayout,
-            verbAutoCrops(buildData, newLayout, new Set([keyA, keyB]), selectionAutoCrop))
+            verbAutoCrops(buildData, newLayout, touched, selectionAutoCrop))
+        return null
     }
 
     // Mosaic the selected items within their combined bounding box — the
-    // box is claimed for the selection. Locked items are never rearranged:
-    // selected ones only stretch the box (their spot is part of the region
-    // being arranged), and EVERY locked item intersecting the box —
-    // selected or not — becomes an obstacle the mosaic packs around.
-    // Unselected UNLOCKED items caught inside the box are cleared out first
-    // by evictFromBox's local moves (slide sideways / shrink to the edge /
-    // drop below the box); whatever can't leave cheaply stays put as an
-    // obstacle too. Without the obstacle handling the arrangement would
-    // overlap those rects and RGL's compactor would shove the overlapping
-    // items apart, scattering the board. (The compactor may still settle
-    // the arranged block upward if there is free space above it, as with
-    // every arrangement verb.)
+    // box is claimed for the selection. Anchored items are never
+    // rearranged: selected ones only stretch the box (their spot is part
+    // of the region being arranged), and every anchored item intersecting
+    // the box — selected or not — becomes an obstacle the mosaic packs
+    // around. Size-locked selected items travel at their fixed size
+    // (placeTravellers). Unselected non-anchored items caught inside the
+    // box are cleared out first by evictFromBox's local moves (slide
+    // sideways / shrink to the edge / drop below the box — size-locked
+    // bystanders move whole or stay); whatever can't leave cheaply stays
+    // put as an obstacle too. Without the obstacle handling the
+    // arrangement would overlap those rects and RGL's compactor would
+    // shove the overlapping items apart, scattering the board. (The
+    // compactor may still settle the arranged block upward if there is
+    // free space above it, as with every arrangement verb.)
     // With keepProportions ("Reflow Selection") each item aims at its
     // current share of the box area instead of a uniform share.
     // With shuffle ("Shuffle") the participants are packed in a random
@@ -412,52 +626,75 @@ export function usePinboardLayoutActions({
     // deterministic and order-preserving, so an already-arranged selection
     // is a fixed point of plain Arrange; permuting its input is what
     // reaches the compositions the DP would otherwise never consider.
-    async function arrangeSelection(keys: string[], keepProportions = false, shuffle = false) {
+    async function arrangeSelection(
+        keys: string[], keepProportions = false, shuffle = false,
+    ): Promise<string | null> {
         const buildData = await ensureBuildData()
-        if (!buildData) return
+        if (!buildData) return null
         const keySet = new Set(keys)
         const selectedItems = buildData.sortedLayout.filter(l => keySet.has(l.i))
+        // Anchored selected items stay exactly where they are — they're
+        // already inside the box, so holding still IS their arrangement.
+        // Size-locked selected items are travellers: re-placed at their
+        // fixed size (near their current spot; at a random spot under
+        // shuffle), and the flexible rest tiles the remaining space.
+        const travellers = selectedItems.filter(l => isSizeLocked(l.i))
         const participants = selectedItems.filter(l => !isLocked(l.i))
-        if (participants.length < 2) return
+        if (participants.length + travellers.length < 2) return null
         const x0 = Math.min(...selectedItems.map(l => l.x))
         const y0 = Math.min(...selectedItems.map(l => l.y))
         const x1 = Math.max(...selectedItems.map(l => l.x + l.w))
         const y1 = Math.max(...selectedItems.map(l => l.y + l.h))
         const box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
-        const packedKeys = new Set(participants.map(l => l.i))
+        const packedKeys = new Set([...participants, ...travellers].map(l => l.i))
         const mins = minPinUnits(grid, buildData.columnWidth)
         const { rest, extraObstacles } = evictFromBox({
             layout, box,
             participantKeys: packedKeys,
-            lockedKeys: new Set(layout.filter(l => isLocked(l.i)).map(l => l.i)),
-            anchoredKeys: new Set(layout.filter(l => locks[l.i] === "anchor").map(l => l.i)),
+            sizeLockedKeys: new Set(layout.filter(l => isSizeLocked(l.i)).map(l => l.i)),
+            anchoredKeys: new Set(layout.filter(l => isAnchored(l.i)).map(l => l.i)),
             columns: grid.columns,
             ...mins,
         })
-        const obstacles = [
+        const baseObstacles = [
             ...layout
-                .filter(l => isLocked(l.i)
+                .filter(l => isAnchored(l.i)
                     && l.x < x1 && l.x + l.w > x0 && l.y < y1 && l.y + l.h > y0)
                 .map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h })),
             ...extraObstacles,
         ]
-        const packItems = participants.map(l => toPackItem(buildData, l))
-        const pack = (items: PackItem[]) => packRegionInBox({
-            items,
-            obstacles,
-            grid,
-            columnWidth: buildData.columnWidth,
-            box,
-            variant: mosaicVariant,
-            // Weights stay off under shuffle: a reroll redistributes the
-            // space, it doesn't re-derive it from the last outcome
-            weights: keepProportions && !shuffle
-                ? participants.map(l => l.w * l.h) : undefined,
-            ...mins,
+        const currentAim = (l: LayoutItem) => ({ x: l.x, y: l.y })
+        const randomAim = (l: LayoutItem) => ({
+            x: box.x + Math.floor(Math.random() * Math.max(1, box.w - l.w + 1)),
+            y: box.y + Math.floor(Math.random() * Math.max(1, box.h - l.h + 1)),
         })
-        let packed = pack(packItems)
+        const packItems = participants.map(l => toPackItem(buildData, l))
+        const attempt = (order: PackItem[], aimFor: (l: LayoutItem) => { x: number, y: number }) => {
+            const placement = placeTravellers(travellers, box, baseObstacles, aimFor)
+            if (typeof placement === "string") return placement
+            const packed = order.length > 0
+                ? packRegionInBox({
+                    items: order,
+                    obstacles: [...baseObstacles, ...placement.rects],
+                    grid,
+                    columnWidth: buildData.columnWidth,
+                    box,
+                    variant: mosaicVariant,
+                    // Weights stay off under shuffle: a reroll
+                    // redistributes the space, it doesn't re-derive it
+                    // from the last outcome. (Non-shuffle order is exactly
+                    // packItems, so the weights align with the items.)
+                    weights: keepProportions && !shuffle
+                        ? participants.map(l => l.w * l.h) : undefined,
+                    ...mins,
+                })
+                : []
+            return { packed, placement }
+        }
+        let result = attempt(packItems, currentAim)
+        if (typeof result === "string") return result
         if (shuffle) {
-            const current = new Map(participants.map(l =>
+            const current = new Map([...participants, ...travellers].map(l =>
                 [l.i, `${l.x},${l.y},${l.w},${l.h}`]))
             const unchanged = (candidate: LayoutItem[]) =>
                 candidate.every(l => current.get(l.i) === `${l.x},${l.y},${l.w},${l.h}`)
@@ -472,16 +709,21 @@ export function usePinboardLayoutActions({
                     const j = Math.floor(Math.random() * (i + 1))
                     const tmp = order[i]; order[i] = order[j]; order[j] = tmp
                 }
-                const candidate = pack(order)
-                if (candidate.length === 0) continue
-                packed = candidate
-                if (!unchanged(candidate)) break
+                const candidate = attempt(order, randomAim)
+                if (typeof candidate === "string") continue
+                if (participants.length > 0 && candidate.packed.length === 0) continue
+                result = candidate
+                if (!unchanged([...candidate.packed, ...candidate.placement.placed])) break
             }
         }
-        if (packed.length === 0) return
-        const newLayout = [...packed, ...rest]
+        if (participants.length > 0 && result.packed.length === 0) {
+            return "Couldn't arrange the selection around the fixed items"
+        }
+        const newLayout = [...result.packed, ...result.placement.placed, ...rest]
         onLayoutChange(newLayout,
-            verbAutoCrops(buildData, newLayout, packedKeys, selectionAutoCrop))
+            verbAutoCrops(buildData, newLayout,
+                new Set(participants.map(l => l.i)), selectionAutoCrop))
+        return null
     }
 
     // Send the selection to a preset region: the region is cleared out and
@@ -553,30 +795,12 @@ export function usePinboardLayoutActions({
         const obstacles = rest
             .filter(l => !evictKeys.has(l.i) && isLocked(l.i) && inBox(l))
             .map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h }))
-        // Place the size-locked travellers: reading order, first spot in a
-        // row-major scan of the region clear of anchored bystanders and
-        // travellers already placed. Any traveller that can't be placed
-        // aborts the whole verb — the move is atomic or not at all.
-        const placedRects: GridRect[] = []
-        const placedItems: LayoutItem[] = []
-        for (const l of sizeLocked) {
-            if (l.w > box.w || l.h > box.h) {
-                return "A size-locked item is too big for the region — unlock or deselect it"
-            }
-            let spot: { x: number, y: number } | null = null
-            for (let y = box.y; y <= box.y + box.h - l.h && !spot; y++) {
-                for (let x = box.x; x <= box.x + box.w - l.w && !spot; x++) {
-                    const r = { x, y, w: l.w, h: l.h }
-                    if (!obstacles.some(o => overlapping(r, o))
-                        && !placedRects.some(o => overlapping(r, o))) spot = { x, y }
-                }
-            }
-            if (!spot) {
-                return "No room in the region for a size-locked item — unlock or deselect it"
-            }
-            placedRects.push({ x: spot.x, y: spot.y, w: l.w, h: l.h })
-            placedItems.push({ ...l, x: spot.x, y: spot.y })
-        }
+        // Travellers land at the free spot nearest their current position,
+        // so the group's rough geography survives the move
+        const placement = placeTravellers(sizeLocked, box, obstacles,
+            l => ({ x: l.x, y: l.y }))
+        if (typeof placement === "string") return placement
+        const { placed: placedItems, rects: placedRects } = placement
         const packed = flexible.length > 0
             ? packRegionInBox({
                 items: flexible.map(l => toPackItem(buildData, l)),
@@ -820,13 +1044,16 @@ export function usePinboardLayoutActions({
     // re-solves sizes only. With obstacles the structure can't survive, so
     // the selection reflows around them in reading order, each item aiming
     // at its current share of the area.
-    async function growSelection(keys: string[]) {
+    async function growSelection(keys: string[]): Promise<string | null> {
         const buildData = await ensureBuildData()
-        if (!buildData) return
+        if (!buildData) return null
         const keySet = new Set(keys)
         const selectedItems = buildData.sortedLayout.filter(l => keySet.has(l.i))
+        const travellers = selectedItems.filter(l => isSizeLocked(l.i))
         const participants = selectedItems.filter(l => !isLocked(l.i))
-        if (participants.length === 0) return
+        if (participants.length === 0) {
+            return "Nothing in the selection can resize — unlock an item first"
+        }
         const x0 = Math.min(...selectedItems.map(l => l.x))
         const y0 = Math.min(...selectedItems.map(l => l.y))
         const x1 = Math.max(...selectedItems.map(l => l.x + l.w))
@@ -853,13 +1080,21 @@ export function usePinboardLayoutActions({
         bottom = Math.max(bottom, y1)
         const box = { x: left, y: top, w: right - left, h: bottom - top }
         const mins = minPinUnits(grid, buildData.columnWidth)
-        const obstacles = [
-            ...selectedItems.filter(l => isLocked(l.i)),
+        // Anchored selected items stay in place as obstacles; size-locked
+        // selected items travel at their fixed size (near their current
+        // spot) and the placed rects become obstacles for the grow
+        const baseObstacles = [
+            ...selectedItems.filter(l => isAnchored(l.i)),
             ...fixed.filter(l =>
                 l.x < x1 && l.x + l.w > x0 && l.y < y1 && l.y + l.h > y0),
         ].map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h }))
+        const placement = placeTravellers(travellers, box, baseObstacles,
+            l => ({ x: l.x, y: l.y }))
+        if (typeof placement === "string") return placement
+        const obstacles = [...baseObstacles, ...placement.rects]
         const packedKeys = new Set(participants.map(l => l.i))
-        const rest = layout.filter(l => !packedKeys.has(l.i))
+        const rest = layout.filter(l =>
+            !packedKeys.has(l.i) && !placement.placed.some(p => p.i === l.i))
         const packed = obstacles.length > 0
             ? packRegionInBox({
                 items: participants.map(l => toPackItem(buildData, l)),
@@ -878,10 +1113,13 @@ export function usePinboardLayoutActions({
                 box,
                 ...mins,
             })
-        if (packed.length === 0) return
-        const newLayout = [...packed, ...rest]
+        if (packed.length === 0) {
+            return "Couldn't grow the selection around the fixed items"
+        }
+        const newLayout = [...packed, ...placement.placed, ...rest]
         onLayoutChange(newLayout,
             verbAutoCrops(buildData, newLayout, packedKeys, selectionAutoCrop))
+        return null
     }
 
     return {
