@@ -56,13 +56,26 @@ const useGalleryPinAutoLayout = () =>
       history: "push",
     })
   )
-// Auto-crop rides on auto-layout: the flag is stored independently (so it
-// survives auto-layout being toggled off and back on) but only takes effect
-// while auto-layout is on — every consumer must check both flags
+// The standing auto-crop setting for the board-layout verb family (fills,
+// reroll, refit, reflow, rows, justify, grow — manual or auto-triggered):
+// on, those verbs fit every item they lay out to its cell; off, they drop
+// the auto crops their writes make stale. Stored independently of
+// auto-layout so it survives pba being toggled off and back on.
 const useGalleryPinAutoCrop = () =>
   useQueryState(
     "pbc",
     parseAsBoolean.withDefault(false).withOptions({
+      clearOnDefault: true,
+      history: "push",
+    })
+  )
+// The same standing setting for the multi-select verbs (arrange, swap),
+// toggled from the selection toolbar. Default ON; in the URL like every
+// board flag so links and back/forward reproduce behavior.
+const useGalleryPinSelectionCrop = () =>
+  useQueryState(
+    "psc",
+    parseAsBoolean.withDefault(true).withOptions({
       clearOnDefault: true,
       history: "push",
     })
@@ -120,4 +133,5 @@ export {
   useGalleryPinGrid,
   useGalleryPinAutoLayout,
   useGalleryPinAutoCrop,
+  useGalleryPinSelectionCrop,
 }

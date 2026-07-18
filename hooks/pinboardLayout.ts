@@ -43,6 +43,8 @@ export function usePinboardLayoutActions({
     autoCrops,
     locks = {},
     highWater = 0,
+    layoutAutoCrop = false,
+    selectionAutoCrop = true,
     dbs,
     grid,
     pinboardRef,
@@ -58,6 +60,13 @@ export function usePinboardLayoutActions({
     locks?: Record<string, PinLock>,
     // The board's layout-height ratchet in grid rows (see pinboardGrid.ts)
     highWater?: number,
+    // The standing auto-crop settings, one per verb class: layoutAutoCrop
+    // (the pbc URL flag) governs the board-layout family — fills, reroll,
+    // refit, reflow, rows, justify, grow — and selectionAutoCrop (the psc
+    // flag, toggled from the selection toolbar) governs the multi-select
+    // verbs, arrange and swap. See verbAutoCrops for what they do.
+    layoutAutoCrop?: boolean,
+    selectionAutoCrop?: boolean,
     dbs: {
         index_db: string | null
         user_data_db: string | null
@@ -97,7 +106,8 @@ export function usePinboardLayoutActions({
         const buildData = await ensureBuildData()
         if (!buildData) return
         const newLayout = buildLayout(buildData, itemsPerRow, restrictToVisible)
-        onLayoutChange(newLayout, stickyAutoCrops(buildData, newLayout))
+        onLayoutChange(newLayout,
+            verbAutoCrops(buildData, newLayout, new Set(newLayout.map(l => l.i)), layoutAutoCrop))
     }
 
     // Grid rows above the fold: the block a fill action must span exactly,
@@ -132,36 +142,36 @@ export function usePinboardLayoutActions({
         return computeAutoCrop(baseW / baseH, cellW, cellH)
     }
 
-    // An item with an auto slot is sticky "keep me fitted to my cell": every
-    // action that computes new cell sizes recomputes those items' auto crops
-    // for their NEW cells — always from the manual base, never from the
-    // previous auto value, so repeated actions can't ratchet the crop tighter.
-    // Items without an auto slot are left alone.
-    function stickyAutoCrops(
+    // Auto-crop maintenance for a verb write. An auto crop is a fit to a
+    // specific cell size — pure derived state with no standing per-item
+    // meaning (the old "sticky" rule re-fitted any item that happened to
+    // carry one, an invisible flag assigned by layout history). With the
+    // verb class's governing setting ON, every item the verb laid out —
+    // plus any bystander whose cell size the write changes, like evicted
+    // peekers — is fitted to its cell from the manual-crop base (never
+    // from the previous auto value, so repeated actions can't ratchet the
+    // crop tighter). With the setting OFF, auto crops the write makes
+    // stale (cell size changed) are dropped instead, letterboxing the
+    // true image. Bystanders whose cell size is unchanged keep their
+    // stored crop, which is still exact.
+    function verbAutoCrops(
         buildData: LayoutBuildData,
         newLayout: LayoutItem[],
+        touched: Set<string>,
+        recrop: boolean,
     ): Record<string, CropRect | null> {
+        const oldSize = new Map(layout.map(l => [l.i, `${l.w}x${l.h}`]))
         const overrides: Record<string, CropRect | null> = {}
         for (const l of newLayout) {
-            if (!autoCrops[l.i]) continue
-            const next = autoCropForCell(buildData, l.i, l.w, l.h)
-            if (next !== undefined) overrides[l.i] = next
-        }
-        return overrides
-    }
-
-    // The crop-all variant of stickyAutoCrops: fit EVERY item to its new
-    // cell, seeding auto slots for items that had none. Auto-layout runs
-    // with the auto-crop flag on use this so the whole board lands cropped
-    // to its cells in the same write as the geometry.
-    function allAutoCrops(
-        buildData: LayoutBuildData,
-        newLayout: LayoutItem[],
-    ): Record<string, CropRect | null> {
-        const overrides: Record<string, CropRect | null> = {}
-        for (const l of newLayout) {
-            const next = autoCropForCell(buildData, l.i, l.w, l.h)
-            if (next !== undefined) overrides[l.i] = next
+            const sizeChanged = oldSize.get(l.i) !== `${l.w}x${l.h}`
+            if (recrop && (touched.has(l.i) || sizeChanged)) {
+                const next = autoCropForCell(buildData, l.i, l.w, l.h)
+                // Unknown natural dimensions (metadata fetch failed): leave
+                // the slot alone rather than fit a made-up aspect
+                if (next !== undefined) overrides[l.i] = next
+            } else if (!recrop && sizeChanged && autoCrops[l.i]) {
+                overrides[l.i] = null
+            }
         }
         return overrides
     }
@@ -191,13 +201,11 @@ export function usePinboardLayoutActions({
     // two actions are equivalent.
     async function doFill({
         visibleOnly = false,
-        cropToCells = false,
         skipIfCovered = false,
         keepProportions = false,
         resetRatchet = false,
     }: {
         visibleOnly?: boolean,
-        cropToCells?: boolean,
         skipIfCovered?: boolean,
         // Aim each item at its CURRENT share of the board area instead of
         // uniform shares: reflow freely, keep the proportions the user made
@@ -249,33 +257,32 @@ export function usePinboardLayoutActions({
         // records absent from the reported layout). No layout beats data loss.
         if (packed.length === 0) return
         const newLayout = [...packed, ...rest]
-        onLayoutChange(newLayout, cropToCells
-            ? allAutoCrops(buildData, newLayout)
-            : stickyAutoCrops(buildData, newLayout), total)
+        onLayoutChange(newLayout,
+            verbAutoCrops(buildData, newLayout, packedKeys, layoutAutoCrop), total)
     }
 
-    function fillViewport(visibleOnly: boolean, cropToCells = false, skipIfCovered = false) {
-        return doFill({ visibleOnly, cropToCells, skipIfCovered })
+    function fillViewport(visibleOnly: boolean, skipIfCovered = false) {
+        return doFill({ visibleOnly, skipIfCovered })
     }
 
     // Cycle to the next distinct near-best composition and re-fill. The
     // counter is session-wide, so subsequent auto-fills keep the chosen
     // variant instead of snapping back to the first one.
-    function rerollLayout(cropToCells = false) {
+    function rerollLayout() {
         mosaicVariant++
-        return doFill({ cropToCells })
+        return doFill({})
     }
 
     // Reset the ratchet to the current viewport and fill it — the explicit
     // opt-out for a board that moved to a smaller screen for good
-    function refitToView(cropToCells = false) {
-        return doFill({ cropToCells, resetRatchet: true })
+    function refitToView() {
+        return doFill({ resetRatchet: true })
     }
 
     // Reflow freely but aim every item at its current share of the board:
     // importance is expressed by how you've already sized things
-    function reflowKeepProportions(cropToCells = false) {
-        return doFill({ cropToCells, keepProportions: true })
+    function reflowKeepProportions() {
+        return doFill({ keepProportions: true })
     }
 
     // "Split the space evenly among N rows" — explicitly row-based. With
@@ -308,7 +315,8 @@ export function usePinboardLayoutActions({
             })
         if (packed.length === 0) return
         const newLayout = [...packed, ...rest]
-        onLayoutChange(newLayout, stickyAutoCrops(buildData, newLayout), total)
+        onLayoutChange(newLayout,
+            verbAutoCrops(buildData, newLayout, packedKeys, layoutAutoCrop), total)
     }
 
     // Resize-only: keep the current row groupings and reading order, give
@@ -325,7 +333,8 @@ export function usePinboardLayoutActions({
             groups, grid, columnWidth: buildData.columnWidth,
             ...minPinUnits(grid, buildData.columnWidth),
         })
-        onLayoutChange(newLayout, stickyAutoCrops(buildData, newLayout))
+        onLayoutChange(newLayout,
+            verbAutoCrops(buildData, newLayout, new Set(newLayout.map(l => l.i)), layoutAutoCrop))
     }
 
     // Grow the current arrangement to fill the target rectangle without
@@ -357,7 +366,8 @@ export function usePinboardLayoutActions({
         })
         if (packed.length === 0) return
         const newLayout = [...packed, ...rest]
-        onLayoutChange(newLayout, stickyAutoCrops(buildData, newLayout), total)
+        onLayoutChange(newLayout,
+            verbAutoCrops(buildData, newLayout, packedKeys, layoutAutoCrop), total)
     }
 
     // Exchange two items' rects: each fills exactly the void the other
@@ -374,7 +384,8 @@ export function usePinboardLayoutActions({
             l.i === keyA ? { ...l, x: b.x, y: b.y, w: b.w, h: b.h }
                 : l.i === keyB ? { ...l, x: a.x, y: a.y, w: a.w, h: a.h }
                     : l)
-        onLayoutChange(newLayout, stickyAutoCrops(buildData, newLayout))
+        onLayoutChange(newLayout,
+            verbAutoCrops(buildData, newLayout, new Set([keyA, keyB]), selectionAutoCrop))
     }
 
     // Mosaic the selected items within their combined bounding box — the
@@ -430,7 +441,23 @@ export function usePinboardLayoutActions({
         })
         if (packed.length === 0) return
         const newLayout = [...packed, ...rest]
-        onLayoutChange(newLayout, stickyAutoCrops(buildData, newLayout))
+        onLayoutChange(newLayout,
+            verbAutoCrops(buildData, newLayout, packedKeys, selectionAutoCrop))
+    }
+
+    // Fit each given item to its current cell — the selection toolbar's
+    // crop-now action, fired when its auto-crop toggle turns on
+    async function autoCropSelection(keys: string[]) {
+        const buildData = await ensureBuildData()
+        if (!buildData) return
+        const keySet = new Set(keys)
+        const overrides: Record<string, CropRect | null> = {}
+        for (const l of layout) {
+            if (!keySet.has(l.i)) continue
+            const next = autoCropForCell(buildData, l.i, l.w, l.h)
+            if (next !== undefined) overrides[l.i] = next
+        }
+        onLayoutChange(layout, overrides)
     }
 
     async function changeItemSize(layoutKey: string, increase: number) {
@@ -450,7 +477,9 @@ export function usePinboardLayoutActions({
             }
             return l
         })
-        onLayoutChange(newLayout, stickyAutoCrops(buildData, newLayout))
+        // An explicit size command is gesture-like: it does not re-fit, it
+        // just drops the auto crop its own resize made stale
+        onLayoutChange(newLayout, verbAutoCrops(buildData, newLayout, new Set(), false))
     }
     async function setItemSize(layoutKey: string, size: number) {
         if (isLocked(layoutKey)) return
@@ -469,13 +498,13 @@ export function usePinboardLayoutActions({
             }
             return l
         })
-        onLayoutChange(newLayout, stickyAutoCrops(buildData, newLayout))
+        onLayoutChange(newLayout, verbAutoCrops(buildData, newLayout, new Set(), false))
     }
     // Fit every item (or only those starting above the fold) to its current
-    // cell by writing its auto-crop slot — which also sets the sticky
-    // "keep me fitted" flag. Near-fits (>= 98% of the base) get null. The
-    // geometry is untouched: the current layout plus the overrides map goes
-    // through the same atomic mechanism as the layout actions.
+    // cell by writing its auto-crop slot. Near-fits (>= 98% of the base)
+    // get null. The geometry is untouched: the current layout plus the
+    // overrides map goes through the same atomic mechanism as the layout
+    // actions.
     async function autoCropToCells(visibleOnly: boolean) {
         const buildData = await ensureBuildData()
         if (!buildData) return
@@ -530,6 +559,7 @@ export function usePinboardLayoutActions({
         growInPlace,
         swapItems,
         arrangeSelection,
+        autoCropSelection,
         // Whether any item is locked — the menu greys out the verbs that
         // no-op with locks present
         hasLocks,

@@ -1,7 +1,7 @@
 import Image from 'next/image'
 import { cn, getFileURL } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
-import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid } from '@/lib/state/gallery'
+import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid, useGalleryPinSelectionCrop } from '@/lib/state/gallery'
 import { consumePinboardNavigation, consumePinboardPendingEdit } from '@/lib/pinboardNavigation'
 import { usePinBoard } from '@/lib/state/pinboard'
 import { GridParams, minPinUnits, rowStep, v1ScaleFactors } from '@/lib/pinboardGrid'
@@ -388,8 +388,11 @@ export function PinBoard(
     // the context menu uses.
     const [autoLayout] = useGalleryPinAutoLayout()
     const [autoLayoutCrop] = useGalleryPinAutoCrop()
-    const { fillViewport, arrangeSelection, swapItems } = usePinboardLayoutActions({
+    const [selectionCrop, setSelectionCrop] = useGalleryPinSelectionCrop()
+    const { fillViewport, arrangeSelection, swapItems, autoCropSelection } = usePinboardLayoutActions({
         layout, crops, autoCrops, locks: itemLocks, highWater, dbs, grid,
+        layoutAutoCrop: autoLayoutCrop,
+        selectionAutoCrop: selectionCrop,
         pinboardRef: scrollAreaRef,
         onLayoutChange,
     })
@@ -744,8 +747,6 @@ export function PinBoard(
     // time while only reacting to their own trigger conditions
     const autoLayoutRef = useRef(autoLayout)
     autoLayoutRef.current = autoLayout
-    const autoLayoutCropRef = useRef(autoLayoutCrop)
-    autoLayoutCropRef.current = autoLayoutCrop
     const fillViewportRef = useRef(fillViewport)
     fillViewportRef.current = fillViewport
     // Previous pin count; null until the first observation so loading a
@@ -768,7 +769,7 @@ export function PinBoard(
             // unmounted, and that edit still needs laying out. Navigation
             // takes precedence: a restored version replaced those records.
             if (pendingEdit && !wasNavigation && count > 0 && autoLayoutRef.current) {
-                void fillViewportRef.current(false, autoLayoutCropRef.current)
+                void fillViewportRef.current(false)
             }
             return
         }
@@ -785,7 +786,7 @@ export function PinBoard(
         if (!autoLayoutRef.current) return
         // Fire-and-forget: fillViewport is async (fetches metadata) and
         // no-ops on its own when the container can't be measured
-        void fillViewportRef.current(false, autoLayoutCropRef.current)
+        void fillViewportRef.current(false)
     }, [records])
     // Viewport-growth trigger: explicit user actions that give the board
     // more room — maximizing it, hiding the gallery thumbnails — re-run the
@@ -814,7 +815,7 @@ export function PinBoard(
         // out at this size (shrunk and regrown without edits) keeps its
         // layout — otherwise peeking at the search UI and coming back would
         // repaint for nothing.
-        void fillViewportRef.current(false, autoLayoutCropRef.current, true)
+        void fillViewportRef.current(false, true)
     }, [fs, thumbnailsOpen])
     return (
         // data-pinboard-area: the version-history panel docks into this
@@ -880,7 +881,23 @@ export function PinBoard(
                         // RGL's own normalization — write it as replace
                         const echo = !gestureRef.current
                         gestureRef.current = false
-                        onLayoutChange([...currentLayout], undefined, undefined, echo)
+                        // A gesture resize makes the item's stored auto crop
+                        // stale (it was a fit to the OLD cell size) — drop it
+                        // in the same write, so the true image letterboxes
+                        // instead of showing a nonsense crop. Not in crop
+                        // mode: there the box resize IS the crop edit, and
+                        // the manual-crop commit rides this write. Echo
+                        // reports and drags only move items, never resize.
+                        let drops: Record<string, CropRect | null> | undefined
+                        if (!echo && cropKey === null) {
+                            const oldSize = new Map(layout.map(l => [l.i, `${l.w}x${l.h}`]))
+                            for (const l of currentLayout) {
+                                if (autoCrops[l.i] && oldSize.get(l.i) !== `${l.w}x${l.h}`) {
+                                    (drops ??= {})[l.i] = null
+                                }
+                            }
+                        }
+                        onLayoutChange([...currentLayout], drops, undefined, echo)
                     }}
                     onDragStop={() => { gestureRef.current = true }}
                     // Size of the grey preview box (10x10 in v1 units)
@@ -1132,9 +1149,17 @@ export function PinBoard(
                         style={{ left: toolbarPos.x, top: toolbarPos.y }}
                         onGripDown={onToolbarGripDown}
                         count={selected.length}
+                        cropOn={selectionCrop}
                         onArrange={() => void arrangeSelection(selected)}
                         onSwap={() => void swapItems(selected[0], selected[1])}
                         onLock={(lock) => setLockForKeys(selected, lock)}
+                        onCropToggle={() => {
+                            const next = !selectionCrop
+                            void setSelectionCrop(next)
+                            // Turning it on doubles as "crop now": off→on
+                            // re-fits the selection to its current cells
+                            if (next) void autoCropSelection(selected)
+                        }}
                         onClear={() => usePinSelection.getState().clear()}
                     />
                 )}
@@ -1152,18 +1177,22 @@ function SelectionToolbar({
     style,
     onGripDown,
     count,
+    cropOn,
     onArrange,
     onSwap,
     onLock,
+    onCropToggle,
     onClear,
 }: {
     innerRef: React.Ref<HTMLDivElement>
     style: React.CSSProperties
     onGripDown: (e: React.PointerEvent) => void
     count: number
+    cropOn: boolean
     onArrange: () => void
     onSwap: () => void
     onLock: (lock: PinLock) => void
+    onCropToggle: () => void
     onClear: () => void
 }) {
     const btn = "rounded-full px-2.5 py-1 hover:bg-gray-200 disabled:opacity-40 disabled:hover:bg-transparent"
@@ -1172,7 +1201,11 @@ function SelectionToolbar({
             ref={innerRef}
             data-selection-toolbar
             style={style}
-            className="absolute z-40 flex items-center gap-1 rounded-full bg-white/95 shadow-lg px-3 py-1 text-sm text-gray-800"
+            // w-max + nowrap: an absolute box with only `left` set would
+            // shrink-to-fit against the board's right edge, wrapping the
+            // bar onto two rows — and the wrapped bar's narrower measured
+            // width then keeps the clamp from ever moving it back left
+            className="absolute z-40 flex w-max items-center gap-1 whitespace-nowrap rounded-full bg-white/95 shadow-lg px-3 py-1 text-sm text-gray-800"
         >
             <div
                 className="cursor-grab active:cursor-grabbing -ml-1.5 pr-0.5 text-gray-400 hover:text-gray-600 touch-none"
@@ -1189,6 +1222,15 @@ function SelectionToolbar({
             <button className={btn} disabled={count !== 2} onClick={onSwap}
                 title="Selected items exchange position and size (select exactly two)">
                 Swap
+            </button>
+            <button
+                className={cn(btn, cropOn && "bg-blue-100 text-blue-700 hover:bg-blue-200")}
+                onClick={onCropToggle}
+                title={cropOn
+                    ? "Arrange and Swap crop items to their cells. Click to turn off (existing crops stay until a verb resizes their cell)"
+                    : "Arrange and Swap leave items letterboxed. Click to turn on and crop the selection to its cells now"}
+            >
+                <Crop className="w-4 h-4" />
             </button>
             <button className={btn} onClick={() => onLock("anchor")}
                 title="Anchor in place: position and size fixed, layouts pack around them">

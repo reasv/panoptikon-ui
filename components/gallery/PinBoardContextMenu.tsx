@@ -1,6 +1,6 @@
 import type { LayoutItem } from "react-grid-layout";
 import { ContextMenuCheckboxItem, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger } from "../ui/context-menu";
-import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid } from "@/lib/state/gallery";
+import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid, useGalleryPinSelectionCrop } from "@/lib/state/gallery";
 import { CropRect, PinLock, TrimRange } from "@/lib/pinboardCrop";
 import { GridParams } from "@/lib/pinboardGrid";
 import { useFileOpenActions } from "@/hooks/fileOpen";
@@ -79,6 +79,9 @@ export function PinBoardCtx({
     // and Show in Folder becomes the FindButton the pin already renders. Only
     // a relay (real local open) makes the submenu worth showing there.
     const showFileMenu = relayEnabled || !disableBackendOpen
+    const [autoLayout, setAutoLayout] = useGalleryPinAutoLayout()
+    const [autoLayoutCrop, setAutoLayoutCrop] = useGalleryPinAutoCrop()
+    const [selectionCrop] = useGalleryPinSelectionCrop()
     const {
         changeLayout,
         fillViewport,
@@ -97,7 +100,11 @@ export function PinBoardCtx({
         swapItems,
         arrangeSelection,
         hasLocks,
-    } = usePinboardLayoutActions({ layout, crops, autoCrops, locks, highWater, dbs, grid, pinboardRef, onLayoutChange })
+    } = usePinboardLayoutActions({
+        layout, crops, autoCrops, locks, highWater, dbs, grid, pinboardRef, onLayoutChange,
+        layoutAutoCrop: autoLayoutCrop,
+        selectionAutoCrop: selectionCrop,
+    })
     const selected = usePinSelection(s => s.selected)
 
     function layoutFixedRows(rows: number) {
@@ -108,8 +115,6 @@ export function PinBoardCtx({
     const setItemSize = (size: number) => setItemSizeByKey(layoutKey, size)
     const [fs, setFs] = useGalleryFullscreen()
     const [showGrid, setShowGrid] = useGalleryPinGrid()
-    const [autoLayout, setAutoLayout] = useGalleryPinAutoLayout()
-    const [autoLayoutCrop, setAutoLayoutCrop] = useGalleryPinAutoCrop()
     // Width presets are fixed fractions of the board width, so the menu is
     // the same on every grid resolution; the step sizes scale with the
     // resolution (1 v1 column = `stepUnit` columns on this grid)
@@ -230,7 +235,7 @@ export function PinBoardCtx({
                 checked={autoLayout}
                 onCheckedChange={(checked) => {
                     setAutoLayout(!!checked)
-                    if (checked) void fillViewport(false, autoLayoutCrop)
+                    if (checked) void fillViewport(false)
                 }}
             >
                 Auto-Layout
