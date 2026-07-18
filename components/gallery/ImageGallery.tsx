@@ -30,7 +30,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { FindButton } from './FindButton'
 import { blurHashToDataURL } from '@/lib/state/blurHashDataURL'
 import { useSearchLoading } from '@/lib/state/zust'
-import { usePinboardURLLoader } from '@/lib/pinboardLinks'
 import { MediaControls } from './PlayButton'
 import React from 'react'
 import { useVideoPlayerState } from '@/lib/videoPlayerState'
@@ -53,8 +52,6 @@ export function ImageGallery({
     setPage: (page: number) => Promise<void>
 }) {
     const [qIndex, setIndex] = useGalleryIndex()
-    // Resolve pinboard links (?pbl=…) into a loaded board layout
-    usePinboardURLLoader()
     const [page] = useSearchPage()
     const pageSize = usePageSize()[0]
     const index = (qIndex || 0) % items.length
@@ -215,6 +212,32 @@ export function ImageGallery({
     )
 }
 
+// The pinboard side of a Results/Pinboard (or path/Pinboard) tab pair:
+// auto-layout toggle, the "pins" trigger and the board menu as one chip.
+// Shared by the gallery header tabs below and the grid view's tabs — must
+// be rendered inside a <Tabs> whose pinboard value is "pins".
+export function PinboardTabChip({ active }: { active: boolean }) {
+    return (
+        <div
+            className={cn(
+                "flex shrink-0 items-stretch rounded-sm",
+                active && "bg-background text-foreground shadow-xs"
+            )}
+        >
+            {/* Auto-layout state, surfaced permanently as the tab's
+                left segment: lit when on, muted when off */}
+            <AutoLayoutToggle className="rounded-sm rounded-r-none" />
+            <TabsTrigger
+                value="pins"
+                className="shrink-0 rounded-none px-2 data-[state=active]:shadow-none"
+            >
+                Pinboard
+            </TabsTrigger>
+            <PinboardMenu />
+        </div>
+    )
+}
+
 export function PinboardTabs({ itemPath }: { itemPath: string }) {
     const [hidePinBoard, setHidePinBoard] = useGalleryHidePinBoard()
     const copyPath = useCopyPath()
@@ -228,23 +251,7 @@ export function PinboardTabs({ itemPath }: { itemPath: string }) {
             className="w-full"
         >
             <TabsList className="flex w-full">
-                <div
-                    className={cn(
-                        "flex shrink-0 items-stretch rounded-sm",
-                        !hidePinBoard && "bg-background text-foreground shadow-xs"
-                    )}
-                >
-                    {/* Auto-layout state, surfaced permanently as the tab's
-                        left segment: lit when on, muted when off */}
-                    <AutoLayoutToggle className="rounded-sm rounded-r-none" />
-                    <TabsTrigger
-                        value="pins"
-                        className="shrink-0 rounded-none px-2 data-[state=active]:shadow-none"
-                    >
-                        Pinboard
-                    </TabsTrigger>
-                    <PinboardMenu />
-                </div>
+                <PinboardTabChip active={!hidePinBoard} />
                 {/* The truncated path is a tab trigger, so plain click can't
                     copy it the way FilePathComponent's does — right-click
                     provides the copy actions instead. The menu wraps the

@@ -3,6 +3,7 @@
 import React, { useMemo } from 'react'
 import { cn } from "@/lib/utils"
 import { usePinBoard } from "@/lib/state/pinboard"
+import { useGalleryHidePinBoard, useGalleryIndex } from "@/lib/state/gallery"
 import { v1ScaleFactors } from "@/lib/pinboardGrid"
 import { markPinboardPendingEdit } from "@/lib/pinboardNavigation"
 import { usePinboardCarry } from "@/lib/state/pinboardCarry"
@@ -25,6 +26,12 @@ export function PinButton({
 }) {
     const prefixLength = 10 // The length of the prefix of the sha256 hash
     const { records, updateRecords } = usePinBoard()
+    // Which host will react to a board appearing: with the gallery open, a
+    // new board replaces only the image pane (the surrounding gallery UI
+    // and thumbnail strip stay); with it closed, the grid view's Pinboard
+    // tab would be a total context switch away from the results
+    const galleryOpen = useGalleryIndex()[0] !== null
+    const setHidePinBoard = useGalleryHidePinBoard()[1]
     const isPinned = useMemo(
         () => records.filter((id, i) => i % 5 === 0 && sha256.slice(0, prefixLength) === id.slice(0, prefixLength)).length > 0,
         [records, sha256]
@@ -46,6 +53,18 @@ export function PinButton({
         // consumes it in the same pass its count trigger fires, so it never
         // double-layouts.
         markPinboardPendingEdit()
+        // A first pin from OUTSIDE the gallery CREATES the board while the
+        // user is browsing results: opening the gallery later must show the
+        // image they clicked, not the board — so the board starts hidden on
+        // the gallery side (ghp), until they switch to it on purpose. A
+        // first pin from inside the gallery keeps ghp at its default and
+        // the new board appears immediately, as it always has. The flag is
+        // reset when the board is destroyed (see usePinBoard), so each
+        // creation decides this fresh. Same-tick with the record write
+        // below — nuqs merges both into one history entry.
+        if (records.length === 0 && !galleryOpen) {
+            void setHidePinBoard(true)
+        }
         // Bound to a specific copy: splice out that exact record by its offset
         if (layoutKey !== undefined) {
             updateRecords((prev) => {

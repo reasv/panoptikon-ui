@@ -1,5 +1,9 @@
 import { useMemo } from "react"
-import { useGalleryPinBoardLayout } from "./gallery"
+import {
+  useGalleryHidePinBoard,
+  useGalleryPinBoardLayout,
+  useGridPinboardTab,
+} from "./gallery"
 import {
   GridParams,
   V2_GRID,
@@ -18,6 +22,8 @@ import {
 // rendering a v1 board never migrates it by accident.
 export function usePinBoard() {
   const [savedLayout, setSavedLayout] = useGalleryPinBoardLayout()
+  const setHidePinBoard = useGalleryHidePinBoard()[1]
+  const setGridPinboardTab = useGridPinboardTab()[1]
   const board = useMemo(() => parseBoard(savedLayout), [savedLayout])
   // opts.highWater, when given, is the ABSOLUTE ratchet value to store
   // (callers compute the max themselves — the refit action deliberately
@@ -33,6 +39,27 @@ export function usePinBoard() {
     mutate: (records: string[], grid: GridParams) => string[],
     opts?: { highWater?: number; history?: "push" | "replace" }
   ) => {
+    // Losing the last pin DESTROYS the board, and the view flags that would
+    // re-open it must not outlive it: gpb (the grid view's pinboard tab)
+    // would otherwise context-switch the whole grid to a future board the
+    // moment its first pin lands, and ghp decides the gallery's tab — the
+    // next board's creation must set it fresh from its own origin (see
+    // PinButton). Centralized here because every unpin path — pin buttons,
+    // board verbs, selection removal — is an updateRecords write, while
+    // navigation writes (loading a saved board or version) bypass this
+    // function by design. Detected against the hook's current records:
+    // unpin writes are one-per-tick (same-tick updateRecords calls don't
+    // compose anyway, see the crop-commit note in GalleryPinBoard), so the
+    // functional write below can't diverge from this precomputation. nuqs
+    // merges same-tick writes to different keys into one history entry, so
+    // the back button restores the board together with its flags.
+    if (
+      board.records.length > 0 &&
+      mutate(board.records, board.grid).length === 0
+    ) {
+      void setGridPinboardTab(null)
+      void setHidePinBoard(null)
+    }
     setSavedLayout((prev) => {
       const { grid, records, isV1, highWater } = parseBoard(prev)
       const next = mutate(records, grid)

@@ -36,6 +36,9 @@ export function pinboardOpenHref(
   params.set("pbl", String(target))
   params.delete("pinboard")
   params.set("ghp", "false")
+  // Land on the pinboard tab either way: ghp covers an open gallery, gpb
+  // the grid view (a link opened in a fresh tab has no gallery index)
+  params.set("gpb", "true")
   return `${pathname}?${params.toString()}`
 }
 

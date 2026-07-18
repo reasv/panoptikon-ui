@@ -16,11 +16,14 @@ import { ScrollBar } from "@/components/ui/scroll-area"
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { SideBar } from "@/components/sidebar/SideBar"
 import { SearchResultImage } from "@/components/SearchResultImage"
-import { useGalleryFullscreen, useGalleryIndex } from "@/lib/state/gallery"
+import { useGalleryFullscreen, useGalleryIndex, useGalleryPinBoardLayout, useGridPinboardTab } from "@/lib/state/gallery"
 import { useSideBarOpen } from "@/lib/state/sideBar"
 import { selectedDBsSerializer, useSelectedDBs } from "@/lib/state/database"
 import { useSearch } from "@/lib/searchHooks"
-import { ImageGallery } from '@/components/gallery/ImageGallery'
+import { ImageGallery, PinboardTabChip } from '@/components/gallery/ImageGallery'
+import { PinBoard } from '@/components/gallery/GalleryPinBoard'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { usePinboardURLLoader } from '@/lib/pinboardLinks'
 import { ImageSimilarityHeader } from '@/components/ImageSimilarityHeader'
 import { useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
 import Link from "next/link"
@@ -119,6 +122,10 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     }, [selectedItem])
     const [fs, setFs] = useGalleryFullscreen()
     const loading = useSearchLoading((state) => state.loading)
+    // Resolve pinboard links (?pbl=…) into a loaded board layout. Lives
+    // here rather than in the gallery so a board link opened in a fresh
+    // tab (no gallery index) resolves too, onto the grid-hosted board.
+    usePinboardURLLoader()
     const showPagination = !fs && (nResults > pageSize) && (pageSize > 0)
     // Survives the grid unmounting while the gallery is open, so the grid can
     // restore its exact scroll position when the gallery closes
@@ -162,7 +169,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                         setPage={setPage}
                     />
                     :
-                    <ResultGrid
+                    <GridPanel
                         results={results}
                         totalCount={nResults}
                         resultMetrics={data?.result_metrics}
@@ -232,7 +239,14 @@ function useResultGridLayout(sidebarOpen: boolean): { columns: number, rowEstima
     return layout
 }
 
-export function ResultGrid({
+// The grid view's panel: the frame the gallery panel is measured against.
+// Same outer chrome (border rounded p-2) and the same 48px header band
+// (h-10 row + mb-2) as the gallery header, so the fixed-height middle —
+// the result grid or the pinboard — computes to identical pixels in both
+// hosts and across both tabs. data-pinboard-frame: presses landing on the
+// panel's own padding can start a pinboard marquee select, same as the
+// gallery frame (see the frame listener in GalleryPinBoard).
+export function GridPanel({
     results,
     totalCount,
     resultMetrics,
@@ -247,6 +261,91 @@ export function ResultGrid({
     resultMetrics?: components["schemas"]["SearchMetrics"],
     countMetrics?: components["schemas"]["SearchMetrics"],
     totalCount: number,
+    onImageClick?: (index?: number) => void,
+    isLoading?: boolean,
+    showPagination?: boolean,
+    savedScrollOffsetRef?: React.MutableRefObject<number>,
+    updateRibbonVisible?: boolean,
+}) {
+    const pinboard = useGalleryPinBoardLayout()[0]
+    const [pinboardTab, setPinboardTab] = useGridPinboardTab()
+    const [fs, setFs] = useGalleryFullscreen()
+    // The tab choice only matters on a non-empty board (the tabs don't
+    // render otherwise). The length guard still matters for a ?pbl link:
+    // gpb=true arrives before the loader has resolved the layout, and the
+    // results must show until it lands. Unpinning the last item clears
+    // gpb itself (see usePinBoard), so the flag can't linger past the
+    // board it was opened for.
+    const showPinboard = pinboard.length > 0 && pinboardTab
+    // Maximize hotkey, same chord as the gallery's. Registered only while
+    // the board is shown here — the two hosts are never mounted together,
+    // so it can't double-fire.
+    useEffect(() => {
+        if (!showPinboard) return
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.ctrlKey && event.shiftKey && event.code === 'KeyM') {
+                event.preventDefault()
+                setFs((f) => !f)
+            }
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [showPinboard])
+    const executionSummary = `Results: ${resultMetrics?.execute} DB, ${resultMetrics?.build} Build, ${resultMetrics?.compile} Compile`
+        + `\nCount: ${countMetrics?.execute} DB, ${countMetrics?.build} Build, ${countMetrics?.compile} Compile`
+    return (
+        <div data-pinboard-frame className="flex flex-col border rounded p-2">
+            {/* 1fr_auto_1fr: the tabs stay centered no matter how wide the
+                result count grows. Height pinned to h-10 so the band can't
+                grow past the gallery header it must measure like. */}
+            {!fs && <div className="grid grid-cols-[1fr_auto_1fr] items-center h-10 mb-2">
+                <h2 className="text-xl font-bold px-2 truncate">
+                    <span title={executionSummary}><AnimatedNumber value={totalCount} /> {totalCount === 1 ? "Result" : "Results"} in {resultMetrics?.execute}s</span>
+                </h2>
+                {pinboard.length > 0 && (
+                    <Tabs
+                        value={showPinboard ? "pins" : "results"}
+                        onValueChange={(value) => setPinboardTab(value === "pins")}
+                    >
+                        <TabsList className="flex">
+                            <PinboardTabChip active={showPinboard} />
+                            <TabsTrigger value="results" className="shrink-0 px-3">
+                                Results
+                            </TabsTrigger>
+                        </TabsList>
+                    </Tabs>
+                )}
+            </div>}
+            {showPinboard ? (
+                <PinBoard
+                    variant="grid"
+                    thumbnailsOpen={false}
+                    showPagination={showPagination}
+                    updateRibbonVisible={updateRibbonVisible}
+                />
+            ) : (
+                <ResultGrid
+                    results={results}
+                    onImageClick={onImageClick}
+                    isLoading={isLoading}
+                    showPagination={showPagination}
+                    savedScrollOffsetRef={savedScrollOffsetRef}
+                    updateRibbonVisible={updateRibbonVisible}
+                />
+            )}
+        </div>
+    )
+}
+
+export function ResultGrid({
+    results,
+    onImageClick,
+    isLoading,
+    showPagination = true,
+    savedScrollOffsetRef,
+    updateRibbonVisible = false,
+}: {
+    results: SearchResult[],
     onImageClick?: (index?: number) => void,
     isLoading?: boolean,
     showPagination?: boolean,
@@ -420,69 +519,67 @@ export function ResultGrid({
         }
     }, [scrollAnchor, columns, rowCount, results.length, virtualizer])
 
-    const executionSummary = `Results: ${resultMetrics?.execute} DB, ${resultMetrics?.build} Build, ${resultMetrics?.compile} Compile`
-        + `\nCount: ${countMetrics?.execute} DB, ${countMetrics?.build} Build, ${countMetrics?.compile} Compile`
     return (
-        <div className="border rounded p-2">
-            <h2 className="text-xl font-bold p-4 flex items-center justify-left">
-                <span title={executionSummary}><AnimatedNumber value={totalCount} /> {totalCount === 1 ? "Result" : "Results"} in {resultMetrics?.execute}s</span>
-            </h2>
-            <ScrollAreaPrimitive.Root className="relative overflow-hidden">
-                <ScrollAreaPrimitive.Viewport
-                    ref={parentRef}
-                    // [&>div]:block! overrides the `display: table` on the content wrapper
-                    // Radix injects — table layout also sizes to content, which breaks the
-                    // width measurement the column count is derived from
-                    className={cn('w-full rounded-[inherit] [&>div]:block!',
-                        showPagination
-                            ? (updateRibbonVisible ? 'max-h-[calc(100vh-273px)]' : 'max-h-[calc(100vh-225px)]')
-                            : (updateRibbonVisible ? 'max-h-[calc(100vh-211px)]' : 'max-h-[calc(100vh-163px)]')
-                    )}
+        <ScrollAreaPrimitive.Root className="relative overflow-hidden">
+            <ScrollAreaPrimitive.Viewport
+                ref={parentRef}
+                // [&>div]:block! overrides the `display: table` on the content wrapper
+                // Radix injects — table layout also sizes to content, which breaks the
+                // width measurement the column count is derived from.
+                // FIXED height, not max-h: the panel must keep its full size even
+                // with few results, so the pagination below stays anchored to the
+                // bottom and the viewport is pixel-identical to the pinboard tab
+                // (and to the gallery pinboard with thumbnails off, which uses the
+                // same 213/151 constants; the ribbon variants add its 48px).
+                className={cn('w-full rounded-[inherit] [&>div]:block!',
+                    showPagination
+                        ? (updateRibbonVisible ? 'h-[calc(100vh-261px)]' : 'h-[calc(100vh-213px)]')
+                        : (updateRibbonVisible ? 'h-[calc(100vh-199px)]' : 'h-[calc(100vh-151px)]')
+                )}
+            >
+                <div
+                    className="relative w-full"
+                    style={{ height: `${virtualizer.getTotalSize()}px` }}
                 >
-                    <div
-                        className="relative w-full"
-                        style={{ height: `${virtualizer.getTotalSize()}px` }}
-                    >
-                        {virtualizer.getVirtualItems().map((virtualRow) => {
-                            const startIndex = virtualRow.index * columns
-                            const rowItems = results.slice(startIndex, startIndex + columns)
-                            return (
+                    {virtualizer.getVirtualItems().map((virtualRow) => {
+                        const startIndex = virtualRow.index * columns
+                        const rowItems = results.slice(startIndex, startIndex + columns)
+                        return (
+                            <div
+                                key={virtualRow.key}
+                                data-index={virtualRow.index}
+                                ref={virtualizer.measureElement}
+                                className="absolute top-0 left-0 w-full"
+                                style={{ transform: `translateY(${virtualRow.start}px)` }}
+                            >
                                 <div
-                                    key={virtualRow.key}
-                                    data-index={virtualRow.index}
-                                    ref={virtualizer.measureElement}
-                                    className="absolute top-0 left-0 w-full"
-                                    style={{ transform: `translateY(${virtualRow.start}px)` }}
+                                    // These responsive classes must stay in sync with useGridColumns
+                                    className={cn('grid gap-4 pb-4 grid-cols-1 md:grid-cols-2',
+                                        sidebarOpen ?
+                                            ('lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4 4xl:grid-cols-5') :
+                                            ('lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5')
+                                    )}
                                 >
-                                    <div
-                                        // These responsive classes must stay in sync with useGridColumns
-                                        className={cn('grid gap-4 pb-4 grid-cols-1 md:grid-cols-2',
-                                            sidebarOpen ?
-                                                ('lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4 4xl:grid-cols-5') :
-                                                ('lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5')
-                                        )}
-                                    >
-                                        {rowItems.map((result, indexInRow) => (
-                                            <SearchResultImage
-                                                key={result.file_id}
-                                                result={result}
-                                                index={startIndex + indexInRow}
-                                                dbs={dbs}
-                                                onImageClick={onImageClick}
-                                                galleryLink
-                                                nItems={results.length}
-                                                showLoadingSpinner={isLoading}
-                                            />
-                                        ))}
-                                    </div>
+                                    {rowItems.map((result, indexInRow) => (
+                                        <SearchResultImage
+                                            key={result.file_id}
+                                            result={result}
+                                            index={startIndex + indexInRow}
+                                            dbs={dbs}
+                                            onImageClick={onImageClick}
+                                            galleryLink
+                                            nItems={results.length}
+                                            showLoadingSpinner={isLoading}
+                                        />
+                                    ))}
                                 </div>
-                            )
-                        })}
-                    </div>
-                </ScrollAreaPrimitive.Viewport>
-                <ScrollBar orientation="vertical" />
-                <ScrollAreaPrimitive.Corner />
-            </ScrollAreaPrimitive.Root>
-        </div>
+                            </div>
+                        )
+                    })}
+                </div>
+            </ScrollAreaPrimitive.Viewport>
+            <ScrollBar orientation="vertical" />
+            <ScrollAreaPrimitive.Corner />
+        </ScrollAreaPrimitive.Root>
     )
 }

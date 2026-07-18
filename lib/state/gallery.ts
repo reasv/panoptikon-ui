@@ -40,6 +40,22 @@ const useGalleryHidePinBoard = () =>
       history: "push",
     })
   )
+// The grid results view's tab choice (gallery closed): true shows the
+// pinboard in place of the results. Deliberately separate from ghp, with
+// the opposite default: the gallery shows the board as soon as pins exist,
+// but pinning from the grid must not yank the results away — here the
+// Pinboard tab is an explicit destination. The flag is scoped to the
+// board's lifetime: unpinning the last item destroys the board and clears
+// it (see usePinBoard), so a future first pin can never context-switch
+// the grid into a board the user didn't ask to see.
+const useGridPinboardTab = () =>
+  useQueryState(
+    "gpb",
+    parseAsBoolean.withDefault(false).withOptions({
+      clearOnDefault: true,
+      history: "push",
+    })
+  )
 const useGalleryPinGrid = () =>
   useQueryState(
     "pg",
@@ -130,6 +146,7 @@ export {
   useGalleryPinBoardLoad,
   useGalleryFullscreen,
   useGalleryHidePinBoard,
+  useGridPinboardTab,
   useGalleryPinGrid,
   useGalleryPinAutoLayout,
   useGalleryPinAutoCrop,

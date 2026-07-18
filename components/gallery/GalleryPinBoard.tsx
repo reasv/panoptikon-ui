@@ -165,10 +165,20 @@ const BAR_ORDER = SELECTION_VERBS.flatMap(v =>
 export function PinBoard(
     {
         thumbnailsOpen,
-        showPagination = true
+        showPagination = true,
+        variant = "gallery",
+        updateRibbonVisible = false,
     }: {
         thumbnailsOpen: boolean
         showPagination?: boolean
+        // "grid": hosted in the search-results panel instead of the
+        // gallery. Same board sizing as the gallery with the thumbnail row
+        // disabled (the two hosts' chrome heights match by construction),
+        // plus the desktop-update-ribbon offset the grid view compensates
+        // for — and mounting there counts as an intent to expand the board
+        // (see the first-observation growth trigger).
+        variant?: "gallery" | "grid"
+        updateRibbonVisible?: boolean
     }
 ) {
     const dbs = useSelectedDBs()[0]
@@ -1200,6 +1210,18 @@ export function PinBoard(
             // takes precedence: a restored version replaced those records.
             if (pendingEdit && !wasNavigation && count > 0 && autoLayoutRef.current) {
                 void fillViewportRef.current(false)
+            } else if (variant === "grid" && !wasNavigation && count > 0
+                && autoLayoutRef.current) {
+                // Opening the board in the grid host is an intent to expand:
+                // its viewport is the gallery's with the thumbnail row gone,
+                // so the fill targets the bigger fold and ratchets the high
+                // water up to it in the same write. skipIfCovered keeps
+                // Results<->Pinboard tab flips idempotent — a board already
+                // laid out at this size (or fullscreen) doesn't repaint.
+                // Not in the gallery: a tab switch back there is navigation,
+                // not a layout request. (The pending-edit fill above already
+                // targets the current fold, so it subsumes this trigger.)
+                void fillViewportRef.current(false, true)
             }
             return
         }
@@ -1316,10 +1338,20 @@ export function PinBoard(
                     pinItem.pinItem(sha256, r)
                 }}
                 className={`relative grow ${rglSettling ? "rgl-mount-still " : ""}${fs ? "h-[97vh]" : (
-                    showPagination ?
-                        (thumbnailsOpen ? "h-[calc(100vh-567px)]" : "h-[calc(100vh-213px)]")
+                    variant === "grid" ?
+                        // Grid host: gallery-without-thumbnails sizing, with
+                        // the 48px update-ribbon offset the grid view
+                        // subtracts (the gallery ignores the ribbon — a
+                        // known, separate inconsistency)
+                        (showPagination ?
+                            (updateRibbonVisible ? "h-[calc(100vh-261px)]" : "h-[calc(100vh-213px)]")
+                            :
+                            (updateRibbonVisible ? "h-[calc(100vh-199px)]" : "h-[calc(100vh-151px)]"))
                         :
-                        (thumbnailsOpen ? "h-[calc(100vh-505px)]" : "h-[calc(100vh-151px)]")
+                        (showPagination ?
+                            (thumbnailsOpen ? "h-[calc(100vh-567px)]" : "h-[calc(100vh-213px)]")
+                            :
+                            (thumbnailsOpen ? "h-[calc(100vh-505px)]" : "h-[calc(100vh-151px)]"))
                 )
                     }`}
             >
