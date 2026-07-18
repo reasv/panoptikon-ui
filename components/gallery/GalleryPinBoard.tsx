@@ -47,6 +47,8 @@ import { GridRect, groupRowsByOverlap } from '@/lib/pinboardPack'
 import { maximalFreeRects, pickRectAt, rectsOverlap } from '@/lib/pinboardHoles'
 import { usePinboardCarry } from '@/lib/state/pinboardCarry'
 import { HoleTargetOverlay } from './HoleTargetOverlay'
+import { PinboardBoardApi, usePinboardBoardApi } from '@/lib/state/pinboardBoardApi'
+import { PinboardFullscreenBar } from './PinboardMenu'
 
 const ALL_RESIZE_HANDLES: LayoutItem["resizeHandles"] =
     ["s", "w", "e", "n", "sw", "nw", "se", "ne"]
@@ -494,6 +496,9 @@ export function PinBoard(
         fillViewport, arrangeSelection, swapItems, autoCropSelection,
         clearAutoCropSelection, growSelection, mirrorSelection, shiftSelection,
         sendSelectionToRegion, sendSelectionToRect,
+        changeLayout, fillViewportRows, justifyCurrentRows, autoCropToCells,
+        clearAutoCrops, shiftLayout, mirrorLayout, rerollLayout, refitToView,
+        reflowKeepProportions, growInPlace, hasLocks, hasAnchors,
     } = usePinboardLayoutActions({
         layout, crops, autoCrops, locks: itemLocks, highWater, dbs, grid,
         layoutAutoCrop: autoLayoutCrop,
@@ -501,6 +506,25 @@ export function PinBoard(
         pinboardRef: scrollAreaRef,
         onLayoutChange,
     })
+    // Publish the board-global verbs for surfaces outside this subtree
+    // (the pinboard tab's chevron menu, the fullscreen bar). One stable
+    // object, mutated every render so readers always see current values
+    // without the store notifying anyone; registered while mounted.
+    const boardApiRef = useRef<PinboardBoardApi>({} as PinboardBoardApi)
+    useEffect(() => {
+        Object.assign(boardApiRef.current, {
+            changeLayout, fillViewport, fillViewportRows, justifyCurrentRows,
+            autoCropToCells, clearAutoCrops, shiftLayout, mirrorLayout,
+            rerollLayout, refitToView, reflowKeepProportions, growInPlace,
+            hasLocks, hasAnchors,
+            highWater, isV1, upgradeGrid,
+        } satisfies PinboardBoardApi)
+    })
+    useEffect(() => {
+        const api = boardApiRef.current
+        usePinboardBoardApi.getState().register(api)
+        return () => usePinboardBoardApi.getState().unregister(api)
+    }, [])
     // Layout verbs report refusals (anchored items that can't travel,
     // size-locked items that can't fit, packer failures) as messages
     // instead of silently doing nothing — surface them as toasts
@@ -1226,9 +1250,12 @@ export function PinBoard(
         // repaint for nothing.
         void fillViewportRef.current(false, true)
     }, [fs, thumbnailsOpen])
-    return (
-        // data-pinboard-area: the version-history panel docks into this
-        // box's corners (PinboardHistory measures it by this attribute)
+    return (<>
+        {/* Maximized mode hides the gallery header, so the tab's controls
+            reappear as a hover-revealed bar at the top of the viewport */}
+        {fs && <PinboardFullscreenBar />}
+        {/* data-pinboard-area: the version-history panel docks into this
+            box's corners (PinboardHistory measures it by this attribute) */}
         <ScrollArea ref={scrollAreaRef} data-pinboard-area className="overflow-y-auto">
             <div
                 ref={gridAreaRef}
@@ -1679,7 +1706,7 @@ export function PinBoard(
                 )}
             </div>
         </ScrollArea>
-    )
+    </>)
 }
 
 // Floating verb bar shown while a selection exists. All buttons are

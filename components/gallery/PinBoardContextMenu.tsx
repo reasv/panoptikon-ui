@@ -1,6 +1,8 @@
 import type { LayoutItem } from "react-grid-layout";
 import { ContextMenuCheckboxItem, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger } from "../ui/context-menu";
-import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid, useGalleryPinSelectionCrop } from "@/lib/state/gallery";
+import { useGalleryPinAutoCrop, useGalleryPinSelectionCrop } from "@/lib/state/gallery";
+import { BoardGlobalMenuItems, contextMenuKit } from "./PinboardGlobalMenu";
+import type { PinboardBoardApi } from "@/lib/state/pinboardBoardApi";
 import { CropRect, PinLock, TrimRange } from "@/lib/pinboardCrop";
 import { GridParams } from "@/lib/pinboardGrid";
 import { useFileOpenActions } from "@/hooks/fileOpen";
@@ -82,8 +84,7 @@ export function PinBoardCtx({
     // and Show in Folder becomes the FindButton the pin already renders. Only
     // a relay (real local open) makes the submenu worth showing there.
     const showFileMenu = relayEnabled || !disableBackendOpen
-    const [autoLayout, setAutoLayout] = useGalleryPinAutoLayout()
-    const [autoLayoutCrop, setAutoLayoutCrop] = useGalleryPinAutoCrop()
+    const [autoLayoutCrop] = useGalleryPinAutoCrop()
     const [selectionCrop] = useGalleryPinSelectionCrop()
     const {
         changeLayout,
@@ -125,14 +126,18 @@ export function PinBoardCtx({
         })
     }
 
-    function layoutFixedRows(rows: number) {
-        runVerb("Rows", fillViewportRows(rows))
-    }
     // The size actions target this menu's own pin
     const changeItemSize = (increase: number) => changeItemSizeByKey(layoutKey, increase)
     const setItemSize = (size: number) => setItemSizeByKey(layoutKey, size)
-    const [fs, setFs] = useGalleryFullscreen()
-    const [showGrid, setShowGrid] = useGalleryPinGrid()
+    // The board-global section (shared with the pinboard tab menu) gets
+    // its verbs from this menu's own layout-actions instance
+    const boardApi: PinboardBoardApi = {
+        changeLayout, fillViewport, fillViewportRows, justifyCurrentRows,
+        autoCropToCells, clearAutoCrops, shiftLayout, mirrorLayout,
+        rerollLayout, refitToView, reflowKeepProportions, growInPlace,
+        hasLocks, hasAnchors,
+        highWater, isV1, upgradeGrid: onUpgradeGrid,
+    }
     // Width presets are fixed fractions of the board width, so the menu is
     // the same on every grid resolution; the step sizes scale with the
     // resolution (1 v1 column = `stepUnit` columns on this grid)
@@ -312,128 +317,7 @@ export function PinBoardCtx({
                     <ContextMenuItem onClick={() => changeItemSize(-6 * stepUnit)}>-{6 * stepUnit}/{grid.columns} Width</ContextMenuItem>
                 </ContextMenuSubContent>
             </ContextMenuSub>
-            <ContextMenuSeparator />
-            <ContextMenuItem onClick={() => setFs(!fs)}>
-                {fs ? "Restore Pinboard Size" : "Maximize Pinboard"}
-            </ContextMenuItem>
-            <ContextMenuItem onClick={() => setShowGrid(!showGrid)}>
-                {showGrid ? "Hide Grid" : "Show Grid"}
-            </ContextMenuItem>
-            {/* When on, the board re-runs Fill Viewport (all items) whenever
-                a pin is added, removed or duplicated, or the board viewport
-                is explicitly grown (see PinBoard). Toggling it on IS a
-                layout request, so it applies immediately. */}
-            <ContextMenuCheckboxItem
-                checked={autoLayout}
-                onCheckedChange={(checked) => {
-                    setAutoLayout(!!checked)
-                    if (checked) runVerb("Fill Viewport", fillViewport(false))
-                }}
-            >
-                Auto-Layout
-            </ContextMenuCheckboxItem>
-            {/* Rides on auto-layout: each auto relayout also fits every item
-                to its cell (same write). The stored flag survives auto-layout
-                toggling off — it just greys out — but never acts alone: both
-                the disabled state here and the flag checks in PinBoard's
-                effects require auto-layout on. Toggling it on applies
-                crops-only immediately (the geometry is already current);
-                toggling it off stops future seeding without clearing
-                anything — that stays the job of Clear Auto-Crops. */}
-            <ContextMenuCheckboxItem
-                checked={autoLayoutCrop}
-                disabled={!autoLayout}
-                onCheckedChange={(checked) => {
-                    setAutoLayoutCrop(!!checked)
-                    if (checked) void autoCropToCells(false)
-                }}
-            >
-                Auto-Crop to Cells
-            </ContextMenuCheckboxItem>
-            {isV1 && <ContextMenuItem onClick={onUpgradeGrid}>
-                Upgrade Board Grid
-            </ContextMenuItem>}
-            <ContextMenuSeparator />
-            <ContextMenuSub>
-                <ContextMenuSubTrigger inset>Layout</ContextMenuSubTrigger>
-                <ContextMenuSubContent className="w-56">
-                    <ContextMenuItem onClick={() => runVerb("Fill Viewport", fillViewport(false))}>Fill Viewport</ContextMenuItem>
-                    <ContextMenuItem onClick={() => runVerb("Fill Viewport", fillViewport(true))}>Fill Viewport (Visible Only)</ContextMenuItem>
-                    {/* Cycle through the packer's near-best alternative
-                        compositions; later auto-fills keep the chosen one */}
-                    <ContextMenuItem onClick={() => runVerb("Reroll Layout", rerollLayout())}>Reroll Layout</ContextMenuItem>
-                    {/* Re-solve sizes only: the arrangement keeps its
-                        structure and grows to fill the viewport. With locks
-                        inside the target it degrades to a proportional
-                        reflow around them. */}
-                    <ContextMenuItem onClick={() => runVerb("Grow to Fill", growInPlace())}>Grow to Fill (In Place)</ContextMenuItem>
-                    {/* Reflow freely but keep each item's current share of
-                        the board area */}
-                    <ContextMenuItem onClick={() => runVerb("Reflow", reflowKeepProportions())}>Reflow (Keep Proportions)</ContextMenuItem>
-                    {/* Reset the layout-height ratchet to the current
-                        viewport (see pinboardGrid.ts) and fill it */}
-                    {highWater > 0 && (
-                        <ContextMenuItem onClick={() => runVerb("Refit", refitToView())}>Refit to Current View</ContextMenuItem>
-                    )}
-                    {/* Justify re-stacks rows from the top, which only an
-                        anchor breaks; size-locked members keep their size
-                        and their row justifies around them */}
-                    <ContextMenuItem disabled={hasAnchors} onClick={() => runVerb("Justify Rows", justifyCurrentRows())}>Justify Rows</ContextMenuItem>
-                    <ContextMenuSeparator />
-                    <ContextMenuItem onClick={() => autoCropToCells(false)}>Auto-Crop to Cells</ContextMenuItem>
-                    <ContextMenuItem onClick={() => autoCropToCells(true)}>Auto-Crop to Cells (Visible Only)</ContextMenuItem>
-                    <ContextMenuItem onClick={() => clearAutoCrops()}>Clear Auto-Crops</ContextMenuItem>
-                    <ContextMenuSeparator />
-                    {/* Items-per-Row rebuilds whole rows and cannot hold a
-                        locked item in place, so it greys out while any lock
-                        exists (the caption below says why). Rows stays
-                        enabled: with locks it flows rows around them.
-                        Shift Left/Right are gravity now — anchors just hold
-                        their ground — so only Center (a whole-row flush
-                        repack) and the Mirrors (a rigid flip, broken by any
-                        fixed point off the axis) need an anchor-free board. */}
-                    <ContextMenuSub>
-                        <ContextMenuSubTrigger disabled={hasLocks}>Items per Row</ContextMenuSubTrigger>
-                        <ContextMenuSubContent className="w-48">
-                            {[3, 4, 5, 6].map(n => (
-                                <ContextMenuItem key={n} onClick={() => changeLayout(n)}>
-                                    {n} Items per Row
-                                </ContextMenuItem>
-                            ))}
-                        </ContextMenuSubContent>
-                    </ContextMenuSub>
-                    <ContextMenuSub>
-                        <ContextMenuSubTrigger>Rows</ContextMenuSubTrigger>
-                        <ContextMenuSubContent className="w-48">
-                            {[1, 2, 3, 4].map(n => (
-                                <ContextMenuItem key={n} onClick={() => layoutFixedRows(n)}>
-                                    {n} {n === 1 ? "Row" : "Rows"}
-                                </ContextMenuItem>
-                            ))}
-                        </ContextMenuSubContent>
-                    </ContextMenuSub>
-                    <ContextMenuSub>
-                        <ContextMenuSubTrigger>Shift</ContextMenuSubTrigger>
-                        <ContextMenuSubContent className="w-48">
-                            <ContextMenuItem onClick={() => shiftLayout("left")}>Shift Left</ContextMenuItem>
-                            <ContextMenuItem disabled={hasAnchors} onClick={() => shiftLayout("center")}>Center</ContextMenuItem>
-                            <ContextMenuItem onClick={() => shiftLayout("right")}>Shift Right</ContextMenuItem>
-                            <ContextMenuSeparator />
-                            <ContextMenuItem disabled={hasAnchors} onClick={() => mirrorLayout("horizontal")}>Mirror Horizontally</ContextMenuItem>
-                            <ContextMenuItem disabled={hasAnchors} onClick={() => mirrorLayout("vertical")}>Mirror Vertically</ContextMenuItem>
-                        </ContextMenuSubContent>
-                    </ContextMenuSub>
-                    {(hasLocks || hasAnchors) && (
-                        <>
-                            <ContextMenuSeparator />
-                            <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                                {hasLocks && "Items per Row rebuilds rows from scratch and can't work around locked items."}
-                                {hasAnchors && " Justify, Center and Mirror can't hold anchored items in place."}
-                            </div>
-                        </>
-                    )}
-                </ContextMenuSubContent>
-            </ContextMenuSub>
+            <BoardGlobalMenuItems kit={contextMenuKit} api={boardApi} />
         </ContextMenuContent>
     )
 }

@@ -1,5 +1,11 @@
 import Image from 'next/image'
-import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons"
+import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder, useCopyPath } from "@/components/imageButtons"
+import {
+    ContextMenu,
+    ContextMenuContent,
+    ContextMenuItem,
+    ContextMenuTrigger,
+} from "@/components/ui/context-menu"
 import { Toggle } from "@/components/ui/toggle"
 import { X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -19,7 +25,7 @@ import { serializers } from '@/lib/state/searchQuery/serializers'
 import { VirtualGalleryHorizontalScroll } from './VirtualizedHorizontalScroll'
 import { PinButton } from './PinButton'
 import { PinBoard } from './GalleryPinBoard'
-import { PinboardMenu } from './PinboardMenu'
+import { AutoLayoutToggle, PinboardMenu } from './PinboardMenu'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { FindButton } from './FindButton'
 import { blurHashToDataURL } from '@/lib/state/blurHashDataURL'
@@ -211,6 +217,10 @@ export function ImageGallery({
 
 export function PinboardTabs({ itemPath }: { itemPath: string }) {
     const [hidePinBoard, setHidePinBoard] = useGalleryHidePinBoard()
+    const copyPath = useCopyPath()
+    // Either separator: the index stores paths as the OS produced them
+    const lastSep = Math.max(itemPath.lastIndexOf("/"), itemPath.lastIndexOf("\\"))
+    const fileName = itemPath.slice(lastSep + 1)
     return (
         <Tabs
             value={hidePinBoard ? "gallery" : "pins"}
@@ -224,18 +234,40 @@ export function PinboardTabs({ itemPath }: { itemPath: string }) {
                         !hidePinBoard && "bg-background text-foreground shadow-xs"
                     )}
                 >
+                    {/* Auto-layout state, surfaced permanently as the tab's
+                        left segment: lit when on, muted when off */}
+                    <AutoLayoutToggle className="rounded-sm rounded-r-none" />
                     <TabsTrigger
                         value="pins"
-                        className="shrink-0 rounded-r-none pr-2 data-[state=active]:shadow-none"
+                        className="shrink-0 rounded-none px-2 data-[state=active]:shadow-none"
                     >
                         Pinboard
                     </TabsTrigger>
                     <PinboardMenu />
                 </div>
+                {/* The truncated path is a tab trigger, so plain click can't
+                    copy it the way FilePathComponent's does — right-click
+                    provides the copy actions instead. The menu wraps the
+                    inner span, NOT the TabsTrigger: ContextMenuTrigger
+                    asChild stamps its own data-state ("closed") over the
+                    Tabs' data-state ("active"), killing the active-tab
+                    styling. */}
                 <TabsTrigger value="gallery" className="flex-1 min-w-0">
-                    <span title={itemPath} className="w-full min-w-0 text-sm truncate cursor-pointer" style={{ direction: 'rtl', textAlign: 'left' }}>
-                        {itemPath}
-                    </span>
+                    <ContextMenu>
+                        <ContextMenuTrigger asChild>
+                            <span title={itemPath} className="w-full min-w-0 text-sm truncate cursor-pointer" style={{ direction: 'rtl', textAlign: 'left' }}>
+                                {itemPath}
+                            </span>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent>
+                            <ContextMenuItem onClick={() => copyPath(itemPath)}>
+                                Copy Path
+                            </ContextMenuItem>
+                            <ContextMenuItem onClick={() => copyPath(fileName)}>
+                                Copy Filename
+                            </ContextMenuItem>
+                        </ContextMenuContent>
+                    </ContextMenu>
                 </TabsTrigger>
             </TabsList>
         </Tabs>

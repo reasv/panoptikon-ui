@@ -349,28 +349,49 @@ export const OpenFolder = (
     </FileActionTargetMenu>
 }
 
-export const FilePathComponent = ({ path }: { path: string }) => {
+// Copy a path (or any text) to the clipboard with a confirmation toast.
+// Shared by the plain file-path header and the pinboard tab header's
+// right-click menu.
+export const useCopyPath = () => {
     const { toast } = useToast()
-    const handleCopyToClipboard = (text: string) => {
-        // This is necessary to prevent the browser from adding file:// to the path
-        const blob = new Blob([text], { type: 'text/plain' })
-        const data = [new ClipboardItem({ 'text/plain': blob })]
-        navigator.clipboard.write(data).then(() => {
-            toast({
-                title: "Path copied to clipboard",
-                description: text,
-                duration: 2000,
-            })
-        }).catch((err) => {
+    return (text: string) => {
+        const ok = () => toast({
+            title: "Copied to clipboard",
+            description: text,
+            duration: 2000,
+        })
+        const fail = (err?: Error) => {
             console.error('Failed to copy text: ', err)
             toast({
-                title: "Failed to copy path to clipboard",
-                description: err.message,
+                title: "Failed to copy to clipboard",
+                description: err?.message,
                 variant: "destructive",
                 duration: 2000,
             })
-        })
+        }
+        try {
+            // Copied as an explicit text/plain item — this is necessary to
+            // prevent the browser from adding file:// to the path
+            const blob = new Blob([text], { type: 'text/plain' })
+            const data = [new ClipboardItem({ 'text/plain': blob })]
+            navigator.clipboard.write(data).then(ok).catch(fail)
+        } catch {
+            // Insecure origins (plain-http on a LAN) have no clipboard API;
+            // the legacy execCommand path still works there
+            const ta = document.createElement("textarea")
+            ta.value = text
+            document.body.appendChild(ta)
+            ta.select()
+            const copied = document.execCommand("copy")
+            ta.remove()
+            if (copied) ok()
+            else fail()
+        }
     }
+}
+
+export const FilePathComponent = ({ path }: { path: string }) => {
+    const handleCopyToClipboard = useCopyPath()
     // Remove leading / if it exists
     const displayPath = path[0] === '/' ? path.slice(1) : path
     return (
