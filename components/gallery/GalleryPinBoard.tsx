@@ -347,11 +347,35 @@ export function PinBoard(
     // un-compacted entry (a pre-fix layout, a hand-crafted link) re-pushes
     // forever and the back button can never get past it.
     const gestureRef = useRef(false)
+    // One-shot mark that a drag/resize gesture JUST completed and changed
+    // the layout: RGL makes the gesture's onLayoutChange call synchronously
+    // inside its drag/resize-stop handling — and only when the gesture
+    // actually changed the layout — so the mark is still set for exactly
+    // that report, and the microtask clears it before any asynchronous one.
+    // Unlike gestureRef it can never go stale on a no-move gesture and
+    // misclassify a later normalization report. It gates the auto-layout
+    // auto-off below, which must never fire from verb writes, echo
+    // normalizations, external drops or crop-mode edits.
+    const manualGestureRef = useRef(false)
+    const markManualGesture = () => {
+        manualGestureRef.current = true
+        queueMicrotask(() => { manualGestureRef.current = false })
+    }
+    // Auto-layout mode: when enabled, adding/removing/duplicating a pin —
+    // or explicitly growing the board's viewport — re-runs the
+    // viewport-filling mosaic over ALL items; with the auto-crop flag also
+    // on, every item additionally gets fitted to its new cell in the same
+    // write (see the trigger effects below). Declared above onLayoutChange
+    // together with the toast because the manual-gesture auto-off uses
+    // both.
+    const [autoLayout, setAutoLayout] = useGalleryPinAutoLayout()
+    const { toast } = useToast()
     const onLayoutChange = (
         currentLayout: LayoutItem[],
         autoCropOverrides?: Record<string, CropRect | null>,
         newHighWater?: number,
         echo = false,
+        manualGesture = false,
     ) => {
         const manualCropOverrides = pendingManualCropRef.current ?? undefined
         pendingManualCropRef.current = null
@@ -369,6 +393,22 @@ export function PinBoard(
             newHighWater === undefined
         ) {
             return
+        }
+        // A hand-made arrangement and auto-layout can't coexist: the next
+        // pin add would repaint the arrangement away. The user moving or
+        // resizing an item is the clearest possible statement that they
+        // want manual control, so the gesture that changed the board also
+        // turns the mode off — same tick as the record write, one history
+        // entry, and the toast says where to turn it back on.
+        if (manualGesture && autoLayout) {
+            setAutoLayout(false)
+            toast({
+                title: "Auto-Layout Off",
+                description: "Arranging items by hand turns auto-layout off"
+                    + " so your layout sticks. Toggle it back on from the"
+                    + " board menu anytime.",
+                duration: 4000,
+            })
         }
         updateRecords(
             (prev) => rebuildRecords(prev, currentLayout, autoCropOverrides, manualCropOverrides),
@@ -493,13 +533,9 @@ export function PinBoard(
         return () => clearTimeout(t)
     }, [rglSettling])
     const pinItem = usePinItem()
-    // Auto-layout mode: when enabled, adding/removing/duplicating a pin —
-    // or explicitly growing the board's viewport (see below) — re-runs the
-    // viewport-filling mosaic over ALL items; with the auto-crop flag also
-    // on, every item additionally gets fitted to its new cell in the same
-    // write. The board's own layout-actions instance shares the machinery
-    // the context menu uses.
-    const [autoLayout] = useGalleryPinAutoLayout()
+    // The board's own layout-actions instance shares the machinery the
+    // context menu uses (autoLayout itself is declared above
+    // onLayoutChange, next to the gesture auto-off that consumes it).
     const [autoLayoutCrop] = useGalleryPinAutoCrop()
     const [selectionCrop, setSelectionCrop] = useGalleryPinSelectionCrop()
     const {
@@ -537,8 +573,8 @@ export function PinBoard(
     }, [])
     // Layout verbs report refusals (anchored items that can't travel,
     // size-locked items that can't fit, packer failures) as messages
-    // instead of silently doing nothing — surface them as toasts
-    const { toast } = useToast()
+    // instead of silently doing nothing — surface them as toasts (the
+    // toast hook itself is declared above onLayoutChange)
     const runVerb = (label: string, result: Promise<string | null> | void) => {
         void Promise.resolve(result).then(err => {
             if (err) toast({ title: label, description: err, duration: 4000 })
@@ -1394,6 +1430,7 @@ export function PinBoard(
                         // RGL's own normalization — write it as replace
                         const echo = !gestureRef.current
                         gestureRef.current = false
+                        const manual = manualGestureRef.current
                         // A gesture resize makes the item's stored auto crop
                         // stale (it was a fit to the OLD cell size) — drop it
                         // in the same write, so the true image letterboxes
@@ -1410,9 +1447,16 @@ export function PinBoard(
                                 }
                             }
                         }
-                        onLayoutChange([...currentLayout], drops, undefined, echo)
+                        onLayoutChange([...currentLayout], drops, undefined, echo, manual)
                     }}
-                    onDragStop={() => { gestureRef.current = true }}
+                    // The crop-mode exemption: there the drag/resize IS the
+                    // crop edit, not a layout statement — it composes with
+                    // auto-layout (the manual crop survives as the base of
+                    // future auto-crops), so it must not turn the mode off
+                    onDragStop={() => {
+                        gestureRef.current = true
+                        if (cropKey === null) markManualGesture()
+                    }}
                     // Size of the grey preview box (10x10 in v1 units)
                     droppingItem={{ i: '__preview', x: 0, y: 0, w: Math.round(10 * sx), h: Math.round(10 * sy) }}
                     // Compacts items vertically to keep them visible on
@@ -1478,6 +1522,7 @@ export function PinBoard(
                     }}
                     onResizeStop={(currentLayout, oldItem, newItem) => {
                         gestureRef.current = true
+                        if (cropKey === null) markManualGesture()
                         setCropResizing(false)
                         if (newItem) {
                             newItem.maxW = undefined

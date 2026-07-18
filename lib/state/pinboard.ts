@@ -1,7 +1,11 @@
 import { useMemo } from "react"
 import {
   useGalleryHidePinBoard,
+  useGalleryPinAutoCrop,
+  useGalleryPinAutoLayout,
   useGalleryPinBoardLayout,
+  useGalleryPinGrid,
+  useGalleryPinSelectionCrop,
   useGridPinboardTab,
 } from "./gallery"
 import {
@@ -11,6 +15,12 @@ import {
   parseBoard,
   serializeBoard,
 } from "@/lib/pinboardGrid"
+import {
+  PINBOARD_DEFAULTABLE_FLAGS,
+  PINBOARD_DEFAULTABLE_KEYS,
+  PinboardDefaultableKey,
+  effectiveCreationDefaults,
+} from "@/lib/pinboardDefaults"
 
 // Access to the pinboard's records with the version token handled. Reads
 // expose the token-stripped records plus the board's grid parameters.
@@ -24,6 +34,17 @@ export function usePinBoard() {
   const [savedLayout, setSavedLayout] = useGalleryPinBoardLayout()
   const setHidePinBoard = useGalleryHidePinBoard()[1]
   const setGridPinboardTab = useGridPinboardTab()[1]
+  // The board-scoped flag setters, keyed like the defaults registry —
+  // creation stamps them, destruction clears them (see updateRecords)
+  const flagSetters: Record<
+    PinboardDefaultableKey,
+    (value: boolean | null, opts?: { history?: "push" | "replace" }) => unknown
+  > = {
+    pba: useGalleryPinAutoLayout()[1],
+    pbc: useGalleryPinAutoCrop()[1],
+    psc: useGalleryPinSelectionCrop()[1],
+    pg: useGalleryPinGrid()[1],
+  }
   const board = useMemo(() => parseBoard(savedLayout), [savedLayout])
   // opts.highWater, when given, is the ABSOLUTE ratchet value to store
   // (callers compute the max themselves — the refit action deliberately
@@ -39,26 +60,49 @@ export function usePinBoard() {
     mutate: (records: string[], grid: GridParams) => string[],
     opts?: { highWater?: number; history?: "push" | "replace" }
   ) => {
-    // Losing the last pin DESTROYS the board, and the view flags that would
-    // re-open it must not outlive it: gpb (the grid view's pinboard tab)
-    // would otherwise context-switch the whole grid to a future board the
-    // moment its first pin lands, and ghp decides the gallery's tab — the
-    // next board's creation must set it fresh from its own origin (see
-    // PinButton). Centralized here because every unpin path — pin buttons,
-    // board verbs, selection removal — is an updateRecords write, while
+    // The board's LIFECYCLE edges are both detected here, against the
+    // hook's current records: every edit path — pin buttons, drops, board
+    // verbs, selection removal — is an updateRecords write, while
     // navigation writes (loading a saved board or version) bypass this
-    // function by design. Detected against the hook's current records:
-    // unpin writes are one-per-tick (same-tick updateRecords calls don't
+    // function by design, so neither edge can fire on a loaded board.
+    // Edit writes are one-per-tick (same-tick updateRecords calls don't
     // compose anyway, see the crop-commit note in GalleryPinBoard), so the
     // functional write below can't diverge from this precomputation. nuqs
     // merges same-tick writes to different keys into one history entry, so
     // the back button restores the board together with its flags.
-    if (
-      board.records.length > 0 &&
-      mutate(board.records, board.grid).length === 0
-    ) {
+    const mutated = mutate(board.records, board.grid)
+    // Losing the last pin DESTROYS the board, and its board-scoped flags
+    // must not outlive it: gpb (the grid view's pinboard tab) would
+    // otherwise context-switch the whole grid to a future board the moment
+    // its first pin lands, ghp decides the gallery's tab — the next
+    // board's creation must set it fresh from its own origin (see
+    // PinButton) — and the defaultable flags (auto-layout & co.) belong to
+    // the destroyed board: the next creation decides them fresh from the
+    // defaults layer, not from what this board left behind.
+    if (board.records.length > 0 && mutated.length === 0) {
       void setGridPinboardTab(null)
       void setHidePinBoard(null)
+      for (const key of PINBOARD_DEFAULTABLE_KEYS) {
+        void flagSetters[key](null)
+      }
+    }
+    // The first pin CREATES the board: stamp the creation defaults (dev
+    // layer + user overrides, see lib/pinboardDefaults.ts) into the URL as
+    // explicit parameters — but only where they differ from the frozen
+    // codec defaults, since an absent parameter already means those. Same
+    // tick as the record write, so the board appears in history complete
+    // with its flags; same history mode, so a replace-write creation
+    // (none exist today) couldn't split into two entries.
+    if (board.records.length === 0 && mutated.length > 0) {
+      const defaults = effectiveCreationDefaults()
+      for (const key of PINBOARD_DEFAULTABLE_KEYS) {
+        if (defaults[key] !== PINBOARD_DEFAULTABLE_FLAGS[key].codecDefault) {
+          void flagSetters[key](
+            defaults[key],
+            opts?.history ? { history: opts.history } : undefined
+          )
+        }
+      }
     }
     setSavedLayout((prev) => {
       const { grid, records, isV1, highWater } = parseBoard(prev)

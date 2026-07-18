@@ -5,7 +5,9 @@ import {
     useGalleryPinAutoCrop,
     useGalleryPinAutoLayout,
     useGalleryPinGrid,
+    useGalleryPinSelectionCrop,
 } from "@/lib/state/gallery"
+import { clearUserDefaults, saveUserDefaults } from "@/lib/pinboardDefaults"
 import type { PinboardBoardApi } from "@/lib/state/pinboardBoardApi"
 import {
     ContextMenuCheckboxItem,
@@ -111,6 +113,8 @@ export function BoardGlobalMenuItems({
     const [showGrid, setShowGrid] = useGalleryPinGrid()
     const [autoLayout, setAutoLayout] = useGalleryPinAutoLayout()
     const [autoLayoutCrop, setAutoLayoutCrop] = useGalleryPinAutoCrop()
+    const [selectionCrop] = useGalleryPinSelectionCrop()
+    const { toast } = useToast()
     const runVerb = useRunVerb()
     const { Item, CheckboxItem, Separator, Sub, SubTrigger, SubContent, Shortcut } = kit
     return (
@@ -157,6 +161,45 @@ export function BoardGlobalMenuItems({
             {api.isV1 && <Item onClick={api.upgradeGrid}>
                 Upgrade Board Grid
             </Item>}
+            {/* User layer of the creation-defaults system (see
+                lib/pinboardDefaults.ts): Save captures the current board
+                flags as what NEW boards start with; Reset returns to the
+                built-in defaults. Existing boards — this one included —
+                are never touched: defaults apply only when a first pin
+                creates a board. */}
+            <Sub>
+                <SubTrigger inset>New-Board Defaults</SubTrigger>
+                <SubContent className="w-64">
+                    <Item onClick={() => {
+                        saveUserDefaults({
+                            pba: autoLayout,
+                            pbc: autoLayoutCrop,
+                            psc: selectionCrop,
+                            pg: showGrid,
+                        })
+                        toast({
+                            title: "New-Board Defaults Saved",
+                            description: "New pinboards will start with this"
+                                + " board's current Auto-Layout, Auto-Crop,"
+                                + " selection-crop and grid settings.",
+                            duration: 4000,
+                        })
+                    }}>
+                        Save Current Settings as Default
+                    </Item>
+                    <Item onClick={() => {
+                        clearUserDefaults()
+                        toast({
+                            title: "Built-in Defaults Restored",
+                            description: "New pinboards will start with the"
+                                + " app's built-in settings again.",
+                            duration: 4000,
+                        })
+                    }}>
+                        Reset to Built-in Defaults
+                    </Item>
+                </SubContent>
+            </Sub>
             <Separator />
             <Sub>
                 <SubTrigger inset>Layout</SubTrigger>

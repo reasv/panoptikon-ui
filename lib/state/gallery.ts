@@ -32,6 +32,14 @@ const useGalleryFullscreen = () =>
     })
   )
 
+// BOARD FLAG DEFAULTS ARE WIRE FORMAT: the withDefault values on the
+// pinboard flags below define what an ABSENT parameter means in every
+// board URL ever shared, forever — never change them, or existing links
+// silently change behavior. Opinionated defaults for NEW boards live in
+// lib/pinboardDefaults.ts (dev + user layers) and are stamped into the URL
+// as explicit parameters when the first pin creates a board (see
+// usePinBoard). New flags added later follow the same split: codec default
+// = the legacy implicit behavior, creation default = the opinionated one.
 const useGalleryHidePinBoard = () =>
   useQueryState(
     "ghp",
