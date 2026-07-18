@@ -496,22 +496,38 @@ export function usePinboardLayoutActions({
     // pull evictees back up through it, and regions built earlier don't
     // overlap this one, so filling the board region by region never
     // disturbs the previous fill. Anchored bystanders in the region stay
-    // put as obstacles; locked SELECTED items stay exactly where they are
-    // (obstacles when inside the region), like every selection verb.
-    async function sendSelectionToRegion(keys: string[], preset: RegionPreset) {
+    // put as obstacles.
+    // The whole selection travels: size-locked selected items keep their
+    // w x h and are placed first-fit into the region (reading order,
+    // row-major scan), then the flexible items tile the remaining space
+    // around them. Anchored selected items can't travel at all, so the
+    // verb refuses outright — silently sending only part of the group
+    // was a footgun. Returns a user-facing error message for the toast,
+    // or null on success; the not-actionable cases (unmeasured
+    // container, stale keys) stay silent no-ops.
+    async function sendSelectionToRegion(
+        keys: string[], preset: RegionPreset,
+    ): Promise<string | null> {
         const buildData = await ensureBuildData()
-        if (!buildData) return
+        if (!buildData) return null
         const keySet = new Set(keys)
-        const participants = buildData.sortedLayout.filter(l =>
-            keySet.has(l.i) && !isLocked(l.i))
-        if (participants.length === 0) return
+        const selectedItems = buildData.sortedLayout.filter(l => keySet.has(l.i))
+        if (selectedItems.length === 0) return null
+        const anchoredCount = selectedItems.filter(l => isAnchored(l.i)).length
+        if (anchoredCount > 0) {
+            return anchoredCount === 1
+                ? "An anchored item is selected — unanchor or deselect it first"
+                : `${anchoredCount} anchored items are selected — unanchor or deselect them first`
+        }
+        const sizeLocked = selectedItems.filter(l => locks[l.i] === "size")
+        const flexible = selectedItems.filter(l => !isLocked(l.i))
         const total = targetRows(buildData)
         const box = regionBox(preset, grid.columns, total)
         const overlapping = (a: GridRect, b: GridRect) =>
             a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
         const inBox = (l: LayoutItem) =>
             overlapping({ x: l.x, y: l.y, w: l.w, h: l.h }, box)
-        const packedKeys = new Set(participants.map(l => l.i))
+        const packedKeys = new Set(selectedItems.map(l => l.i))
         const rest = layout.filter(l => !packedKeys.has(l.i)).map(l => ({ ...l }))
         // Evictees keep their size and x and drop straight down from the
         // region's bottom edge to the first free spot — size locks don't
@@ -537,22 +553,53 @@ export function usePinboardLayoutActions({
         const obstacles = rest
             .filter(l => !evictKeys.has(l.i) && isLocked(l.i) && inBox(l))
             .map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h }))
-        const packed = packRegionInBox({
-            items: participants.map(l => toPackItem(buildData, l)),
-            obstacles,
-            grid,
-            columnWidth: buildData.columnWidth,
-            box,
-            variant: mosaicVariant,
-            weights: participants.map(l => l.w * l.h),
-            ...minPinUnits(grid, buildData.columnWidth),
-        })
-        if (packed.length === 0) return
-        const newLayout = [...packed, ...rest]
+        // Place the size-locked travellers: reading order, first spot in a
+        // row-major scan of the region clear of anchored bystanders and
+        // travellers already placed. Any traveller that can't be placed
+        // aborts the whole verb — the move is atomic or not at all.
+        const placedRects: GridRect[] = []
+        const placedItems: LayoutItem[] = []
+        for (const l of sizeLocked) {
+            if (l.w > box.w || l.h > box.h) {
+                return "A size-locked item is too big for the region — unlock or deselect it"
+            }
+            let spot: { x: number, y: number } | null = null
+            for (let y = box.y; y <= box.y + box.h - l.h && !spot; y++) {
+                for (let x = box.x; x <= box.x + box.w - l.w && !spot; x++) {
+                    const r = { x, y, w: l.w, h: l.h }
+                    if (!obstacles.some(o => overlapping(r, o))
+                        && !placedRects.some(o => overlapping(r, o))) spot = { x, y }
+                }
+            }
+            if (!spot) {
+                return "No room in the region for a size-locked item — unlock or deselect it"
+            }
+            placedRects.push({ x: spot.x, y: spot.y, w: l.w, h: l.h })
+            placedItems.push({ ...l, x: spot.x, y: spot.y })
+        }
+        const packed = flexible.length > 0
+            ? packRegionInBox({
+                items: flexible.map(l => toPackItem(buildData, l)),
+                obstacles: [...obstacles, ...placedRects],
+                grid,
+                columnWidth: buildData.columnWidth,
+                box,
+                variant: mosaicVariant,
+                weights: flexible.map(l => l.w * l.h),
+                ...minPinUnits(grid, buildData.columnWidth),
+            })
+            : []
+        if (flexible.length > 0 && packed.length === 0) {
+            return "Couldn't fit the selection around the region's fixed items"
+        }
+        const newLayout = [...packed, ...placedItems, ...rest]
         // The region explicitly targets the full line, so the write moves
-        // the ratchet like a fill does
+        // the ratchet like a fill does. Size-locked travellers keep their
+        // cell size, so only the flexible items need auto-crop maintenance.
         onLayoutChange(newLayout,
-            verbAutoCrops(buildData, newLayout, packedKeys, selectionAutoCrop), total)
+            verbAutoCrops(buildData, newLayout,
+                new Set(flexible.map(l => l.i)), selectionAutoCrop), total)
+        return null
     }
 
     // Fit each given item to its current cell — the selection toolbar's

@@ -41,6 +41,7 @@ import {
 import { REGION_PRESETS, RegionPreset, usePinboardLayoutActions } from '@/hooks/pinboardLayout'
 import { RegionIcon } from './RegionIcon'
 import { usePinSelection } from '@/lib/state/pinboardSelection'
+import { useToast } from '@/components/ui/use-toast'
 import { useItemSelection } from '@/lib/state/itemSelection'
 import { groupRowsByOverlap } from '@/lib/pinboardPack'
 
@@ -480,6 +481,14 @@ export function PinBoard(
         pinboardRef: scrollAreaRef,
         onLayoutChange,
     })
+    // Send to Region reports refusals (anchored selection, size-locked
+    // item that can't fit) as messages for the user instead of silently
+    // doing nothing or, worse, sending only part of the group
+    const { toast } = useToast()
+    const sendToRegion = async (keys: string[], preset: RegionPreset) => {
+        const err = await sendSelectionToRegion(keys, preset)
+        if (err) toast({ title: "Send to Region", description: err, duration: 4000 })
+    }
     // Transient multi-selection, following file-manager conventions: plain
     // click selects just the clicked item, ctrl/cmd+click toggles items,
     // shift+click selects the reading-order range from the anchor (see
@@ -1344,7 +1353,7 @@ export function PinBoard(
                                 case "clearCrop": clearAutoCropSelection(selected); break
                             }
                         }}
-                        onRegion={(preset) => void sendSelectionToRegion(selected, preset)}
+                        onRegion={(preset) => void sendToRegion(selected, preset)}
                         onLock={(lock) => setLockForKeys(selected, lock)}
                         onCropToggle={() => {
                             const next = !selectionCrop

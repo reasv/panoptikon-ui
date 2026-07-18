@@ -4,8 +4,9 @@ import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, u
 import { CropRect, PinLock, TrimRange } from "@/lib/pinboardCrop";
 import { GridParams } from "@/lib/pinboardGrid";
 import { useFileOpenActions } from "@/hooks/fileOpen";
-import { REGION_PRESETS, usePinboardLayoutActions } from "@/hooks/pinboardLayout";
+import { REGION_PRESETS, RegionPreset, usePinboardLayoutActions } from "@/hooks/pinboardLayout";
 import { RegionIcon } from "./RegionIcon";
+import { useToast } from "@/components/ui/use-toast";
 import { usePinSelection } from "@/lib/state/pinboardSelection";
 
 export function PinBoardCtx({
@@ -113,6 +114,13 @@ export function PinBoardCtx({
         selectionAutoCrop: selectionCrop,
     })
     const selected = usePinSelection(s => s.selected)
+    // Send to Region reports refusals (anchored selection, size-locked
+    // item that can't fit) as messages instead of silent partial sends
+    const { toast } = useToast()
+    const sendToRegion = async (keys: string[], preset: RegionPreset) => {
+        const err = await sendSelectionToRegion(keys, preset)
+        if (err) toast({ title: "Send to Region", description: err, duration: 4000 })
+    }
 
     function layoutFixedRows(rows: number) {
         fillViewportRows(rows)
@@ -205,7 +213,7 @@ export function PinBoardCtx({
                                 <ContextMenuSubContent className="w-48">
                                     {REGION_PRESETS.map(([preset, label]) => (
                                         <ContextMenuItem key={preset}
-                                            onClick={() => sendSelectionToRegion(selected, preset)}>
+                                            onClick={() => void sendToRegion(selected, preset)}>
                                             <span className="flex items-center gap-2">
                                                 <RegionIcon preset={preset} className="w-4 h-4" />
                                                 {label}
