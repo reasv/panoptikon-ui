@@ -572,17 +572,22 @@ export function PinBoard(
             usePinboardCarry.getState().cancel()
         }
     }, [])
-    // Free-mask bound in grid rows: the ratchet, the content bottom or the
-    // fold, whichever is deepest — the band between the last item and the
-    // fold is legitimately targetable empty board
+    // Free-mask bound in grid rows: the fold or the ratchet, whichever is
+    // deeper — the same committed rectangle every fill verb targets. Holes
+    // are uncovered cells of THAT rectangle only: a bottom-open hole ends
+    // at the board's committed bottom instead of stretching down into the
+    // below-fold staging band (a cutting board of parked items would
+    // otherwise turn every bottom hole into a full-depth sliver and
+    // conforming placements into stretched strips). The staging band has
+    // no holes by definition; it stays reachable via free placement
+    // (carry without Shift, normal drag-and-drop).
     const holeRows = useMemo(() => {
         if (!holeMode) return 0
-        const contentBottom = layout.reduce((a, l) => Math.max(a, l.y + l.h), 0)
         const areaH = gridAreaRef.current?.clientHeight ?? 0
         const fold = Math.max(1, Math.floor(
             (areaH - 2 * grid.padding + grid.margin) / rowStep(grid)))
-        return Math.max(highWater, contentBottom, fold)
-    }, [holeMode, layout, highWater, grid, gridAreaRef])
+        return Math.max(highWater, fold)
+    }, [holeMode, highWater, grid, gridAreaRef])
     // Occupancy for the free mask. The verb MOVES the selection, so it
     // counts as lifted — its own cells are free to land back onto (e.g.
     // merging with an adjacent hole). Carried/dragged items are new;
