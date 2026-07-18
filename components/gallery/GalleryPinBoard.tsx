@@ -27,14 +27,18 @@ import { CropRect, PinLock, TrimRange, clampCrop, composeCrops, isEmptyTrim, pac
 import { useVideoTrim } from '@/lib/videoTrim'
 import { CropGeometry, CropView } from './CropView'
 import { VideoTimeline } from './VideoTimeline'
-import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightFromLine, ArrowRightToLine, Check, ChevronDown, Crop, Expand, FlipHorizontal2, FlipVertical2, GripVertical, LayoutDashboard, LockOpen, Maximize, Ruler, Scaling, X, type LucideIcon } from 'lucide-react'
+import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightFromLine, ArrowRightToLine, Check, ChevronDown, Columns3, Crop, Dices, Expand, FlipHorizontal2, FlipVertical2, FoldHorizontal, GripVertical, LayoutDashboard, LockOpen, Maximize, Ruler, Scaling, X, type LucideIcon } from 'lucide-react'
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuSub,
+    DropdownMenuSubContent,
+    DropdownMenuSubTrigger,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { usePinboardLayoutActions } from '@/hooks/pinboardLayout'
+import { REGION_PRESETS, RegionPreset, usePinboardLayoutActions } from '@/hooks/pinboardLayout'
 import { usePinSelection } from '@/lib/state/pinboardSelection'
 import { useItemSelection } from '@/lib/state/itemSelection'
 import { groupRowsByOverlap } from '@/lib/pinboardPack'
@@ -96,12 +100,20 @@ const SELECTION_VERBS: SelectionVerb[] = [
         title: "Rearrange within the bounding box, keeping each item's share of the space",
     },
     {
+        id: "shuffle", label: "Shuffle", icon: Dices, min: 2,
+        title: "Reroll the selection's arrangement — a different composition each time",
+    },
+    {
         id: "grow", label: "Grow to Fill", icon: Expand,
         title: "Grow the selection into the empty space around it",
     },
     {
         id: "shiftLeft", label: "Shift Left", icon: ArrowLeftToLine,
         title: "Slide the selected items left until they hit something",
+    },
+    {
+        id: "shiftCenter", label: "Center", icon: FoldHorizontal,
+        title: "Pack the selected items together and center them in their free space",
     },
     {
         id: "shiftRight", label: "Shift Right", icon: ArrowRightToLine,
@@ -122,6 +134,9 @@ const SELECTION_VERBS: SelectionVerb[] = [
 ]
 const TOOLBAR_VERBS_KEY = "pinboardToolbarVerbs"
 const DEFAULT_TOOLBAR_VERBS = ["arrange", "swap"]
+// Pinnable non-verb: the Send to Region submenu. On the bar it becomes an
+// icon button opening the preset menu rather than acting directly.
+const REGION_MENU_ID = "region"
 
 export function PinBoard(
     {
@@ -456,6 +471,7 @@ export function PinBoard(
     const {
         fillViewport, arrangeSelection, swapItems, autoCropSelection,
         clearAutoCropSelection, growSelection, mirrorSelection, shiftSelection,
+        sendSelectionToRegion,
     } = usePinboardLayoutActions({
         layout, crops, autoCrops, locks: itemLocks, highWater, dbs, grid,
         layoutAutoCrop: autoLayoutCrop,
@@ -653,45 +669,76 @@ export function PinBoard(
     const marqueeRef = useRef<{
         startX: number
         startY: number
+        lastClientX: number
+        lastClientY: number
         active: boolean
+        raf: number
+        update: () => void
         onMove: (e: PointerEvent) => void
         onUp: () => void
+        onScroll: () => void
     } | null>(null)
     const endMarquee = () => {
         const m = marqueeRef.current
         if (!m) return
         window.removeEventListener("pointermove", m.onMove)
         window.removeEventListener("pointerup", m.onUp)
+        document.removeEventListener("scroll", m.onScroll, true)
+        if (m.raf) cancelAnimationFrame(m.raf)
         marqueeRef.current = null
         setMarquee(null)
     }
     const endMarqueeRef = useRef(endMarquee)
     endMarqueeRef.current = endMarquee
     useEffect(() => () => endMarqueeRef.current(), [])
+    // How close (px) to the scroll viewport's edge the pointer must be to
+    // auto-scroll the board, and the max px per frame it scrolls
+    const MARQUEE_SCROLL_EDGE = 40
+    const MARQUEE_SCROLL_MAX = 24
     const beginMarquee = (start: { clientX: number; clientY: number }, additive: boolean) => {
         endMarquee()
+        const area = gridAreaRef.current
+        if (!area) return
         const sel = usePinSelection.getState()
         const base = additive ? sel.selected : []
         const baseAnchor = additive ? sel.anchor : null
+        const startRect = area.getBoundingClientRect()
+        // The scrolling element, for edge auto-scroll (Radix puts the
+        // scrollbars on the root; the viewport child is what scrolls)
+        const viewport = scrollAreaRef.current
+            ?.querySelector<HTMLElement>("[data-radix-scroll-area-viewport]")
         const m = {
-            startX: start.clientX,
-            startY: start.clientY,
+            // The press point in CONTENT coordinates (relative to the grid
+            // area). Client coords would detach the rectangle's origin from
+            // the board the moment it scrolls mid-drag: the origin would
+            // ride the viewport instead of the content, sliding the whole
+            // selection up and dropping everything scrolled past.
+            startX: start.clientX - startRect.left,
+            startY: start.clientY - startRect.top,
+            lastClientX: start.clientX,
+            lastClientY: start.clientY,
             active: false,
-            onMove: (e: PointerEvent) => {
-                const area = gridAreaRef.current
-                if (!area || marqueeRef.current !== m) return
+            raf: 0,
+            // Recompute rectangle, overlay and hits from the anchored start
+            // and the latest pointer position — called on pointer moves AND
+            // on scrolls, which move the content under a resting pointer
+            update: () => {
+                if (!gridAreaRef.current || marqueeRef.current !== m) return
+                const areaRect = gridAreaRef.current.getBoundingClientRect()
+                // The press point's CURRENT client position
+                const sx = m.startX + areaRect.left
+                const sy = m.startY + areaRect.top
                 // Same threshold as the click movement guard below, so a
                 // modifier press-and-release is a click XOR a marquee
-                if (!m.active && Math.hypot(e.clientX - m.startX, e.clientY - m.startY) <= 5) return
+                if (!m.active && Math.hypot(m.lastClientX - sx, m.lastClientY - sy) <= 5) return
                 m.active = true
-                const left = Math.min(m.startX, e.clientX)
-                const top = Math.min(m.startY, e.clientY)
-                const right = Math.max(m.startX, e.clientX)
-                const bottom = Math.max(m.startY, e.clientY)
-                const areaRect = area.getBoundingClientRect()
+                const left = Math.min(sx, m.lastClientX)
+                const top = Math.min(sy, m.lastClientY)
+                const right = Math.max(sx, m.lastClientX)
+                const bottom = Math.max(sy, m.lastClientY)
                 setMarquee({ x: left - areaRect.left, y: top - areaRect.top, w: right - left, h: bottom - top })
                 const hits: string[] = []
-                for (const el of area.querySelectorAll<HTMLElement>("[data-pin-key]")) {
+                for (const el of gridAreaRef.current.querySelectorAll<HTMLElement>("[data-pin-key]")) {
                     const key = el.dataset.pinKey
                     if (!key || key.endsWith("__preview")) continue
                     const r = el.getBoundingClientRect()
@@ -703,11 +750,42 @@ export function PinBoard(
                 hits.sort((a, b) => readingOrder.indexOf(a) - readingOrder.indexOf(b))
                 usePinSelection.getState().replace(union(base, hits), baseAnchor ?? hits[0] ?? null)
             },
+            onMove: (e: PointerEvent) => {
+                if (marqueeRef.current !== m) return
+                m.lastClientX = e.clientX
+                m.lastClientY = e.clientY
+                m.update()
+                // Edge auto-scroll, file-manager style: dragging near the
+                // top/bottom of the scroll viewport keeps scrolling frame by
+                // frame while the pointer stays there (the loop re-checks)
+                if (m.active && !m.raf && viewport) m.raf = requestAnimationFrame(step)
+            },
             onUp: () => endMarqueeRef.current(),
+            // Wheel- or bar-scrolling mid-drag also moves the content under
+            // the pointer (capture: scroll events don't bubble)
+            onScroll: () => m.update(),
+        }
+        const step = () => {
+            m.raf = 0
+            if (marqueeRef.current !== m || !viewport) return
+            const vr = viewport.getBoundingClientRect()
+            let dy = 0
+            if (m.lastClientY > vr.bottom - MARQUEE_SCROLL_EDGE) {
+                dy = Math.min(MARQUEE_SCROLL_MAX, (m.lastClientY - (vr.bottom - MARQUEE_SCROLL_EDGE)) / 2)
+            } else if (m.lastClientY < vr.top + MARQUEE_SCROLL_EDGE) {
+                dy = -Math.min(MARQUEE_SCROLL_MAX, ((vr.top + MARQUEE_SCROLL_EDGE) - m.lastClientY) / 2)
+            }
+            if (dy === 0) return
+            const before = viewport.scrollTop
+            viewport.scrollTop += dy
+            if (viewport.scrollTop === before) return // hit the end
+            m.update()
+            m.raf = requestAnimationFrame(step)
         }
         marqueeRef.current = m
         window.addEventListener("pointermove", m.onMove)
         window.addEventListener("pointerup", m.onUp)
+        document.addEventListener("scroll", m.onScroll, true)
     }
     const beginMarqueeRef = useRef(beginMarquee)
     beginMarqueeRef.current = beginMarquee
@@ -752,6 +830,23 @@ export function PinBoard(
         window.addEventListener("keydown", onKey)
         return () => window.removeEventListener("keydown", onKey)
     }, [escActive])
+    // Ctrl/Cmd+A selects every pin, file-manager style — in reading order,
+    // so a shift+click right after shrinks the range predictably. Presses
+    // aimed at a text field keep their native select-all.
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if ((e.key !== "a" && e.key !== "A") || !(e.ctrlKey || e.metaKey)
+                || e.altKey || e.shiftKey) return
+            const t = e.target as HTMLElement | null
+            if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return
+            const keys = readingOrder.filter(k => !k.endsWith("__preview"))
+            if (keys.length === 0) return
+            e.preventDefault()
+            usePinSelection.getState().replace(keys, keys[0])
+        }
+        window.addEventListener("keydown", onKey)
+        return () => window.removeEventListener("keydown", onKey)
+    }, [readingOrder])
     // Pressing anywhere that isn't a pin, the selection toolbar or a popup
     // menu — the board background, the rest of the app — deselects, the
     // way every file manager does. Ctrl/shift presses are exempt so
@@ -1232,14 +1327,17 @@ export function PinBoard(
                                 case "arrange": void arrangeSelection(selected); break
                                 case "swap": void swapItems(selected[0], selected[1]); break
                                 case "reflow": void arrangeSelection(selected, true); break
+                                case "shuffle": void arrangeSelection(selected, false, true); break
                                 case "grow": void growSelection(selected); break
                                 case "shiftLeft": shiftSelection(selected, "left"); break
+                                case "shiftCenter": shiftSelection(selected, "center"); break
                                 case "shiftRight": shiftSelection(selected, "right"); break
                                 case "mirrorH": void mirrorSelection(selected, "horizontal"); break
                                 case "mirrorV": void mirrorSelection(selected, "vertical"); break
                                 case "clearCrop": clearAutoCropSelection(selected); break
                             }
                         }}
+                        onRegion={(preset) => void sendSelectionToRegion(selected, preset)}
                         onLock={(lock) => setLockForKeys(selected, lock)}
                         onCropToggle={() => {
                             const next = !selectionCrop
@@ -1271,6 +1369,7 @@ function SelectionToolbar({
     cropOn,
     selHasAnchor,
     onVerb,
+    onRegion,
     onLock,
     onCropToggle,
     onClear,
@@ -1283,6 +1382,7 @@ function SelectionToolbar({
     // Whether the selection contains an anchored item (greys the mirrors)
     selHasAnchor: boolean
     onVerb: (id: string) => void
+    onRegion: (preset: RegionPreset) => void
     onLock: (lock: PinLock) => void
     onCropToggle: () => void
     onClear: () => void
@@ -1295,7 +1395,8 @@ function SelectionToolbar({
         try {
             const ids = JSON.parse(localStorage.getItem(TOOLBAR_VERBS_KEY) ?? "")
             if (Array.isArray(ids)) {
-                setPinned(ids.filter(id => SELECTION_VERBS.some(v => v.id === id)))
+                setPinned(ids.filter(id =>
+                    id === REGION_MENU_ID || SELECTION_VERBS.some(v => v.id === id)))
             }
         } catch { /* absent or corrupted preference: keep the default */ }
     }, [])
@@ -1365,38 +1466,38 @@ function SelectionToolbar({
                                     <v.icon className="w-4 h-4" />
                                     {v.label}
                                 </span>
-                                {/* A real checkbox look: empty outlined box
-                                    when unpinned, filled box with a check
-                                    when pinned — a same-glyph color change
-                                    alone reads as enabled either way */}
-                                <button
-                                    data-pin-toggle
-                                    className="ml-auto rounded p-0.5 hover:bg-gray-200"
-                                    title={isPinned
-                                        ? "Shown on the toolbar — click to remove"
-                                        : "Show directly on the toolbar"}
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onPointerUp={(e) => { e.preventDefault(); e.stopPropagation() }}
-                                    onClick={(e) => {
-                                        // Keep the menu open: the click must
-                                        // not reach the row's select handling
-                                        e.preventDefault()
-                                        e.stopPropagation()
-                                        togglePin(v.id)
-                                    }}
-                                >
-                                    <span className={cn(
-                                        "flex h-4 w-4 items-center justify-center rounded border",
-                                        isPinned
-                                            ? "border-blue-600 bg-blue-600 text-white"
-                                            : "border-gray-400 text-transparent hover:border-gray-600",
-                                    )}>
-                                        <Check className="w-3 h-3" />
-                                    </span>
-                                </button>
+                                <PinToggle isPinned={isPinned} onToggle={() => togglePin(v.id)} />
                             </DropdownMenuItem>
                         )
                     })}
+                    {/* The region presets live in one submenu (seven
+                        rarely-simultaneous targets would flood the list);
+                        its pin toggle puts a menu-opening icon button on
+                        the bar rather than a direct verb */}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuSub>
+                        <DropdownMenuSubTrigger
+                            title="Clear a preset region and pack the selection to fill it; bystanders drop below the board"
+                        >
+                            <span className="flex items-center gap-2">
+                                <Columns3 className="w-4 h-4" />
+                                Send to Region
+                            </span>
+                            <span className="ml-auto pl-2">
+                                <PinToggle
+                                    isPinned={pinned.includes(REGION_MENU_ID)}
+                                    onToggle={() => togglePin(REGION_MENU_ID)}
+                                />
+                            </span>
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="w-44">
+                            {REGION_PRESETS.map(([preset, label]) => (
+                                <DropdownMenuItem key={preset} onSelect={() => onRegion(preset)}>
+                                    {label}
+                                </DropdownMenuItem>
+                            ))}
+                        </DropdownMenuSubContent>
+                    </DropdownMenuSub>
                 </DropdownMenuContent>
             </DropdownMenu>
             {SELECTION_VERBS.filter(v => pinned.includes(v.id)).map(v => (
@@ -1405,6 +1506,25 @@ function SelectionToolbar({
                     <v.icon className="w-4 h-4" />
                 </button>
             ))}
+            {/* The pinned Send to Region opens its preset menu in place —
+                an icon button can't carry seven targets directly */}
+            {pinned.includes(REGION_MENU_ID) && (
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <button className={btn}
+                            title="Send the selection to a region of the board">
+                            <Columns3 className="w-4 h-4" />
+                        </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-44">
+                        {REGION_PRESETS.map(([preset, label]) => (
+                            <DropdownMenuItem key={preset} onSelect={() => onRegion(preset)}>
+                                {label}
+                            </DropdownMenuItem>
+                        ))}
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            )}
             <button
                 className={cn(btn, cropOn && "bg-blue-100 text-blue-700 hover:bg-blue-200")}
                 onClick={onCropToggle}
@@ -1429,6 +1549,47 @@ function SelectionToolbar({
                 <X className="w-4 h-4" />
             </button>
         </div>
+    )
+}
+
+// The dropdown rows' toolbar-membership checkbox. A real checkbox look:
+// empty outlined box when unpinned, filled box with a check when pinned —
+// a same-glyph color change alone reads as enabled either way. All three
+// pointer phases are stopped so toggling never selects the row or closes
+// the menu (Radix fires item select from pointerup via item.click()).
+function PinToggle({
+    isPinned,
+    onToggle,
+}: {
+    isPinned: boolean
+    onToggle: () => void
+}) {
+    return (
+        <button
+            data-pin-toggle
+            className="ml-auto rounded p-0.5 hover:bg-gray-200"
+            title={isPinned
+                ? "Shown on the toolbar — click to remove"
+                : "Show directly on the toolbar"}
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerUp={(e) => { e.preventDefault(); e.stopPropagation() }}
+            onClick={(e) => {
+                // Keep the menu open: the click must not reach the row's
+                // select handling
+                e.preventDefault()
+                e.stopPropagation()
+                onToggle()
+            }}
+        >
+            <span className={cn(
+                "flex h-4 w-4 items-center justify-center rounded border",
+                isPinned
+                    ? "border-blue-600 bg-blue-600 text-white"
+                    : "border-gray-400 text-transparent hover:border-gray-600",
+            )}>
+                <Check className="w-3 h-3" />
+            </span>
+        </button>
     )
 }
 

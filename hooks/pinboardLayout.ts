@@ -406,7 +406,13 @@ export function usePinboardLayoutActions({
     // every arrangement verb.)
     // With keepProportions ("Reflow Selection") each item aims at its
     // current share of the box area instead of a uniform share.
-    async function arrangeSelection(keys: string[], keepProportions = false) {
+    // With shuffle ("Shuffle") the participants are packed in a random
+    // order instead of reading order, retried until the geometry actually
+    // differs — the reroll for a selection. The packer itself is
+    // deterministic and order-preserving, so an already-arranged selection
+    // is a fixed point of plain Arrange; permuting its input is what
+    // reaches the compositions the DP would otherwise never consider.
+    async function arrangeSelection(keys: string[], keepProportions = false, shuffle = false) {
         const buildData = await ensureBuildData()
         if (!buildData) return
         const keySet = new Set(keys)
@@ -435,6 +441,102 @@ export function usePinboardLayoutActions({
                 .map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h })),
             ...extraObstacles,
         ]
+        const packItems = participants.map(l => toPackItem(buildData, l))
+        const pack = (items: PackItem[]) => packRegionInBox({
+            items,
+            obstacles,
+            grid,
+            columnWidth: buildData.columnWidth,
+            box,
+            variant: mosaicVariant,
+            // Weights stay off under shuffle: a reroll redistributes the
+            // space, it doesn't re-derive it from the last outcome
+            weights: keepProportions && !shuffle
+                ? participants.map(l => l.w * l.h) : undefined,
+            ...mins,
+        })
+        let packed = pack(packItems)
+        if (shuffle) {
+            const current = new Map(participants.map(l =>
+                [l.i, `${l.x},${l.y},${l.w},${l.h}`]))
+            const unchanged = (candidate: LayoutItem[]) =>
+                candidate.every(l => current.get(l.i) === `${l.x},${l.y},${l.w},${l.h}`)
+            // A tiny selection has few distinct orders (2 items: two), so
+            // an identical draw is common — redraw a few times rather than
+            // presenting a "reroll" that visibly did nothing. All orders
+            // exhausted-by-luck: commit the last draw anyway (the no-change
+            // guard in onLayoutChange makes that a true no-op).
+            for (let tries = 0; tries < 8; tries++) {
+                const order = [...packItems]
+                for (let i = order.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1))
+                    const tmp = order[i]; order[i] = order[j]; order[j] = tmp
+                }
+                const candidate = pack(order)
+                if (candidate.length === 0) continue
+                packed = candidate
+                if (!unchanged(candidate)) break
+            }
+        }
+        if (packed.length === 0) return
+        const newLayout = [...packed, ...rest]
+        onLayoutChange(newLayout,
+            verbAutoCrops(buildData, newLayout, packedKeys, selectionAutoCrop))
+    }
+
+    // Send the selection to a preset region: the region is cleared out and
+    // the selected items are packed to tile it completely, reflow-style
+    // (each aims at its current share of the space, so relative sizes
+    // survive the move). The selection may come from anywhere on the
+    // board — this is how a group of items is handed a column of its own.
+    // Non-selected, non-anchored items overlapping the region are evicted
+    // BELOW the board's target line (fold or ratchet), where they stack
+    // past whatever already sits there — a staging band. Since the packed
+    // region spans the full target height, the vertical compactor can't
+    // pull evictees back up through it, and regions built earlier don't
+    // overlap this one, so filling the board region by region never
+    // disturbs the previous fill. Anchored bystanders in the region stay
+    // put as obstacles; locked SELECTED items stay exactly where they are
+    // (obstacles when inside the region), like every selection verb.
+    async function sendSelectionToRegion(keys: string[], preset: RegionPreset) {
+        const buildData = await ensureBuildData()
+        if (!buildData) return
+        const keySet = new Set(keys)
+        const participants = buildData.sortedLayout.filter(l =>
+            keySet.has(l.i) && !isLocked(l.i))
+        if (participants.length === 0) return
+        const total = targetRows(buildData)
+        const box = regionBox(preset, grid.columns, total)
+        const overlapping = (a: GridRect, b: GridRect) =>
+            a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+        const inBox = (l: LayoutItem) =>
+            overlapping({ x: l.x, y: l.y, w: l.w, h: l.h }, box)
+        const packedKeys = new Set(participants.map(l => l.i))
+        const rest = layout.filter(l => !packedKeys.has(l.i)).map(l => ({ ...l }))
+        // Evictees keep their size and x and drop straight down from the
+        // region's bottom edge to the first free spot — size locks don't
+        // matter (nothing resizes), anchors are never moved. Processed
+        // top-to-bottom so the staging band roughly preserves their order.
+        const evictees = rest
+            .filter(l => !keySet.has(l.i) && !isAnchored(l.i) && inBox(l))
+            .sort((a, b) => a.y - b.y || a.x - b.x)
+        const evictKeys = new Set(evictees.map(l => l.i))
+        const solid: GridRect[] = rest
+            .filter(l => !evictKeys.has(l.i))
+            .map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h }))
+        for (const l of evictees) {
+            const r = { x: l.x, y: box.y + box.h, w: l.w, h: l.h }
+            for (; ;) {
+                const hit = solid.find(o => overlapping(r, o))
+                if (!hit) break
+                r.y = hit.y + hit.h
+            }
+            l.y = r.y
+            solid.push(r)
+        }
+        const obstacles = rest
+            .filter(l => !evictKeys.has(l.i) && isLocked(l.i) && inBox(l))
+            .map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h }))
         const packed = packRegionInBox({
             items: participants.map(l => toPackItem(buildData, l)),
             obstacles,
@@ -442,13 +544,15 @@ export function usePinboardLayoutActions({
             columnWidth: buildData.columnWidth,
             box,
             variant: mosaicVariant,
-            weights: keepProportions ? participants.map(l => l.w * l.h) : undefined,
-            ...mins,
+            weights: participants.map(l => l.w * l.h),
+            ...minPinUnits(grid, buildData.columnWidth),
         })
         if (packed.length === 0) return
         const newLayout = [...packed, ...rest]
+        // The region explicitly targets the full line, so the write moves
+        // the ratchet like a fill does
         onLayoutChange(newLayout,
-            verbAutoCrops(buildData, newLayout, packedKeys, selectionAutoCrop))
+            verbAutoCrops(buildData, newLayout, packedKeys, selectionAutoCrop), total)
     }
 
     // Fit each given item to its current cell — the selection toolbar's
@@ -557,11 +661,16 @@ export function usePinboardLayoutActions({
     // The same gravity restricted to the selection: only selected items
     // fall, and they stop at ANY other item — so nothing outside the
     // selection ever moves. Anchored items inside the selection simply
-    // stay put as obstacles.
-    function shiftSelection(keys: string[], dir: "left" | "right") {
+    // stay put as obstacles. Center packs the selection flush with
+    // leftward gravity first, then slides each y-overlap cluster right by
+    // half its remaining free space — so unlike the global Center (a
+    // whole-row repack) it composes with anchors like the other two.
+    function shiftSelection(keys: string[], dir: "left" | "right" | "center") {
         const movable = new Set(keys.filter(k => !isAnchored(k)))
         if (movable.size === 0) return
-        onLayoutChange(gravityShiftLayout(layout, dir, grid.columns, movable))
+        onLayoutChange(dir === "center"
+            ? gravityCenterShiftLayout(layout, grid.columns, movable)
+            : gravityShiftLayout(layout, dir, grid.columns, movable))
     }
     // Mirror the arrangement (not the images) about the centre of the items'
     // own bounding box, so the group stays put and items swap places. A
@@ -749,6 +858,7 @@ export function usePinboardLayoutActions({
         growSelection,
         swapItems,
         arrangeSelection,
+        sendSelectionToRegion,
         autoCropSelection,
         clearAutoCropSelection,
         // Lock presence flags for the menus: hasLocks greys the verbs that
@@ -885,6 +995,47 @@ function sortLayout(layout: LayoutItem[]): LayoutItem[] {
     return sortedLayout;
 }
 
+// Preset target regions for "Send to Region": full visible height, cut at
+// halves or thirds of the board width — plus the whole viewport (fold or
+// ratchet, whichever is taller), which hands the ENTIRE visible board to
+// the selection and stages everything else below. Complementary pairs
+// share their cut lines (left two-thirds + right third tile the board
+// exactly), so regions filled one after the other compose without gaps or
+// overlaps.
+export type RegionPreset =
+    | "viewport"
+    | "left-half" | "right-half"
+    | "left-third" | "center-third" | "right-third"
+    | "left-two-thirds" | "right-two-thirds"
+
+// Menu entries, in display order — shared by the toolbar dropdown and the
+// context menu so the two lists can't drift apart
+export const REGION_PRESETS: [RegionPreset, string][] = [
+    ["viewport", "Entire Viewport"],
+    ["left-half", "Left Half"],
+    ["right-half", "Right Half"],
+    ["left-third", "Left Third"],
+    ["center-third", "Center Third"],
+    ["right-third", "Right Third"],
+    ["left-two-thirds", "Left Two-Thirds"],
+    ["right-two-thirds", "Right Two-Thirds"],
+]
+
+function regionBox(preset: RegionPreset, columns: number, rows: number): GridRect {
+    const half = Math.round(columns / 2)
+    const third = Math.round(columns / 3)
+    switch (preset) {
+        case "viewport": return { x: 0, y: 0, w: columns, h: rows }
+        case "left-half": return { x: 0, y: 0, w: half, h: rows }
+        case "right-half": return { x: half, y: 0, w: columns - half, h: rows }
+        case "left-third": return { x: 0, y: 0, w: third, h: rows }
+        case "center-third": return { x: third, y: 0, w: columns - 2 * third, h: rows }
+        case "right-third": return { x: columns - third, y: 0, w: third, h: rows }
+        case "left-two-thirds": return { x: 0, y: 0, w: columns - third, h: rows }
+        case "right-two-thirds": return { x: third, y: 0, w: columns - third, h: rows }
+    }
+}
+
 export type ShiftMode = "left" | "right" | "center"
 
 // Repack every item horizontally against one edge of its row (or centered),
@@ -970,6 +1121,57 @@ function gravityShiftLayout(
     }
     const byKey = new Map(settled.map(l => [l.i, l]))
     return layout.map(l => byKey.get(l.i)!)
+}
+
+// Selection-scoped Center: leftward gravity packs the movable items flush
+// (same routine as Shift Left, so obstacles between them keep holding them
+// apart), then each maximal y-overlap cluster of movers rigidly slides
+// right by half its remaining free space. The rigid slide keeps internal
+// spacing, the per-mover slack minimum keeps it collision-free, and
+// clusters can't interfere with each other (no y-overlap by construction).
+// Running it again re-packs left and lands on the same spot — idempotent
+// like the other shifts. On a full-row selection of an anchor-free board
+// this reproduces the global Center's flush centered row.
+function gravityCenterShiftLayout(
+    layout: LayoutItem[],
+    columns: number,
+    movableKeys: Set<string>,
+): LayoutItem[] {
+    const packed = gravityShiftLayout(layout, "left", columns, movableKeys)
+    const movers = packed.filter(l => movableKeys.has(l.i))
+    const settled = packed.filter(l => !movableKeys.has(l.i))
+    const yOverlap = (a: LayoutItem, b: LayoutItem) =>
+        a.y < b.y + b.h && b.y < a.y + a.h
+    // Maximal chains: an item overlapping several existing clusters
+    // bridges them into one
+    const clusters: LayoutItem[][] = []
+    for (const mv of movers) {
+        const hits = clusters.filter(c => c.some(o => yOverlap(o, mv)))
+        if (hits.length === 0) {
+            clusters.push([mv])
+            continue
+        }
+        hits[0].push(mv)
+        for (const c of hits.slice(1)) {
+            hits[0].push(...c)
+            clusters.splice(clusters.indexOf(c), 1)
+        }
+    }
+    for (const cluster of clusters) {
+        let slack = Infinity
+        for (const mv of cluster) {
+            let edge = columns
+            for (const o of settled) {
+                if (yOverlap(o, mv) && o.x >= mv.x + mv.w) edge = Math.min(edge, o.x)
+            }
+            slack = Math.min(slack, edge - (mv.x + mv.w))
+        }
+        const dx = Math.floor(slack / 2)
+        // gravityShiftLayout returns fresh copies, so mutating in place is
+        // safe — `packed` and `movers` share the same objects
+        if (dx > 0) for (const mv of cluster) mv.x += dx
+    }
+    return packed
 }
 
 export type MirrorAxis = "horizontal" | "vertical"

@@ -4,7 +4,7 @@ import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, u
 import { CropRect, PinLock, TrimRange } from "@/lib/pinboardCrop";
 import { GridParams } from "@/lib/pinboardGrid";
 import { useFileOpenActions } from "@/hooks/fileOpen";
-import { usePinboardLayoutActions } from "@/hooks/pinboardLayout";
+import { REGION_PRESETS, usePinboardLayoutActions } from "@/hooks/pinboardLayout";
 import { usePinSelection } from "@/lib/state/pinboardSelection";
 
 export function PinBoardCtx({
@@ -103,6 +103,7 @@ export function PinBoardCtx({
         growSelection,
         swapItems,
         arrangeSelection,
+        sendSelectionToRegion,
         hasLocks,
         hasAnchors,
     } = usePinboardLayoutActions({
@@ -187,12 +188,37 @@ export function PinBoardCtx({
                                 onClick={() => arrangeSelection(selected, true)}>
                                 Reflow (Keep Proportions)
                             </ContextMenuItem>
+                            {/* Reroll: arrange again in a random order until
+                                the composition actually changes */}
+                            <ContextMenuItem disabled={selected.length < 2}
+                                onClick={() => arrangeSelection(selected, false, true)}>
+                                Shuffle
+                            </ContextMenuItem>
                             <ContextMenuItem onClick={() => growSelection(selected)}>
                                 Grow to Fill
                             </ContextMenuItem>
+                            {/* Clear a preset region and pack the selection
+                                to fill it; bystanders drop below the board */}
+                            <ContextMenuSub>
+                                <ContextMenuSubTrigger>Send to Region</ContextMenuSubTrigger>
+                                <ContextMenuSubContent className="w-44">
+                                    {REGION_PRESETS.map(([preset, label]) => (
+                                        <ContextMenuItem key={preset}
+                                            onClick={() => sendSelectionToRegion(selected, preset)}>
+                                            {label}
+                                        </ContextMenuItem>
+                                    ))}
+                                </ContextMenuSubContent>
+                            </ContextMenuSub>
                             <ContextMenuSeparator />
                             <ContextMenuItem onClick={() => shiftSelection(selected, "left")}>
                                 Shift Left
+                            </ContextMenuItem>
+                            {/* Unlike the global Center (whole-row repack,
+                                greyed with anchors) this packs the selection
+                                and centers it in its free span */}
+                            <ContextMenuItem onClick={() => shiftSelection(selected, "center")}>
+                                Center
                             </ContextMenuItem>
                             <ContextMenuItem onClick={() => shiftSelection(selected, "right")}>
                                 Shift Right
