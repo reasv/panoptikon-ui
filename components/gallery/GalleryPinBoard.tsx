@@ -4,7 +4,7 @@ import { useSelectedDBs } from "@/lib/state/database"
 import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid } from '@/lib/state/gallery'
 import { consumePinboardNavigation, consumePinboardPendingEdit } from '@/lib/pinboardNavigation'
 import { usePinBoard } from '@/lib/state/pinboard'
-import { GridParams, minPinUnits, v1ScaleFactors } from '@/lib/pinboardGrid'
+import { GridParams, minPinUnits, rowStep, v1ScaleFactors } from '@/lib/pinboardGrid'
 import { PinButton } from './PinButton'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { GridLayout, noCompactor, useContainerWidth, type LayoutItem } from "react-grid-layout"
@@ -27,7 +27,7 @@ import { CropRect, PinLock, TrimRange, clampCrop, composeCrops, isEmptyTrim, pac
 import { useVideoTrim } from '@/lib/videoTrim'
 import { CropGeometry, CropView } from './CropView'
 import { VideoTimeline } from './VideoTimeline'
-import { Anchor, ArrowRightFromLine, ArrowRightToLine, Check, Crop, Ruler, X } from 'lucide-react'
+import { Anchor, ArrowRightFromLine, ArrowRightToLine, Check, Crop, GripVertical, Ruler, X } from 'lucide-react'
 import { usePinboardLayoutActions } from '@/hooks/pinboardLayout'
 import { usePinSelection } from '@/lib/state/pinboardSelection'
 import { useItemSelection } from '@/lib/state/itemSelection'
@@ -53,6 +53,11 @@ const DROP_CONFIG = { enabled: true }
 // Order-preserving set union, for additive selection gestures
 const union = (a: string[], b: string[]) =>
     [...a, ...b.filter((k) => !a.includes(k))]
+
+// Selection toolbar placement: smallest inset from the board edges, and the
+// gap between the bar's bottom edge and the item top edge it hangs above
+const TOOLBAR_EDGE = 4
+const TOOLBAR_GAP = 6
 
 export function PinBoard(
     {
@@ -424,6 +429,115 @@ export function PinBoard(
         // adds the range to the existing selection. The anchor stays put
         // either way; only plain clicks and ctrl+clicks rebase it.
         sel.replace(additive ? union(sel.selected, range) : range, anchor)
+    }
+    // Floating toolbar placement, in CONTENT coordinates (it scrolls with
+    // the board, staying glued to the selection). The bar hangs just above
+    // the selection's bounding box — except with exactly two items at
+    // different heights, where it hangs above the LOWER item's top edge:
+    // a two-item bbox is mostly empty diagonal space, and two items are
+    // usually selected to swap, so the seam between them is where the
+    // mouse is. When the anchor is too close to the board's top for the
+    // bar to fit, it pins just below the top edge instead (over the
+    // selection — the drag grip below is the escape hatch for that).
+    const toolbarRef = useRef<HTMLDivElement | null>(null)
+    const [toolbarSize, setToolbarSize] = useState({ w: 320, h: 34 })
+    useEffect(() => {
+        const el = toolbarRef.current
+        if (!el) return
+        const w = el.offsetWidth
+        const h = el.offsetHeight
+        setToolbarSize(s => (s.w === w && s.h === h) ? s : { w, h })
+    }, [selected.length])
+    // Manually parked position (from the drag grip). Any change to the
+    // selection SET discards it and the automatic anchor takes over; pure
+    // layout changes of the same selection keep it — the user moved the
+    // bar out of the way on purpose, snapping it back mid-workflow would
+    // re-cover whatever they moved it away from.
+    const [toolbarManual, setToolbarManual] = useState<{ x: number; y: number } | null>(null)
+    const selKey = useMemo(() => [...selected].sort().join("|"), [selected])
+    useEffect(() => { setToolbarManual(null) }, [selKey])
+    const toolbarPos = useMemo(() => {
+        if (selected.length === 0 || !gridWidth) return null
+        const colW = (gridWidth - 2 * grid.padding - (grid.columns - 1) * grid.margin) / grid.columns
+        const unitX = colW + grid.margin
+        const px = (x: number) => grid.padding + x * unitX
+        const py = (y: number) => grid.padding + y * rowStep(grid)
+        const maxY = layout.reduce((acc, l) => Math.max(acc, l.y + l.h), 0)
+        // The bar never leaves the board: x within the inner width, y
+        // between the top edge and the bottom of the board's content
+        const clampPos = (x: number, y: number) => ({
+            x: Math.min(
+                Math.max(x, TOOLBAR_EDGE),
+                Math.max(TOOLBAR_EDGE, gridWidth - toolbarSize.w - TOOLBAR_EDGE)),
+            y: Math.min(
+                Math.max(y, TOOLBAR_EDGE),
+                Math.max(TOOLBAR_EDGE, py(maxY) - grid.margin - toolbarSize.h - TOOLBAR_EDGE)),
+        })
+        if (toolbarManual) return clampPos(toolbarManual.x, toolbarManual.y)
+        const rects = layout.filter(l => selectedSet.has(l.i))
+        if (rects.length === 0) return null
+        let anchorTop: number
+        let centerX: number
+        if (rects.length === 2 && rects[0].y !== rects[1].y) {
+            const lower = rects[0].y > rects[1].y ? rects[0] : rects[1]
+            anchorTop = py(lower.y)
+            centerX = px(lower.x) + (lower.w * unitX - grid.margin) / 2
+        } else {
+            const x0 = Math.min(...rects.map(l => l.x))
+            const x1 = Math.max(...rects.map(l => l.x + l.w))
+            anchorTop = py(Math.min(...rects.map(l => l.y)))
+            centerX = (px(x0) + px(x1) - grid.margin) / 2
+        }
+        return clampPos(centerX - toolbarSize.w / 2, anchorTop - TOOLBAR_GAP - toolbarSize.h)
+    }, [selected.length, toolbarManual, layout, selectedSet, gridWidth, grid, toolbarSize])
+    // Dragging the grip moves the bar freely; on release it snaps
+    // vertically to the nearest resting spot — just above an item's top
+    // edge, or pinned below the board's top — so a parked bar sits at the
+    // same kind of place the automatic anchor picks. Only items the bar
+    // horizontally overlaps at its drop position count as snap targets: a
+    // top edge on the far side of the board is not a visible line here,
+    // and snapping to it would park the bar at a seemingly random height
+    // through the middle of whatever it IS over. Horizontal stays
+    // wherever it was dropped (clamped to the board).
+    const onToolbarGripDown = (e: React.PointerEvent) => {
+        if (e.button !== 0) return
+        const area = gridAreaRef.current
+        const bar = toolbarRef.current
+        if (!area || !bar) return
+        e.preventDefault()
+        e.stopPropagation()
+        const barRect = bar.getBoundingClientRect()
+        const dx = e.clientX - barRect.left
+        const dy = e.clientY - barRect.top
+        const posFrom = (ev: PointerEvent) => {
+            const aRect = area.getBoundingClientRect()
+            return { x: ev.clientX - aRect.left - dx, y: ev.clientY - aRect.top - dy }
+        }
+        const onMove = (ev: PointerEvent) => setToolbarManual(posFrom(ev))
+        const onUp = (ev: PointerEvent) => {
+            window.removeEventListener("pointermove", onMove)
+            window.removeEventListener("pointerup", onUp)
+            const raw = posFrom(ev)
+            const colW = (gridWidth - 2 * grid.padding - (grid.columns - 1) * grid.margin) / grid.columns
+            const unitX = colW + grid.margin
+            const px = (x: number) => grid.padding + x * unitX
+            const py = (y: number) => grid.padding + y * rowStep(grid)
+            // The bar's resting x-span (clamped like the renderer clamps),
+            // for the horizontal-overlap test
+            const xl = Math.min(
+                Math.max(raw.x, TOOLBAR_EDGE),
+                Math.max(TOOLBAR_EDGE, gridWidth - toolbarSize.w - TOOLBAR_EDGE))
+            const xr = xl + toolbarSize.w
+            let best = TOOLBAR_EDGE
+            for (const l of layout) {
+                if (px(l.x) >= xr || px(l.x + l.w) - grid.margin <= xl) continue
+                const c = py(l.y) - TOOLBAR_GAP - toolbarSize.h
+                if (c >= TOOLBAR_EDGE && Math.abs(c - raw.y) < Math.abs(best - raw.y)) best = c
+            }
+            setToolbarManual({ x: raw.x, y: best })
+        }
+        window.addEventListener("pointermove", onMove)
+        window.addEventListener("pointerup", onUp)
     }
     // Active lock badges (the pin/size toggles of LOCKED items) are shown
     // while the user is interacting with the board — hovering over any pin
@@ -1012,8 +1126,11 @@ export function PinBoard(
                         style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }}
                     />
                 )}
-                {selected.length > 0 && (
+                {selected.length > 0 && toolbarPos && (
                     <SelectionToolbar
+                        innerRef={toolbarRef}
+                        style={{ left: toolbarPos.x, top: toolbarPos.y }}
+                        onGripDown={onToolbarGripDown}
                         count={selected.length}
                         onArrange={() => void arrangeSelection(selected)}
                         onSwap={() => void swapItems(selected[0], selected[1])}
@@ -1028,14 +1145,21 @@ export function PinBoard(
 
 // Floating verb bar shown while a selection exists. Lock/unlock apply to
 // every selected item in one record write; Arrange mosaics the selection
-// within its own bounding box; Swap needs exactly two items.
+// within its own bounding box; Swap needs exactly two items. Positioned by
+// the parent (anchored above the selection, or wherever the grip parked it).
 function SelectionToolbar({
+    innerRef,
+    style,
+    onGripDown,
     count,
     onArrange,
     onSwap,
     onLock,
     onClear,
 }: {
+    innerRef: React.Ref<HTMLDivElement>
+    style: React.CSSProperties
+    onGripDown: (e: React.PointerEvent) => void
     count: number
     onArrange: () => void
     onSwap: () => void
@@ -1045,9 +1169,18 @@ function SelectionToolbar({
     const btn = "rounded-full px-2.5 py-1 hover:bg-gray-200 disabled:opacity-40 disabled:hover:bg-transparent"
     return (
         <div
+            ref={innerRef}
             data-selection-toolbar
-            className="absolute top-2 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 rounded-full bg-white/95 shadow-lg px-3 py-1 text-sm text-gray-800"
+            style={style}
+            className="absolute z-40 flex items-center gap-1 rounded-full bg-white/95 shadow-lg px-3 py-1 text-sm text-gray-800"
         >
+            <div
+                className="cursor-grab active:cursor-grabbing -ml-1.5 pr-0.5 text-gray-400 hover:text-gray-600 touch-none"
+                title="Drag to move the toolbar out of the way"
+                onPointerDown={onGripDown}
+            >
+                <GripVertical className="w-4 h-4" />
+            </div>
             <span className="font-medium mr-1 select-none">{count} selected</span>
             <button className={btn} disabled={count < 2} onClick={onArrange}
                 title="Rearrange the selected items within their combined bounding box">
