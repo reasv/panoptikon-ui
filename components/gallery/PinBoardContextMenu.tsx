@@ -5,6 +5,7 @@ import { CropRect, PinLock, TrimRange } from "@/lib/pinboardCrop";
 import { GridParams } from "@/lib/pinboardGrid";
 import { useFileOpenActions } from "@/hooks/fileOpen";
 import { REGION_PRESETS, usePinboardLayoutActions } from "@/hooks/pinboardLayout";
+import { RegionIcon } from "./RegionIcon";
 import { usePinSelection } from "@/lib/state/pinboardSelection";
 
 export function PinBoardCtx({
@@ -201,11 +202,14 @@ export function PinBoardCtx({
                                 to fill it; bystanders drop below the board */}
                             <ContextMenuSub>
                                 <ContextMenuSubTrigger>Send to Region</ContextMenuSubTrigger>
-                                <ContextMenuSubContent className="w-44">
+                                <ContextMenuSubContent className="w-48">
                                     {REGION_PRESETS.map(([preset, label]) => (
                                         <ContextMenuItem key={preset}
                                             onClick={() => sendSelectionToRegion(selected, preset)}>
-                                            {label}
+                                            <span className="flex items-center gap-2">
+                                                <RegionIcon preset={preset} className="w-4 h-4" />
+                                                {label}
+                                            </span>
                                         </ContextMenuItem>
                                     ))}
                                 </ContextMenuSubContent>

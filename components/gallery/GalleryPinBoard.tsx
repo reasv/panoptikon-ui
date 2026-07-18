@@ -39,6 +39,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { REGION_PRESETS, RegionPreset, usePinboardLayoutActions } from '@/hooks/pinboardLayout'
+import { RegionIcon } from './RegionIcon'
 import { usePinSelection } from '@/lib/state/pinboardSelection'
 import { useItemSelection } from '@/lib/state/itemSelection'
 import { groupRowsByOverlap } from '@/lib/pinboardPack'
@@ -857,7 +858,13 @@ export function PinBoard(
         const onDown = (e: PointerEvent) => {
             if (e.ctrlKey || e.metaKey || e.shiftKey) return
             const t = e.target as HTMLElement | null
-            if (t?.closest?.(
+            // A press dismissing a MODAL Radix layer (the context menu)
+            // hit-tests to <html>/<body> — Radix put pointer-events:none on
+            // the body — so it can't be matched against the exemptions
+            // below. It's consuming the dismissal, not aiming at the
+            // background: never deselect on it.
+            if (!t || t === document.documentElement || t === document.body) return
+            if (t.closest?.(
                 '[data-pin-key], [data-selection-toolbar], [data-scroll-area-scrollbar],'
                 + ' [data-radix-popper-content-wrapper], [role="menu"]'
             )) return
@@ -1410,6 +1417,10 @@ function SelectionToolbar({
         || (v.min !== undefined && count < v.min)
         || (!!v.noAnchors && selHasAnchor)
     const btn = "rounded-full px-2.5 py-1 hover:bg-gray-200 disabled:opacity-40 disabled:hover:bg-transparent"
+    // Dropdown trigger buttons light up while their menu is open (Radix
+    // stamps data-state on the trigger)
+    const menuBtn = cn(btn,
+        "data-[state=open]:bg-blue-100 data-[state=open]:text-blue-700 data-[state=open]:hover:bg-blue-200")
     return (
         <div
             ref={innerRef}
@@ -1429,9 +1440,16 @@ function SelectionToolbar({
                 <GripVertical className="w-4 h-4" />
             </div>
             <span className="font-medium mr-1 select-none">{count} selected</span>
-            <DropdownMenu>
+            {/* modal={false} on the bar's menus: modal mode puts
+                pointer-events:none on the body while open, so the press
+                that dismisses the menu hit-tests to <html> instead of the
+                bar — it slipped past the bar entirely (and past the
+                deselect handler's exemptions, clearing the selection and
+                clicking the pin behind the bar). Non-modal, the dismissing
+                press lands on whatever the user actually aimed at. */}
+            <DropdownMenu modal={false}>
                 <DropdownMenuTrigger asChild>
-                    <button className={btn} title="All selection verbs">
+                    <button className={menuBtn} title="All selection verbs">
                         <ChevronDown className="w-4 h-4" />
                     </button>
                 </DropdownMenuTrigger>
@@ -1490,10 +1508,13 @@ function SelectionToolbar({
                                 />
                             </span>
                         </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent className="w-44">
+                        <DropdownMenuSubContent className="w-48">
                             {REGION_PRESETS.map(([preset, label]) => (
                                 <DropdownMenuItem key={preset} onSelect={() => onRegion(preset)}>
-                                    {label}
+                                    <span className="flex items-center gap-2">
+                                        <RegionIcon preset={preset} className="w-4 h-4" />
+                                        {label}
+                                    </span>
                                 </DropdownMenuItem>
                             ))}
                         </DropdownMenuSubContent>
@@ -1509,17 +1530,20 @@ function SelectionToolbar({
             {/* The pinned Send to Region opens its preset menu in place —
                 an icon button can't carry seven targets directly */}
             {pinned.includes(REGION_MENU_ID) && (
-                <DropdownMenu>
+                <DropdownMenu modal={false}>
                     <DropdownMenuTrigger asChild>
-                        <button className={btn}
+                        <button className={menuBtn}
                             title="Send the selection to a region of the board">
                             <Columns3 className="w-4 h-4" />
                         </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-44">
+                    <DropdownMenuContent align="start" className="w-48">
                         {REGION_PRESETS.map(([preset, label]) => (
                             <DropdownMenuItem key={preset} onSelect={() => onRegion(preset)}>
-                                {label}
+                                <span className="flex items-center gap-2">
+                                    <RegionIcon preset={preset} className="w-4 h-4" />
+                                    {label}
+                                </span>
                             </DropdownMenuItem>
                         ))}
                     </DropdownMenuContent>
