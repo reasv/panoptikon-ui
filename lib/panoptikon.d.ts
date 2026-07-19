@@ -1107,6 +1107,8 @@ export interface paths {
          * Search for files and items in the database
          * @description Search for files in the database based on the provided query parameters.
          *     This endpoint is meant to be used with the Panoptikon Query Language.
+         *     With `include_bookmarks`, each result additionally carries a `bookmarked` field
+         *     resolved after the query runs (see the parameter description).
          */
         post: operations["search_pql"];
         delete?: never;
@@ -2473,6 +2475,14 @@ export interface components {
             /** Format: int64 */
             audio_tracks?: number | null;
             blurhash?: string | null;
+            /**
+             * @description Bookmarked
+             *
+             *     Whether this item is bookmarked. Only present when the search was
+             *     requested with `include_bookmarks` and the result has a sha256.
+             *     Computed after the query runs; never part of the compiled search SQL.
+             */
+            bookmarked?: boolean | null;
             /** Format: double */
             confidence?: number | null;
             /** Format: int64 */
@@ -4969,6 +4979,27 @@ export interface operations {
                 index_db?: string | null;
                 /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
+                /**
+                 * @description Include Bookmark Status
+                 *
+                 *     When true, each result carries a `bookmarked` field, resolved against
+                 *     the selected user data database after the search query runs. This
+                 *     avoids a separate round trip for per-item bookmark status without
+                 *     coupling the search query itself to bookmark state.
+                 */
+                include_bookmarks?: boolean;
+                /**
+                 * @description Bookmarks Namespace
+                 *
+                 *     The bookmark namespace to check against. `*` matches any namespace.
+                 */
+                bookmarks_namespace?: string;
+                /**
+                 * @description Bookmarks User
+                 *
+                 *     The bookmarks user to check against.
+                 */
+                bookmarks_user?: string;
             };
             header?: never;
             path?: never;

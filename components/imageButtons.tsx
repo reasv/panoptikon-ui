@@ -9,6 +9,7 @@ import { Button } from "./ui/button"
 import { Toggle } from "./ui/toggle"
 import { cn } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
+import { bookmarkStatusKey, useBookmarkStatus } from "@/lib/state/bookmarkStatus"
 import { useAlwaysShowBookmarkBtn } from "@/lib/state/alwaysShowBookmarks"
 import { FindButton } from "./gallery/FindButton"
 import { FileBookmarksSetter } from "./sidebar/details/FileBookmarks"
@@ -77,11 +78,22 @@ export const BookmarkBtn = (
         query
     }
     const bookmarkPath = "/api/bookmarks/ns/{namespace}/{sha256}"
-    const { data, error, isLoading, isError, status } = $api.useQuery(
+    // Status usually comes from the shared store, seeded in bulk by the
+    // search response (include_bookmarks) and kept current by mutations.
+    // The per-item GET below only fires for items with no store entry —
+    // surfaces outside search results (pinboards) or a namespace the search
+    // hasn't been run under.
+    const statusKey = bookmarkStatusKey(query.user_data_db, namespace, sha256)
+    const seededStatus = useBookmarkStatus((state) => state.statuses.get(statusKey))
+    const setBookmarkStatus = useBookmarkStatus((state) => state.setOne)
+    const { data } = $api.useQuery(
         "get",
         bookmarkPath,
         {
             params,
+        },
+        {
+            enabled: seededStatus === undefined,
         },
     )
 
@@ -98,10 +110,13 @@ export const BookmarkBtn = (
     const queryClient = useQueryClient()
     const { toast } = useToast()
 
-    const isBookmarked = data?.exists || false
+    const isBookmarked = seededStatus ?? (data?.exists || false)
 
     const handleBookmarkClick = () => {
         const onSuccess = (deleted: boolean) => {
+            // The mutation result is authoritative for this item — update the
+            // shared store directly, no refetch needed for the clicked item.
+            setBookmarkStatus(statusKey, !deleted)
             queryClient.invalidateQueries({
                 queryKey: [
                     "get",

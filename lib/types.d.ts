@@ -12,4 +12,6 @@ interface SearchResult {
   width?: number | null
   height?: number | null
   blurhash?: string
+  /** Present when the search was made with include_bookmarks */
+  bookmarked?: boolean | null
 }

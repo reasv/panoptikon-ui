@@ -16,7 +16,15 @@ export const prefetchSearchPage = async (
   const partitionBy = partitionByParamsCache.parse(searchParams)
   const searchRequest = {
     params: {
-      query: dbs,
+      query: {
+        ...dbs,
+        // Must mirror useSearch's results-query params for the prefetch key
+        // to match. The client's bookmark namespace lives in localStorage and
+        // is unknowable here; "default" matches the common case, other
+        // namespaces simply refetch on the client.
+        include_bookmarks: true,
+        bookmarks_namespace: "default",
+      },
     },
     body: {
       ...searchQuery,

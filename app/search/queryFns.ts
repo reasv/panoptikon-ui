@@ -5,6 +5,10 @@ import { components } from "@/lib/panoptikon"
 interface queryParams {
   index_db: string | null
   user_data_db: string | null
+  /** Ask the backend to stamp `bookmarked` on each result (post-query enrichment) */
+  include_bookmarks?: boolean
+  bookmarks_namespace?: string
+  bookmarks_user?: string
 }
 export interface SearchQueryArgs {
   params: {

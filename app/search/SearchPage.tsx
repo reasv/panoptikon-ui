@@ -362,7 +362,13 @@ export function ResultGrid({
     // TanStack Virtual v3 triggers re-renders by mutating internal state,
     // which the React Compiler's memoization breaks — same as the gallery view.
     "use no memo"
-    const [dbs, __] = useSelectedDBs()
+    const [dbsState, __] = useSelectedDBs()
+    // Referentially stable while the values are unchanged, so the memoized
+    // SearchResultImage cards skip re-rendering on every scroll frame.
+    const dbs = useMemo(
+        () => dbsState,
+        [dbsState.index_db, dbsState.user_data_db]
+    )
     const parentRef = useRef<HTMLDivElement>(null)
     const [sidebarOpen] = useSideBarOpen()
     const { columns, rowEstimate } = useResultGridLayout(sidebarOpen)

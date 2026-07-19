@@ -1,7 +1,7 @@
 "use client"
 import Image from 'next/image'
 import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons"
-import { useCallback, useMemo } from "react";
+import { memo, useCallback, useMemo } from "react";
 import { cn, getFileURL, getLocale } from "@/lib/utils";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { useSearchParams } from 'next/navigation';
@@ -9,7 +9,11 @@ import { getGalleryOptionsSerializer } from '@/lib/state/gallery';
 import { PinButton } from './gallery/PinButton';
 import { blurHashToDataURL } from '@/lib/state/blurHashDataURL';
 
-export function SearchResultImage({
+// Memoized: the virtualized grid re-renders on every scroll frame (tanstack
+// virtual mutates state under "use no memo"), and without this each visible
+// card re-executes per frame. Callers must keep object/function props
+// referentially stable for the memo to hold.
+export const SearchResultImage = memo(function SearchResultImage({
     result,
     index,
     dbs,
@@ -117,4 +121,4 @@ export function SearchResultImage({
             </p>
         </div>
     )
-}
+})

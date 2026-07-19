@@ -5,7 +5,8 @@ import {
 } from "@tanstack/react-query"
 import { $api, fetchClient } from "./api"
 import { useSelectedDBs } from "./state/database"
-import { useInstantSearch, useSearchLoading } from "./state/zust"
+import { useBookmarkNs, useInstantSearch, useSearchLoading } from "./state/zust"
+import { bookmarkStatusKey, useBookmarkStatus } from "./state/bookmarkStatus"
 import { SearchQueryArgs } from "@/app/search/queryFns"
 import {
   useQueryOptions,
@@ -42,8 +43,12 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   // fires on the leading edge, so an isolated change (a click, a toggle, a
   // page turn) still queries instantly; only rapid successions (typing,
   // slider drags) are coalesced.
+  // Bookmark status rides along with the results query (backend post-query
+  // enrichment) so the grid's bookmark buttons never fire per-item GETs.
+  const bookmarkNs = useBookmarkNs((state) => state.namespace)
   const liveRequest = {
     dbs,
+    bookmarkNs,
     body: {
       ...searchQuery,
       page,
@@ -60,7 +65,11 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     "/api/search/pql",
     {
       params: {
-        query: request.dbs,
+        query: {
+          ...request.dbs,
+          include_bookmarks: true,
+          bookmarks_namespace: request.bookmarkNs,
+        },
       },
       body: {
         ...request.body,
@@ -108,6 +117,28 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     }
     return () => clearTimeout(timer)
   }, [isFetching])
+
+  // Seed the shared bookmark-status store from the enriched response. Skipped
+  // while fetching: with keepPreviousData, `data` may belong to the previous
+  // request (e.g. a different namespace) until the new response lands.
+  const setManyStatuses = useBookmarkStatus((state) => state.setMany)
+  useEffect(() => {
+    if (isFetching || !data?.results) return
+    const entries: [string, boolean][] = []
+    for (const result of data.results as SearchResult[]) {
+      if (result.sha256 && typeof result.bookmarked === "boolean") {
+        entries.push([
+          bookmarkStatusKey(
+            request.dbs.user_data_db,
+            request.bookmarkNs,
+            result.sha256
+          ),
+          result.bookmarked,
+        ])
+      }
+    }
+    if (entries.length) setManyStatuses(entries)
+  }, [data, isFetching])
   const queryClient = useQueryClient()
   const prefetchSearch = async (searchRequest: SearchQueryArgs) => {
     const timer = setTimeout(() => setLoading(true), 400)
@@ -123,7 +154,11 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     // live content on its leading edge, so this is the key the query will use
     const searchRequest = {
       params: {
-        query: liveRequest.dbs,
+        query: {
+          ...liveRequest.dbs,
+          include_bookmarks: true,
+          bookmarks_namespace: liveRequest.bookmarkNs,
+        },
       },
       body: {
         ...liveRequest.body,
@@ -180,6 +215,7 @@ export function usePrefetchSearch() {
   const queryClient = new QueryClient()
   const searchQueryState = useSearchQueryState()
   const dbs = useSelectedDBs()[0]
+  const bookmarkNs = useBookmarkNs((state) => state.namespace)
   const [partitionBy] = usePartitionBy()
   const setLoading = useSearchLoading((state) => state.setLoading)
   const prefetchSearch = async (searchRequest: SearchQueryArgs) => {
@@ -195,7 +231,11 @@ export function usePrefetchSearch() {
     const searchQuery = queryFromState(searchQueryState)[0]
     const searchRequest = {
       params: {
-        query: dbs,
+        query: {
+          ...dbs,
+          include_bookmarks: true,
+          bookmarks_namespace: bookmarkNs,
+        },
       },
       body: {
         ...searchQuery,

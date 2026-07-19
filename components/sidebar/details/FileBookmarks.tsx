@@ -9,6 +9,7 @@ import { FilterContainer } from "../base/FilterContainer";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/components/ui/use-toast";
 import { useSelectedDBs } from "@/lib/state/database";
+import { bookmarkStatusKey, useBookmarkStatus } from "@/lib/state/bookmarkStatus";
 
 export function FileBookmarks({
     item,
@@ -94,9 +95,13 @@ export function FileBookmarksSetter(
     ]));
     const queryClient = useQueryClient()
     const { toast } = useToast()
+    const setBookmarkStatus = useBookmarkStatus((state) => state.setOne)
 
     function changeBookmarks(ns: string, deleted: boolean) {
         const onSuccess = () => {
+            // Keep the shared status store (used by grid bookmark buttons)
+            // consistent with this out-of-band change.
+            setBookmarkStatus(bookmarkStatusKey(dbs.user_data_db, ns, sha256), !deleted)
             getQueryKeys(ns).forEach((k) => queryClient.invalidateQueries({
                 queryKey: k
             }))
