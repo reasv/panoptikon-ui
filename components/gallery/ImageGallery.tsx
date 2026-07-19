@@ -488,17 +488,20 @@ export function HorizontalScrollElement({
             draggable={true}
         >
             <Link href={imageLink} onClick={onClick}>
-                <Image
-                    src={thumbnailURL}
-                    alt={item.path}
-                    // onClick={() => onClick()}
-                    className="w-full h-full object-cover object-top rounded-md cursor-pointer"
-                    fill
-                    placeholder={blurDataURL ? 'blur' : 'empty'}
-                    blurDataURL={blurDataURL}
-                    unoptimized={true}
-                    sizes="200px"
-                />
+                {/* fill needs a positioned parent; the Link's <a> is static
+                    (same structure as VirtualHorizontalScrollElement) */}
+                <div className="w-full h-full relative">
+                    <Image
+                        src={thumbnailURL}
+                        alt={item.path}
+                        className="object-cover object-top rounded-md cursor-pointer"
+                        fill
+                        placeholder={blurDataURL ? 'blur' : 'empty'}
+                        blurDataURL={blurDataURL}
+                        unoptimized={true}
+                        sizes="200px"
+                    />
+                </div>
             </Link>
             {searchLoading && (
                 <div className="absolute inset-0 z-10 flex items-center rounded-md justify-center bg-white bg-opacity-50">
