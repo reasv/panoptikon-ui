@@ -169,7 +169,7 @@ function VirtualHorizontalScrollElement({
                         />
                     </div>
                 )}
-                <BookmarkBtn sha256={item.sha256} />
+                <BookmarkBtn sha256={item.sha256} bookmarked={item.bookmarked} />
                 <PinButton sha256={item.sha256} />
                 <FindButton
                     id={item.file_id}

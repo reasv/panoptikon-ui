@@ -9,7 +9,7 @@ import { Button } from "./ui/button"
 import { Toggle } from "./ui/toggle"
 import { cn } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
-import { bookmarkStatusKey, useBookmarkStatus } from "@/lib/state/bookmarkStatus"
+import { updateBookmarkStatusInSearchCache } from "@/lib/bookmarkSearchCache"
 import { useAlwaysShowBookmarkBtn } from "@/lib/state/alwaysShowBookmarks"
 import { FindButton } from "./gallery/FindButton"
 import { FileBookmarksSetter } from "./sidebar/details/FileBookmarks"
@@ -65,10 +65,15 @@ function FileActionTargetMenu({
 export const BookmarkBtn = (
     {
         sha256,
-        buttonVariant
+        buttonVariant,
+        bookmarked
     }: {
         sha256: string
         buttonVariant?: boolean
+        // Status from the enriched search response the card was rendered
+        // from (result.bookmarked). Undefined/null = surface without
+        // enrichment; only then does the per-item GET below run.
+        bookmarked?: boolean | null
     }
 ) => {
     const query = useSelectedDBs()[0]
@@ -78,14 +83,9 @@ export const BookmarkBtn = (
         query
     }
     const bookmarkPath = "/api/bookmarks/ns/{namespace}/{sha256}"
-    // Status usually comes from the shared store, seeded in bulk by the
-    // search response (include_bookmarks) and kept current by mutations.
-    // The per-item GET below only fires for items with no store entry —
-    // surfaces outside search results (pinboards) or a namespace the search
-    // hasn't been run under.
-    const statusKey = bookmarkStatusKey(query.user_data_db, namespace, sha256)
-    const seededStatus = useBookmarkStatus((state) => state.statuses.get(statusKey))
-    const setBookmarkStatus = useBookmarkStatus((state) => state.setOne)
+    // The prop gates the query at render time, so a fresh page of enriched
+    // results can never fire a per-card volley (an effect-seeded store
+    // cannot make that guarantee — children render before parent effects).
     const { data } = $api.useQuery(
         "get",
         bookmarkPath,
@@ -93,7 +93,7 @@ export const BookmarkBtn = (
             params,
         },
         {
-            enabled: seededStatus === undefined,
+            enabled: bookmarked == null,
         },
     )
 
@@ -110,13 +110,20 @@ export const BookmarkBtn = (
     const queryClient = useQueryClient()
     const { toast } = useToast()
 
-    const isBookmarked = seededStatus ?? (data?.exists || false)
+    const isBookmarked = bookmarked ?? (data?.exists || false)
 
     const handleBookmarkClick = () => {
         const onSuccess = (deleted: boolean) => {
-            // The mutation result is authoritative for this item — update the
-            // shared store directly, no refetch needed for the clicked item.
-            setBookmarkStatus(statusKey, !deleted)
+            // The mutation result is authoritative — patch every cached
+            // search response so this card (and any other card showing the
+            // same item) flips instantly without a refetch.
+            updateBookmarkStatusInSearchCache(
+                queryClient,
+                query.user_data_db,
+                sha256,
+                namespace,
+                !deleted
+            )
             queryClient.invalidateQueries({
                 queryKey: [
                     "get",

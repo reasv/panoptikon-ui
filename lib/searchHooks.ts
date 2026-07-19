@@ -6,7 +6,6 @@ import {
 import { $api, fetchClient } from "./api"
 import { useSelectedDBs } from "./state/database"
 import { useBookmarkNs, useInstantSearch, useSearchLoading } from "./state/zust"
-import { bookmarkStatusKey, useBookmarkStatus } from "./state/bookmarkStatus"
 import { SearchQueryArgs } from "@/app/search/queryFns"
 import {
   useQueryOptions,
@@ -118,27 +117,6 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     return () => clearTimeout(timer)
   }, [isFetching])
 
-  // Seed the shared bookmark-status store from the enriched response. Skipped
-  // while fetching: with keepPreviousData, `data` may belong to the previous
-  // request (e.g. a different namespace) until the new response lands.
-  const setManyStatuses = useBookmarkStatus((state) => state.setMany)
-  useEffect(() => {
-    if (isFetching || !data?.results) return
-    const entries: [string, boolean][] = []
-    for (const result of data.results as SearchResult[]) {
-      if (result.sha256 && typeof result.bookmarked === "boolean") {
-        entries.push([
-          bookmarkStatusKey(
-            request.dbs.user_data_db,
-            request.bookmarkNs,
-            result.sha256
-          ),
-          result.bookmarked,
-        ])
-      }
-    }
-    if (entries.length) setManyStatuses(entries)
-  }, [data, isFetching])
   const queryClient = useQueryClient()
   const prefetchSearch = async (searchRequest: SearchQueryArgs) => {
     const timer = setTimeout(() => setLoading(true), 400)

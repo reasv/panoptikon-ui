@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button"
 import { useEffect, useMemo, useRef } from "react"
 import { useShallow } from "zustand/react/shallow"
 import { cn, getFileURL, getLocale } from "@/lib/utils"
-import { OpenDetailsButton } from "@/components/OpenFileDetails"
+import { itemEquals, OpenDetailsButton } from "@/components/OpenFileDetails"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail, useGalleryPinBoardLayout, useGalleryFullscreen, useGalleryHidePinBoard } from "@/lib/state/gallery"
 import { useSelectedDBs } from "@/lib/state/database"
@@ -121,7 +121,15 @@ export function ImageGallery({
         prevImage()
     }
 
-    const currentItem = selectedItem ? selectedItem : items[index]
+    // Prefer the live result object when the selection points at the same
+    // item: the selection snapshot is stale the moment a bookmark mutation
+    // patches the cached search response (setItem skips same-file_id
+    // updates via itemEquals), while items[index] always reflects it.
+    const galleryItem = items[index]
+    const currentItem =
+        selectedItem && galleryItem && itemEquals(selectedItem, galleryItem)
+            ? galleryItem
+            : selectedItem ? selectedItem : galleryItem
     const dateString = getLocale(new Date(currentItem.last_modified))
     const pinboard = useGalleryPinBoardLayout()[0]
 
@@ -149,7 +157,7 @@ export function ImageGallery({
         <div data-pinboard-frame className="flex flex-col border rounded p-2">
             {!fs && <div className="flex justify-between items-center mb-2">
                 <div className="flex items-center">
-                    <BookmarkBtn sha256={currentItem.sha256} buttonVariant />
+                    <BookmarkBtn sha256={currentItem.sha256} bookmarked={currentItem.bookmarked} buttonVariant />
                     <OpenFile sha256={currentItem.sha256} path={currentItem.path} buttonVariant />
                     <OpenFolder sha256={currentItem.sha256} path={currentItem.path} buttonVariant />
                     <Link

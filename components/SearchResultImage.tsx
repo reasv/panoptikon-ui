@@ -109,7 +109,7 @@ export const SearchResultImage = memo(function SearchResultImage({
                         />
                     </div>
                 )}
-                <BookmarkBtn sha256={result.sha256} />
+                <BookmarkBtn sha256={result.sha256} bookmarked={result.bookmarked} />
                 <OpenFile sha256={result.sha256} path={result.path} />
                 <OpenFolder sha256={result.sha256} path={result.path} />
                 <OpenDetailsButton item={result} variantButton />

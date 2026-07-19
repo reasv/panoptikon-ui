@@ -7,6 +7,7 @@ import { getGalleryOptionsSerializer, useGalleryIndex } from "@/lib/state/galler
 import { selectedDBsSerializer, useSelectedDBs } from "@/lib/state/database"
 import { useItemSimilaritySearch, useItemSimilarityTextSource, useOrderArgs, useQueryOptions, useResetSearchQueryState } from "@/lib/state/searchQuery/clientHooks"
 import { useItemSelection } from "@/lib/state/itemSelection"
+import { useBookmarkNs } from "@/lib/state/zust"
 import { SimilaritySideBarComponents } from "@/lib/state/searchQuery/searchQueryKeyMaps"
 import { serializers } from "@/lib/state/searchQuery/serializers"
 import { useMemo } from "react"
@@ -50,12 +51,20 @@ export function SimilarItemsView({
 }) {
     const [dbs, ___] = useSelectedDBs()
     const [partitionBy] = usePartitionBy()
+    const bookmarkNs = useBookmarkNs((state) => state.namespace)
     const { data, error, isError, refetch, isFetching, isLoading } = $api.useQuery(
         "post",
         "/api/search/pql",
         {
             params: {
-                query: dbs,
+                query: {
+                    ...dbs,
+                    // Similar-item cards carry bookmark buttons; enrichment
+                    // gives them status without per-item GETs, same as the
+                    // main results grid.
+                    include_bookmarks: true,
+                    bookmarks_namespace: bookmarkNs,
+                },
             },
             body: {
                 ...query,
