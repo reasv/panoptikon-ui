@@ -9,11 +9,9 @@ import {
 import { Toggle } from "@/components/ui/toggle"
 import { X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { useCallback, useEffect, useMemo, useRef } from "react"
+import { useEffect, useMemo, useRef } from "react"
 import { useShallow } from "zustand/react/shallow"
 import { cn, getFileURL, getLocale } from "@/lib/utils"
-import { ScrollBar } from "@/components/ui/scroll-area"
-import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { OpenDetailsButton } from "@/components/OpenFileDetails"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail, useGalleryPinBoardLayout, useGalleryFullscreen, useGalleryHidePinBoard } from "@/lib/state/gallery"
@@ -23,12 +21,9 @@ import Link from 'next/link'
 import { usePageSize, useSearchPage } from '@/lib/state/searchQuery/clientHooks'
 import { serializers } from '@/lib/state/searchQuery/serializers'
 import { VirtualGalleryHorizontalScroll } from './VirtualizedHorizontalScroll'
-import { PinButton } from './PinButton'
 import { PinBoard } from './GalleryPinBoard'
 import { AutoLayoutToggle, PinboardMenu } from './PinboardMenu'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
-import { FindButton } from './FindButton'
-import { blurHashToDataURL } from '@/lib/state/blurHashDataURL'
 import { useSearchLoading } from '@/lib/state/zust'
 import { MediaControls } from './PlayButton'
 import React from 'react'
@@ -207,7 +202,7 @@ export function ImageGallery({
                 thumbnailsOpen={thumbnailsOpen}
                 showPagination={totalPages > 1}
             />}
-            {!fs && thumbnailsOpen ? (items.length < 15 ? <GalleryHorizontalScroll items={items} /> : <VirtualGalleryHorizontalScroll items={items} />) : null}
+            {!fs && thumbnailsOpen ? <VirtualGalleryHorizontalScroll items={items} /> : null}
         </div>
     )
 }
@@ -399,127 +394,3 @@ export function GalleryImageLarge(
     )
 }
 
-export function GalleryHorizontalScroll({
-    items,
-}: {
-    items: SearchResult[]
-}) {
-    const viewportRef = useRef<HTMLDivElement>(null)
-    const onWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
-        if (!viewportRef.current || e.deltaY === 0 || e.deltaX !== 0) {
-            return
-        }
-
-        const delta = e.deltaY
-        const currPos = viewportRef.current.scrollLeft
-        const scrollWidth = viewportRef.current.scrollWidth
-        const clientWidth = viewportRef.current.clientWidth
-
-        const newPos = Math.max(0, Math.min(scrollWidth - clientWidth, currPos + delta))
-
-        viewportRef.current.scrollLeft = newPos
-    }, [])
-
-    return (
-        <ScrollAreaPrimitive.Root onWheel={onWheel} className={cn("relative overflow-hidden w-full whitespace-nowrap rounded-md border")}>
-            <ScrollAreaPrimitive.Viewport ref={viewportRef} className="h-full w-full rounded-[inherit]">
-                <div className="flex w-max space-x-4 p-4">
-                    {items.map((item, i) => (
-                        <HorizontalScrollElement
-                            key={item.file_id}
-                            item={item}
-                            ownIndex={i}
-                            nItems={items.length}
-                        />
-                    ))}
-                </div>
-            </ScrollAreaPrimitive.Viewport>
-            <ScrollBar orientation="horizontal" />
-            <ScrollAreaPrimitive.Corner />
-        </ScrollAreaPrimitive.Root>
-    )
-}
-
-export function HorizontalScrollElement({
-    item,
-    ownIndex,
-    nItems,
-}: {
-    item: SearchResult,
-    ownIndex: number,
-    nItems: number,
-}) {
-    const [qIndex, setIndex] = useGalleryIndex()
-    const isSelected = useMemo(() => ownIndex === ((qIndex || 0) % nItems), [qIndex, nItems, ownIndex])
-    const [dbs, __] = useSelectedDBs()
-    const setSelected = useItemSelection((state) => state.setItem)
-    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256)
-    const params = useSearchParams()
-
-    const imageLink = useMemo(() => {
-        const queryParams = new URLSearchParams(params)
-        const indexUrl = getGalleryOptionsSerializer()(queryParams, { gi: ownIndex % nItems })
-        return indexUrl
-    }, [ownIndex, params, nItems])
-
-    const onClick = (
-        e: React.MouseEvent<HTMLAnchorElement, MouseEvent>
-    ) => {
-        e.preventDefault()
-        setIndex(ownIndex % nItems)
-        setSelected(item)
-    }
-    const blurDataURL = useMemo(() => item.blurhash ? blurHashToDataURL(item.blurhash) : undefined, [item.blurhash])
-    const searchLoading = useSearchLoading(state => state.loading)
-    const handleDragStart = (event: React.DragEvent<HTMLImageElement | HTMLAnchorElement | HTMLDivElement>): void => {
-        if (!item) return;
-        console.log('dragging', item.sha256);
-        event.dataTransfer.effectAllowed = 'copy';
-        event.dataTransfer.setData('text/plain', item.sha256);
-        event.dataTransfer.setData('text/uri-list', getFileURL(dbs, "file", "sha256", item.sha256));
-    }
-    return (
-        <figure
-            key={item.file_id}
-            className={cn("w-60 h-80 relative rounded-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-hidden cursor-pointer group",
-                isSelected ? "scale-105 ring-2 ring-blue-500" : "scale-100"
-            )}
-            onDragStart={handleDragStart}
-            draggable={true}
-        >
-            <Link href={imageLink} onClick={onClick}>
-                {/* fill needs a positioned parent; the Link's <a> is static
-                    (same structure as VirtualHorizontalScrollElement) */}
-                <div className="w-full h-full relative">
-                    <Image
-                        src={thumbnailURL}
-                        alt={item.path}
-                        className="object-cover object-top rounded-md cursor-pointer"
-                        fill
-                        placeholder={blurDataURL ? 'blur' : 'empty'}
-                        blurDataURL={blurDataURL}
-                        unoptimized={true}
-                        sizes="200px"
-                    />
-                </div>
-            </Link>
-            {searchLoading && (
-                <div className="absolute inset-0 z-10 flex items-center rounded-md justify-center bg-white bg-opacity-50">
-                    <Image
-                        src="/spinner.svg"
-                        alt="Loading..."
-                        width={110}
-                        height={110}
-                    />
-                </div>
-            )}
-            <BookmarkBtn sha256={item.sha256} />
-            <PinButton sha256={item.sha256} />
-            <FindButton
-                id={item.file_id}
-                id_type='file_id'
-                path={item.path}
-            />
-        </figure>
-    )
-}

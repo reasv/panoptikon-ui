@@ -32,17 +32,25 @@ export function VirtualGalleryHorizontalScroll({
         horizontal: true,
     })
 
+    // Map vertical wheel to horizontal scroll, but leave real horizontal
+    // wheel input (trackpads, tilt wheels) to the browser.
     const onWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
-        if (parentRef.current) {
-            const delta = e.deltaY
-            parentRef.current.scrollLeft += delta
+        if (!parentRef.current || e.deltaY === 0 || e.deltaX !== 0) {
+            return
         }
+        const { scrollLeft, scrollWidth, clientWidth } = parentRef.current
+        parentRef.current.scrollLeft = Math.max(
+            0,
+            Math.min(scrollWidth - clientWidth, scrollLeft + e.deltaY)
+        )
     }, [])
-    const [qIndex, setIndex] = useGalleryIndex()
+    const [qIndex] = useGalleryIndex()
+    // Keep the selected thumbnail in view as the gallery index moves
+    // (arrow keys, click-through on the large image, pagination).
     useEffect(() => {
+        if (items.length === 0) return
         virtualizer.scrollToIndex((qIndex || 0) % items.length)
-
-    }, [items, items.length, qIndex, virtualizer])
+    }, [items, qIndex, virtualizer])
 
     return (
         <ScrollAreaPrimitive.Root
