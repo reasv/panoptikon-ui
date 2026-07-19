@@ -225,8 +225,14 @@ export function PinboardTabChip({ active }: { active: boolean }) {
             )}
         >
             {/* Auto-layout state, surfaced permanently as the tab's
-                left segment: lit when on, muted when off */}
-            <AutoLayoutToggle className="rounded-sm rounded-r-none" />
+                left segment: lit when on, muted when off. Disabled while
+                THIS strip's pinboard tab is inactive — `active` is the
+                host's own flag, so the grid strip's wand works even while
+                the board stays hidden on the gallery side (ghp). */}
+            <AutoLayoutToggle
+                className="rounded-sm rounded-r-none"
+                disabled={!active}
+            />
             <TabsTrigger
                 value="pins"
                 className="shrink-0 rounded-none px-2 data-[state=active]:shadow-none"

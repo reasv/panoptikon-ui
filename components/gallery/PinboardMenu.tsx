@@ -12,6 +12,7 @@ import {
     PenLine,
     Save,
     SaveAll,
+    Trash2,
     WandSparkles,
 } from "lucide-react"
 import {
@@ -30,16 +31,18 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { usePinboardActions } from "@/lib/pinboardSave"
+import { usePinBoard } from "@/lib/state/pinboard"
 import { useSelectedDBs } from "@/lib/state/database"
 import { $api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { useToast } from "@/components/ui/use-toast"
 import {
     useGalleryFullscreen,
-    useGalleryHidePinBoard,
     useGalleryPinAutoCrop,
     useGalleryPinAutoLayout,
+    useGalleryPinBoardId,
     useGalleryPinGrid,
 } from "@/lib/state/gallery"
 import { usePinboardBoardApi } from "@/lib/state/pinboardBoardApi"
@@ -56,11 +59,15 @@ import { BoardGlobalMenuItems, LayoutMenuItems, dropdownMenuKit } from "./Pinboa
 // original untouched.
 function usePinboardDialogs() {
     const { save, rename, pbid } = usePinboardActions()
+    const { updateRecords } = usePinBoard()
+    const setPbid = useGalleryPinBoardId()[1]
+    const { toast } = useToast()
     const dbs = useSelectedDBs()[0]
     const [libraryOpen, setLibraryOpen] = useState(false)
     const [historyOpen, setHistoryOpen] = useState(false)
     const [renameOpen, setRenameOpen] = useState(false)
     const [renameValue, setRenameValue] = useState("")
+    const [clearOpen, setClearOpen] = useState(false)
 
     const { data: board } = $api.useQuery(
         "get",
@@ -82,6 +89,25 @@ function usePinboardDialogs() {
         setRenameOpen(false)
         const trimmed = renameValue.trim()
         await rename(trimmed === "" ? null : trimmed)
+    }
+
+    // Clear wipes the LIVE board only — a saved board's versions stay on
+    // the server, reloadable from the Library. Emptying the records rides
+    // the board-destruction path in usePinBoard (gpb/ghp and the
+    // defaultable flags reset with it), and pbid drops in the same tick so
+    // the next first pin creates a fresh board instead of saving over this
+    // one. nuqs merges the same-tick writes into ONE history entry: the
+    // browser Back button restores the board whole, which is why a toast
+    // saying so replaces any heavier undo mechanism.
+    const submitClear = () => {
+        setClearOpen(false)
+        updateRecords(() => [])
+        void setPbid(null)
+        toast({
+            title: "Pinboard cleared",
+            description: "Press the browser Back button to restore it.",
+            duration: 4000,
+        })
     }
 
     const dialogs = (
@@ -110,6 +136,20 @@ function usePinboardDialogs() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+            <ConfirmDialog
+                open={clearOpen}
+                title="Clear pinboard?"
+                description={
+                    "Every pin will be removed from the board."
+                    + (pbid != null
+                        ? ` Saved versions of “${board?.name || `board ${pbid}`}”`
+                            + " stay in the Library."
+                        : " This board was never saved, so this discards it.")
+                }
+                confirmLabel="Clear"
+                onConfirm={submitClear}
+                onCancel={() => setClearOpen(false)}
+            />
         </>
     )
     return {
@@ -119,6 +159,7 @@ function usePinboardDialogs() {
         openLibrary: () => setLibraryOpen(true),
         openHistory: () => setHistoryOpen(true),
         openRename,
+        openClear: () => setClearOpen(true),
         dialogs,
     }
 }
@@ -130,13 +171,14 @@ function usePinboardDialogs() {
 // hover state and stretches to the wrapper's height.
 // Below the library items sits the board-global section shared with the
 // per-pin right-click menu — the discoverable path to the same verbs.
-// The whole menu is pinboard UI, so the chevron greys out while the
-// gallery tab is active (which also guarantees the board is mounted and
-// its verb registry populated whenever the menu can open).
+// The chevron stays clickable even while another tab is active and the
+// board unmounted: the library verbs and Clear operate on the URL state,
+// not the mounted board, so a board can be saved or erased without
+// loading it. Only the board-global section needs the mounted board's
+// verb registry, and it simply doesn't render while that's empty.
 export function PinboardMenu() {
-    const { save, pbid, board, openLibrary, openHistory, openRename, dialogs } =
+    const { save, pbid, board, openLibrary, openHistory, openRename, openClear, dialogs } =
         usePinboardDialogs()
-    const hidePinBoard = useGalleryHidePinBoard()[0]
     const boardApi = usePinboardBoardApi(s => s.api)
 
     return (
@@ -146,7 +188,6 @@ export function PinboardMenu() {
                     <button
                         title="Pinboard actions"
                         aria-label="Pinboard actions"
-                        disabled={hidePinBoard}
                         className="inline-flex shrink-0 items-center justify-center rounded-sm rounded-l-none px-1 transition-colors hover:bg-foreground/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                     >
                         <ChevronDown className="h-4 w-4" />
@@ -156,7 +197,14 @@ export function PinboardMenu() {
                     the width of the toggle + label segments left of this
                     chevron. */}
                 <DropdownMenuContent align="start" alignOffset={-104} className="w-56">
+                    {/* Same icons as the fullscreen toolbar's buttons, so
+                        the two surfaces for these verbs read as one set.
+                        mr-2 + h-4 lands the labels on the pl-8 indent the
+                        checkbox items below use. Checkbox items and the
+                        submenus stay icon-free: their check/chevron marks
+                        are the affordance. */}
                     <DropdownMenuItem onClick={() => save(false)}>
+                        <Save className="mr-2 h-4 w-4" />
                         Save
                         {pbid != null && (
                             <span className="ml-auto text-xs text-muted-foreground truncate max-w-32">
@@ -165,10 +213,12 @@ export function PinboardMenu() {
                         )}
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => save(true)}>
+                        <SaveAll className="mr-2 h-4 w-4" />
                         Save as new copy
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={openLibrary}>
+                        <LibraryBig className="mr-2 h-4 w-4" />
                         Library
                     </DropdownMenuItem>
                     {/* History and Rename need a saved board. Not
@@ -186,6 +236,7 @@ export function PinboardMenu() {
                             openHistory()
                         }}
                     >
+                        <History className="mr-2 h-4 w-4" />
                         History
                     </DropdownMenuItem>
                     <DropdownMenuItem
@@ -198,6 +249,7 @@ export function PinboardMenu() {
                             openRename()
                         }}
                     >
+                        <PenLine className="mr-2 h-4 w-4" />
                         Rename
                     </DropdownMenuItem>
                     {boardApi && (
@@ -207,6 +259,20 @@ export function PinboardMenu() {
                             maximizeLabel="Maximize"
                         />
                     )}
+                    <DropdownMenuSeparator />
+                    {/* The destructive verb sits last, below everything.
+                        It confirms first (see usePinboardDialogs), so a
+                        stray click can't wipe the board. Explicit red text
+                        tones, NOT text-destructive: the dark theme's
+                        --destructive is a 30%-lightness button background
+                        that reads as disabled grey when used as text. */}
+                    <DropdownMenuItem
+                        className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
+                        onClick={openClear}
+                    >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Clear Board
+                    </DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
             {dialogs}
@@ -217,19 +283,23 @@ export function PinboardMenu() {
 // Auto-layout is the one board mode that changes what every future
 // add/remove does, so its state is surfaced permanently on the Pinboard
 // tab (and the fullscreen toolbar) instead of hiding inside menus: lit
-// when on, muted when off, and itself the toggle. Like the chevron it's
-// pinboard UI, greyed out while the gallery tab is active — which also
-// means the board (and its verb registry) is mounted whenever it's
-// clickable.
+// when on, muted when off, and itself the toggle. `disabled` comes from
+// the HOST rendering the wand — each tab strip's pinboard tab knows its
+// own active flag (ghp for the gallery, gpb for the grid), and reading
+// either one here directly gates the wrong host's wand. Toggling on is a
+// layout request needing the mounted board's API, so hosts disable the
+// wand whenever their board isn't showing; the fullscreen toolbar never
+// does, since the board is visible there by construction.
 export function AutoLayoutToggle({
     className,
     iconClassName = "h-4 w-4",
+    disabled = false,
 }: {
     className?: string
     iconClassName?: string
+    disabled?: boolean
 }) {
     const [autoLayout, setAutoLayout] = useGalleryPinAutoLayout()
-    const hidePinBoard = useGalleryHidePinBoard()[0]
     const boardApi = usePinboardBoardApi(s => s.api)
     const { toast } = useToast()
     const toggle = () => {
@@ -245,7 +315,7 @@ export function AutoLayoutToggle({
     return (
         <button
             onClick={toggle}
-            disabled={hidePinBoard}
+            disabled={disabled}
             aria-pressed={autoLayout}
             aria-label="Toggle auto-layout"
             title={autoLayout

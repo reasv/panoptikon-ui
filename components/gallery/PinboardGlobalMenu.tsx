@@ -1,4 +1,5 @@
 "use client"
+import { Grid2x2Plus, Maximize2, Minimize2 } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import {
     useGalleryFullscreen,
@@ -120,13 +121,22 @@ export function BoardGlobalMenuItems({
     return (
         <>
             <Separator />
+            {/* Fullscreen-toolbar icons on the plain action items (see
+                PinboardMenu for the shared convention); checkbox items and
+                submenus stay icon-free */}
             <Item onClick={() => setFs(!fs)}>
+                {fs
+                    ? <Minimize2 className="mr-2 h-4 w-4" />
+                    : <Maximize2 className="mr-2 h-4 w-4" />}
                 {fs ? "Restore Pinboard Size" : maximizeLabel}
                 <Shortcut>Ctrl+Shift+M</Shortcut>
             </Item>
-            <Item onClick={() => setShowGrid(!showGrid)}>
-                {showGrid ? "Hide Grid" : "Show Grid"}
-            </Item>
+            <CheckboxItem
+                checked={showGrid}
+                onCheckedChange={(checked) => setShowGrid(!!checked)}
+            >
+                Show Grid
+            </CheckboxItem>
             {/* When on, the board re-runs Fill Viewport (all items) whenever
                 a pin is added, removed or duplicated, or the board viewport
                 is explicitly grown (see PinBoard). Toggling it on IS a
@@ -159,6 +169,7 @@ export function BoardGlobalMenuItems({
                 Auto-Crop to Cells
             </CheckboxItem>
             {api.isV1 && <Item onClick={api.upgradeGrid}>
+                <Grid2x2Plus className="mr-2 h-4 w-4" />
                 Upgrade Board Grid
             </Item>}
             {/* User layer of the creation-defaults system (see

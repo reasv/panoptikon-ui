@@ -14,6 +14,7 @@ import {
   useGalleryHidePinBoard,
   useGalleryPinBoardId,
   useGalleryPinBoardLayout,
+  useGridPinboardTab,
 } from "@/lib/state/gallery"
 import { useSelectedDBs } from "@/lib/state/database"
 import {
@@ -106,6 +107,7 @@ export function usePinboardActions() {
   const [savedLayout, setSavedLayout] = useGalleryPinBoardLayout()
   const [pbid, setPbid] = useGalleryPinBoardId()
   const setHidePinBoard = useGalleryHidePinBoard()[1]
+  const setGridPinboardTab = useGridPinboardTab()[1]
   const flagValues = usePinboardFlagValues()
   const stampFlags = useStampBoardFlags()
   const dbs = useSelectedDBs()[0]
@@ -237,7 +239,11 @@ export function usePinboardActions() {
     markPinboardNavigation()
     setSavedLayout(layout, { history })
     setPbid(pinboardId, { history })
+    // Land on the pinboard either way, matching pinboardOpenHref: ghp
+    // covers an open gallery, gpb the grid view — without it a load from
+    // the grid's Results tab succeeds invisibly.
     setHidePinBoard(false, { history })
+    setGridPinboardTab(true, { history })
     stampFlags(flags, { history })
   }
 

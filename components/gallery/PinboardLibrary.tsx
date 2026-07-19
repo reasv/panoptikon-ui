@@ -2,7 +2,7 @@
 
 import React, { useRef, useState } from "react"
 import { usePathname, useSearchParams } from "next/navigation"
-import { Expand, Pencil, Trash2, X } from "lucide-react"
+import { Expand, LibraryBig, Pencil, Pin, Trash2, X } from "lucide-react"
 import {
     Dialog,
     DialogContent,
@@ -81,6 +81,12 @@ export function PinboardLibraryDialog({
         { enabled: open, placeholderData: keepPreviousData }
     )
     const boards = data?.pinboards ?? []
+    // True first-run state: the query resolved and the user has no boards
+    // at all (as opposed to a name search matching none). Gated on `data`
+    // so the initial fetch shows neither state instead of flashing the
+    // onboarding panel at users whose boards are still loading.
+    const emptyLibrary =
+        data != null && boards.length === 0 && nameQuery.trim() === ""
 
     const invalidate = () =>
         queryClient.invalidateQueries({ queryKey: ["get", "/api/pinboards"] })
@@ -132,39 +138,42 @@ export function PinboardLibraryDialog({
                         tab. Hover a card&apos;s corner icon to preview its latest save.
                     </DialogDescription>
                 </DialogHeader>
-                <div className="relative max-w-xs">
-                    <Input
-                        ref={searchInputRef}
-                        value={nameQuery}
-                        onChange={(e) => setNameQuery(e.target.value)}
-                        placeholder="Search by name"
-                        className="pr-8"
-                    />
-                    {nameQuery !== "" && (
-                        <button
-                            type="button"
-                            title="Clear search"
-                            onClick={() => {
-                                setNameQuery("")
-                                searchInputRef.current?.focus()
-                            }}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                        >
-                            <X className="h-4 w-4" />
-                        </button>
-                    )}
-                </div>
+                {/* A search box over an empty library reads as a broken
+                    results page, so the first-run state hides it and takes
+                    over the whole body below */}
+                {!emptyLibrary && (
+                    <div className="relative max-w-xs">
+                        <Input
+                            ref={searchInputRef}
+                            value={nameQuery}
+                            onChange={(e) => setNameQuery(e.target.value)}
+                            placeholder="Search by name"
+                            className="pr-8"
+                        />
+                        {nameQuery !== "" && (
+                            <button
+                                type="button"
+                                title="Clear search"
+                                onClick={() => {
+                                    setNameQuery("")
+                                    searchInputRef.current?.focus()
+                                }}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        )}
+                    </div>
+                )}
                 {/* Fixed height: result-count changes while searching must
-                    not resize the dialog */}
-                <ScrollArea
-                    className="h-[65vh]"
-                    onScrollCapture={() => setHovered(null)}
-                >
-                    {boards.length === 0 ? (
-                        <p className="text-sm text-muted-foreground p-8 text-center">
-                            {nameQuery ? "No pinboards match" : "No saved pinboards yet — Save a board from the Pinboard tab menu"}
-                        </p>
-                    ) : (
+                    not resize the dialog. Empty states render outside the
+                    ScrollArea (Radix's table-display viewport defeats h-full
+                    centering) in a same-height plain div. */}
+                {boards.length > 0 ? (
+                    <ScrollArea
+                        className="h-[65vh]"
+                        onScrollCapture={() => setHovered(null)}
+                    >
                         <div className="grid grid-cols-2 md:grid-cols-3 items-start gap-3 p-1">
                             {boards.map((board) => (
                                 <PinboardCard
@@ -185,8 +194,31 @@ export function PinboardLibraryDialog({
                                 />
                             ))}
                         </div>
-                    )}
-                </ScrollArea>
+                    </ScrollArea>
+                ) : (
+                    <div className="flex h-[65vh] items-center justify-center p-8">
+                        {emptyLibrary ? (
+                            // First run: this dialog is reachable before any
+                            // board exists (the grid header's library button),
+                            // so it explains the creation path instead of
+                            // showing a search UI with nothing to search
+                            <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+                                <Pin className="h-10 w-10 text-muted-foreground/60" />
+                                <p className="font-medium">No saved pinboards yet</p>
+                                <p className="text-sm text-muted-foreground">
+                                    Pin items from your search results to start a
+                                    board — a Pinboard tab will appear next to the
+                                    results. Save the board from that tab&apos;s menu
+                                    and it will show up here.
+                                </p>
+                            </div>
+                        ) : data != null ? (
+                            <p className="text-sm text-muted-foreground">
+                                No pinboards match
+                            </p>
+                        ) : null}
+                    </div>
+                )}
                 {hovered && hovered.board.head_version_id != null && (
                     <PreviewPopover
                         src={pinboardPreviewURL(
@@ -280,6 +312,30 @@ export function PinboardLibraryDialog({
                 </Dialog>
             </DialogContent>
         </Dialog>
+    )
+}
+
+// The grid header's always-visible library entry point: the one path to
+// saved boards that doesn't require a board to already be open (every
+// other trigger lives on the Pinboard tab or the fullscreen bar, which
+// only exist once something is pinned). Always visible rather than
+// hidden-while-a-board-is-open: a stable anchor teaches where boards
+// live, and with a board open it doubles as the board switcher.
+export function PinboardLibraryButton() {
+    const [open, setOpen] = useState(false)
+    return (
+        <>
+            <Button
+                variant="ghost"
+                size="icon"
+                title="Pinboard library"
+                aria-label="Pinboard library"
+                onClick={() => setOpen(true)}
+            >
+                <LibraryBig className="h-5 w-5" />
+            </Button>
+            <PinboardLibraryDialog open={open} onOpenChange={setOpen} />
+        </>
     )
 }
 

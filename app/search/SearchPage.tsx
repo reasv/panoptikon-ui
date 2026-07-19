@@ -22,6 +22,7 @@ import { selectedDBsSerializer, useSelectedDBs } from "@/lib/state/database"
 import { useSearch } from "@/lib/searchHooks"
 import { ImageGallery, PinboardTabChip } from '@/components/gallery/ImageGallery'
 import { PinBoard } from '@/components/gallery/GalleryPinBoard'
+import { PinboardLibraryButton } from '@/components/gallery/PinboardLibrary'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { usePinboardURLLoader } from '@/lib/pinboardLinks'
 import { ImageSimilarityHeader } from '@/components/ImageSimilarityHeader'
@@ -315,6 +316,12 @@ export function GridPanel({
                         </TabsList>
                     </Tabs>
                 )}
+                {/* col-start-3: the tabs cell above is conditional, so
+                    without an explicit track this would slide into the
+                    center when no board exists */}
+                <div className="col-start-3 flex justify-end">
+                    <PinboardLibraryButton />
+                </div>
             </div>}
             {showPinboard ? (
                 <PinBoard
