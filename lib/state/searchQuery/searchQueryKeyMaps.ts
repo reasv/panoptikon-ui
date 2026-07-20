@@ -16,6 +16,8 @@ export type OrderArgsType = {
   order: components["schemas"]["OrderArgs"]["order"]
   page: number
   page_size: number
+  /** Null when the ordering is not random; see the `seed` key map entry. */
+  seed: number | null
 }
 export type orderByType = NonNullable<
   components["schemas"]["OrderArgs"]["order_by"]
@@ -68,6 +70,14 @@ export const orderParamsKeyMap = (p: typeof def) =>
     order: p.parseAsStringEnum<orderType>(["asc", "desc"]),
     page: p.parseAsInteger.withDefault(1).withOptions({ history: "push" }),
     page_size: p.parseAsInteger.withDefault(10),
+    // Seeds `order_by: "random"`, making the shuffle a stable total order:
+    // the same seed reproduces the same ordering, so paging enumerates the
+    // result set instead of resampling it, and a refetch or reload no longer
+    // replaces what the user was looking at. Absent for every other ordering
+    // — a seed on a non-random query would only cost it the result cache.
+    // Nullable rather than defaulted: "no seed" is a real state (the server
+    // then mints a throwaway one), distinct from any particular seed value.
+    seed: p.parseAsInteger,
   })
 
 export const pageKey = (p: typeof def) =>
@@ -78,6 +88,10 @@ export const pageKey = (p: typeof def) =>
 
 export const pageSizeKey = (p: typeof def) =>
   p.parseAsInteger.withDefault(10).withOptions({ clearOnDefault: true })
+
+// Must mirror the `seed` entry in orderParamsKeyMap — both address the same
+// URL key. No default: absent means "no seed", not "seed 0".
+export const seedKey = (p: typeof def) => p.parseAsInteger
 
 export const tagFiltersKeyMap = (p: typeof def) =>
   applyOptionsToMap({

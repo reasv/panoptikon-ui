@@ -1,5 +1,6 @@
 import { Options, useQueryState } from "nuqs"
 import * as def from "nuqs"
+import { useEffect } from "react"
 
 import { useQueryStates } from "nuqs"
 import {
@@ -32,6 +33,7 @@ import {
   pageSizeKey,
   rrfKeyMapSemanticAudio,
   ATSemanticAudio,
+  seedKey,
 } from "./searchQueryKeyMaps"
 import { useScopedQueryStates } from "../nuqsScopedWrappers/scopedQueryStates"
 import {
@@ -87,6 +89,54 @@ export function useOrderArgs(): [
     KeymapComponents["OrderArgs"],
     SetFn<KeymapComponents["OrderArgs"]>
   ]
+}
+
+/**
+ * A fresh random-order seed. 2^31 distinct shuffles is far more than anyone
+ * will exhaust, and it keeps the value a safe integer through the URL and
+ * JSON round trip.
+ */
+export function mintSeed(): number {
+  return Math.floor(Math.random() * 2 ** 31)
+}
+
+/**
+ * The random-order seed, with position reset on change.
+ *
+ * A new seed is a new shuffle, so the current page and scroll offset point
+ * at nothing meaningful — hence `useResetPage`. Deliberately separate from
+ * `useOrderArgs` (which is not wrapped): the lazy stamping of a seedless
+ * random URL writes through that raw setter precisely so it does *not*
+ * disturb the user's position.
+ */
+export function useRandomSeed(): [number | null, SetFn<number | null>] {
+  const [state, set] = useQueryState("seed", seedKey(def as any))
+  return [state, useResetPage(set)] as const
+}
+
+/**
+ * Stamps a seed onto a random-ordered URL that arrived without one — an old
+ * link, a hand-written one, or a tab opened before seeds existed.
+ *
+ * Left alone, those URLs stay on the server's mint-per-request path: every
+ * refetch resamples, so the item the user is looking at can vanish, and the
+ * result cache is bypassed entirely. Stamping self-heals the link on first
+ * view, and any later reload reproduces the same shuffle.
+ *
+ * Written with history "replace" through the *raw* order-args setter, so it
+ * neither adds a history entry nor resets the user's page and scroll
+ * position — unlike a deliberate reroll, which does both.
+ */
+export function useStampRandomSeed() {
+  const [orderArgs, setOrderArgs] = useOrderArgs()
+  const needsSeed = orderArgs.order_by === "random" && orderArgs.seed === null
+  useEffect(() => {
+    if (!needsSeed) return
+    setOrderArgs({ seed: mintSeed() }, { history: "replace" })
+    // setOrderArgs identity churns per render; the guard above is the real
+    // condition and it goes false as soon as the write lands.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsSeed])
 }
 
 export function useEmbedArgs(): [

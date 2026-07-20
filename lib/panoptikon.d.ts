@@ -1679,6 +1679,16 @@ export interface components {
             count_metrics: components["schemas"]["SearchMetrics"];
             result_metrics: components["schemas"]["SearchMetrics"];
             results: components["schemas"]["SearchResult"][];
+            /**
+             * Format: int64
+             * @description Random Order Seed
+             *
+             *     The seed this query actually shuffled by, present only when the query
+             *     orders by `random`. Pass it back as `seed` on subsequent pages to page
+             *     through one coherent shuffle; omit it (or send a new one) to reshuffle.
+             *     Echoed whether the caller supplied it or the server minted it.
+             */
+            seed?: number | null;
         };
         FileSearchResult: {
             last_modified: string;
@@ -2428,6 +2438,24 @@ export interface components {
              * @default true
              */
             results?: boolean;
+            /**
+             * Format: int64
+             * @description Random Order Seed
+             *
+             *     Seeds the shuffle used by `order_by: "random"`, making it a stable
+             *     total order: the same seed reproduces the same ordering, so pages
+             *     partition the result set instead of each being an independent sample.
+             *     Pass the same seed across a pagination session, and a new one to
+             *     reshuffle.
+             *
+             *     Ignored unless the query orders by "random". If omitted, the server
+             *     mints a fresh seed per request — which reproduces the legacy
+             *     behaviour (a new sample every time, and pages that may repeat or skip
+             *     results) and bypasses the result cache. The seed actually used is
+             *     always returned in the response.
+             * @default null
+             */
+            seed?: number | null;
             /**
              * @description Data to return
              *

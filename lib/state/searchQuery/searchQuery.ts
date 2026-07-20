@@ -423,6 +423,10 @@ export function queryFromState(
 
     page: state.OrderArgs.page,
     page_size: state.OrderArgs.page_size,
+    // Only meaningful for random ordering, and only sent when we actually
+    // hold one: sending null asks the server to mint a throwaway seed, which
+    // resamples on every request and bypasses the result cache.
+    seed: getOrderBy(state) === "random" ? state.OrderArgs.seed : null,
     count: true,
     results: true,
     check_path: false,

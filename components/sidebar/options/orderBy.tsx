@@ -1,7 +1,7 @@
 import { Label } from "../../ui/label"
 import { ComboBoxResponsive } from "../../combobox";
-import { useOrderArgs, useOrderBy, useSearchQuery } from "@/lib/state/searchQuery/clientHooks";
-import { orderByType } from "@/lib/state/searchQuery/searchQueryKeyMaps";
+import { mintSeed, useOrderArgs, useOrderBy, useSearchQuery } from "@/lib/state/searchQuery/clientHooks";
+import { OrderArgsType, orderByType } from "@/lib/state/searchQuery/searchQueryKeyMaps";
 
 export function OrderBy() {
     const orderByData = useOrderBy()
@@ -41,8 +41,15 @@ export function OrderBy() {
 
     function onOrderByChange(value: string | null) {
         if (value) {
-            // @ts-ignore
-            setOrderArgs({ order_by: value })
+            // The seed rides along in the same URL update as the order it
+            // belongs to, so one navigation carries both: minted when
+            // switching to random (a shuffle the user can page through and
+            // come back to), cleared otherwise (a seed on a non-random query
+            // would only cost it the result cache).
+            setOrderArgs({
+                order_by: value as OrderArgsType["order_by"],
+                seed: value === "random" ? mintSeed() : null,
+            })
         }
     }
 

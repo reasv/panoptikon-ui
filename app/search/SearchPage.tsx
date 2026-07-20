@@ -26,7 +26,7 @@ import { PinboardLibraryButton } from '@/components/gallery/PinboardLibrary'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { usePinboardURLLoader } from '@/lib/pinboardLinks'
 import { ImageSimilarityHeader } from '@/components/ImageSimilarityHeader'
-import { useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
+import { mintSeed, useOrderBy, useQueryOptions, useRandomSeed, useStampRandomSeed } from "@/lib/state/searchQuery/clientHooks"
 import Link from "next/link"
 import { useScanDrawerOpen } from "@/lib/state/scanDrawer"
 import { ScanDrawer } from "@/components/scan/ScanDrawer"
@@ -65,11 +65,28 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     { initialQuery: SearchQueryArgs, isRestrictedMode: boolean, updateRibbonVisible?: boolean }) {
     const { data, error, isError, refetch, isFetching, nResults, page, pageSize, setPage, searchEnabled, getPageURL } = useSearch({ initialQuery })
     const { toast } = useToast()
+    // Random ordering is now a stable shuffle pinned by a seed, so refetching
+    // deliberately returns the *same* results — that stability is the point.
+    // Refresh therefore means "reshuffle" here: mint a new seed and let the
+    // changed query drive the request (an explicit refetch would be
+    // redundant). history "push" so Back returns to the previous shuffle,
+    // which is now a working operation rather than a fresh random draw.
+    const orderedRandomly = useOrderBy().order_by === "random"
+    const setSeed = useRandomSeed()[1]
     const onRefresh = async () => {
         if (!searchEnabled) {
             toast({
                 title: "Error",
                 description: "Invalid user input",
+                duration: 2000
+            })
+            return
+        }
+        if (orderedRandomly) {
+            await setSeed(mintSeed(), { history: "push" })
+            toast({
+                title: "Reshuffled results",
+                description: "A new random order has been picked",
                 duration: 2000
             })
             return
@@ -81,6 +98,8 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
             duration: 2000
         })
     }
+    // Self-heals random-ordered links that predate seeds (see the hook)
+    useStampRandomSeed()
     const instantSearch = useInstantSearch((state) => state.enabled)
     useEffect(() => {
         if (!instantSearch && searchEnabled) {
