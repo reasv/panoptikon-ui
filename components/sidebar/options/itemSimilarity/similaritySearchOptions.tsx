@@ -6,6 +6,7 @@ import { ComboBoxResponsive } from "@/components/combobox"
 import { SrcTextFilter } from "../../base/SrcTextFilter"
 import { FilterContainer } from "../../base/FilterContainer"
 import { SwitchFilter } from "../../base/SwitchFilter"
+import { VectorIndexModeSelector } from "../../base/VectorIndexModeSelector"
 
 export function ItemSimilaritySearchOptions({
     filter,
@@ -66,6 +67,14 @@ export function ItemSimilaritySearchOptions({
                     currentValue={filter.distance_aggregation}
                     onChangeValue={onOptionSelected}
                     placeholder="Distance Aggregation..."
+                />
+            </div>
+            <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
+                <VectorIndexModeSelector
+                    model={filter.model}
+                    index={filter.index}
+                    variant={filter.variant}
+                    setValue={(value) => setFilter(value)}
                 />
             </div>
             {embeddingType === "clip" &&

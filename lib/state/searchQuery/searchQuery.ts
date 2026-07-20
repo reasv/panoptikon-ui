@@ -188,6 +188,8 @@ export function queryFromState(
       row_n: false,
       image_embeddings: {
         ...state.SemanticImageSearch,
+        // Empty string means "no variant selected" in URL state.
+        variant: state.SemanticImageSearch.variant || null,
         embed: state.EmbedArgs,
       },
     }
@@ -214,6 +216,7 @@ export function queryFromState(
       row_n: false,
       text_embeddings: {
         ...state.SemanticTextSearch,
+        variant: state.SemanticTextSearch.variant || null,
         src_text: sourceFilters(state.SemanticTextSource),
         embed: state.EmbedArgs,
       },
@@ -380,6 +383,7 @@ export function queryFromState(
       row_n: false,
       similar_to: {
         ...state.ItemSimilarity,
+        variant: state.ItemSimilarity.variant || null,
         src_text,
       },
     }
@@ -527,6 +531,7 @@ export function sbSimilarityQueryFromState(state: SimilaritySideBarComponents) {
           row_n: false,
           similar_to: {
             ...state.CLIPSimilarity,
+            variant: state.CLIPSimilarity.variant || null,
             target,
             model:
               state.CLIPSimilarity.model.length > 0
@@ -561,6 +566,7 @@ export function sbSimilarityQueryFromState(state: SimilaritySideBarComponents) {
           row_n: false,
           similar_to: {
             ...state.TextSimilarity,
+            variant: state.TextSimilarity.variant || null,
             target,
             model:
               state.TextSimilarity.model.length > 0

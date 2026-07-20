@@ -891,6 +891,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/quants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get vector quantization status
+         * @description Desired (config.toml) merged with actual (DB) state of the vector quant profiles: per-profile setters coverage, build progress, size on disk and whether a reconcile is needed.
+         */
+        get: operations["get_vector_quants"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/quants/rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rebuild a quant profile's artifact for an embedding space
+         * @description Marks the embedding space containing the given setter for rebuild under the given profile (artifact recomputed at a bumped revision) and enqueues a reconcile job. The affected setters search exact until the rebuild completes. Explicit user action by design — artifact recomputation reshuffles coarse order and is never background-silent.
+         */
+        post: operations["rebuild_vector_quant_pair"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/quants/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enqueue a vector quant reconcile job
+         * @description Enqueues a reconcile job for the selected database (deduplicated: no-op when one is already queued or running). The job is stateless and converges the DB to the configured desired state.
+         */
+        post: operations["enqueue_vector_quant_reconcile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/queue": {
         parameters: {
             query?: never;
@@ -1714,6 +1774,16 @@ export interface components {
             sub_ns?: boolean;
             user?: string;
         };
+        /**
+         * @description Index mode for vector filters (docs/vector-index-design.md).
+         *
+         *     `auto` resolves to the default quant profile where its coverage is ready
+         *     for the queried setter(s), else exact. `exact` always brute-forces
+         *     full-precision vectors. `quant` demands a quant profile (the `variant`
+         *     or the default) and errors when it isn't ready. `ann` is reserved.
+         * @enum {string}
+         */
+        IndexMode: "auto" | "exact" | "quant" | "ann";
         /** @description Multipart form body of `POST /predict/{group}/{inference_id}`. */
         InferencePredictRequest: {
             /**
@@ -1802,7 +1872,7 @@ export interface components {
             inference_id?: string | null;
         };
         /** @enum {string} */
-        JobType: "data_extraction" | "data_deletion" | "folder_rescan" | "folder_update" | "job_data_deletion" | "test_sleep" | "test_panic";
+        JobType: "data_extraction" | "data_deletion" | "folder_rescan" | "folder_update" | "job_data_deletion" | "vector_quant_reconcile" | "test_sleep" | "test_panic";
         LogRecord: {
             /** Format: int64 */
             batch_size: number;
@@ -2693,6 +2763,24 @@ export interface components {
             distance_aggregation?: components["schemas"]["DistanceAggregation"];
             embed?: null | components["schemas"]["EmbedArgs"];
             /**
+             * @description Index mode: `auto` (default) uses the default quant profile where its
+             *     coverage is ready for this model, else exact; `exact` always
+             *     brute-forces full-precision vectors; `quant` demands a quant profile
+             *     and errors when it isn't ready. `ann` is reserved.
+             *
+             *     Under a quant profile the displayed head order is always re-scored
+             *     against full-precision vectors (see `k`), and `order_rank` is a rank,
+             *     not a raw distance.
+             */
+            index?: components["schemas"]["IndexMode"];
+            /**
+             * Format: int64
+             * @description The exactness horizon: the coarse-top-k candidates re-scored with
+             *     full-precision distances. Ignored by `exact`. Keep it fixed across a
+             *     pagination session.
+             */
+            k?: number;
+            /**
              * @description The image embedding model to use
              *
              *     The image embedding model to use for the semantic search.
@@ -2708,6 +2796,12 @@ export interface components {
              */
             query: string;
             src_text?: null | components["schemas"]["SourceArgs"];
+            /**
+             * @description Selects a specific quant profile by name (requires quant/auto index
+             *     semantics). Naming a profile that doesn't exist or isn't ready for
+             *     this model is a validation error, not a silent fallback.
+             */
+            variant?: string | null;
         };
         SemanticImageSearch: components["schemas"]["SortableOptions"] & {
             /**
@@ -2722,6 +2816,24 @@ export interface components {
             distance_aggregation?: components["schemas"]["DistanceAggregation"];
             embed?: null | components["schemas"]["EmbedArgs"];
             /**
+             * @description Index mode: `auto` (default) uses the default quant profile where its
+             *     coverage is ready for this model, else exact; `exact` always
+             *     brute-forces full-precision vectors; `quant` demands a quant profile
+             *     and errors when it isn't ready. `ann` is reserved.
+             *
+             *     Under a quant profile the displayed head order is always re-scored
+             *     against full-precision vectors (see `k`), and `order_rank` is a rank,
+             *     not a raw distance.
+             */
+            index?: components["schemas"]["IndexMode"];
+            /**
+             * Format: int64
+             * @description The exactness horizon: the coarse-top-k candidates re-scored with
+             *     full-precision distances. Ignored by `exact`. Keep it fixed across a
+             *     pagination session.
+             */
+            k?: number;
+            /**
              * @description The text embedding model to use
              *
              *     The text embedding model to use for the semantic search.
@@ -2735,6 +2847,12 @@ export interface components {
              */
             query: string;
             src_text?: null | components["schemas"]["SourceArgs"];
+            /**
+             * @description Selects a specific quant profile by name (requires quant/auto index
+             *     semantics). Naming a profile that doesn't exist or isn't ready for
+             *     this model is a validation error, not a silent fallback.
+             */
+            variant?: string | null;
         };
         SemanticTextSearch: components["schemas"]["SortableOptions"] & {
             /**
@@ -2795,11 +2913,35 @@ export interface components {
              *     even if the model used for similarity search has a different distance function override specified in its config.
              */
             force_distance_function?: boolean | null;
+            /**
+             * @description Index mode: `auto` (default) uses the default quant profile where its
+             *     coverage is ready for this model, else exact; `exact` always
+             *     brute-forces full-precision vectors; `quant` demands a quant profile
+             *     and errors when it isn't ready. `ann` is reserved.
+             *
+             *     Under a quant profile both sides of the similarity self-join use
+             *     binary quants for the coarse pass, and `order_rank` is a rank, not a
+             *     raw distance.
+             */
+            index?: components["schemas"]["IndexMode"];
+            /**
+             * Format: int64
+             * @description The exactness horizon: the coarse-top-k candidates re-scored with
+             *     full-precision distances. Ignored by `exact`. Keep it fixed across a
+             *     pagination session.
+             */
+            k?: number;
             /** @description The name of the embedding model used for similarity search */
             model: string;
             src_text?: null | components["schemas"]["SourceArgs"];
             /** @description Sha256 hash of the target item to find similar items for */
             target: string;
+            /**
+             * @description Selects a specific quant profile by name (requires quant/auto index
+             *     semantics). Naming a profile that doesn't exist or isn't ready for
+             *     this model is a validation error, not a silent fallback.
+             */
+            variant?: string | null;
             /** @description When using CLIP cross-modal similarity, whether to use image-to-image similarity as well or just image-to-text and text-to-text. */
             xmodal_i2i?: boolean;
             /** @description When using CLIP cross-modal similarity, whether to use text-to-text similarity as well or just image-to-text and image-to-image. */
@@ -2987,6 +3129,7 @@ export interface components {
             scan_images?: boolean;
             scan_pdf?: boolean;
             scan_video?: boolean;
+            vector_quants?: null | components["schemas"]["VectorQuantsConfig"];
         } & {
             [key: string]: components["schemas"]["Value"];
         };
@@ -3054,6 +3197,66 @@ export interface components {
             text: components["schemas"]["ExtractedTextRecord"][];
         };
         Value: unknown;
+        VectorQuantActionResponse: {
+            detail: string;
+        };
+        VectorQuantProfileConfig: {
+            /** @description Mean-center vectors before binarization (per embedding space). */
+            centered?: boolean;
+            name: string;
+            /** @description 'binary' in v1; 'int8' is a reserved future recipe slot. */
+            quantizer: string;
+        };
+        VectorQuantProfileStatus: {
+            centered: boolean;
+            is_default: boolean;
+            name: string;
+            quantizer: string;
+            setters: components["schemas"]["VectorQuantSetterStatus"][];
+            /** Format: int64 */
+            size_bytes: number;
+            /** @description active | removing | missing (desired but not yet in the DB) */
+            state: string;
+        };
+        VectorQuantRebuildRequest: {
+            /** @description The quant profile name to rebuild. */
+            profile: string;
+            /**
+             * @description A setter of the embedding space to rebuild; xmodal siblings rebuild
+             *     together.
+             */
+            setter_name: string;
+        };
+        VectorQuantSetterStatus: {
+            /** Format: int64 */
+            dim?: number | null;
+            /** Format: int64 */
+            n_at_artifact?: number | null;
+            /** Format: int64 */
+            quantized: number;
+            setter_name: string;
+            /** @description pending | building | ready */
+            state: string;
+            /** Format: int64 */
+            vectors: number;
+        };
+        VectorQuantStatus: {
+            profiles: components["schemas"]["VectorQuantProfileStatus"][];
+            /**
+             * @description True when desired and actual state differ (reconcile needed or
+             *     running).
+             */
+            reconcile_needed: boolean;
+        };
+        /**
+         * @description Desired state for vector quantization (docs/vector-index-design.md).
+         *     `None` (section absent from TOML) means the built-in default profile;
+         *     an explicit empty `profiles` list means opted out.
+         */
+        VectorQuantsConfig: {
+            default?: string | null;
+            profiles?: components["schemas"]["VectorQuantProfileConfig"][];
+        };
     };
     responses: never;
     parameters: never;
@@ -4611,6 +4814,86 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobModel"];
+                };
+            };
+        };
+    };
+    get_vector_quants: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Vector quantization status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VectorQuantStatus"];
+                };
+            };
+        };
+    };
+    rebuild_vector_quant_pair: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The profile and setter to rebuild */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VectorQuantRebuildRequest"];
+            };
+        };
+        responses: {
+            /** @description Rebuild scheduled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VectorQuantActionResponse"];
+                };
+            };
+        };
+    };
+    enqueue_vector_quant_reconcile: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reconcile triggered */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VectorQuantActionResponse"];
                 };
             };
         };

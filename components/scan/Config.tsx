@@ -92,6 +92,7 @@ export function Config() {
         "remove_unavailable_files", "scan_images", "scan_video", "scan_audio", "scan_html", "scan_pdf",
         "enable_cron_job", "cron_schedule", "cron_jobs", "job_settings", "included_folders", "excluded_folders",
         "preload_embedding_models", "prewarm_embedding_models", "continuous_filescan", "job_filters", "filescan_filter",
+        "vector_quants",
     ])
     const tomlOnlyKeys = data
         ? Object.keys(data as Record<string, unknown>).filter((key) => !guiKnownKeys.has(key))

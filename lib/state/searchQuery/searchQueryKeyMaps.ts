@@ -29,6 +29,9 @@ export type distanceAggregation = NonNullable<
 export type distanceFunction = NonNullable<
   components["schemas"]["SimilarityArgs"]["distance_function"]
 >
+
+// "ann" is reserved backend-side and not selectable in the UI.
+export type vectorIndexMode = Exclude<components["schemas"]["IndexMode"], "ann">
 const applyOptionsToMap = <T extends Record<string, any>>(
   map: T
 ): {
@@ -142,6 +145,11 @@ export const semanticTextSearchKeyMap = (p: typeof def) =>
     distance_aggregation: p
       .parseAsStringEnum<distanceAggregation>(["MIN", "MAX", "AVG"])
       .withDefault("AVG"),
+    index: p
+      .parseAsStringEnum<vectorIndexMode>(["auto", "exact", "quant"])
+      .withDefault("auto"),
+    variant: p.parseAsString.withDefault(""),
+    k: p.parseAsInteger.withDefault(10000),
   })
 
 export const sourceTextKeyMap = (p: typeof def) =>
@@ -165,6 +173,11 @@ export const semanticImageSearchKeyMap = (p: typeof def) =>
       .parseAsStringEnum<distanceAggregation>(["MIN", "MAX", "AVG"])
       .withDefault("AVG"),
     clip_xmodal: p.parseAsBoolean.withDefault(false),
+    index: p
+      .parseAsStringEnum<vectorIndexMode>(["auto", "exact", "quant"])
+      .withDefault("auto"),
+    variant: p.parseAsString.withDefault(""),
+    k: p.parseAsInteger.withDefault(10000),
   })
 
 export const itemSimilarityKeyMap = (p: typeof def) =>
@@ -180,6 +193,11 @@ export const itemSimilarityKeyMap = (p: typeof def) =>
     clip_xmodal: p.parseAsBoolean.withDefault(false),
     xmodal_t2t: p.parseAsBoolean.withDefault(true),
     xmodal_i2i: p.parseAsBoolean.withDefault(true),
+    index: p
+      .parseAsStringEnum<vectorIndexMode>(["auto", "exact", "quant"])
+      .withDefault("auto"),
+    variant: p.parseAsString.withDefault(""),
+    k: p.parseAsInteger.withDefault(10000),
   })
 
 export const filterSortKeyMap = (p: typeof def) =>
@@ -270,22 +288,24 @@ export type ATMatchPath = Required<
   Omit<components["schemas"]["MatchPathArgs"], "match" | "raw_fts5_match">
 >
 
+// The AnyText surfaces don't expose per-filter index selection; the backend
+// default (`auto`) applies there.
 export type ATSemanticText = Required<
   Omit<
     components["schemas"]["SemanticTextArgs"],
-    "query" | "embed" | "src_text"
+    "query" | "embed" | "src_text" | "index" | "variant" | "k"
   >
 >
 export type ATSemanticImage = Required<
   Omit<
     components["schemas"]["SemanticImageArgs"],
-    "query" | "embed" | "src_text"
+    "query" | "embed" | "src_text" | "index" | "variant" | "k"
   >
 >
 export type ATSemanticAudio = Required<
   Omit<
     components["schemas"]["SemanticImageArgs"],
-    "query" | "embed" | "src_text"
+    "query" | "embed" | "src_text" | "index" | "variant" | "k"
   >
 >
 
@@ -325,8 +345,8 @@ export type KeymapComponents = {
   MatchTags: Required<MatchTagsArgs>
   FileFilters: FileFilters
   SemanticTextSearch: Required<
-    Omit<components["schemas"]["SemanticTextArgs"], "embed" | "src_text">
-  >
+    Omit<components["schemas"]["SemanticTextArgs"], "embed" | "src_text" | "index">
+  > & { index: vectorIndexMode }
   SemanticTextSource: NonNullableProps<
     Required<components["schemas"]["SourceArgs"]>
   >
@@ -335,15 +355,15 @@ export type KeymapComponents = {
   SemanticImageSearch: Required<
     Omit<
       components["schemas"]["SemanticImageArgs"],
-      "embed" | "src_text" | "force_distance_function"
+      "embed" | "src_text" | "force_distance_function" | "index"
     >
-  >
+  > & { index: vectorIndexMode }
   ItemSimilarity: Required<
     Omit<
       components["schemas"]["SimilarityArgs"],
-      "embed" | "src_text" | "force_distance_function"
+      "embed" | "src_text" | "force_distance_function" | "index"
     >
-  >
+  > & { index: vectorIndexMode }
   ItemSimilarityTextSource: Required<components["schemas"]["SourceArgs"]>
   SearchQueryOptions: Required<Omit<SearchQueryOptions, "src_text">>
   ATMatchText: ATMatchText
@@ -372,9 +392,9 @@ export type SimilaritySideBarComponents = {
   CLIPSimilarity: Required<
     Omit<
       components["schemas"]["SimilarityArgs"],
-      "target" | "distance_function" | "src_text" | "force_distance_function"
+      "target" | "distance_function" | "src_text" | "force_distance_function" | "index"
     >
-  >
+  > & { index: vectorIndexMode }
   CLIPTextSource: Required<components["schemas"]["SourceArgs"]>
 
   TextSimilarity: Required<
@@ -387,8 +407,9 @@ export type SimilaritySideBarComponents = {
       | "xmodal_t2t"
       | "xmodal_i2i"
       | "force_distance_function"
+      | "index"
     >
-  >
+  > & { index: vectorIndexMode }
   TextSource: Required<components["schemas"]["SourceArgs"]>
   PageArgs: Required<{
     page_clip: number

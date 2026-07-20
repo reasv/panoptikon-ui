@@ -2,6 +2,7 @@ import { useQueryOptions, useSemanticImageSearch, useSemanticTextSearch, useSema
 import { TextEmbeddingSearch } from "../base/TextEmbeddingSearch"
 import { Input } from "@/components/ui/input"
 import { ImageEmbeddingSearch } from "../base/ImageEmbeddingsSearch"
+import { VectorIndexModeSelector } from "../base/VectorIndexModeSelector"
 
 export function TextEmbSearch() {
     const [filter, setFilter] = useSemanticTextSearch()
@@ -16,13 +17,23 @@ export function TextEmbSearch() {
             srcFilter={srcFilter}
             setSrcFilter={setSrcFilter}
             children={
-                <Input
-                    type="text"
-                    placeholder={"Semantic Text Search"}
-                    value={filter.query}
-                    onChange={(e) => setFilter({ query: e.target.value })}
-                    className="grow mt-4"
-                />
+                <>
+                    <Input
+                        type="text"
+                        placeholder={"Semantic Text Search"}
+                        value={filter.query}
+                        onChange={(e) => setFilter({ query: e.target.value })}
+                        className="grow mt-4"
+                    />
+                    <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
+                        <VectorIndexModeSelector
+                            model={filter.model}
+                            index={filter.index}
+                            variant={filter.variant}
+                            setValue={(value) => setFilter(value)}
+                        />
+                    </div>
+                </>
             }
         />
     )
@@ -38,13 +49,23 @@ export function ImgEmbSearch() {
             filter={filter}
             setFilter={setFilter}
             children={
-                <Input
-                    type="text"
-                    placeholder={"Semantic Image Search"}
-                    value={filter.query}
-                    onChange={(e) => setFilter({ query: e.target.value })}
-                    className="grow mt-4"
-                />
+                <>
+                    <Input
+                        type="text"
+                        placeholder={"Semantic Image Search"}
+                        value={filter.query}
+                        onChange={(e) => setFilter({ query: e.target.value })}
+                        className="grow mt-4"
+                    />
+                    <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
+                        <VectorIndexModeSelector
+                            model={filter.model}
+                            index={filter.index}
+                            variant={filter.variant}
+                            setValue={(value) => setFilter(value)}
+                        />
+                    </div>
+                </>
             }
         />
     )

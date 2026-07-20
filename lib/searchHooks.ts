@@ -26,7 +26,13 @@ import { useClientConfig } from "./useClientConfig"
 // regardless of page size, so the marginal cost of fetching extra pages in
 // the same execution is noise. For cheap indexed queries it is a real tax,
 // hence 0 there.
-const VECTOR_PREFETCH_PAGES = 4
+//
+// Prefetch is a row budget, not a page count: execution cost is
+// LIMIT-insensitive for vector queries and enrich is per-served-page, so a
+// fixed ~320 cached rows costs the same whether that's 31 extra 10-row pages
+// or 2 extra 100-row pages. At >= 320 rows/page prefetch drops to 0.
+const VECTOR_PREFETCH_ROW_BUDGET = 320
+const MAX_VECTOR_PREFETCH_PAGES = 32
 const VECTOR_FILTER_KEYS = new Set([
   "image_embeddings",
   "text_embeddings",
@@ -42,9 +48,13 @@ export function hasVectorFilter(element: unknown): boolean {
   return false
 }
 export function prefetchPagesFor(
-  query: components["schemas"]["PqlQuery"]["query"]
+  query: components["schemas"]["PqlQuery"]["query"],
+  pageSize: number | undefined
 ): number {
-  return hasVectorFilter(query) ? VECTOR_PREFETCH_PAGES : 0
+  if (!hasVectorFilter(query)) return 0
+  const size = pageSize && pageSize > 0 ? pageSize : 10
+  const pages = Math.floor(VECTOR_PREFETCH_ROW_BUDGET / size) - 1
+  return Math.min(Math.max(pages, 0), MAX_VECTOR_PREFETCH_PAGES)
 }
 
 export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
@@ -100,7 +110,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
         ...request.body,
         results: true,
         count: false,
-        prefetch_pages: prefetchPagesFor(request.body.query),
+        prefetch_pages: prefetchPagesFor(request.body.query, request.body.page_size),
       },
     },
     {
@@ -170,7 +180,10 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
         page: newPage,
         results: true,
         count: false,
-        prefetch_pages: prefetchPagesFor(liveRequest.body.query),
+        prefetch_pages: prefetchPagesFor(
+          liveRequest.body.query,
+          liveRequest.body.page_size
+        ),
       },
     }
     await prefetchSearch(searchRequest)
@@ -249,7 +262,7 @@ export function usePrefetchSearch() {
         count: false,
         partition_by: partitionBy.partition_by as any,
         page,
-        prefetch_pages: prefetchPagesFor(searchQuery.query),
+        prefetch_pages: prefetchPagesFor(searchQuery.query, searchQuery.page_size),
       },
     }
     await prefetchSearch(searchRequest)
