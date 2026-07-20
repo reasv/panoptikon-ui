@@ -2339,6 +2339,17 @@ export interface components {
                 [key: string]: string;
             };
             result_metrics: components["schemas"]["SearchMetrics"];
+            /**
+             * Format: int64
+             * @description Random Order Seed
+             *
+             *     The seed bound into the returned results SQL, present only when the
+             *     query orders by `random`. Filled in by the `/pql/build` endpoint —
+             *     without it the compiled SQL carries a seed the caller never chose and
+             *     has no way to read back, so re-running it by hand would reproduce
+             *     neither this build nor a search.
+             */
+            seed?: number | null;
         };
         PqlQuery: {
             /**

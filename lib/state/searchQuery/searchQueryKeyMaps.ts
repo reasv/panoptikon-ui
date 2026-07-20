@@ -89,9 +89,12 @@ export const pageKey = (p: typeof def) =>
 export const pageSizeKey = (p: typeof def) =>
   p.parseAsInteger.withDefault(10).withOptions({ clearOnDefault: true })
 
-// Must mirror the `seed` entry in orderParamsKeyMap — both address the same
-// URL key. No default: absent means "no seed", not "seed 0".
-export const seedKey = (p: typeof def) => p.parseAsInteger
+// Derived from the map rather than restated: both address the same URL key,
+// so a parser or option that differed between them would make the same `seed`
+// value read back differently depending on which hook asked. The history mode
+// is deliberately left at the default here and chosen per call site — a
+// deliberate reroll pushes, lazy self-healing replaces.
+export const seedKey = (p: typeof def) => orderParamsKeyMap(p).seed
 
 export const tagFiltersKeyMap = (p: typeof def) =>
   applyOptionsToMap({

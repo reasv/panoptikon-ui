@@ -62,7 +62,11 @@ export function useResetPage<T>(
   const [page, setPage] = useSearchPage()
   const [gi, setGi] = useGalleryIndex()
   const setAnchor = useGridScrollAnchor()[1]
-  const setState: SetFn<T> = (newOptions) => {
+  // `options` must be forwarded: callers use it to choose the history mode
+  // (a deliberate reroll pushes, lazy self-healing replaces), and dropping it
+  // silently falls back to nuqs' default with nothing to typecheck against —
+  // the extra parameter is simply ignored at the call site.
+  const setState: SetFn<T> = (newOptions, options) => {
     if (enabled) {
       // A changed query invalidates the grid scroll anchor along with the page
       // and gallery index — restoring it into different results would drop the
@@ -75,7 +79,7 @@ export function useResetPage<T>(
         setGi(0)
       }
     }
-    return setFunc(newOptions)
+    return setFunc(newOptions, options)
   }
   return setState
 }
