@@ -57,6 +57,7 @@ function StatusLine({
         paused_for_job: boolean
         roots_valid: boolean
         mode: "watcher" | "poller"
+        watcher_fallback?: boolean
         poll_interval_secs?: number | null
         watch_roots: string[]
     }
@@ -71,12 +72,18 @@ function StatusLine({
             color = "bg-red-500"
             text = "Inactive — none of the watched folders are valid"
         } else if (status.active) {
-            color = "bg-green-500"
             const roots = `${status.watch_roots.length} folder root${status.watch_roots.length === 1 ? "" : "s"}`
-            text =
-                status.mode === "poller"
-                    ? `Watching ${roots}, polling every ${status.poll_interval_secs}s`
-                    : `Watching ${roots} for file events`
+            if (status.watcher_fallback) {
+                // Running, but not in the mode that was asked for.
+                color = "bg-yellow-500"
+                text = `Watching ${roots}, polling every ${status.poll_interval_secs}s — the OS file watcher could not be started`
+            } else {
+                color = "bg-green-500"
+                text =
+                    status.mode === "poller"
+                        ? `Watching ${roots}, polling every ${status.poll_interval_secs}s`
+                        : `Watching ${roots} for file events`
+            }
         } else {
             color = "bg-yellow-500"
             text = "Enabled but not active yet"
@@ -224,6 +231,18 @@ export function ContinuousScan() {
                                     </SelectItem>
                                 </SelectContent>
                             </Select>
+                            {continuous.enabled && status?.watcher_fallback && (
+                                <div className="text-sm mt-4 text-yellow-600 dark:text-yellow-500">
+                                    The OS file watcher could not be started, so
+                                    continuous scanning fell back to polling every{" "}
+                                    {status.poll_interval_secs}s. On Linux this usually
+                                    means the system limit on watched paths is too low for
+                                    the size of the watched folders — raise{" "}
+                                    <code>fs.inotify.max_user_watches</code>, or switch to
+                                    Periodic Polling to silence this. See the logs for the
+                                    underlying error.
+                                </div>
+                            )}
                             {mode === "poller" && (
                                 <div className="flex flex-row items-center space-x-2 mt-4">
                                     <Input

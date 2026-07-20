@@ -1430,7 +1430,10 @@ export interface components {
              *     inside an included folder or fall under an excluded folder.
              */
             invalid_includes: string[];
-            /** @description Change-detection mode from the configuration. */
+            /**
+             * @description Change-detection mode from the configuration. This is what was asked
+             *     for, not necessarily what is running — see `watcher_fallback`.
+             */
             mode: components["schemas"]["ContinuousScanMode"];
             /**
              * @description Whether the scanner is temporarily paused while a job runs on this
@@ -1439,7 +1442,8 @@ export interface components {
             paused_for_job: boolean;
             /**
              * Format: int64
-             * @description Poll interval in effect when `mode` is `poller`.
+             * @description Poll interval actually in effect, including when `watcher_fallback` is
+             *     set. Null in watcher mode.
              */
             poll_interval_secs?: number | null;
             /**
@@ -1452,6 +1456,12 @@ export interface components {
              *     folders when no continuous watched folders are configured).
              */
             watch_roots: string[];
+            /**
+             * @description True when `mode` is `watcher` but the OS watcher could not be started,
+             *     so polling is standing in for it. The usual cause is the system's limit
+             *     on watched paths being too low for the size of the watched tree.
+             */
+            watcher_fallback: boolean;
         };
         CreatePinboardRequest: components["schemas"]["SaveVersionRequest"] & {
             /** @description Optional display name; pinboards are identified by preview otherwise. */
