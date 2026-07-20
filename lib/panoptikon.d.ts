@@ -1139,12 +1139,12 @@ export interface paths {
         };
         /**
          * Get search result cache stats
-         * @description Returns usage counters, per-database groups (with current epochs and stale-entry counts), and a paginated entry listing for the search result cache.
+         * @description Returns usage counters, per-database groups (with current epochs and stale-entry counts), and a paginated listing of cached row spans for the search result cache. Entry counts are spans, not client pages.
          */
         get: operations["get_search_result_cache"];
         /**
          * Resize search result cache
-         * @description Sets the live byte budget of the search result cache and returns updated stats. Growing is free; shrinking evicts LRU entries until under budget; `0` empties and disables the cache. Sizes above the `[search] cache_size_max_mb` ceiling are rejected. Not persisted — the `[search] cache_size_mb` TOML value applies again at the next startup.
+         * @description Sets the live byte budget of the search result cache and returns updated stats. Growing is free; shrinking evicts LRU spans until under budget; `0` empties and disables the cache. Sizes above the `[search] cache_size_max_mb` ceiling are rejected. Not persisted — the `[search] cache_size_mb` TOML value applies again at the next startup.
          */
         put: operations["resize_search_result_cache"];
         post?: never;
@@ -2428,17 +2428,18 @@ export interface components {
             partition_by?: components["schemas"]["Column"][] | null;
             /**
              * Format: int32
-             * @description Prefetch Pages
+             * @description Prefetch Rows
              *
-             *     Number of additional pages to fetch and cache beyond the requested
-             *     one, amortizing the full query cost across page visits (useful for
-             *     vector searches, whose cost does not scale down with LIMIT).
-             *     Executed as a single query with a larger LIMIT and sliced into
-             *     per-page cache entries. Clamped server-side; ignored when the cache
-             *     is disabled or bypassed, or when page_size < 1.
+             *     Total number of rows to fetch and cache from the requested offset,
+             *     amortizing the full query cost across page visits (useful for vector
+             *     searches, whose cost does not scale down with LIMIT). Executed as a
+             *     single query with `LIMIT max(page_size, prefetch_rows)`; the extra
+             *     rows are cached and serve any later window that falls inside them,
+             *     whatever page size asks for it. Clamped server-side; ignored when the
+             *     cache is disabled or bypassed.
              * @default 0
              */
-            prefetch_pages?: number;
+            prefetch_rows?: number;
             /** @default null */
             query?: null | components["schemas"]["QueryElement"];
             /**
@@ -2614,6 +2615,7 @@ export interface components {
         ScalarValue: number | string;
         SearchCacheDbGroup: {
             bytes: number;
+            /** @description Cached spans, not client pages: one 320-row prefetch is 2 spans. */
             entries: number;
             index_db: string;
             /**
@@ -2622,7 +2624,7 @@ export interface components {
              */
             index_epoch: number;
             /**
-             * @description Entries recorded under a different epoch than the current one. High
+             * @description Spans recorded under a different epoch than the current one. High
              *     counts mean write churn is defeating the cache.
              */
             stale_entries: number;
@@ -2632,14 +2634,20 @@ export interface components {
         };
         SearchCacheEntryInfo: {
             bytes: number;
+            /**
+             * Format: int64
+             * @description One past the last row index this span holds. Absent for count entries.
+             */
+            end?: number | null;
             kind: string;
-            /** Format: int64 */
-            limit?: number | null;
-            /** Format: int64 */
-            offset?: number | null;
             rows?: number | null;
-            /** @description Truncated compiled SQL. */
+            /** @description Truncated compiled SQL, shared by every span of the same query. */
             sql: string;
+            /**
+             * Format: int64
+             * @description First row index this span holds. Absent for count entries.
+             */
+            start?: number | null;
             valid: boolean;
         };
         SearchCacheResize: {
@@ -2652,10 +2660,11 @@ export interface components {
             size_mb: number;
         };
         SearchCacheStats: {
-            /** @description Paginated entry listing, most recently used first. */
+            /** @description Paginated span listing, most recently used first. */
             cached: components["schemas"]["SearchCacheEntryInfo"][];
             capacity_bytes: number;
             databases: components["schemas"]["SearchCacheDbGroup"][];
+            /** @description Cached spans, not client pages. */
             entries: number;
             /** Format: int64 */
             evictions: number;
@@ -2701,11 +2710,11 @@ export interface components {
              */
             execute: number;
             /**
-             * Format: int32
-             * @description Extra pages fetched and cached beyond the requested one (results
+             * Format: int64
+             * @description Extra rows fetched and cached beyond the requested page (results
              *     only; explains a larger `execute` on the populating request)
              */
-            prefetched_pages?: number | null;
+            prefetched_rows?: number | null;
             /**
              * Format: double
              * @description Preprocess time

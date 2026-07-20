@@ -65,13 +65,13 @@ function MetricsSection({
             <dd className="text-right tabular-nums">{formatSeconds(value)}</dd>
           </div>
         ))}
-        {typeof metrics.prefetched_pages === "number" &&
-          metrics.prefetched_pages > 0 && (
+        {typeof metrics.prefetched_rows === "number" &&
+          metrics.prefetched_rows > 0 && (
             <div className="contents">
               <dt>Prefetched</dt>
               <dd className="text-right tabular-nums">
-                {metrics.prefetched_pages}{" "}
-                {metrics.prefetched_pages === 1 ? "page" : "pages"}
+                {metrics.prefetched_rows}{" "}
+                {metrics.prefetched_rows === 1 ? "row" : "rows"}
               </dd>
             </div>
           )}
