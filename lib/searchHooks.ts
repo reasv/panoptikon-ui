@@ -19,6 +19,7 @@ import { usePartitionBy } from "./state/partitionBy"
 import { useEffect } from "react"
 import { queryFromState } from "./state/searchQuery/searchQuery"
 import { useThrottledValue } from "./useThrottledValue"
+import { usePinboardMaximized } from "./state/gallery"
 import { useClientConfig } from "./useClientConfig"
 
 // Server-side page prefetching is worth it exactly when the query cost does
@@ -71,6 +72,12 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const [page, setPage] = useSearchPage()
   const searchEnabled = useQueryOptions()[0].s_enable
   const instantSearch = useInstantSearch((state) => state.enabled)
+  // A maximized board hides every consumer of these results, so running the
+  // search buys nothing — and for an embedding query it costs a model load.
+  // keepPreviousData below means whatever was fetched before maximizing
+  // stays in hand, so restoring the board size shows it immediately while
+  // the now-stale query refetches. See lib/state/pinboardView.ts.
+  const pinboardMaximized = usePinboardMaximized()
   const [partitionBy] = usePartitionBy()
   // The request is throttled as a single unit — filters, page, partitioning
   // and database selection together — so a partially-updated "hybrid" query
@@ -114,7 +121,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
       },
     },
     {
-      enabled: searchEnabled && instantSearch,
+      enabled: searchEnabled && instantSearch && !pinboardMaximized,
       placeholderData: keepPreviousData,
     }
   )
@@ -133,7 +140,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
       },
     },
     {
-      enabled: searchEnabled && instantSearch,
+      enabled: searchEnabled && instantSearch && !pinboardMaximized,
       placeholderData: keepPreviousData,
     }
   )

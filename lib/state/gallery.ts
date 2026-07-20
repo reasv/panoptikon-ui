@@ -6,6 +6,7 @@ import {
   parseAsString,
   useQueryState,
 } from "nuqs"
+import { isPinboardMaximized } from "./pinboardView"
 
 const useGalleryIndex = () =>
   useQueryState(
@@ -136,6 +137,17 @@ const useGalleryPinBoardLoad = () =>
     })
   )
 
+// Whether the board is currently maximized over the whole view — see
+// lib/state/pinboardView.ts for what that means and why it gates searching.
+const usePinboardMaximized = () =>
+  isPinboardMaximized({
+    fs: useGalleryFullscreen()[0],
+    hidePinBoard: useGalleryHidePinBoard()[0],
+    gridTab: useGridPinboardTab()[0],
+    pinboard: useGalleryPinBoardLayout()[0],
+    pbl: useGalleryPinBoardLoad()[0],
+  })
+
 const gallerySearchParams = () => ({
   gi: parseAsInteger,
   gt: parseAsBoolean,
@@ -159,4 +171,5 @@ export {
   useGalleryPinAutoLayout,
   useGalleryPinAutoCrop,
   useGalleryPinSelectionCrop,
+  usePinboardMaximized,
 }

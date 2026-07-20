@@ -297,7 +297,12 @@ export function GridPanel({
     // results must show until it lands. Unpinning the last item clears
     // gpb itself (see usePinBoard), so the flag can't linger past the
     // board it was opened for.
-    const showPinboard = pinboard.length > 0 && pinboardTab
+    // `|| fs` covers a cold load of a URL maximized from the GALLERY host
+    // (gi set, gpb absent): the search that host needs to mount is exactly
+    // the one being maximized suppresses, so results are empty and the view
+    // lands here instead. Without this the board would be replaced by an
+    // empty grid — the one thing the URL asked not to show.
+    const showPinboard = pinboard.length > 0 && (pinboardTab || fs)
     // Maximize hotkey, same chord as the gallery's. Registered only while
     // the board is shown here — the two hosts are never mounted together,
     // so it can't double-fire.

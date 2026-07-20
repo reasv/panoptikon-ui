@@ -4,6 +4,7 @@ import { fetchDB, fetchNs, fetchSearch, fetchStats } from "./queryFns"
 import { getSearchQueryCache } from "@/lib/state/searchQuery/serverParsers"
 import { partitionByParamsCache } from "@/lib/state/partitionByServer"
 import { getServerClientConfig } from "@/lib/serverApi"
+import { isPinboardMaximizedFromParams } from "@/lib/state/pinboardView"
 
 export const prefetchSearchPage = async (
   queryClient: QueryClient,
@@ -47,14 +48,23 @@ export const prefetchSearchPage = async (
     },
   }
 
-  await queryClient.prefetchQuery({
-    queryKey: ["post", "/api/search/pql", searchRequest],
-    queryFn: () => fetchSearch(searchRequest),
-  })
-  await queryClient.prefetchQuery({
-    queryKey: ["post", "/api/search/pql", countRequest],
-    queryFn: () => fetchSearch(countRequest),
-  })
+  // A URL that opens straight into a maximized board renders nothing that
+  // comes from the search, so running it here would only delay first paint
+  // — and an embedding query would load a model for results the page never
+  // shows. useSearch keeps the queries disabled on the client for as long
+  // as the board stays maximized, and fetches on its own once it isn't.
+  // searchRequest is still returned: it is the SSR shape useSearch falls
+  // back to, not a promise that the data was fetched.
+  if (!isPinboardMaximizedFromParams(searchParams)) {
+    await queryClient.prefetchQuery({
+      queryKey: ["post", "/api/search/pql", searchRequest],
+      queryFn: () => fetchSearch(searchRequest),
+    })
+    await queryClient.prefetchQuery({
+      queryKey: ["post", "/api/search/pql", countRequest],
+      queryFn: () => fetchSearch(countRequest),
+    })
+  }
   const requestDBs = {
     params: {
       query: {
