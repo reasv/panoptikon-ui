@@ -4825,6 +4825,13 @@ export interface operations {
                 index_db?: string | null;
                 /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
+                /**
+                 * @description Include per-setter vector/quantized counts (progress and size on
+                 *     disk). These are full index scans over each setter's rows; pass
+                 *     false from latency-sensitive surfaces that only need profile names
+                 *     and states. Defaults to true.
+                 */
+                counts?: boolean;
             };
             header?: never;
             path?: never;

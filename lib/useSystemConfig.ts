@@ -48,6 +48,15 @@ export function useSystemConfig() {
             queryClient.invalidateQueries({
                 queryKey: ["get", "/api/jobs/continuous/status"],
             })
+            // A config commit is also a vector-quant commit: it writes the
+            // TOML and schedules the consequence in one action, so the
+            // status card and the job queue both change.
+            queryClient.invalidateQueries({
+                queryKey: ["get", "/api/jobs/quants"],
+            })
+            queryClient.invalidateQueries({
+                queryKey: ["get", "/api/jobs/queue"],
+            })
             toast({
                 title: "Settings Updated",
                 description: "The changes have been applied",

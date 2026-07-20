@@ -60,6 +60,7 @@ export function ImgEmbSearch() {
                     <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
                         <VectorIndexModeSelector
                             model={filter.model}
+                            clipXmodal={filter.clip_xmodal}
                             index={filter.index}
                             variant={filter.variant}
                             setValue={(value) => setFilter(value)}

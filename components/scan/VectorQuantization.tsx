@@ -31,7 +31,9 @@ function effectiveQuantsConfig(config: { vector_quants?: QuantsConfig | null } |
 function profileChip(profile: ProfileStatus): string {
     if (profile.state === "removing") return "Removing"
     if (profile.state === "missing") return "Reconcile needed"
-    if (profile.setters.length === 0) return "Ready"
+    // No coverage rows is not readiness: either the DB has no embeddings
+    // yet, or the rows haven't been written — search is exact either way.
+    if (profile.setters.length === 0) return "No embeddings"
     if (profile.setters.every((setter) => setter.state === "ready")) return "Ready"
     const total = profile.setters.reduce((acc, setter) => acc + setter.vectors, 0)
     const done = profile.setters.reduce((acc, setter) => acc + setter.quantized, 0)
@@ -56,9 +58,11 @@ export function VectorQuantization() {
     const [newName, setNewName] = useState("")
     const [newCentered, setNewCentered] = useState(true)
 
+    // The card shows progress and size on disk, so it opts into the
+    // per-setter counts (full scans) the selector skips.
     const statusQuery = $api.useQuery("get", "/api/jobs/quants", {
         params: {
-            query: dbs
+            query: { ...dbs, counts: true }
         }
     })
     const invalidateStatus = () => {
