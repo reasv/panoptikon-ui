@@ -35,6 +35,7 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 import { components } from "@/lib/panoptikon"
 import { useGridScrollAnchor } from "@/lib/state/gridScroll"
 import { DesktopUpdateRibbon } from "@/components/DesktopUpdateRibbon"
+import { SearchMetricsHoverCard } from "@/components/SearchMetricsCard"
 
 export function SearchPageContent({ initialQuery, isRestrictedMode }:
     { initialQuery: SearchQueryArgs, isRestrictedMode: boolean }) {
@@ -292,8 +293,6 @@ export function GridPanel({
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
     }, [showPinboard])
-    const executionSummary = `Results: ${resultMetrics?.execute} DB, ${resultMetrics?.build} Build, ${resultMetrics?.compile} Compile`
-        + `\nCount: ${countMetrics?.execute} DB, ${countMetrics?.build} Build, ${countMetrics?.compile} Compile`
     return (
         <div data-pinboard-frame className="flex flex-col border rounded p-2">
             {/* 1fr_auto_1fr: the tabs stay centered no matter how wide the
@@ -301,7 +300,9 @@ export function GridPanel({
                 grow past the gallery header it must measure like. */}
             {!fs && <div className="grid grid-cols-[1fr_auto_1fr] items-center h-10 mb-2">
                 <h2 className="text-xl font-bold px-2 truncate">
-                    <span title={executionSummary}><AnimatedNumber value={totalCount} /> {totalCount === 1 ? "Result" : "Results"} in {resultMetrics?.execute}s</span>
+                    <SearchMetricsHoverCard resultMetrics={resultMetrics} countMetrics={countMetrics}>
+                        <span><AnimatedNumber value={totalCount} /> {totalCount === 1 ? "Result" : "Results"} in {resultMetrics?.execute}s</span>
+                    </SearchMetricsHoverCard>
                 </h2>
                 {pinboard.length > 0 && (
                     <Tabs

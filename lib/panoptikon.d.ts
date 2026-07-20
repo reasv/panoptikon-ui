@@ -1070,6 +1070,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/search/cache": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get search result cache stats
+         * @description Returns usage counters, per-database groups (with current epochs and stale-entry counts), and a paginated entry listing for the search result cache.
+         */
+        get: operations["get_search_result_cache"];
+        /**
+         * Resize search result cache
+         * @description Sets the live byte budget of the search result cache and returns updated stats. Growing is free; shrinking evicts LRU entries until under budget; `0` empties and disables the cache. Sizes above the `[search] cache_size_max_mb` ceiling are rejected. Not persisted — the `[search] cache_size_mb` TOML value applies again at the next startup.
+         */
+        put: operations["resize_search_result_cache"];
+        post?: never;
+        /**
+         * Clear search result cache
+         * @description Clears the search result cache and returns updated stats. Optional `index_db`/`user_data_db` params restrict the clear to entries keyed to those databases (exact name match; both given means both must match). Clearing never touches epochs.
+         */
+        delete: operations["clear_search_result_cache"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/search/embeddings/cache": {
         parameters: {
             query?: never;
@@ -1255,6 +1283,11 @@ export interface components {
                 [key: string]: string[];
             };
         };
+        /**
+         * @description Search result cache outcome for one request side (count or results).
+         * @enum {string}
+         */
+        CacheOutcome: "hit" | "stale" | "miss" | "bypass" | "disabled";
         CancelResponse: {
             detail: string;
         };
@@ -2229,6 +2262,15 @@ export interface components {
         };
         PqlQuery: {
             /**
+             * @description Use Result Cache
+             *
+             *     If false, this request bypasses the search result cache entirely —
+             *     it neither reads existing entries nor stores its own results.
+             *     Useful for benchmarking real query speed on a live instance.
+             * @default true
+             */
+            cache?: boolean;
+            /**
              * @description Check Paths Exist
              *
              *     If true, the query will check if the path exists on disk before returning it.
@@ -2293,6 +2335,19 @@ export interface components {
              * @default null
              */
             partition_by?: components["schemas"]["Column"][] | null;
+            /**
+             * Format: int32
+             * @description Prefetch Pages
+             *
+             *     Number of additional pages to fetch and cache beyond the requested
+             *     one, amortizing the full query cost across page visits (useful for
+             *     vector searches, whose cost does not scale down with LIMIT).
+             *     Executed as a single query with a larger LIMIT and sliced into
+             *     per-page cache entries. Clamped server-side; ignored when the cache
+             *     is disabled or bypassed, or when page_size < 1.
+             * @default 0
+             */
+            prefetch_pages?: number;
             /** @default null */
             query?: null | components["schemas"]["QueryElement"];
             /**
@@ -2448,6 +2503,63 @@ export interface components {
             screenful_h?: number | null;
         };
         ScalarValue: number | string;
+        SearchCacheDbGroup: {
+            bytes: number;
+            entries: number;
+            index_db: string;
+            /**
+             * Format: int64
+             * @description Current index-DB epoch these entries validate against.
+             */
+            index_epoch: number;
+            /**
+             * @description Entries recorded under a different epoch than the current one. High
+             *     counts mean write churn is defeating the cache.
+             */
+            stale_entries: number;
+            user_data_db?: string | null;
+            /** Format: int64 */
+            user_data_epoch?: number | null;
+        };
+        SearchCacheEntryInfo: {
+            bytes: number;
+            kind: string;
+            /** Format: int64 */
+            limit?: number | null;
+            /** Format: int64 */
+            offset?: number | null;
+            rows?: number | null;
+            /** @description Truncated compiled SQL. */
+            sql: string;
+            valid: boolean;
+        };
+        SearchCacheResize: {
+            /**
+             * @description New byte budget in megabytes. `0` empties and disables the cache;
+             *     values above the `[search] cache_size_max_mb` ceiling are rejected.
+             *     Not persisted: the TOML `[search] cache_size_mb` remains the source
+             *     of truth at the next startup.
+             */
+            size_mb: number;
+        };
+        SearchCacheStats: {
+            /** @description Paginated entry listing, most recently used first. */
+            cached: components["schemas"]["SearchCacheEntryInfo"][];
+            capacity_bytes: number;
+            databases: components["schemas"]["SearchCacheDbGroup"][];
+            entries: number;
+            /** Format: int64 */
+            evictions: number;
+            /** Format: int64 */
+            hits: number;
+            /** Format: int64 */
+            misses: number;
+            page: number;
+            page_size: number;
+            /** Format: int64 */
+            stale_hits: number;
+            used_bytes: number;
+        };
         SearchMetrics: {
             /**
              * Format: double
@@ -2456,6 +2568,7 @@ export interface components {
              *     Time taken to process the query into an SQLAlchemy Core statement
              */
             build: number;
+            cache?: null | components["schemas"]["CacheOutcome"];
             /**
              * Format: double
              * @description Compile time
@@ -2465,11 +2578,32 @@ export interface components {
             compile: number;
             /**
              * Format: double
+             * @description Enrichment time
+             *
+             *     Time spent on per-response result enrichment (path checking and
+             *     bookmark annotation), which runs on every request, cached or not
+             */
+            enrich?: number;
+            /**
+             * Format: double
              * @description Execution time
              *
              *     Time taken to execute the SQL query
              */
             execute: number;
+            /**
+             * Format: int32
+             * @description Extra pages fetched and cached beyond the requested one (results
+             *     only; explains a larger `execute` on the populating request)
+             */
+            prefetched_pages?: number | null;
+            /**
+             * Format: double
+             * @description Preprocess time
+             *
+             *     Time taken to resolve embeddings and normalize the query before building
+             */
+            preprocess?: number;
         };
         SearchResult: {
             /** Format: int64 */
@@ -4911,6 +5045,87 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    get_search_result_cache: {
+        parameters: {
+            query?: {
+                /** @description Page number for the entry listing */
+                page?: number;
+                /** @description Page size for the entry listing */
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Search result cache stats */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchCacheStats"];
+                };
+            };
+        };
+    };
+    resize_search_result_cache: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchCacheResize"];
+            };
+        };
+        responses: {
+            /** @description Search result cache stats after resizing */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchCacheStats"];
+                };
+            };
+        };
+    };
+    clear_search_result_cache: {
+        parameters: {
+            query?: {
+                /** @description Restrict the clear to entries keyed to this index database. */
+                index_db?: string;
+                /**
+                 * @description Restrict the clear to entries keyed to this user data database.
+                 *     Only matches entries whose query touched user_data tables.
+                 */
+                user_data_db?: string;
+                /** @description Page number for the entry listing */
+                page?: number;
+                /** @description Page size for the entry listing */
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Search result cache stats after clearing */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchCacheStats"];
+                };
             };
         };
     };

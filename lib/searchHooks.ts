@@ -21,6 +21,32 @@ import { queryFromState } from "./state/searchQuery/searchQuery"
 import { useThrottledValue } from "./useThrottledValue"
 import { useClientConfig } from "./useClientConfig"
 
+// Server-side page prefetching is worth it exactly when the query cost does
+// not scale down with LIMIT — vector searches scan every candidate embedding
+// regardless of page size, so the marginal cost of fetching extra pages in
+// the same execution is noise. For cheap indexed queries it is a real tax,
+// hence 0 there.
+const VECTOR_PREFETCH_PAGES = 4
+const VECTOR_FILTER_KEYS = new Set([
+  "image_embeddings",
+  "text_embeddings",
+  "similar_to",
+])
+export function hasVectorFilter(element: unknown): boolean {
+  if (Array.isArray(element)) return element.some(hasVectorFilter)
+  if (element && typeof element === "object") {
+    return Object.entries(element).some(
+      ([key, value]) => VECTOR_FILTER_KEYS.has(key) || hasVectorFilter(value)
+    )
+  }
+  return false
+}
+export function prefetchPagesFor(
+  query: components["schemas"]["PqlQuery"]["query"]
+): number {
+  return hasVectorFilter(query) ? VECTOR_PREFETCH_PAGES : 0
+}
+
 export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const isClient = typeof window !== "undefined"
   const searchQueryState = useSearchQuery()
@@ -74,6 +100,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
         ...request.body,
         results: true,
         count: false,
+        prefetch_pages: prefetchPagesFor(request.body.query),
       },
     },
     {
@@ -143,6 +170,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
         page: newPage,
         results: true,
         count: false,
+        prefetch_pages: prefetchPagesFor(liveRequest.body.query),
       },
     }
     await prefetchSearch(searchRequest)
@@ -221,6 +249,7 @@ export function usePrefetchSearch() {
         count: false,
         partition_by: partitionBy.partition_by as any,
         page,
+        prefetch_pages: prefetchPagesFor(searchQuery.query),
       },
     }
     await prefetchSearch(searchRequest)
