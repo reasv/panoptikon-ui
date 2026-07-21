@@ -5,7 +5,7 @@ import { Check, Copy } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
-/// The address this page is being served from, with a copy button.
+/// The Search UI's address, with a copy button.
 ///
 /// The setup wizard runs inside the Desktop window, so every way out of it is
 /// a button that asks the operating system to open a browser. When that fails
@@ -14,13 +14,21 @@ import { cn } from "@/lib/utils"
 /// can simply visit. This is that fallback, and it is shown unconditionally
 /// rather than only after a failed open, because the user needs to know the
 /// address exists before they are stuck.
-export function ServerAddress({ className }: { className?: string }) {
+///
+/// The address always names a page worth landing on. Desktop users have no use
+/// for the site root, so it points at Search - and at the database the wizard
+/// just set up, matching the button beside it.
+export function ServerAddress({ indexDb, className }: { indexDb?: string; className?: string }) {
   const [address, setAddress] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
   // Read on the client: there is no request origin during prerender, and
   // guessing one would risk printing an address that does not work.
-  useEffect(() => setAddress(window.location.origin), [])
+  useEffect(() => {
+    const url = new URL("/search", window.location.origin)
+    if (indexDb) url.searchParams.set("index_db", indexDb)
+    setAddress(url.toString())
+  }, [indexDb])
 
   useEffect(() => {
     if (!copied) return
@@ -48,20 +56,18 @@ export function ServerAddress({ className }: { className?: string }) {
   }
 
   return (
-    <div className={cn("mx-auto flex w-fit max-w-full flex-col items-center gap-2 rounded-lg border px-4 py-3", className)}>
-      <p className="text-sm text-muted-foreground">Or open Panoptikon in any browser on this computer:</p>
-      <div className="flex items-center gap-2">
-        <code className="rounded bg-muted px-2 py-1 text-sm font-medium">{address}</code>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-8 w-8"
-          onClick={() => void copy()}
-          aria-label={copied ? "Address copied" : "Copy address"}
-        >
-          {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
-        </Button>
-      </div>
+    <div className={cn("mx-auto flex w-fit max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-lg border px-4 py-2", className)}>
+      <span className="text-sm text-muted-foreground">The Search UI is reachable at:</span>
+      <code className="rounded bg-muted px-2 py-1 text-sm font-medium">{address}</code>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-8 w-8"
+        onClick={() => void copy()}
+        aria-label={copied ? "Address copied" : "Copy address"}
+      >
+        {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+      </Button>
       <span aria-live="polite" className="sr-only">{copied ? "Address copied to the clipboard" : ""}</span>
     </div>
   )

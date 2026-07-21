@@ -94,7 +94,7 @@ export function WizardProgress({ completion }: { completion: Completion }) {
       )}
 
       {queueError && <p className="text-sm text-destructive" role="alert">{queueError}</p>}
-      <ServerAddress />
+      <ServerAddress indexDb={completion.index_db} />
       <div className="grid gap-3 sm:grid-cols-2">
         <Button size="lg" onClick={() => openPage("search")}><Search className="mr-2 h-4 w-4" />Open Search<ExternalLink className="ml-2 h-3.5 w-3.5 opacity-70" /></Button>
         <Button size="lg" variant="outline" onClick={() => openPage("scan")}><Settings2 className="mr-2 h-4 w-4" />Open Scan and job details<ExternalLink className="ml-2 h-3.5 w-3.5 opacity-70" /></Button>
