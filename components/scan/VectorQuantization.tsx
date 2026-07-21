@@ -7,9 +7,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import { Loader2 } from "lucide-react"
 import { useSystemConfig } from "@/lib/useSystemConfig"
 import { components } from "@/lib/panoptikon"
+import { keepPreviousData } from "@tanstack/react-query"
 import { useState } from "react"
+
+type QuantStatus = components["schemas"]["VectorQuantStatus"]
 
 type QuantsConfig = components["schemas"]["VectorQuantsConfig"]
 type ProfileStatus = components["schemas"]["VectorQuantProfileStatus"]
@@ -44,6 +48,22 @@ function profileChip(profile: ProfileStatus): string {
     return "Pending"
 }
 
+// Anything that is still moving: drift waiting on a reconcile, a reconcile in
+// flight, or a profile/setter that hasn't reached its steady state yet.
+function isConverging(status: QuantStatus | undefined): boolean {
+    if (!status) return false
+    if (status.reconcile_needed || status.reconcile_scheduled) return true
+    return status.profiles.some(
+        (profile) =>
+            profile.state !== "active" ||
+            profile.setters.some((setter) => setter.state !== "ready"),
+    )
+}
+
+function setterStateLabel(state: string): string {
+    return state.charAt(0).toUpperCase() + state.slice(1)
+}
+
 function formatBytes(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -60,11 +80,23 @@ export function VectorQuantization() {
 
     // The card shows progress and size on disk, so it opts into the
     // per-setter counts (full scans) the selector skips.
-    const statusQuery = $api.useQuery("get", "/api/jobs/quants", {
-        params: {
-            query: { ...dbs, counts: true }
-        }
-    })
+    const statusQuery = $api.useQuery(
+        "get",
+        "/api/jobs/quants",
+        {
+            params: {
+                query: { ...dbs, counts: true }
+            }
+        },
+        {
+            placeholderData: keepPreviousData,
+            // counts:true means a full scan per setter, so this doesn't get
+            // the flat 2.5s of the other cards: poll fast only while
+            // something is actually converging, and idle slowly otherwise.
+            refetchInterval: (query) =>
+                isConverging(query.state.data as QuantStatus | undefined) ? 2000 : 20000,
+        },
+    )
     const invalidateStatus = () => {
         queryClient.invalidateQueries({ queryKey: ["get", "/api/jobs/quants"] })
         queryClient.invalidateQueries({ queryKey: ["get", "/api/jobs/queue"] })
@@ -128,8 +160,18 @@ export function VectorQuantization() {
             description="Binary quant profiles that accelerate vector search (exact rescoring keeps result quality)"
             storageKey="vectorQuantization"
         >
-            {status?.reconcile_needed && (
-                <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm flex flex-row items-center justify-between">
+            {status?.reconcile_scheduled ? (
+                // Every action that creates drift also enqueues the reconcile
+                // that clears it, so the common case is "already handled".
+                <div className="mt-4 rounded-lg border p-4 text-sm flex flex-row items-center gap-3 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                    <span>
+                        A reconcile job is queued or running — this card follows it as it
+                        converges the database to the configuration.
+                    </span>
+                </div>
+            ) : status?.reconcile_needed ? (
+                <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm flex flex-row items-center justify-between gap-4">
                     <span>
                         Configuration and database state differ — a reconcile is needed
                         (it also runs automatically after any scan or extraction job).
@@ -137,12 +179,14 @@ export function VectorQuantization() {
                     <Button
                         variant="outline"
                         size="sm"
+                        className="shrink-0"
+                        disabled={reconcileMut.isPending}
                         onClick={() => reconcileMut.mutate({ params: { query: dbs } })}
                     >
                         Reconcile now
                     </Button>
                 </div>
-            )}
+            ) : null}
             {(status?.profiles || []).map((profile) => (
                 <div key={profile.name} className="flex flex-col items-left rounded-lg border p-4 mt-4">
                     <div className="flex flex-row items-center justify-between">
@@ -183,36 +227,46 @@ export function VectorQuantization() {
                                     setter.vectors > 0 &&
                                     setter.vectors >= setter.n_at_artifact * 4
                                 return (
+                                    // Fixed action column so the status text ends
+                                    // (and the buttons start) at the same x on
+                                    // every row, whether or not the row has one.
                                     <div
                                         key={setter.setter_name}
-                                        className="flex flex-row items-center justify-between text-sm border rounded-md p-2"
+                                        className="grid grid-cols-[minmax(0,1fr)_auto_5.5rem] items-center gap-3 text-sm border rounded-md px-3 py-2"
                                     >
-                                        <span className="font-mono">{setter.setter_name}</span>
-                                        <span className="text-muted-foreground">
-                                            {setter.state === "ready"
-                                                ? `ready · ${setter.quantized.toLocaleString()} vectors`
-                                                : `${setter.state} · ${setter.quantized.toLocaleString()}/${setter.vectors.toLocaleString()}`}
-                                            {setter.n_at_artifact != null &&
-                                                ` · artifact from ${setter.n_at_artifact.toLocaleString()}`}
-                                            {stale && " — rebuild recommended"}
+                                        <span className="font-mono truncate" title={setter.setter_name}>
+                                            {setter.setter_name}
                                         </span>
-                                        {setter.state === "ready" && (
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() =>
-                                                    rebuildMut.mutate({
-                                                        params: { query: dbs },
-                                                        body: {
-                                                            profile: profile.name,
-                                                            setter_name: setter.setter_name,
-                                                        },
-                                                    })
-                                                }
-                                            >
-                                                Rebuild
-                                            </Button>
-                                        )}
+                                        <span className="text-muted-foreground text-right tabular-nums whitespace-nowrap">
+                                            {setter.state === "ready"
+                                                ? `Ready · ${setter.quantized.toLocaleString()} vectors`
+                                                : `${setterStateLabel(setter.state)} · ${setter.quantized.toLocaleString()} / ${setter.vectors.toLocaleString()}`}
+                                            {stale && (
+                                                <span className="text-yellow-600 dark:text-yellow-500">
+                                                    {` · artifact from ${setter.n_at_artifact!.toLocaleString()} — rebuild recommended`}
+                                                </span>
+                                            )}
+                                        </span>
+                                        <div className="flex justify-end">
+                                            {setter.state === "ready" && (
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    disabled={rebuildMut.isPending}
+                                                    onClick={() =>
+                                                        rebuildMut.mutate({
+                                                            params: { query: dbs },
+                                                            body: {
+                                                                profile: profile.name,
+                                                                setter_name: setter.setter_name,
+                                                            },
+                                                        })
+                                                    }
+                                                >
+                                                    Rebuild
+                                                </Button>
+                                            )}
+                                        </div>
                                     </div>
                                 )
                             })}

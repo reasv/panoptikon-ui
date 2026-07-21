@@ -45,7 +45,7 @@ function GroupListInnner(
         value={currentTab}
         onValueChange={(value) => setSelectedTab(value)}
         defaultValue={groups[0].group_name}
-        className="rounded-lg border p-4"
+        className="rounded-lg border p-4 mt-4"
     >
         <TabsList>
             {groups.map((group) => (

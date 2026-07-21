@@ -2,6 +2,17 @@ import { ColumnDef } from "@tanstack/react-table"
 import { components } from "@/lib/panoptikon"
 import { Checkbox } from "@/components/ui/checkbox"
 
+// A job type the UI doesn't know falls back to its own wire name rather than
+// a placeholder: unhelpful, but at least it says which job is running.
+const jobTypeLabels: Record<string, string> = {
+    data_extraction: "Index Data Extraction",
+    data_deletion: "Index Data Deletion",
+    folder_rescan: "Folder Rescan",
+    folder_update: "Folder Update",
+    job_data_deletion: "Index Data Deletion (Job)",
+    vector_quant_reconcile: "Vector Quant Reconcile",
+}
+
 export const jobQueueColumns: ColumnDef<components["schemas"]["JobModel"]>[] = [
     {
         id: "select",
@@ -51,22 +62,8 @@ export const jobQueueColumns: ColumnDef<components["schemas"]["JobModel"]>[] = [
         accessorKey: "job_type",
         header: "Type",
         cell: ({ row }) => {
-            if (row.getValue("job_type") === "data_extraction") {
-                return "Index Data Extraction"
-            }
-            if (row.getValue("job_type") === "data_deletion") {
-                return "Index Data Deletion"
-            }
-            if (row.getValue("job_type") === "folder_rescan") {
-                return "Folder Rescan"
-            }
-            if (row.getValue("job_type") === "folder_update") {
-                return "Folder Update"
-            }
-            if (row.getValue("job_type") === "job_data_deletion") {
-                return "Index Data Deletion (Job)"
-            }
-            return "Mystery Job"
+            const jobType = row.getValue("job_type") as string
+            return jobTypeLabels[jobType] || jobType
         },
     },
     {
