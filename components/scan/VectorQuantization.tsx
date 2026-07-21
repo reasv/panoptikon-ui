@@ -123,6 +123,11 @@ export function VectorQuantization() {
     })
 
     const status = statusQuery.data
+    // A click creates the drift immediately but the job only shows up in the
+    // next poll, so cover the gap from the mutation itself: without this the
+    // very action that schedules a reconcile flashes "a reconcile is needed".
+    const reconcileScheduled =
+        status?.reconcile_scheduled || reconcileMut.isPending || rebuildMut.isPending
     const quants = effectiveQuantsConfig(config)
     const configured = new Set((quants.profiles || []).map((profile) => profile.name))
 
@@ -160,7 +165,7 @@ export function VectorQuantization() {
             description="Binary quant profiles that accelerate vector search (exact rescoring keeps result quality)"
             storageKey="vectorQuantization"
         >
-            {status?.reconcile_scheduled ? (
+            {reconcileScheduled ? (
                 // Every action that creates drift also enqueues the reconcile
                 // that clears it, so the common case is "already handled".
                 <div className="mt-4 rounded-lg border p-4 text-sm flex flex-row items-center gap-3 text-muted-foreground">
