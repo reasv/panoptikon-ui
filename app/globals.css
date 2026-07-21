@@ -3,10 +3,16 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* rem, not px: Tailwind 4 emits breakpoint media queries in the order the
+   theme values sort, and it only sorts values that share a unit. px-valued
+   breakpoints therefore land in their own group *before* the rem-valued
+   built-ins, so `2xl:` (96rem) would come later in the stylesheet and beat
+   `4xl:` (2200px) at widths where both match. Same numbers, rem units:
+   1920px, 2200px, 3000px at the 16px root size. */
 @theme {
-  --breakpoint-3xl: 1920px;
-  --breakpoint-4xl: 2200px;
-  --breakpoint-5xl: 3000px;
+  --breakpoint-3xl: 120rem;
+  --breakpoint-4xl: 137.5rem;
+  --breakpoint-5xl: 187.5rem;
 }
 
 /* Inline theme: utilities reference these vars at the element that uses
