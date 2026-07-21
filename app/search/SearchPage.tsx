@@ -143,6 +143,23 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
         // index past the end means these results are momentarily the wrong
         // ones, and wrapping would compare the selection against an unrelated
         // item and rewrite the index to match it
+        // This effect writes the index from the selection; the gallery writes
+        // the selection from the index. Two-way binding, and an effect always
+        // runs one step behind the store — so this can be queued for a
+        // selection the gallery has already replaced. Acting on that stale
+        // value moves the index back to where the *previous* item sits, the
+        // gallery answers by pushing the item now under the new index, and
+        // the two trade places forever.
+        //
+        // Nothing used to reach that state because every path here fetched:
+        // the results were stale meanwhile, which suppressed the gallery's
+        // push. A similarity swap now lands from cache with nothing in
+        // flight, so the tie has to be broken explicitly. The newer
+        // selection's own run of this effect is already queued behind us and
+        // will do the right thing with it.
+        if (useItemSelection.getState().selected?.file_id !== selectedItem?.file_id) {
+            return
+        }
         const index = Math.max(0, Math.min(qIndex || 0, results.length - 1))
         if (selectedItem && results[index] && selectedItem.file_id !== results[index].file_id) {
             const newIndex = results.findIndex((item) => item.file_id === selectedItem.file_id)
