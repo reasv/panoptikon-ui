@@ -9,7 +9,7 @@ import {
 import { Toggle } from "@/components/ui/toggle"
 import { X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { useEffect, useMemo, useRef } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useShallow } from "zustand/react/shallow"
 import { cn, getFileURL, getLocale } from "@/lib/utils"
 import { itemEquals, OpenDetailsButton } from "@/components/OpenFileDetails"
@@ -41,15 +41,39 @@ export function ImageGallery({
     items,
     totalPages,
     setPage,
+    resultsAreStale = false,
 }: {
     items: SearchResult[]
     totalPages: number
     setPage: (page: number) => Promise<void>
+    /** These results belong to a different page than the URL names — see useSearch */
+    resultsAreStale?: boolean
 }) {
     const [qIndex, setIndex] = useGalleryIndex()
     const [page] = useSearchPage()
-    const pageSize = usePageSize()[0]
-    const index = (qIndex || 0) % items.length
+    const pageSize = usePageSize()
+    // Clamp rather than wrap: an index past the end of the page addresses
+    // nothing, and wrapping round lands on a semantically unrelated item.
+    const urlIndex = Math.max(0, Math.min(qIndex || 0, items.length - 1))
+    // Hold still while the results don't match the URL. A page-size change
+    // rewrites the index and the size together, so for one render the new
+    // index addresses the old page — resolving it there would show a wrong
+    // item and (via the selection push below) make that wrong item stick.
+    // The held index is the same *item* the remap is moving to, so nothing
+    // visibly happens: the number changes underneath an unchanged picture.
+    //
+    // Adjusted during render rather than in an effect: a ref read while
+    // rendering is exactly what the React Compiler (on, see next.config.mjs)
+    // forbids, and this way the held value can never lag a commit behind.
+    // React re-runs the component immediately without committing, and the
+    // non-stale branch doesn't read it anyway, so the extra pass is free.
+    const [heldIndex, setHeldIndex] = useState(urlIndex)
+    if (!resultsAreStale && heldIndex !== urlIndex) {
+        setHeldIndex(urlIndex)
+    }
+    const index = resultsAreStale
+        ? Math.max(0, Math.min(heldIndex, items.length - 1))
+        : urlIndex
     const nextImage = () => {
         if (index === (items.length - 1)) {
             if (page < totalPages) {
@@ -80,11 +104,14 @@ export function ImageGallery({
     const [selectedItem, setSelectedItem] = useItemSelection(useShallow((state) => [state.getSelected(), state.setItem]))
     useEffect(() => {
         // items[index] can be undefined while results and the gallery index
-        // are transiently out of sync (setItem would throw on undefined)
-        if (items[index]) {
+        // are transiently out of sync (setItem would throw on undefined).
+        // Stale results are skipped outright: publishing an item resolved
+        // against the wrong page makes the selection→index effect in
+        // SearchPage rewrite gi to wherever that item happens to land.
+        if (!resultsAreStale && items[index]) {
             setSelectedItem(items[index])
         }
-    }, [index, items])
+    }, [index, items, resultsAreStale])
 
     const params = useSearchParams()
     const [prevImageLink, nextImageLink] = useMemo(() => {

@@ -26,7 +26,7 @@ import { PinboardLibraryButton } from '@/components/gallery/PinboardLibrary'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { usePinboardURLLoader } from '@/lib/pinboardLinks'
 import { ImageSimilarityHeader } from '@/components/ImageSimilarityHeader'
-import { mintSeed, useOrderBy, useQueryOptions, useRandomSeed, useStampRandomSeed } from "@/lib/state/searchQuery/clientHooks"
+import { mintSeed, useOrderBy, usePageSize, useQueryOptions, useRandomSeed, useStampRandomSeed } from "@/lib/state/searchQuery/clientHooks"
 import Link from "next/link"
 import { useScanDrawerOpen } from "@/lib/state/scanDrawer"
 import { ScanDrawer } from "@/components/scan/ScanDrawer"
@@ -63,7 +63,7 @@ export function SearchPageContent({ initialQuery, isRestrictedMode }:
 
 export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVisible = false }:
     { initialQuery: SearchQueryArgs, isRestrictedMode: boolean, updateRibbonVisible?: boolean }) {
-    const { data, error, isError, refetch, isFetching, nResults, page, pageSize, setPage, searchEnabled, getPageURL } = useSearch({ initialQuery })
+    const { data, error, isError, refetch, isFetching, resultsAreStale, nResults, page, pageSize, setPage, searchEnabled, getPageURL } = useSearch({ initialQuery })
     const { toast } = useToast()
     // Random ordering is now a stable shuffle pinned by a seed, so refetching
     // deliberately returns the *same* results — that stability is the point.
@@ -103,10 +103,16 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     const instantSearch = useInstantSearch((state) => state.enabled)
     useEffect(() => {
         if (!instantSearch && searchEnabled) {
-            // Make pagination work if the user has disabled instant search
+            // Make pagination work if the user has disabled instant search.
+            // Page size belongs here for the same reason the page number does:
+            // instant-search-off exists to stop queries firing while the
+            // *query* is being edited, and both of these navigate within the
+            // results of a query that is already committed. Mostly a fallback
+            // — the prefetch in useCommitPageSize means react-query usually
+            // has the new page in hand before this runs.
             refetch()
         }
-    }, [page])
+    }, [page, pageSize])
     const totalPages = pageSize > 0 ? (Math.ceil((nResults || 1) / (pageSize)) || 1) : 1
     const [qIndex, setIndex] = useGalleryIndex()
     const results = data?.results || []
@@ -133,7 +139,11 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
         if (qIndex === null) {
             return
         }
-        const index = (qIndex || 0) % results.length
+        // Clamped, not wrapped, for the same reason as in the gallery: an
+        // index past the end means these results are momentarily the wrong
+        // ones, and wrapping would compare the selection against an unrelated
+        // item and rewrite the index to match it
+        const index = Math.max(0, Math.min(qIndex || 0, results.length - 1))
         if (selectedItem && results[index] && selectedItem.file_id !== results[index].file_id) {
             const newIndex = results.findIndex((item) => item.file_id === selectedItem.file_id)
             if (newIndex !== -1 && newIndex !== index) {
@@ -151,6 +161,17 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     // Survives the grid unmounting while the gallery is open, so the grid can
     // restore its exact scroll position when the gallery closes
     const gridScrollOffsetRef = useRef(0)
+    // A pixel offset describes one specific layout of one specific page. Once
+    // the page or the page size changes it describes a layout that no longer
+    // exists, and it *wins* over the URL anchor on restore — so drop it and
+    // let the anchor (which is an item index, and has been remapped) decide.
+    // The URL's page size, not useSearch's — that one trails the request
+    // throttle, which would leave the offset alive for the window in which
+    // closing the gallery could restore it.
+    const urlPageSize = usePageSize()
+    useEffect(() => {
+        gridScrollOffsetRef.current = 0
+    }, [page, urlPageSize])
     return (
         <>
             <SearchErrorToast noFtsErrors={options.e_iss} isError={isError} error={error} />
@@ -188,6 +209,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                         items={results}
                         totalPages={totalPages}
                         setPage={setPage}
+                        resultsAreStale={resultsAreStale}
                     />
                     :
                     <GridPanel
@@ -197,6 +219,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                         countMetrics={data?.count_metrics}
                         onImageClick={(index) => setIndex(index !== undefined ? index : null)}
                         isLoading={loading}
+                        resultsAreStale={resultsAreStale}
                         showPagination={showPagination}
                         savedScrollOffsetRef={gridScrollOffsetRef}
                         updateRibbonVisible={updateRibbonVisible}
@@ -274,6 +297,7 @@ export function GridPanel({
     countMetrics,
     onImageClick,
     isLoading,
+    resultsAreStale = false,
     showPagination = true,
     savedScrollOffsetRef,
     updateRibbonVisible = false,
@@ -284,6 +308,7 @@ export function GridPanel({
     totalCount: number,
     onImageClick?: (index?: number) => void,
     isLoading?: boolean,
+    resultsAreStale?: boolean,
     showPagination?: boolean,
     savedScrollOffsetRef?: React.MutableRefObject<number>,
     updateRibbonVisible?: boolean,
@@ -360,6 +385,7 @@ export function GridPanel({
                     results={results}
                     onImageClick={onImageClick}
                     isLoading={isLoading}
+                    resultsAreStale={resultsAreStale}
                     showPagination={showPagination}
                     savedScrollOffsetRef={savedScrollOffsetRef}
                     updateRibbonVisible={updateRibbonVisible}
@@ -373,6 +399,7 @@ export function ResultGrid({
     results,
     onImageClick,
     isLoading,
+    resultsAreStale = false,
     showPagination = true,
     savedScrollOffsetRef,
     updateRibbonVisible = false,
@@ -380,6 +407,7 @@ export function ResultGrid({
     results: SearchResult[],
     onImageClick?: (index?: number) => void,
     isLoading?: boolean,
+    resultsAreStale?: boolean,
     showPagination?: boolean,
     savedScrollOffsetRef?: React.MutableRefObject<number>,
     updateRibbonVisible?: boolean,
@@ -482,6 +510,13 @@ export function ResultGrid({
     const restoredScroll = useRef(false)
     useEffect(() => {
         if (restoredScroll.current || rowCount === 0) return
+        // Mounting onto results that aren't ours yet: closing the gallery
+        // during a page-size remap lands here with the anchor already remapped
+        // and the previous page still rendered. Restoring against it would
+        // take the stale-anchor branch below and *delete* the position we just
+        // computed. restoredScroll stays false, so this runs again on the
+        // results it belongs to.
+        if (resultsAreStale) return
         restoredScroll.current = true
         // From here on the current URL anchor is accounted for: the external-
         // change effect below must only react to values arriving later
@@ -537,25 +572,32 @@ export function ResultGrid({
             ensureVisible()
             requestAnimationFrame(ensureVisible)
         })
-    }, [rowCount, columns, results, selected, virtualizer, savedScrollOffsetRef, rowEstimate, scrollAnchor, setScrollAnchor])
+    }, [rowCount, columns, results, selected, virtualizer, savedScrollOffsetRef, rowEstimate, scrollAnchor, setScrollAnchor, resultsAreStale])
 
     // Anchor values we didn't write ourselves arrive from history navigation
     // (back/forward restoring the entry's anchor) or from a query change
     // clearing it: move the grid to match. Our own scroll-stop writes echo
     // back as scrollAnchor === lastWrittenAnchor and are ignored, so plain
     // scrolling never re-enters here.
+    // An anchor is only *applied* — and only then recorded as written — once it
+    // has been applied against results it actually belongs to. A page-size
+    // change can put an anchor beyond the end of the previous page, which
+    // keepPreviousData is still rendering: clamping it to that shorter list
+    // and marking it done would scroll to the wrong row and leave the correct
+    // results unable to move the grid, since the effect would never re-fire.
     useEffect(() => {
         if (!restoredScroll.current) return
         if (scrollAnchor === lastWrittenAnchor.current) return
-        lastWrittenAnchor.current = scrollAnchor
         if (columns <= 0 || rowCount === 0) return
+        if (resultsAreStale) return
+        lastWrittenAnchor.current = scrollAnchor
         if (scrollAnchor === null || scrollAnchor <= 0) {
             virtualizer.scrollToOffset(0)
         } else {
             const clamped = Math.min(scrollAnchor, results.length - 1)
             virtualizer.scrollToIndex(Math.floor(clamped / columns), { align: 'start' })
         }
-    }, [scrollAnchor, columns, rowCount, results.length, virtualizer])
+    }, [scrollAnchor, columns, rowCount, results.length, virtualizer, resultsAreStale])
 
     return (
         <ScrollAreaPrimitive.Root className="relative overflow-hidden">

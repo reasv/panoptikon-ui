@@ -1,25 +1,22 @@
-import {
-  keepPreviousData,
-  QueryClient,
-  useQueryClient,
-} from "@tanstack/react-query"
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query"
 import { $api, fetchClient } from "./api"
 import { useSelectedDBs } from "./state/database"
 import { useBookmarkNs, useInstantSearch, useSearchLoading } from "./state/zust"
 import { SearchQueryArgs } from "@/app/search/queryFns"
 import {
+  usePageSizeRaw,
   useQueryOptions,
   useSearchPage,
+  useSearchPageRaw,
   useSearchQuery,
-  useSearchQueryState,
 } from "./state/searchQuery/clientHooks"
 import { components } from "./panoptikon"
 import { getSearchPageURL } from "./state/searchQuery/serializers"
 import { usePartitionBy } from "./state/partitionBy"
-import { useEffect } from "react"
-import { queryFromState } from "./state/searchQuery/searchQuery"
+import { useEffect, useRef } from "react"
 import { useThrottledValue } from "./useThrottledValue"
-import { usePinboardMaximized } from "./state/gallery"
+import { useGalleryIndex, usePinboardMaximized } from "./state/gallery"
+import { useGridScrollAnchor } from "./state/gridScroll"
 import { useClientConfig } from "./useClientConfig"
 
 // Server-side prefetching is worth it exactly when the query cost does not
@@ -34,6 +31,8 @@ import { useClientConfig } from "./useClientConfig"
 // into a page count (`floor(320 / size) - 1`), which lost rows to rounding —
 // at page size 100 it asked for 300, not 320.
 const VECTOR_PREFETCH_ROW_BUDGET = 320
+// Any value would do — see the count query below.
+const COUNT_QUERY_PAGE_SIZE = 10
 const VECTOR_FILTER_KEYS = new Set([
   "image_embeddings",
   "text_embeddings",
@@ -98,7 +97,8 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   // page_size is optional in the spec (server default 10); the query
   // builders always set it, but the type can't promise that.
   const pageSize = request.body.page_size ?? 10
-  const { data, error, isError, refetch, isFetching } = $api.useQuery(
+  const queryEnabled = searchEnabled && instantSearch && !pinboardMaximized
+  const { data, error, isError, refetch, isFetching, isPlaceholderData } = $api.useQuery(
     "post",
     "/api/search/pql",
     {
@@ -117,7 +117,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
       },
     },
     {
-      enabled: searchEnabled && instantSearch && !pinboardMaximized,
+      enabled: queryEnabled,
       placeholderData: keepPreviousData,
     }
   )
@@ -131,12 +131,17 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
       body: {
         ...request.body,
         page: 1,
+        // Counts are compiled without pagination and cached under a
+        // pagination-free key server-side, so the page size cannot change the
+        // answer. Pinned to a constant so a page-size change doesn't re-key
+        // this query and cost a round trip for a value we already have.
+        page_size: COUNT_QUERY_PAGE_SIZE,
         results: false,
         count: true,
       },
     },
     {
-      enabled: searchEnabled && instantSearch && !pinboardMaximized,
+      enabled: queryEnabled,
       placeholderData: keepPreviousData,
     }
   )
@@ -157,38 +162,34 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     return () => clearTimeout(timer)
   }, [isFetching])
 
-  const queryClient = useQueryClient()
-  const prefetchSearch = async (searchRequest: SearchQueryArgs) => {
-    const timer = setTimeout(() => setLoading(true), 400)
-    await queryClient.prefetchQuery({
-      queryKey: ["post", "/api/search/pql", searchRequest],
-      queryFn: () => fetchSearch(searchRequest),
-    })
-    clearTimeout(timer)
-    setLoading(false)
-  }
+  const prefetchPageState = usePrefetchPageState()
   const setPagePrefetch = async (newPage: number) => {
-    // Built from the live request: after setPage the throttle propagates the
-    // live content on its leading edge, so this is the key the query will use
-    const searchRequest = {
-      params: {
-        query: {
-          ...liveRequest.dbs,
-          include_bookmarks: true,
-          bookmarks_namespace: liveRequest.bookmarkNs,
-        },
-      },
-      body: {
-        ...liveRequest.body,
-        page: newPage,
-        results: true,
-        count: false,
-        prefetch_rows: prefetchRowsFor(liveRequest.body.query),
-      },
-    }
-    await prefetchSearch(searchRequest)
+    // Warm the cache for the page being turned to before the URL says we are
+    // on it, so the flip and the results swap land in the same render
+    await prefetchPageState({ page: newPage })
     setPage(newPage)
   }
+
+  // Do the results in hand belong to the page the URL currently names?
+  //
+  // Two ways they can't. react-query's keepPreviousData keeps the last page
+  // rendered while a new key loads (isPlaceholderData). And the throttle
+  // propagates in an effect, so even a fully cached page arrives one render
+  // after the URL moved — a warm cache shortens that window but cannot remove
+  // it. Anything that positions itself *within* the results (the grid's scroll
+  // anchor, the gallery's index) must sit still until this is false, or it
+  // resolves a position against rows that don't correspond to it.
+  //
+  // `isPlaceholderData` needs the fetching guard: a disabled query (instant
+  // search off, invalid input, maximized board) still swaps to placeholder
+  // data when its key changes, and with nothing in flight it stays there
+  // forever. Left ungated, editing the query with instant search off would
+  // freeze the gallery and the grid anchor until the user pressed Enter.
+  const livePageSize = liveRequest.body.page_size ?? 10
+  const resultsAreStale =
+    (isPlaceholderData && (queryEnabled || isFetching)) ||
+    request.body.page !== liveRequest.body.page ||
+    pageSize !== livePageSize
 
   const nResults = countQuery.data?.count || 0
   return {
@@ -202,6 +203,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     isError,
     refetch: refetchAll,
     isFetching,
+    resultsAreStale,
     nResults,
     page,
     pageSize,
@@ -230,42 +232,189 @@ export async function fetchSearch(args: SearchQueryArgs) {
   }
 }
 
-export function usePrefetchSearch() {
-  const queryClient = new QueryClient()
-  const searchQueryState = useSearchQueryState()
+/** A page of results to move to: a page number, optionally at a new size. */
+interface PageState {
+  page: number
+  /** Omitted means "whatever the URL currently says". */
+  pageSize?: number
+}
+
+/**
+ * Builds the results request for a page state, from the same URL state
+ * `useSearch` derives its live query from — so the key this produces is the
+ * key that query will use once the URL catches up. That identity is the whole
+ * point of prefetching: build it anywhere else and the warmed entry is dead
+ * weight under a key nothing reads.
+ */
+function useSearchRequestFor(): (target: PageState) => SearchQueryArgs {
+  const searchQuery = useSearchQuery()
   const dbs = useSelectedDBs()[0]
   const bookmarkNs = useBookmarkNs((state) => state.namespace)
   const [partitionBy] = usePartitionBy()
+  return ({ page, pageSize }) => ({
+    params: {
+      query: {
+        ...dbs,
+        include_bookmarks: true,
+        bookmarks_namespace: bookmarkNs,
+      },
+    },
+    body: {
+      ...searchQuery,
+      ...(pageSize !== undefined ? { page_size: pageSize } : {}),
+      page,
+      partition_by: partitionBy.partition_by,
+      results: true,
+      count: false,
+      prefetch_rows: prefetchRowsFor(searchQuery.query),
+    },
+  })
+}
+
+/**
+ * Warm the react-query cache for a page state before the URL moves to it.
+ * Standalone (not a `useSearch` return value) because the page-size control
+ * lives in the sidebar, outside the component that runs the search.
+ */
+export function usePrefetchPageState() {
+  const queryClient = useQueryClient()
+  const buildRequest = useSearchRequestFor()
   const setLoading = useSearchLoading((state) => state.setLoading)
-  const prefetchSearch = async (searchRequest: SearchQueryArgs) => {
+  return async (target: PageState) => {
+    const searchRequest = buildRequest(target)
     const timer = setTimeout(() => setLoading(true), 400)
-    await queryClient.prefetchQuery({
-      queryKey: ["post", "/api/search/pql", searchRequest],
-      queryFn: () => fetchSearch(searchRequest),
-    })
-    clearTimeout(timer)
-    setLoading(false)
-  }
-  const prefetchSearchPage = async (page: number) => {
-    const searchQuery = queryFromState(searchQueryState)[0]
-    const searchRequest = {
-      params: {
-        query: {
-          ...dbs,
-          include_bookmarks: true,
-          bookmarks_namespace: bookmarkNs,
-        },
-      },
-      body: {
-        ...searchQuery,
-        results: true,
-        count: false,
-        partition_by: partitionBy.partition_by as any,
-        page,
-        prefetch_rows: prefetchRowsFor(searchQuery.query),
-      },
+    try {
+      await queryClient.prefetchQuery({
+        queryKey: ["post", "/api/search/pql", searchRequest],
+        queryFn: () => fetchSearch(searchRequest),
+      })
+    } finally {
+      clearTimeout(timer)
+      setLoading(false)
     }
-    await prefetchSearch(searchRequest)
   }
-  return prefetchSearchPage
+}
+
+/**
+ * An in-page index, brought inside a page of `pageSize` rows. A page size
+ * below 1 is a single unbounded page, so nothing to clamp against.
+ */
+function clampToPage(index: number, pageSize: number): number {
+  const floored = Math.max(index, 0)
+  return pageSize >= 1 ? Math.min(floored, pageSize - 1) : floored
+}
+
+/**
+ * Where the item at `anchor` on the current page lands once the page size
+ * becomes `nextPageSize`. The global index of a result is
+ * `(page - 1) * page_size + index_in_page` and that mapping is page-size
+ * independent on this backend (pagination is appended to pagination-free SQL,
+ * never compiled into it), so the item is simply re-expressed in the new
+ * geometry — see docs/page-size-remap-design.md.
+ *
+ * A page size below 1 means "no pagination", which is treated as a single
+ * unbounded page rather than special-cased: both directions then fall out of
+ * the same arithmetic.
+ */
+export function remapPageAnchor({
+  page,
+  pageSize,
+  nextPageSize,
+  anchor,
+}: {
+  page: number
+  pageSize: number
+  nextPageSize: number
+  anchor: number
+}): { page: number; index: number } {
+  const oldSize = pageSize >= 1 ? pageSize : Infinity
+  const newSize = nextPageSize >= 1 ? nextPageSize : Infinity
+  const oldPage = oldSize === Infinity ? 1 : Math.max(page, 1)
+  const index = Math.max(anchor, 0)
+  // Guarded rather than written as `(oldPage - 1) * oldSize`: that is
+  // `0 * Infinity` — NaN — on the unpaginated page.
+  const global = oldPage > 1 ? (oldPage - 1) * oldSize + index : index
+  if (newSize === Infinity) return { page: 1, index: global }
+  return { page: Math.floor(global / newSize) + 1, index: global % newSize }
+}
+
+/**
+ * Change the page size while keeping the user on the same item.
+ *
+ * Prefetch first, then write: the results should be in hand by the time the
+ * URL names them. It still isn't atomic — the request throttle propagates in
+ * an effect, so the query key trails the URL by a commit either way — which is
+ * what `resultsAreStale` is for.
+ *
+ * Every write is `history: "replace"`, and explicitly so on each one — nuqs
+ * escalates the whole batch to `push` if any member asks for it. None of
+ * these are navigation: they are one position re-expressed at a new page
+ * size, the same reasoning that already makes the grid anchor replace-mode.
+ * The cost is that Back no longer undoes a page-size change.
+ */
+export function useCommitPageSize() {
+  const prefetch = usePrefetchPageState()
+  const [page, setPage] = useSearchPageRaw()
+  const [pageSize, setPageSize] = usePageSizeRaw()
+  const [galleryIndex, setGalleryIndex] = useGalleryIndex()
+  const [scrollAnchor, setScrollAnchor] = useGridScrollAnchor()
+  // The target of a commit that has been computed but not yet written, so a
+  // second click during the first one's prefetch composes onto it instead of
+  // remapping from the same base twice. The +/- buttons commit per click, so
+  // two clicks inside one round trip is ordinary use, not an edge case.
+  const inFlight = useRef<{
+    page: number
+    pageSize: number
+    index: number
+  } | null>(null)
+  return async (nextPageSize: number) => {
+    const base = inFlight.current ?? {
+      page,
+      pageSize,
+      // The position to preserve: the open gallery's item, or the grid's
+      // scroll anchor (absent while the top row is still visible, hence the
+      // 0). Clamped into the current page, so a hand-written or stale URL
+      // whose index points past the end remaps from the item actually on
+      // screen — both surfaces clamp for display — rather than from a global
+      // index pages away from it.
+      index: clampToPage(
+        galleryIndex !== null ? galleryIndex : scrollAnchor ?? 0,
+        pageSize
+      ),
+    }
+    if (nextPageSize === base.pageSize) return
+    const target = remapPageAnchor({
+      page: base.page,
+      pageSize: base.pageSize,
+      nextPageSize,
+      anchor: base.index,
+    })
+    const token = { page: target.page, pageSize: nextPageSize, index: target.index }
+    inFlight.current = token
+    await prefetch({ page: target.page, pageSize: nextPageSize })
+    // A later click superseded this one while its prefetch was in the air:
+    // that call owns the write, and it already composed onto this target.
+    if (inFlight.current !== token) return
+    inFlight.current = null
+    const replace = { history: "replace" as const }
+    // Written in one tick so nuqs coalesces them into a single URL update —
+    // one history entry, one render, one query. Unchanged values are skipped:
+    // a setter called with what it already holds can still produce a history
+    // entry for an identical URL.
+    // Compared against the live params, not `base`: when this commit composed
+    // onto an in-flight one, that one's writes never happened, so `base` names
+    // a page the URL was never on. Skipping on it drops a write that is not a
+    // no-op and strands the URL on the old page.
+    const writes: Promise<unknown>[] = []
+    if (target.page !== page) writes.push(setPage(target.page, replace))
+    if (galleryIndex !== null && target.index !== galleryIndex) {
+      writes.push(setGalleryIndex(target.index, replace))
+    }
+    // Set even with the gallery open: the grid is unmounted then, and this is
+    // what puts it back in the right place on close.
+    const nextAnchor = target.index > 0 ? target.index : null
+    if (nextAnchor !== scrollAnchor) writes.push(setScrollAnchor(nextAnchor, replace))
+    writes.push(setPageSize(nextPageSize, replace))
+    await Promise.all(writes)
+  }
 }

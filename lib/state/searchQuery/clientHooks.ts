@@ -154,20 +154,43 @@ export function useEmbedArgs(): [
   ]
 }
 
-export function usePageSize(): [number, SetFn<number>] {
-  const [state, set] = useQueryState("page_size", pageSizeKey(def as any))
-  return [state, useResetPage(set)] as const
+/**
+ * The raw `page_size` param. No position handling of any kind — see
+ * `useCommitPageSize` (lib/searchHooks), the one path that should write it
+ * outside a full search reset.
+ */
+export function usePageSizeRaw() {
+  return useQueryState("page_size", pageSizeKey(def as any))
+}
+
+/**
+ * Read-only on purpose. A page-size change is not a query change: the result
+ * set is identical and only the window onto it moves, so the user's position
+ * is remapped rather than reset (docs/page-size-remap-design.md). Handing out
+ * a bare setter here would make the resetting version the easy one to reach.
+ */
+export function usePageSize(): number {
+  return usePageSizeRaw()[0]
+}
+
+/**
+ * The raw `page` param: no side effects, and `options` reaches nuqs so the
+ * caller can choose the history mode. The remap writes through this — it is
+ * carrying the position across, not abandoning it.
+ */
+export function useSearchPageRaw() {
+  return useQueryState("page", pageKey(def as any))
 }
 
 export function useSearchPage(): [number, SetFn<number>] {
-  const [state, set] = useQueryState("page", pageKey(def as any))
+  const [state, set] = useSearchPageRaw()
   const [gi, setGi] = useGalleryIndex()
   const setAnchor = useGridScrollAnchor()[1]
-  const setState: SetFn<number> = (newOptions) => {
+  const setState: SetFn<number> = (newOptions, options) => {
     if (gi && gi > 0) setGi(0)
     // A new page starts at the top — drop the previous page's scroll anchor
     setAnchor(null)
-    return set(newOptions)
+    return set(newOptions, options)
   }
   return [state, setState] as const
 }
