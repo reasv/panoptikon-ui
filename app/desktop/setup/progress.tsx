@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { components } from "@/lib/panoptikon"
 import { openPanoptikonPage } from "./open-panoptikon-page"
+import { ServerAddress } from "./server-address"
 
 type Job = components["schemas"]["JobModel"]
 type Completion = components["schemas"]["DesktopSetupCompleteResponse"]
@@ -93,6 +94,7 @@ export function WizardProgress({ completion }: { completion: Completion }) {
       )}
 
       {queueError && <p className="text-sm text-destructive" role="alert">{queueError}</p>}
+      <ServerAddress />
       <div className="grid gap-3 sm:grid-cols-2">
         <Button size="lg" onClick={() => openPage("search")}><Search className="mr-2 h-4 w-4" />Open Search<ExternalLink className="ml-2 h-3.5 w-3.5 opacity-70" /></Button>
         <Button size="lg" variant="outline" onClick={() => openPage("scan")}><Settings2 className="mr-2 h-4 w-4" />Open Scan and job details<ExternalLink className="ml-2 h-3.5 w-3.5 opacity-70" /></Button>
