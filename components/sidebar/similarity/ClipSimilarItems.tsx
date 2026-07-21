@@ -6,9 +6,11 @@ import { useItemSelection } from "@/lib/state/itemSelection"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useSBClipSimilarity, useSBClipSimilarityTextSrc, useSBSimilarityPageArgs, useSBSimilarityQuery } from "@/lib/state/searchQuery/clientHooks"
 import { ItemSimilaritySearchOptions } from "../options/itemSimilarity/similaritySearchOptions"
+import { pickDefaultEmbeddingModel } from "@/lib/embeddingModels"
 
 export function ClipItemSimilarity() {
-    const sha256 = useItemSelection((state) => state.getSelected()?.sha256)
+    const selected = useItemSelection((state) => state.getSelected())
+    const sha256 = selected?.sha256
 
     const [dbs, ___] = useSelectedDBs()
     const { data } = $api.useQuery("get", "/api/search/stats", {
@@ -18,7 +20,9 @@ export function ClipItemSimilarity() {
     })
     const clipSetters = data?.setters.filter((setter) => setter[0] === "clip").map((setter) => setter[1]) || []
     const [filter, setFilter] = useSBClipSimilarity()
-    const model = filter.model.length > 0 ? filter.model : clipSetters[0] || ""
+    const model = filter.model.length > 0
+        ? filter.model
+        : pickDefaultEmbeddingModel(clipSetters, selected?.type)
     const [srcFilter, setSrcFilter] = useSBClipSimilarityTextSrc()
     const { clip } = useSBSimilarityQuery()
     const [pageArgs, setPageArgs] = useSBSimilarityPageArgs()

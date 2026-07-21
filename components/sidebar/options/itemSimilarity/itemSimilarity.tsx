@@ -7,12 +7,15 @@ import { SimilarityTarget } from "./similarityTarget"
 import { $api } from "@/lib/api"
 import { useSelectedDBs } from "@/lib/state/database"
 import { Switch } from "@/components/ui/switch"
+import { useItemSelection } from "@/lib/state/itemSelection"
+import { pickDefaultEmbeddingModel } from "@/lib/embeddingModels"
 
 export function ItemSimilarityWrapper() {
     const [options, setOptions] = useQueryOptions()
     const [filter, setFilter] = useItemSimilaritySearch()
     const [srcFilter, setSrcFilter] = useItemSimilarityTextSource()
     const [dbs, ___] = useSelectedDBs()
+    const selected = useItemSelection((state) => state.getSelected())
     const { data } = $api.useQuery("get", "/api/search/stats", {
         params: {
             query: dbs
@@ -29,7 +32,7 @@ export function ItemSimilarityWrapper() {
                 .filter(setter => !setter[1].startsWith("tclip/"))
                 .map((setter) => ({ value: setter[1], label: setter[1] })) || [])
         ]
-        const model = models.length > 0 ? models[0].value : ""
+        const model = pickDefaultEmbeddingModel(models.map((m) => m.value), selected?.type)
         if (option === "L2") {
             setFilter({ distance_function: "L2", model }, { history: "push" })
         } else if (option === "COSINE") {
@@ -43,7 +46,7 @@ export function ItemSimilarityWrapper() {
                 .filter(setter => !setter[1].startsWith("tclip/"))
                 .map((setter) => ({ value: setter[1], label: setter[1] })) || [])
         ]
-        const model = models.length > 0 ? models[0].value : ""
+        const model = pickDefaultEmbeddingModel(models.map((m) => m.value), selected?.type)
         if (models.length === 0) {
             return
         }
