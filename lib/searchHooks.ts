@@ -1,4 +1,4 @@
-import { keepPreviousData, useQueryClient } from "@tanstack/react-query"
+import { hashKey, keepPreviousData, useQueryClient } from "@tanstack/react-query"
 import { $api, fetchClient } from "./api"
 import { useSelectedDBs } from "./state/database"
 import { useBookmarkNs, useInstantSearch, useSearchLoading } from "./state/zust"
@@ -31,8 +31,10 @@ import { useClientConfig } from "./useClientConfig"
 // into a page count (`floor(320 / size) - 1`), which lost rows to rounding —
 // at page size 100 it asked for 300, not 320.
 const VECTOR_PREFETCH_ROW_BUDGET = 320
-// Any value would do — see the count query below.
-const COUNT_QUERY_PAGE_SIZE = 10
+// Any value would do — see the count query below. Exported because the
+// sidebar's similarity count query has to pin the same one: a count that
+// differs only in page size is a cache miss for a value already in hand.
+export const COUNT_QUERY_PAGE_SIZE = 10
 const VECTOR_FILTER_KEYS = new Set([
   "image_embeddings",
   "text_embeddings",
@@ -53,6 +55,34 @@ export function prefetchRowsFor(
   return hasVectorFilter(query) ? VECTOR_PREFETCH_ROW_BUDGET : 0
 }
 
+/**
+ * The query the update lock considers *committed*, as a request hash.
+ *
+ * With the lock off there is nothing to withhold, so the live query is always
+ * the committed one — which also means that turning the lock on freezes
+ * exactly what is on screen. With the lock on, the committed query only moves
+ * when something calls `commit()`: an edit in the sidebar changes the live
+ * query without committing it, and the search stays where it was.
+ *
+ * Derived during render rather than in an effect. An effect would leave one
+ * render gating the search on a stale answer, and that render is visible: it
+ * is either a query that fires when it shouldn't or a results pane that
+ * blanks when it shouldn't.
+ */
+function useCommittedQueryKey(
+  liveKey: string,
+  instantSearch: boolean,
+  commitToken: number
+): string {
+  const committed = useRef(liveKey)
+  const seenToken = useRef(commitToken)
+  if (instantSearch || seenToken.current !== commitToken) {
+    committed.current = liveKey
+  }
+  seenToken.current = commitToken
+  return committed.current
+}
+
 export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const isClient = typeof window !== "undefined"
   const searchQueryState = useSearchQuery()
@@ -67,6 +97,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const [page, setPage] = useSearchPage()
   const searchEnabled = useQueryOptions()[0].s_enable
   const instantSearch = useInstantSearch((state) => state.enabled)
+  const commitToken = useInstantSearch((state) => state.commitToken)
   // A maximized board hides every consumer of these results, so running the
   // search buys nothing — and for an embedding query it costs a model load.
   // keepPreviousData below means whatever was fetched before maximizing
@@ -97,7 +128,15 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   // page_size is optional in the spec (server default 10); the query
   // builders always set it, but the type can't promise that.
   const pageSize = request.body.page_size ?? 10
-  const queryEnabled = searchEnabled && instantSearch && !pinboardMaximized
+  // Gated on the *live* request, not the throttled one: the throttle trails
+  // by a render, and during that render the query key is still the previously
+  // committed one — already in cache, so leaving it enabled costs nothing.
+  const liveKey = hashKey([liveRequest])
+  const committedKey = useCommittedQueryKey(liveKey, instantSearch, commitToken)
+  const queryEnabled =
+    searchEnabled &&
+    (instantSearch || committedKey === liveKey) &&
+    !pinboardMaximized
   const { data, error, isError, refetch, isFetching, isPlaceholderData } = $api.useQuery(
     "post",
     "/api/search/pql",

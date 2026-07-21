@@ -68,6 +68,7 @@ export function ClipItemSimilarity() {
                         filterOptions={filter}
                         distance_function={"COSINE"}
                         sha256={sha256}
+                        displayCount={pageArgs.page_size_clip}
                         query={clip(sha256, model)}
                     />)}
             </div>

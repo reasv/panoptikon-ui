@@ -11,6 +11,7 @@ import { components } from '@/lib/panoptikon'
 import { OrderArgsType, orderByType } from '@/lib/state/searchQuery/searchQueryKeyMaps'
 import { Button } from '../ui/button'
 import { partitionBySerializer, usePartitionBy } from '@/lib/state/partitionBy'
+import { useInstantSearch } from '@/lib/state/zust'
 import { serializers } from '@/lib/state/searchQuery/serializers'
 import { cn } from '@/lib/utils'
 
@@ -130,6 +131,7 @@ export function FindButton({
     const [orderArgs, setOrderArgs] = useOrderArgs()
     const [options, setOptions] = useQueryOptions()
     const [filter, setFilter] = useFileFilters()
+    const commit = useInstantSearch((state) => state.commit)
     const dbs = useSelectedDBs()[0]
     const getNavigationData = async () => {
         console.log("Getting navigation data")
@@ -218,7 +220,7 @@ export function FindButton({
         return fullURL
     }
 
-    const navigate = ({
+    const navigate = async ({
         folder,
         page,
         index,
@@ -228,23 +230,30 @@ export function FindButton({
     }: NavigationData
     ) => {
         console.log(`Navigating to folder ${folder}, page ${page}, index ${index}`)
-        // Unset all search query parameters
-        resetSearch()
-        setFilter({
-            paths: [folder],
-        }, {
-            history: "push",
-        })
-        setOptions({
-            e_path: true,
-        }, { history: "push" })
-        setOrderArgs({
-            order_by,
-            order,
-            page,
-            page_size,
-        }, { history: "push" })
-        setIndex(index, { history: "push" })
+        // Awaited as a batch so the URL holds this query before `commit()`
+        // declares it one to run: navigating to a folder is a committed
+        // query, not a query being edited, so the update lock must not
+        // swallow it.
+        await Promise.all([
+            // Unset all search query parameters
+            resetSearch(),
+            setFilter({
+                paths: [folder],
+            }, {
+                history: "push",
+            }),
+            setOptions({
+                e_path: true,
+            }, { history: "push" }),
+            setOrderArgs({
+                order_by,
+                order,
+                page,
+                page_size,
+            }, { history: "push" }),
+            setIndex(index, { history: "push" }),
+        ])
+        commit()
         toast({
             title: "Navigating to folder...",
             description: `${folder}`,
@@ -260,7 +269,7 @@ export function FindButton({
             })
             return
         }
-        navigate(data)
+        await navigate(data)
     }
     const [link, setLink] = React.useState<string | null>(null)
     // Reset the link when the id or path changes

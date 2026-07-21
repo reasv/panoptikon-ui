@@ -494,7 +494,47 @@ function sourceFilters(source: components["schemas"]["SourceArgs"]) {
   return null
 }
 
-export function sbSimilarityQueryFromState(state: SimilaritySideBarComponents) {
+/**
+ * Ceiling on the row count a sidebar similarity query fetches, however large
+ * the main search's page is. Set to the vector prefetch budget: the server
+ * caches that many rows as spans anyway, so the sidebar never asks for more
+ * than one query's worth of already-cached work.
+ *
+ * The cap is what makes a 10k-page main search survivable here — the sidebar
+ * re-queries on every item selection, so an uncapped coupling would pull a
+ * full page per selected item to display six of them. The price is that a
+ * swap out of the sidebar re-expresses a larger main page at 320 rows; see
+ * `similarityQueryPageSize`.
+ */
+export const SIMILARITY_QUERY_ROW_CAP = 320
+
+/**
+ * The page size a sidebar similarity query runs at.
+ *
+ * The slider next to it is a *display* count — how many of the fetched rows
+ * the panel renders — not the query's page size. The query instead tracks the
+ * main search's page size, so that clicking a result can hand the identical
+ * request over to the main search and be served from the react-query cache
+ * with no fetch at all. Whichever of the two is larger wins: a slider asking
+ * for more rows than the main page has must widen the query (and, on swap,
+ * the main page along with it).
+ *
+ * A main page size below 1 means "unpaginated", which cannot be honoured
+ * here — it would fetch the whole result set per selected item — so it reads
+ * as the cap.
+ */
+export function similarityQueryPageSize(
+  displayCount: number,
+  mainPageSize: number
+): number {
+  const mainRows = mainPageSize >= 1 ? mainPageSize : SIMILARITY_QUERY_ROW_CAP
+  return Math.min(Math.max(mainRows, displayCount), SIMILARITY_QUERY_ROW_CAP)
+}
+
+export function sbSimilarityQueryFromState(
+  state: SimilaritySideBarComponents,
+  mainPageSize: number
+) {
   const query: components["schemas"]["PqlQuery"] = {
     query: null,
     page: 1,
@@ -516,6 +556,10 @@ export function sbSimilarityQueryFromState(state: SimilaritySideBarComponents) {
       "blurhash",
     ],
     entity: "file",
+    // Never random-ordered, so never seeded — but the key must be *present*
+    // and null, because the main query always carries it and the two request
+    // bodies have to hash identically for the swap to hit the cache.
+    seed: null,
     count: false,
     results: true,
     check_path: false,
@@ -529,7 +573,10 @@ export function sbSimilarityQueryFromState(state: SimilaritySideBarComponents) {
   ) => ({
     ...query,
     page: state.PageArgs.page_clip,
-    page_size: state.PageArgs.page_size_clip,
+    page_size: similarityQueryPageSize(
+      state.PageArgs.page_size_clip,
+      mainPageSize
+    ),
     query: {
       and_: [
         {
@@ -564,7 +611,10 @@ export function sbSimilarityQueryFromState(state: SimilaritySideBarComponents) {
   ) => ({
     ...query,
     page: state.PageArgs.page_text,
-    page_size: state.PageArgs.page_size_text,
+    page_size: similarityQueryPageSize(
+      state.PageArgs.page_size_text,
+      mainPageSize
+    ),
     query: {
       and_: [
         {

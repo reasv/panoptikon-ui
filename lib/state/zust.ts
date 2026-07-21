@@ -167,6 +167,25 @@ const instantSearchStorageOptions = {
 interface InstantSearchState {
   enabled: boolean
   setEnabled: (enabled: boolean) => void
+  /**
+   * Bumped by `commit()`. Only its changes are meaningful — see `commit`.
+   */
+  commitToken: number
+  /**
+   * Declare that the query state now in the URL is one to *run*, not one
+   * being edited, so the update lock lets it through.
+   *
+   * The lock exists to stop a query firing while the user assembles it in the
+   * sidebar. A surface that writes a whole query at once — a similarity swap,
+   * a find-in-folder navigation — is not assembling anything: it is the
+   * commit the lock is waiting for. Call this *after* awaiting the URL
+   * writes, so the committed query is the one the search hook can already
+   * see; committing first adopts the query being navigated away from.
+   *
+   * Not persisted with `enabled`, being per-session by nature — but it rides
+   * in this store because it is meaningless apart from the lock.
+   */
+  commit: () => void
 }
 
 export const useInstantSearch = create(
@@ -174,7 +193,14 @@ export const useInstantSearch = create(
     (set) => ({
       enabled: true,
       setEnabled: (enabled: boolean) => set({ enabled }),
+      commitToken: 0,
+      commit: () => set((state) => ({ commitToken: state.commitToken + 1 })),
     }),
-    instantSearchStorageOptions
+    {
+      ...instantSearchStorageOptions,
+      // A restored token would be compared against a fresh render's and read
+      // as a commit that never happened.
+      partialize: (state) => ({ enabled: state.enabled }) as InstantSearchState,
+    }
   )
 )

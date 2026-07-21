@@ -70,6 +70,7 @@ export function TextEmbeddingsSimilarity() {
                         model={model}
                         distance_function="L2"
                         sha256={sha256}
+                        displayCount={pageArgs.page_size_text}
                         query={text(sha256, model)}
                     />)}
             </div>

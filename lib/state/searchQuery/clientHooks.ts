@@ -487,12 +487,16 @@ export const useResetSearchQueryState = () => {
     useATSemanticTextRRF()[1],
     useATSemanticImageRRF()[1],
   ]
-  return () => {
-    for (const setter of setters) {
-      // @ts-ignore
-      setter(null, { history: "push" }) // @ts-ignore
-    }
-  }
+  // Awaitable so a caller that follows the reset with its own writes can tell
+  // when the URL actually holds them — see `commit()` in the instant-search
+  // store, which is only meaningful once it does.
+  return () =>
+    Promise.all(
+      setters.map((setter) =>
+        // @ts-ignore
+        setter(null, { history: "push" })
+      )
+    )
 }
 
 // Similarity sidebar
@@ -577,5 +581,8 @@ export const useSBSimilarityQueryState = () => {
   return keymapComponents
 }
 export const useSBSimilarityQuery = () => {
-  return sbSimilarityQueryFromState(useSBSimilarityQueryState())
+  // The main search's page size, not the sidebar slider, sets the size of the
+  // page these queries fetch — see `similarityQueryPageSize`.
+  const [orderArgs] = useOrderArgs()
+  return sbSimilarityQueryFromState(useSBSimilarityQueryState(), orderArgs.page_size)
 }

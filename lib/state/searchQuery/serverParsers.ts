@@ -291,5 +291,8 @@ export function getFullSimilaritySBQueryCache(
 }
 
 export function getSimilaritySBQueryCache(params: SearchParams) {
-  return sbSimilarityQueryFromState(getFullSimilaritySBQueryCache(params))
+  return sbSimilarityQueryFromState(
+    getFullSimilaritySBQueryCache(params),
+    getOrderArgsCache(params).page_size
+  )
 }
