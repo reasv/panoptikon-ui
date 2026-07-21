@@ -56,11 +56,20 @@ export function ComboBoxResponsive({
         return (
             <Popover open={open} onOpenChange={setOpen}>
                 <PopoverTrigger asChild>
-                    <Button variant="outline" className="justify-start max-w-[250px]">
+                    {/* min-w-0 so the label can truncate instead of overflowing the
+                        flex row; max-w-full so the button grows to whatever the
+                        container allows rather than a fixed cap */}
+                    <Button variant="outline" className="justify-start min-w-0 max-w-full">
                         <span className="truncate">{buttonLabel}</span>
                     </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[200px] p-0" align="start">
+                {/* At least as wide as the trigger (Radix measures it into this
+                    var), free to grow with the longest option, capped so a long
+                    model name can't push the list off screen */}
+                <PopoverContent
+                    className="w-auto min-w-[var(--radix-popover-trigger-width)] max-w-[min(90vw,32rem)] p-0"
+                    align="start"
+                >
                     <OptionList resetValue={resetValue} currentValue={currentValue} options={options} setOpen={setOpen} onChangeValue={onChangeValue} />
                 </PopoverContent>
             </Popover>
@@ -70,7 +79,7 @@ export function ComboBoxResponsive({
     return (
         <Drawer open={open} onOpenChange={setOpen}>
             <DrawerTrigger asChild>
-                <Button variant="outline" className="justify-start max-w-[250px]">
+                <Button variant="outline" className="justify-start min-w-0 max-w-full">
                     <span className="truncate">{buttonLabel}</span>
                 </Button>
             </DrawerTrigger>
