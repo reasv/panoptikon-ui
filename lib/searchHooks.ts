@@ -18,42 +18,17 @@ import { useThrottledValue } from "./useThrottledValue"
 import { useGalleryIndex, usePinboardMaximized } from "./state/gallery"
 import { useGridScrollAnchor } from "./state/gridScroll"
 import { useClientConfig } from "./useClientConfig"
+import { buildCountRequest, buildResultsRequest } from "./searchRequest"
 
-// Server-side prefetching is worth it exactly when the query cost does not
-// scale down with LIMIT — vector searches scan every candidate embedding
-// regardless of page size, so the marginal cost of fetching extra rows in the
-// same execution is noise. For cheap indexed queries it is a real tax, hence 0
-// there.
-//
-// The budget is a plain row count and goes to the server as one: the result
-// cache stores rows as page-size-agnostic spans, so ~320 cached rows serve any
-// window inside them whatever page size asks. This used to be back-computed
-// into a page count (`floor(320 / size) - 1`), which lost rows to rounding —
-// at page size 100 it asked for 300, not 320.
-const VECTOR_PREFETCH_ROW_BUDGET = 320
-// Any value would do — see the count query below. Exported because the
-// sidebar's similarity count query has to pin the same one: a count that
-// differs only in page size is a cache miss for a value already in hand.
-export const COUNT_QUERY_PAGE_SIZE = 10
-const VECTOR_FILTER_KEYS = new Set([
-  "image_embeddings",
-  "text_embeddings",
-  "similar_to",
-])
-export function hasVectorFilter(element: unknown): boolean {
-  if (Array.isArray(element)) return element.some(hasVectorFilter)
-  if (element && typeof element === "object") {
-    return Object.entries(element).some(
-      ([key, value]) => VECTOR_FILTER_KEYS.has(key) || hasVectorFilter(value)
-    )
-  }
-  return false
-}
-export function prefetchRowsFor(
-  query: components["schemas"]["PqlQuery"]["query"]
-): number {
-  return hasVectorFilter(query) ? VECTOR_PREFETCH_ROW_BUDGET : 0
-}
+// The request builders live in lib/searchRequest.ts so the server-side
+// prefetch (app/search/prefetch.ts, which cannot call hooks) can build the
+// exact same requests. Re-exported here for the callers that already import
+// them from this module.
+export {
+  COUNT_QUERY_PAGE_SIZE,
+  hasVectorFilter,
+  prefetchRowsFor,
+} from "./searchRequest"
 
 /**
  * The query the update lock considers *committed*, as a request hash.
@@ -93,7 +68,13 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const searchQuery = isClient
     ? searchQueryState
     : (initialQuery.body as Required<components["schemas"]["PqlQuery"]>)
-  const dbs = isClient ? useSelectedDBs()[0] : initialQuery.params.query
+  const serverDBs = initialQuery.params.query
+  const dbs = isClient
+    ? useSelectedDBs()[0]
+    : {
+        index_db: serverDBs.index_db,
+        user_data_db: serverDBs.user_data_db,
+      }
   const [page, setPage] = useSearchPage()
   const searchEnabled = useQueryOptions()[0].s_enable
   const instantSearch = useInstantSearch((state) => state.enabled)
@@ -111,23 +92,19 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   // fires on the leading edge, so an isolated change (a click, a toggle, a
   // page turn) still queries instantly; only rapid successions (typing,
   // slider drags) are coalesced.
-  // Bookmark status rides along with the results query (backend post-query
-  // enrichment) so the grid's bookmark buttons never fire per-item GETs.
   const bookmarkNs = useBookmarkNs((state) => state.namespace)
   const liveRequest = {
+    searchQuery,
     dbs,
     bookmarkNs,
-    body: {
-      ...searchQuery,
-      page,
-      partition_by: partitionBy.partition_by,
-    },
+    partitionBy: partitionBy.partition_by,
+    page,
   }
   const throttledRequest = useThrottledValue(liveRequest, throttleMs)
   const request = throttleMs > 0 ? throttledRequest : liveRequest
   // page_size is optional in the spec (server default 10); the query
   // builders always set it, but the type can't promise that.
-  const pageSize = request.body.page_size ?? 10
+  const pageSize = request.searchQuery.page_size ?? 10
   // Gated on the *live* request, not the throttled one: the throttle trails
   // by a render, and during that render the query key is still the previously
   // committed one — already in cache, so leaving it enabled costs nothing.
@@ -137,24 +114,13 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     searchEnabled &&
     (instantSearch || committedKey === liveKey) &&
     !pinboardMaximized
+  // Spread, not passed straight through: openapi-react-query's init type wants
+  // an index signature, which a named interface doesn't carry. The spread is
+  // shallow and the key is hashed by value, so it changes nothing at runtime.
   const { data, error, isError, refetch, isFetching, isPlaceholderData } = $api.useQuery(
     "post",
     "/api/search/pql",
-    {
-      params: {
-        query: {
-          ...request.dbs,
-          include_bookmarks: true,
-          bookmarks_namespace: request.bookmarkNs,
-        },
-      },
-      body: {
-        ...request.body,
-        results: true,
-        count: false,
-        prefetch_rows: prefetchRowsFor(request.body.query),
-      },
-    },
+    { ...buildResultsRequest(request, { page: request.page }) },
     {
       enabled: queryEnabled,
       placeholderData: keepPreviousData,
@@ -163,22 +129,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const countQuery = $api.useQuery(
     "post",
     "/api/search/pql",
-    {
-      params: {
-        query: request.dbs,
-      },
-      body: {
-        ...request.body,
-        page: 1,
-        // Counts are compiled without pagination and cached under a
-        // pagination-free key server-side, so the page size cannot change the
-        // answer. Pinned to a constant so a page-size change doesn't re-key
-        // this query and cost a round trip for a value we already have.
-        page_size: COUNT_QUERY_PAGE_SIZE,
-        results: false,
-        count: true,
-      },
-    },
+    { ...buildCountRequest(request) },
     {
       enabled: queryEnabled,
       placeholderData: keepPreviousData,
@@ -224,10 +175,10 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   // data when its key changes, and with nothing in flight it stays there
   // forever. Left ungated, editing the query with instant search off would
   // freeze the gallery and the grid anchor until the user pressed Enter.
-  const livePageSize = liveRequest.body.page_size ?? 10
+  const livePageSize = liveRequest.searchQuery.page_size ?? 10
   const resultsAreStale =
     (isPlaceholderData && (queryEnabled || isFetching)) ||
-    request.body.page !== liveRequest.body.page ||
+    request.page !== liveRequest.page ||
     pageSize !== livePageSize
 
   const nResults = countQuery.data?.count || 0
@@ -290,24 +241,11 @@ function useSearchRequestFor(): (target: PageState) => SearchQueryArgs {
   const dbs = useSelectedDBs()[0]
   const bookmarkNs = useBookmarkNs((state) => state.namespace)
   const [partitionBy] = usePartitionBy()
-  return ({ page, pageSize }) => ({
-    params: {
-      query: {
-        ...dbs,
-        include_bookmarks: true,
-        bookmarks_namespace: bookmarkNs,
-      },
-    },
-    body: {
-      ...searchQuery,
-      ...(pageSize !== undefined ? { page_size: pageSize } : {}),
-      page,
-      partition_by: partitionBy.partition_by,
-      results: true,
-      count: false,
-      prefetch_rows: prefetchRowsFor(searchQuery.query),
-    },
-  })
+  return ({ page, pageSize }) =>
+    buildResultsRequest(
+      { searchQuery, dbs, bookmarkNs, partitionBy: partitionBy.partition_by },
+      { page, pageSize }
+    )
 }
 
 /**

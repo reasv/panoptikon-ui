@@ -5,6 +5,7 @@ import { getSearchQueryCache } from "@/lib/state/searchQuery/serverParsers"
 import { partitionByParamsCache } from "@/lib/state/partitionByServer"
 import { getServerClientConfig } from "@/lib/serverApi"
 import { isPinboardMaximizedFromParams } from "@/lib/state/pinboardView"
+import { buildCountRequest, buildResultsRequest } from "@/lib/searchRequest"
 
 export const prefetchSearchPage = async (
   queryClient: QueryClient,
@@ -15,38 +16,23 @@ export const prefetchSearchPage = async (
   const searchQuery = getSearchQueryCache(searchParams)
   const dbs = selectedDBsServer.parse(searchParams)
   const partitionBy = partitionByParamsCache.parse(searchParams)
-  const searchRequest = {
-    params: {
-      query: {
-        ...dbs,
-        // Must mirror useSearch's results-query params for the prefetch key
-        // to match. The client's bookmark namespace lives in localStorage and
-        // is unknowable here; "default" matches the common case, other
-        // namespaces simply refetch on the client.
-        include_bookmarks: true,
-        bookmarks_namespace: "default",
-      },
-    },
-    body: {
-      ...searchQuery,
-      results: true,
-      count: false,
-      partition_by: partitionBy.partition_by as any,
-    },
+  // Built through the same builders useSearch uses, so the hydrated entries
+  // land under the keys the client's queries read. Assembling them here by
+  // hand is what made every page load fetch its results twice: the client
+  // sends `prefetch_rows` and this did not, and react-query hashes the whole
+  // body — absent is not 0.
+  //
+  // The client's bookmark namespace lives in localStorage and is unknowable
+  // here; "default" matches the common case, other namespaces simply refetch
+  // on the client.
+  const parts = {
+    searchQuery,
+    dbs,
+    bookmarkNs: "default",
+    partitionBy: partitionBy.partition_by as any,
   }
-
-  const countRequest = {
-    params: {
-      query: dbs,
-    },
-    body: {
-      ...searchQuery,
-      page: 1,
-      results: false,
-      count: true,
-      partition_by: partitionBy.partition_by as any,
-    },
-  }
+  const searchRequest = buildResultsRequest(parts)
+  const countRequest = buildCountRequest(parts)
 
   // A URL that opens straight into a maximized board renders nothing that
   // comes from the search, so running it here would only delay first paint
