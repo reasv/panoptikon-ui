@@ -7,6 +7,7 @@ import { TextFilter } from "../base/TextFilter"
 import { ImageEmbeddingSearch } from "../base/ImageEmbeddingsSearch"
 import { TextEmbeddingSearch } from "../base/TextEmbeddingSearch"
 import { RRFParams } from "../base/RRFWeights"
+import { VectorIndexControls } from "../base/VectorIndexModeSelector"
 
 export function AnyTextFilter() {
     const [options, _] = useQueryOptions()
@@ -100,11 +101,21 @@ function AnyTextImageEmbeddingSearch() {
             filter={filter}
             setFilter={setFilter}
             children={
-                <RRFParams
-                    storageKey="si_rrf"
-                    rrf={rrf}
-                    setRrf={setRRF}
-                />
+                <>
+                    <VectorIndexControls
+                        model={filter.model}
+                        clipXmodal={filter.clip_xmodal}
+                        index={filter.index}
+                        variant={filter.variant}
+                        k={filter.k}
+                        setValue={(value) => setFilter(value)}
+                    />
+                    <RRFParams
+                        storageKey="si_rrf"
+                        rrf={rrf}
+                        setRrf={setRRF}
+                    />
+                </>
             }
         />
     )
@@ -121,11 +132,20 @@ function AnyTextAudioEmbeddingSearch() {
             setFilter={setFilter}
             clap={true}
             children={
-                <RRFParams
-                    storageKey="sa_rrf"
-                    rrf={rrf}
-                    setRrf={setRRF}
-                />
+                <>
+                    <VectorIndexControls
+                        model={filter.model}
+                        index={filter.index}
+                        variant={filter.variant}
+                        k={filter.k}
+                        setValue={(value) => setFilter(value)}
+                    />
+                    <RRFParams
+                        storageKey="sa_rrf"
+                        rrf={rrf}
+                        setRrf={setRRF}
+                    />
+                </>
             }
         />
     )
@@ -145,11 +165,20 @@ function AnyTextSemanticTextSearch() {
             srcFilter={srcFilter}
             setSrcFilter={setSrcFilter}
             children={
-                <RRFParams
-                    storageKey="st_rrf"
-                    rrf={rrf}
-                    setRrf={setRRF}
-                />
+                <>
+                    <VectorIndexControls
+                        model={filter.model}
+                        index={filter.index}
+                        variant={filter.variant}
+                        k={filter.k}
+                        setValue={(value) => setFilter(value)}
+                    />
+                    <RRFParams
+                        storageKey="st_rrf"
+                        rrf={rrf}
+                        setRrf={setRRF}
+                    />
+                </>
             }
         />
     )

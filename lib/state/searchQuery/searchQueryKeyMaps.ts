@@ -305,26 +305,28 @@ export type ATMatchPath = Required<
   Omit<components["schemas"]["MatchPathArgs"], "match" | "raw_fts5_match">
 >
 
-// The AnyText surfaces don't expose per-filter index selection; the backend
-// default (`auto`) applies there.
+// The AnyText surfaces share the dedicated filters' keymaps, so index/variant/k
+// are per-filter state here too, and each renders its own index controls.
+// `index` is re-declared because the schema admits the reserved `ann`, which
+// the URL parsers refuse.
 export type ATSemanticText = Required<
   Omit<
     components["schemas"]["SemanticTextArgs"],
-    "query" | "embed" | "src_text" | "index" | "variant" | "k"
+    "query" | "embed" | "src_text" | "index"
   >
->
+> & { index: vectorIndexMode }
 export type ATSemanticImage = Required<
   Omit<
     components["schemas"]["SemanticImageArgs"],
-    "query" | "embed" | "src_text" | "index" | "variant" | "k"
+    "query" | "embed" | "src_text" | "index"
   >
->
+> & { index: vectorIndexMode }
 export type ATSemanticAudio = Required<
   Omit<
     components["schemas"]["SemanticImageArgs"],
-    "query" | "embed" | "src_text" | "index" | "variant" | "k"
+    "query" | "embed" | "src_text" | "index"
   >
->
+> & { index: vectorIndexMode }
 
 export type ATEmbedArgs = Required<components["schemas"]["EmbedArgs"]>
 export type ATSourceText = NonNullableProps<

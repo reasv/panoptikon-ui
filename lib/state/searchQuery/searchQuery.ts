@@ -314,11 +314,9 @@ export function queryFromState(
       image_embeddings: {
         ...state.ATSemanticImage,
         query: state.SearchQueryOptions.at_query,
-        // The AnyText surfaces share the keymaps of the dedicated filters,
-        // so their state carries index/variant/k even though the AT types
-        // omit them. An empty-string variant is a *strict* profile
-        // selection server-side and would fail the query.
-        variant: null,
+        // Empty string means "no variant selected" in URL state; sending it
+        // would be a *strict* selection of an empty-named profile.
+        variant: state.ATSemanticImage.variant || null,
         embed: state.EmbedArgs,
       },
     }
@@ -334,7 +332,7 @@ export function queryFromState(
       image_embeddings: {
         ...state.ATSemanticAudio,
         query: state.SearchQueryOptions.at_query,
-        variant: null,
+        variant: state.ATSemanticAudio.variant || null,
         embed: state.EmbedArgs,
       },
     }
@@ -350,7 +348,7 @@ export function queryFromState(
       text_embeddings: {
         ...state.ATSemanticText,
         query: state.SearchQueryOptions.at_query,
-        variant: null,
+        variant: state.ATSemanticText.variant || null,
         src_text: sourceFilters(state.ATSourceText),
         embed: state.EmbedArgs,
       },
