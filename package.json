@@ -2,6 +2,7 @@
   "name": "panoptikon-ui",
   "version": "0.1.7",
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "scripts": {
     "predev": "node scripts/sync-sqlite-wasm.mjs",
     "dev": "next dev",

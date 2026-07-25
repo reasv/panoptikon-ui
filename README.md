@@ -94,3 +94,11 @@ it disappears after pairing. Paired file actions use Relay by default; their
 right-click context menu provides a session-local switch to the existing
 action. A restored pending request stays actionable so it can foreground
 Desktop's dedicated pairing window again.
+
+# License
+
+Panoptikon UI is free software released under the [GNU Affero General Public License v3.0 or later](LICENSE) (AGPL-3.0-or-later), like the rest of Panoptikon.
+
+## Contributions
+
+Panoptikon is written and copyrighted by a single author. Contributions are welcome, but are accepted only under the terms in [CONTRIBUTING.md](CONTRIBUTING.md): by submitting a contribution you assign its copyright to the maintainer and agree to its release under the AGPL. Read that file before opening a pull request.
