@@ -28,20 +28,37 @@ export function JobQueue() {
     )
     const queryClient = useQueryClient()
     const { toast } = useToast()
+    const queue = data?.queue || []
+    // Selection is keyed by queue_id (see `getRowId` below), not by array
+    // index: the queue is refetched every 2.5s and rows shift as jobs finish.
+    const [selected, setSelected] = React.useState<RowSelectionState>({})
+    const selectedValues = queue.filter(
+        (job) => selected[String(job.queue_id)] === true,
+    )
     const cancelJob = $api.useMutation("delete", "/api/jobs/queue", {
-        onSuccess: () => {
+        onSuccess: (_data, variables) => {
             queryClient.invalidateQueries({
                 queryKey: ["get", "/api/jobs/queue"],
             })
+            const skipped =
+                variables.params.query.run_maintenance === false
             toast({
                 title: "Jobs Cancelled",
-                description: "The selected jobs have been cancelled.",
+                description: skipped
+                    ? "The selected jobs have been cancelled. Database maintenance was skipped."
+                    : "The selected jobs have been cancelled.",
+            })
+            setSelected({})
+        },
+        onError: (error) => {
+            const detail = (error as { detail?: string } | null)?.detail
+            toast({
+                title: "Cancellation Failed",
+                description: detail || "The server rejected the request",
+                variant: "destructive",
             })
         },
     })
-    const queue = data?.queue || []
-    const [selected, setSelected] = React.useState<RowSelectionState>({})
-    const selectedValues = queue.filter((_, index) => selected[index] === true)
     // run_maintenance=false suppresses the deferred DB maintenance job this
     // cancel would otherwise schedule; the owed work stays owed for the next
     // job boundary.
@@ -54,8 +71,8 @@ export function JobQueue() {
                 },
             },
         })
-        setSelected({})
     }
+    const cancelDisabled = selectedValues.length === 0 || cancelJob.isPending
 
     return (
         <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
@@ -72,10 +89,11 @@ export function JobQueue() {
                     storageKey="jobQueue"
                     data={queue}
                     columns={jobQueueColumns}
+                    getRowId={(job) => String(job.queue_id)}
                     header={
                         <div className="flex flex-row items-center">
                             <Button
-                                disabled={selectedValues.length === 0}
+                                disabled={cancelDisabled}
                                 variant="destructive"
                                 className="rounded-r-none"
                                 onClick={() => cancelSelected(true)}
@@ -85,7 +103,7 @@ export function JobQueue() {
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                     <Button
-                                        disabled={selectedValues.length === 0}
+                                        disabled={cancelDisabled}
                                         variant="destructive"
                                         size="icon"
                                         aria-label="More cancel options"
@@ -96,6 +114,7 @@ export function JobQueue() {
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
                                     <DropdownMenuItem
+                                        className="text-destructive focus:text-destructive"
                                         onSelect={() => cancelSelected(false)}
                                     >
                                         Cancel selected (skip maintenance job)

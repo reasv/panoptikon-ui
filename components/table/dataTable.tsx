@@ -5,6 +5,7 @@ import {
     ColumnDef,
     ColumnFiltersState,
     OnChangeFn,
+    Row,
     RowSelectionState,
     SortingState,
     VisibilityState,
@@ -47,6 +48,7 @@ export function DataTable<TData, TValue>(
         setRowSelection,
         header,
         defaultColumnVisibility,
+        getRowId,
     }: {
         data: TData[],
         columns: ColumnDef<TData, TValue>[],
@@ -58,6 +60,10 @@ export function DataTable<TData, TValue>(
         setRowSelection?: OnChangeFn<RowSelectionState>,
         header?: React.ReactNode,
         defaultColumnVisibility?: VisibilityState,
+        // Optional: key rows by a stable id instead of the array index, so a
+        // selection survives the underlying list shifting. Left undefined by
+        // callers that don't need it (table-core falls back to the index).
+        getRowId?: (originalRow: TData, index: number, parent?: Row<TData>) => string,
     }) {
     "use no memo"
     const [sorting, setSorting] = React.useState<SortingState>([])
@@ -103,6 +109,7 @@ export function DataTable<TData, TValue>(
         getSortedRowModel: getSortedRowModel(),
         getFilteredRowModel: getFilteredRowModel(),
         onRowSelectionChange: setRowSelection,
+        getRowId,
     })
     const [open, setOpen] = React.useState(false)
     return (

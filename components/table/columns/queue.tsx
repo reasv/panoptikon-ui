@@ -14,6 +14,17 @@ const jobTypeLabels: Record<string, string> = {
     db_maintenance: "Database Maintenance",
 }
 
+// Deferred maintenance jobs carry their owed-work flags in `metadata`, the
+// same field extraction jobs use for the model name. Translate the flags:
+// the recount + ANALYZE pass always runs, a VACUUM only when data was deleted
+// (and only if the server then judges it worthwhile).
+const maintenanceMetadataLabel = (metadata: string) => {
+    const flags = metadata.split(",").map((flag) => flag.trim())
+    return flags.includes("deleted_data")
+        ? "Tag recount + analyze, possible vacuum"
+        : "Tag recount + analyze"
+}
+
 export const jobQueueColumns: ColumnDef<components["schemas"]["JobModel"]>[] = [
     {
         id: "select",
@@ -71,6 +82,13 @@ export const jobQueueColumns: ColumnDef<components["schemas"]["JobModel"]>[] = [
         id: "model",
         accessorKey: "metadata",
         header: "Model",
+        cell: ({ row }) => {
+            const metadata = row.getValue("model") as string | null
+            if (row.original.job_type === "db_maintenance") {
+                return maintenanceMetadataLabel(metadata ?? "")
+            }
+            return metadata
+        },
     },
     {
         id: "batch_size",
