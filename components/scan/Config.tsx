@@ -101,13 +101,13 @@ export function Config() {
                     description: "The maintenance job has been queued",
                 })
             },
-            // 409 means a maintenance pass is already running; the gateway
-            // says so in `detail`, like every other error path.
+            // The gateway explains itself in `detail` (a 409 says a pass is
+            // already running); transport failures have no body.
             onError: (error) => {
                 const detail = (error as { detail?: string } | null)?.detail
                 toast({
                     title: "Maintenance Failed",
-                    description: detail || "A maintenance job is already running",
+                    description: detail || "The server rejected the request",
                     variant: "destructive",
                 })
             },
@@ -255,6 +255,20 @@ export function Config() {
                             </div>
                         )}
                     </div>
+                    <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
+                        <div className="flex flex-row items-center justify-between">
+                            <div className="space-y-0.5">
+                                <Label className="text-base">Database Maintenance</Label>
+                                <div className="text-gray-400">Recount tags, refresh query statistics, and reclaim free space</div>
+                            </div>
+                            <Button
+                                title="Queue a database maintenance job"
+                                variant="outline"
+                                disabled={maintenanceMut.isPending}
+                                onClick={runMaintenance}
+                            >Run Now</Button>
+                        </div>
+                    </div>
                 </div>
                 <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
                     <div className="flex flex-row items-center justify-between">
@@ -287,20 +301,6 @@ export function Config() {
                         />
                         <ScrollBar orientation="horizontal" />
                     </ScrollArea>
-                </div>
-                <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
-                    <div className="flex flex-row items-center justify-between">
-                        <div className="space-y-0.5">
-                            <Label className="text-base">Database Maintenance</Label>
-                            <div className="text-gray-400">Recount tags, refresh query statistics, and reclaim free space</div>
-                        </div>
-                        <Button
-                            title="Queue a database maintenance job"
-                            variant="outline"
-                            disabled={maintenanceMut.isPending}
-                            onClick={runMaintenance}
-                        >Run Now</Button>
-                    </div>
                 </div>
             </> : null}
         </FilterContainer>
