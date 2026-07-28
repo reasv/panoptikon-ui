@@ -891,6 +891,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/maintenance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run database maintenance
+         * @description Enqueues a database maintenance job for the selected database: rebuild the tag item counts, refresh query statistics, truncate the write-ahead log, and reclaim free space (the space reclaim is skipped unless the database actually holds enough free pages to be worth rewriting). Runs at the back of the queue, after everything already queued. If a maintenance job for this database is already queued, that job is upgraded to do all of the above and returned instead of adding a second one. Responds 409 only when a maintenance job for this database is already running, since a pass in flight may already have decided what to skip; retry once it finishes.
+         */
+        post: operations["enqueue_db_maintenance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/quants": {
         parameters: {
             query?: never;
@@ -4889,6 +4909,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobModel"];
+                };
+            };
+        };
+    };
+    enqueue_db_maintenance: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Enqueued (or upgraded) database maintenance job */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobModel"];
+                };
+            };
+            /** @description A maintenance job for this database is already running */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
         };

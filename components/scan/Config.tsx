@@ -88,6 +88,33 @@ export function Config() {
     const runCronJob = async () => {
         cronjobRunMut.mutate({ params: { query: dbs } })
     }
+    const maintenanceMut = $api.useMutation(
+        "post",
+        "/api/jobs/maintenance",
+        {
+            onSuccess: () => {
+                queryClient.invalidateQueries({
+                    queryKey: ["get", "/api/jobs/queue"],
+                })
+                toast({
+                    title: "Database Maintenance",
+                    description: "The maintenance job has been queued",
+                })
+            },
+            // 409 means a maintenance pass is already running; the gateway
+            // says so in `detail`, like every other error path.
+            onError: (error) => {
+                const detail = (error as { detail?: string } | null)?.detail
+                toast({
+                    title: "Maintenance Failed",
+                    description: detail || "A maintenance job is already running",
+                    variant: "destructive",
+                })
+            },
+        })
+    const runMaintenance = () => {
+        maintenanceMut.mutate({ params: { query: dbs } })
+    }
     const guiKnownKeys = new Set([
         "remove_unavailable_files", "scan_images", "scan_video", "scan_audio", "scan_html", "scan_pdf",
         "enable_cron_job", "cron_schedule", "cron_jobs", "job_settings", "included_folders", "excluded_folders",
@@ -260,6 +287,20 @@ export function Config() {
                         />
                         <ScrollBar orientation="horizontal" />
                     </ScrollArea>
+                </div>
+                <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
+                    <div className="flex flex-row items-center justify-between">
+                        <div className="space-y-0.5">
+                            <Label className="text-base">Database Maintenance</Label>
+                            <div className="text-gray-400">Recount tags, refresh query statistics, and reclaim free space</div>
+                        </div>
+                        <Button
+                            title="Queue a database maintenance job"
+                            variant="outline"
+                            disabled={maintenanceMut.isPending}
+                            onClick={runMaintenance}
+                        >Run Now</Button>
+                    </div>
                 </div>
             </> : null}
         </FilterContainer>
