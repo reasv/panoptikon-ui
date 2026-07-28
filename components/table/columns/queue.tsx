@@ -11,6 +11,7 @@ const jobTypeLabels: Record<string, string> = {
     folder_update: "Folder Update",
     job_data_deletion: "Index Data Deletion (Job)",
     vector_quant_reconcile: "Vector Quant Reconcile",
+    db_maintenance: "Database Maintenance",
 }
 
 export const jobQueueColumns: ColumnDef<components["schemas"]["JobModel"]>[] = [

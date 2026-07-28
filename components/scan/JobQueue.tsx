@@ -8,6 +8,13 @@ import { Button } from "@/components/ui/button"
 import { jobQueueColumns } from "@/components/table/columns/queue"
 import { useToast } from "@/components/ui/use-toast"
 import { Label } from "@/components/ui/label"
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { ChevronDown } from "lucide-react"
 
 export function JobQueue() {
     const { data, error, isError, refetch, isFetching } = $api.useQuery(
@@ -35,11 +42,15 @@ export function JobQueue() {
     const queue = data?.queue || []
     const [selected, setSelected] = React.useState<RowSelectionState>({})
     const selectedValues = queue.filter((_, index) => selected[index] === true)
-    const cancelSelected = () => {
+    // run_maintenance=false suppresses the deferred DB maintenance job this
+    // cancel would otherwise schedule; the owed work stays owed for the next
+    // job boundary.
+    const cancelSelected = (runMaintenance: boolean) => {
         cancelJob.mutate({
             params: {
                 query: {
                     queue_ids: selectedValues.map((job) => job.queue_id),
+                    run_maintenance: runMaintenance,
                 },
             },
         })
@@ -62,13 +73,36 @@ export function JobQueue() {
                     data={queue}
                     columns={jobQueueColumns}
                     header={
-                        <Button
-                            disabled={selectedValues.length === 0}
-                            variant="destructive"
-                            onClick={() => cancelSelected()}
-                        >
-                            Cancel Selected
-                        </Button>
+                        <div className="flex flex-row items-center">
+                            <Button
+                                disabled={selectedValues.length === 0}
+                                variant="destructive"
+                                className="rounded-r-none"
+                                onClick={() => cancelSelected(true)}
+                            >
+                                Cancel Selected
+                            </Button>
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button
+                                        disabled={selectedValues.length === 0}
+                                        variant="destructive"
+                                        size="icon"
+                                        aria-label="More cancel options"
+                                        className="w-8 rounded-l-none border-l border-background/30"
+                                    >
+                                        <ChevronDown className="h-4 w-4" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    <DropdownMenuItem
+                                        onSelect={() => cancelSelected(false)}
+                                    >
+                                        Cancel selected (skip maintenance job)
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </div>
                     }
                 />
                 <ScrollBar orientation="horizontal" />

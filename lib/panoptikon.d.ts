@@ -1262,10 +1262,14 @@ export interface paths {
          *     The `limit` parameter can be used to control the number of tags to return.
          *     Returns a list of tuples, where each tuple contains the namespace, name,
          *     and the number of unique items tagged with the tag.
-         *     Matching is a plain substring test, so there is no notion of a closer or
-         *     weaker match. When more tags match than `limit` allows, the most-used ones
+         *     Matching is a plain substring test, and every character of the string is
+         *     matched literally (`%` and `_` are not wildcards), so there is no notion of
+         *     a closer or weaker match. When more tags match than `limit` allows, the most-used ones
          *     are returned: results are both selected and ordered by the number of items
          *     tagged, descending, with ties broken by namespace then name.
+         *     The count is refreshed after every completed job rather than computed live,
+         *     so a tag added since the last one reports 0 and sorts last. Which tags match
+         *     is never affected.
          */
         get: operations["get_tags"];
         put?: never;
@@ -1895,7 +1899,7 @@ export interface components {
             inference_id?: string | null;
         };
         /** @enum {string} */
-        JobType: "data_extraction" | "data_deletion" | "folder_rescan" | "folder_update" | "job_data_deletion" | "vector_quant_reconcile" | "test_sleep" | "test_panic";
+        JobType: "data_extraction" | "data_deletion" | "folder_rescan" | "folder_update" | "job_data_deletion" | "vector_quant_reconcile" | "db_maintenance" | "test_sleep" | "test_panic" | "test_report";
         LogRecord: {
             /** Format: int64 */
             batch_size: number;
@@ -4491,7 +4495,10 @@ export interface operations {
     };
     cancel_current_job: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Run deferred DB maintenance after this cancel */
+                run_maintenance?: boolean | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4998,6 +5005,8 @@ export interface operations {
             query: {
                 /** @description List of Queue IDs to cancel */
                 queue_ids: number[];
+                /** @description Run deferred DB maintenance after this cancel */
+                run_maintenance?: boolean | null;
             };
             header?: never;
             path?: never;
