@@ -114,10 +114,15 @@ export function JobQueue() {
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
                                     <DropdownMenuItem
-                                        className="text-destructive focus:text-destructive"
                                         onSelect={() => cancelSelected(false)}
                                     >
-                                        Cancel selected (skip maintenance job)
+                                        <div className="flex flex-col gap-0.5">
+                                            <span>Cancel without maintenance</span>
+                                            <span className="text-xs text-muted-foreground">
+                                                Skips the post-cancel database
+                                                maintenance job
+                                            </span>
+                                        </div>
                                     </DropdownMenuItem>
                                 </DropdownMenuContent>
                             </DropdownMenu>
