@@ -1262,7 +1262,10 @@ export interface paths {
          *     The `limit` parameter can be used to control the number of tags to return.
          *     Returns a list of tuples, where each tuple contains the namespace, name,
          *     and the number of unique items tagged with the tag.
-         *     The tags are returned in descending order of the number of items tagged.
+         *     Matching is a plain substring test, so there is no notion of a closer or
+         *     weaker match. When more tags match than `limit` allows, the most-used ones
+         *     are returned: results are both selected and ordered by the number of items
+         *     tagged, descending, with ties broken by namespace then name.
          */
         get: operations["get_tags"];
         put?: never;
