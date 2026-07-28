@@ -114,11 +114,15 @@ export function JobQueue() {
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
                                     <DropdownMenuItem
+                                        // Styled like the destructive button it
+                                        // extends: same fill, same foreground,
+                                        // focus standing in for hover.
+                                        className="cursor-pointer bg-destructive text-destructive-foreground focus:bg-destructive/90 focus:text-destructive-foreground"
                                         onSelect={() => cancelSelected(false)}
                                     >
                                         <div className="flex flex-col gap-0.5">
                                             <span>Cancel without maintenance</span>
-                                            <span className="text-xs text-muted-foreground">
+                                            <span className="text-xs text-destructive-foreground/80">
                                                 Skips the post-cancel database
                                                 maintenance job
                                             </span>
