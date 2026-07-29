@@ -49,7 +49,6 @@ export function DataTable<TData, TValue>(
         header,
         defaultColumnVisibility,
         getRowId,
-        enableRowSelection,
     }: {
         data: TData[],
         columns: ColumnDef<TData, TValue>[],
@@ -65,9 +64,6 @@ export function DataTable<TData, TValue>(
         // selection survives the underlying list shifting. Left undefined by
         // callers that don't need it (table-core falls back to the index).
         getRowId?: (originalRow: TData, index: number, parent?: Row<TData>) => string,
-        // Optional: rows failing the predicate cannot be selected, and
-        // select-all skips them.
-        enableRowSelection?: (row: Row<TData>) => boolean,
     }) {
     "use no memo"
     const [sorting, setSorting] = React.useState<SortingState>([])
@@ -114,7 +110,6 @@ export function DataTable<TData, TValue>(
         getFilteredRowModel: getFilteredRowModel(),
         onRowSelectionChange: setRowSelection,
         getRowId,
-        ...(enableRowSelection !== undefined ? { enableRowSelection } : {}),
     })
     const [open, setOpen] = React.useState(false)
     return (

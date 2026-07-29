@@ -78,6 +78,9 @@ export function GroupTab({ group }: { group: Group }) {
     const selectedInferenceIds = selectedValues.map((model) => `${group.group_name}/${model.inference_id}`)
     const missingInputs = missingRequiredExternalInputs(externalInputs.data, selectedInferenceIds)
     const requirementsMissing = missingInputs.length > 0
+    // Unavailable models stay selectable so their existing data can be
+    // deleted; only running and scheduling them is blocked.
+    const unavailableSelected = selectedValues.some((model) => model.unavailable)
     const runJob = $api.useMutation("post", "/api/jobs/data/extraction", {
         onSuccess: () => {
             queryClient.invalidateQueries({
@@ -167,19 +170,19 @@ export function GroupTab({ group }: { group: Group }) {
                         modelConfig={modelConfig}
                     />}
                     {requirementsMissing && <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm"><p className="font-medium text-destructive">The selected model configuration is incomplete.</p><p className="mt-1 text-muted-foreground">Supply the required external values before running or scheduling these models.</p>{clientConfig.data?.desktopManaged ? <Link className="mt-2 inline-block font-medium text-primary underline underline-offset-4" href="/desktop/configuration">Open Additional configuration</Link> : <p className="mt-2">Configure the declared environment variables on the Inferio host.</p>}</div>}
+                    {unavailableSelected && <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm"><p className="font-medium text-destructive">The selection includes models not available on this system.</p><p className="mt-1 text-muted-foreground">They cannot be run or scheduled here, but data they generated previously can still be deleted.</p></div>}
                     <DataTable
                         setRowSelection={setSelected}
                         rowSelection={selected}
                         storageKey={"groupTable"}
                         data={group.inference_ids || []}
                         columns={modelColumns}
-                        enableRowSelection={(row) => !row.original.unavailable}
                         filterColumn="description"
                         filterPlaceholder="Search description..."
                         header={
                             <>
                                 <Button
-                                    disabled={selectedValues.length === 0 || requirementsMissing}
+                                    disabled={selectedValues.length === 0 || requirementsMissing || unavailableSelected}
                                     variant="outline"
                                     onClick={() => runSelected()}
                                 >
@@ -194,7 +197,7 @@ export function GroupTab({ group }: { group: Group }) {
                                     Delete Data From Selected
                                 </Button>
                                 <Button
-                                    disabled={selectedValues.length === 0 || requirementsMissing}
+                                    disabled={selectedValues.length === 0 || requirementsMissing || unavailableSelected}
                                     className="ml-4 mr-4"
                                     variant="outline"
                                     onClick={() => addToCronSchedule()}
