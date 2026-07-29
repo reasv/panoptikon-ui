@@ -97,10 +97,11 @@ export function WizardModelSelection({
                     return (
                       <div key={id} className={`rounded-md border p-3 ${checked ? "border-primary bg-primary/5" : ""}`}>
                         <div className="flex gap-3">
-                          <Checkbox id={`model-${id}`} checked={checked} onCheckedChange={(value) => toggleModel(group, model, value === true)} />
+                          <Checkbox id={`model-${id}`} checked={checked} disabled={!!model.unavailable} onCheckedChange={(value) => toggleModel(group, model, value === true)} />
                           <Label htmlFor={`model-${id}`} className="min-w-0 cursor-pointer space-y-1 font-normal">
                             <span className="block break-all font-mono text-sm font-medium">{model.inference_id}</span>
                             <span className="block text-sm text-muted-foreground">{model.description}</span>
+                            {model.unavailable && <span className="mt-1 block text-xs text-destructive">{model.unavailable_reason ? `Not available on this system: ${model.unavailable_reason}` : "Not available on this system"}</span>}
                             {inputUsages.length > 0 && <span className={`mt-1 block text-xs ${missingRequired ? "text-destructive" : "text-muted-foreground"}`}>{missingRequired ? "Additional configuration required" : "Additional configuration available"}</span>}
                           </Label>
                         </div>

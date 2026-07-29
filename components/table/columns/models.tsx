@@ -30,7 +30,14 @@ export type InputObject = Record<string, {
         input_mime_types: string[];
         input_spec: object;
     };
-    inference_ids: Record<string, { description: string, link?: string }>;
+    inference_ids: Record<string, {
+        description: string,
+        link?: string,
+        // Set by the gateway's /metadata availability overlay when this
+        // host cannot run the model (e.g. GPU compute capability floor).
+        unavailable?: boolean,
+        unavailable_reason?: string,
+    }>;
 }>;
 
 export function transformData(input: InputObject): Group[] {
@@ -51,6 +58,8 @@ export interface Model {
     inference_id: string;
     description: string;
     link?: string;
+    unavailable?: boolean;
+    unavailable_reason?: string;
 }
 export const modelColumns: ColumnDef<Model>[] = [
     {
@@ -68,6 +77,7 @@ export const modelColumns: ColumnDef<Model>[] = [
         cell: ({ row }) => (
             <Checkbox
                 checked={row.getIsSelected()}
+                disabled={!row.getCanSelect()}
                 onCheckedChange={(value) => row.toggleSelected(!!value)}
                 aria-label="Select row"
             />
@@ -83,7 +93,17 @@ export const modelColumns: ColumnDef<Model>[] = [
         accessorKey: "description",
         header: "Description",
         cell: ({ row }) => {
-            return <div className="max-w-50vw text-wrap">{row.getValue("description")}</div>
+            return <div className="max-w-50vw text-wrap">
+                {row.getValue("description")}
+                {row.original.unavailable && (
+                    <div className="text-destructive">
+                        Not available on this system
+                        {row.original.unavailable_reason
+                            ? `: ${row.original.unavailable_reason}`
+                            : ""}
+                    </div>
+                )}
+            </div>
         },
     }
     // {

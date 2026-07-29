@@ -173,6 +173,7 @@ export function GroupTab({ group }: { group: Group }) {
                         storageKey={"groupTable"}
                         data={group.inference_ids || []}
                         columns={modelColumns}
+                        enableRowSelection={(row) => !row.original.unavailable}
                         filterColumn="description"
                         filterPlaceholder="Search description..."
                         header={
