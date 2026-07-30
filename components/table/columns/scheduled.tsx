@@ -1,6 +1,7 @@
 import { ColumnDef } from "@tanstack/react-table"
 import { components } from "@/lib/panoptikon"
 import { Checkbox } from "@/components/ui/checkbox"
+import { formatMaxBatchSize } from "@/components/scan/MaxBatchSize"
 
 export const scheduleColumns: ColumnDef<components["schemas"]["CronJob"]>[] = [
     {
@@ -33,7 +34,9 @@ export const scheduleColumns: ColumnDef<components["schemas"]["CronJob"]>[] = [
     {
         id: "batch_size",
         accessorKey: "batch_size",
-        header: "Batch Size",
+        header: "Max Batch Size",
+        // Cron rows carry no cap by default: the schedule runs on auto.
+        cell: ({ row }) => formatMaxBatchSize(row.original.batch_size),
     },
     {
         id: "threshold",

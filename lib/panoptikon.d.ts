@@ -1335,6 +1335,33 @@ export interface components {
         AndOperator: {
             and_: components["schemas"]["QueryElement"][];
         };
+        /** @description One measured GPU batch in [`ReplicaTelemetryHealth`]. */
+        BatchHealth: {
+            /** Format: int64 */
+            age_ms: number;
+            /** Format: int64 */
+            allocated_before_mb?: number | null;
+            /** Format: double */
+            duration_ms?: number | null;
+            /**
+             * Format: int64
+             * @description Inputs in the batch (not cost-dimension units — see the worker
+             *     protocol's "Memory sensing").
+             */
+            items?: number | null;
+            /** Format: int64 */
+            peak_allocated_mb?: number | null;
+            /** Format: int64 */
+            peak_reserved_mb?: number | null;
+            /** Format: int64 */
+            reserved_before_mb?: number | null;
+            /**
+             * Format: int64
+             * @description Per-worker sequence number; strictly increasing, gaps mean the ring
+             *     evicted samples between reads.
+             */
+            seq: number;
+        };
         /**
          * Format: binary
          * @description A raw binary payload (schema: string, format binary).
@@ -1490,12 +1517,35 @@ export interface components {
              */
             watcher_fallback: boolean;
         };
+        /** @description A model's cost dimension, as resolved from `metadata.cost`. */
+        CostHealth: {
+            /** @description `count` | `sum` | `max-times-count`; absent for the `none` class. */
+            aggregation?: string | null;
+            /**
+             * @description True when the registry declared nothing usable and the conservative
+             *     `(item, count)` fallback is in force.
+             */
+            degraded: boolean;
+            /** Format: int32 */
+            epoch: number;
+            /**
+             * Format: int32
+             * @description First-touch batch before calibration; absent for the `none` class.
+             */
+            seed_units?: number | null;
+            /** @description `item` | `pixel` | `token` | `audio-second` | `none`. */
+            unit: string;
+        };
         CreatePinboardRequest: components["schemas"]["SaveVersionRequest"] & {
             /** @description Optional display name; pinboards are identified by preview otherwise. */
             name?: string | null;
         };
         CronJob: {
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Optional cap on GPU batch size; `None` = auto (the default, and what
+             *     the one-time `batch_auto` migration reset every existing row to).
+             */
             batch_size?: number | null;
             inference_id: string;
             /** Format: double */
@@ -1740,6 +1790,21 @@ export interface components {
             /** Format: int64 */
             unique: number;
         };
+        /** @description The fitted cost model in `GET /health`. */
+        FitHealth: {
+            /** Format: double */
+            intercept_mb: number;
+            /** Format: double */
+            residual_mb: number;
+            samples: number;
+            /** Format: double */
+            slope_mb_per_unit: number;
+            /**
+             * @description Warm-pool transients retained as the diagnostic/validation series.
+             *     Never used for admission.
+             */
+            transient_samples: number;
+        };
         FolderValidation: {
             errors: components["schemas"]["FolderValidationIssue"][];
             excluded_folders: string[];
@@ -1753,6 +1818,86 @@ export interface components {
             excluded_folders: string[];
             included_folders: string[];
         };
+        /** @description One board's ledger state in `GET /health`. */
+        GpuBudgetHealth: {
+            /** Format: double */
+            cap_fraction?: number | null;
+            /**
+             * Format: int64
+             * @description What the residents actually cost the board: `Σ` per-worker
+             *     `footprint + max(0, grants − pool growth)`. This — not
+             *     `footprints_mb + grants_mb` — is what `headroom_mb` is derived from: a
+             *     post-fit grant is denominated in the same memory the footprint's
+             *     pool-growth term already counts, so the two overlap per worker.
+             */
+            charges_mb: number;
+            /**
+             * @description False when no free-memory reading is known yet, in which case
+             *     `external_mb` is 0 by assumption rather than by measurement.
+             */
+            external_known: boolean;
+            /**
+             * Format: int64
+             * @description `max(0, total − free − Σ our footprints)`: what other processes hold.
+             */
+            external_mb: number;
+            /** Format: int64 */
+            external_sample_age_ms?: number | null;
+            /**
+             * @description Which driver answered the freshest free reading (`"nvml"`, `"torch"`,
+             *     or `"nvidia-smi"` for a ledger-side staleness refresh).
+             */
+            external_source?: string | null;
+            /** Format: int64 */
+            footprints_mb: number;
+            gpu_name: string;
+            gpu_uuid: string;
+            /** Format: int64 */
+            grants_mb: number;
+            grants_outstanding: number;
+            /** Format: int64 */
+            headroom_mb: number;
+            /**
+             * Format: int64
+             * @description The admission budget: `min(total × cap_fraction, total − external ×
+             *     (1 + margin))`.
+             */
+            limit_mb: number;
+            /** Format: int64 */
+            load_reservations_mb: number;
+            /** Format: double */
+            margin: number;
+            /** Format: int64 */
+            total_mb: number;
+            workers: components["schemas"]["LedgerWorkerHealth"][];
+        };
+        /** @description One visible NVIDIA board. */
+        GpuInfo: {
+            /**
+             * @description Compute capability as `major.minor` (`"12.0"`), the same value
+             *     `HostComputeCaps` filters models with — per board here, because
+             *     default placement picks the fastest one. `None` when nvidia-smi could
+             *     not report it for this board (`[N/A]` on vGPU slices and some
+             *     datacenter SKUs): the board is still a usable, pinnable identity, it
+             *     just cannot be ranked or used to unlock a capability-gated model.
+             */
+            compute_cap?: string | null;
+            /**
+             * Format: int32
+             * @description nvidia-smi enumeration index. Useful only for resolving registry
+             *     `devices = ["3"]` pins into a UUID; never an identity.
+             */
+            index: number;
+            /** @description Marketing name, e.g. `NVIDIA GeForce RTX 5090`; the cost-profile key. */
+            name: string;
+            /** Format: int64 */
+            total_mb: number;
+            /**
+             * @description Board UUID (`GPU-…`), the budget/ledger key and the pin form CUDA
+             *     accepts directly in `CUDA_VISIBLE_DEVICES`.
+             */
+            uuid: string;
+        };
         HasUnprocessedData: {
             /** @description Item must have item_data of given types that has not been processed by the given setter name */
             has_data_unprocessed: components["schemas"]["DerivedDataArgs"];
@@ -1763,6 +1908,11 @@ export interface components {
          *     layer; `Deserialize` exists so tests can round-trip the wire shape.
          */
         HealthReport: {
+            /**
+             * @description Visible GPUs by board UUID (batch-calibration step 1a); empty when
+             *     the host has no GPU inventory, in which case workers are not pinned.
+             */
+            gpus: components["schemas"]["GpuInfo"][];
             /** @description Number of loaded models (== `models.len()`). */
             model_count: number;
             /** @description Per loaded model liveness/queue snapshot, sorted by inference_id. */
@@ -1782,6 +1932,13 @@ export interface components {
             shutting_down: boolean;
             /** @description `"ok"` normally, `"shutting_down"` once shutdown has begun. */
             status: string;
+            /**
+             * @description Per-GPU VRAM ledger: budgets, footprints, outstanding grants, ramp and
+             *     deflation state and the fitted cost model (batch-calibration step 1b).
+             *     Empty on a host with no GPU inventory, where nothing is admitted and
+             *     every model takes the unpriced dispatch path.
+             */
+            vram: components["schemas"]["GpuBudgetHealth"][];
         };
         InBookmarks: components["schemas"]["SortableOptions"] & {
             /**
@@ -1911,7 +2068,12 @@ export interface components {
         /** @enum {string} */
         JobOutcomeStatus: "completed" | "failed" | "cancelled";
         JobSettings: {
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Last-selected cap on GPU batch size for this group/model; `None` =
+             *     auto (the default, and what the one-time `batch_auto` migration reset
+             *     every stored value to).
+             */
             default_batch_size?: number | null;
             /** Format: double */
             default_threshold?: number | null;
@@ -1920,6 +2082,74 @@ export interface components {
         };
         /** @enum {string} */
         JobType: "data_extraction" | "data_deletion" | "folder_rescan" | "folder_update" | "job_data_deletion" | "vector_quant_reconcile" | "db_maintenance" | "test_sleep" | "test_panic" | "test_report";
+        /** @description One resident replica's ledger state. */
+        LedgerWorkerHealth: {
+            /** Format: int64 */
+            base_mb?: number | null;
+            /**
+             * Format: int64
+             * @description `footprint + max(0, grants − pool growth)`: what this replica charges the
+             *     board right now, grant overlap netted out.
+             */
+            charge_mb: number;
+            /**
+             * Format: int32
+             * @description Consecutive clean windows since the last negative sample.
+             */
+            clean_windows: number;
+            /**
+             * Format: int32
+             * @description Halvings currently applied by OOM / throughput-collapse deflation.
+             */
+            deflation: number;
+            /**
+             * Format: double
+             * @description The margin this model's windows are actually priced under: the
+             *     board's configured margin, widened while the fit is unconfirmed or
+             *     scattered.
+             */
+            effective_margin: number;
+            fit?: null | components["schemas"]["FitHealth"];
+            /**
+             * Format: int64
+             * @description `base + max(0, reserved − reserved_at_load)`: this resident's footprint.
+             */
+            footprint_mb: number;
+            /** Format: int64 */
+            grants_mb: number;
+            grants_outstanding: number;
+            inference_id: string;
+            /**
+             * Format: int32
+             * @description Local clean high-water samples behind this model's fit, including any
+             *     a local calibration profile restored. Below
+             *     `LOCAL_CONFIRMATION_SAMPLES` the effective margin is widened.
+             */
+            local_samples: number;
+            /**
+             * Format: int64
+             * @description Ratchet anchor: largest locally measured clean high-water batch.
+             */
+            max_units_measured: number;
+            /** @description Demand signal behind the contention split. */
+            pending_requests: number;
+            /**
+             * Format: int32
+             * @description Doublings earned by clean windows.
+             */
+            ramp_step: number;
+            /** Format: int64 */
+            reserved_at_load_mb?: number | null;
+            /** Format: int64 */
+            reserved_mb?: number | null;
+            /** Format: int64 */
+            seed_units: number;
+            /**
+             * Format: int64
+             * @description The ramp+ratchet-bounded unit budget as of this snapshot.
+             */
+            unit_budget: number;
+        };
         LogRecord: {
             /** Format: int64 */
             batch_size: number;
@@ -2225,6 +2455,11 @@ export interface components {
             /** @description Cache keys currently referencing the model, sorted. */
             cache_keys: string[];
             /**
+             * @description Cost dimension resolved from registry metadata at load time
+             *     (batch-calibration step 1a).
+             */
+            cost: components["schemas"]["CostHealth"];
+            /**
              * Format: int64
              * @description Monotonic load generation (bumps on every respawn).
              */
@@ -2233,11 +2468,18 @@ export interface components {
             in_flight_windows: number;
             inference_id: string;
             /**
-             * Format: int32
-             * @description Effective cap of the most recently dispatched window (design §6);
-             *     `null` until the first window dispatches.
+             * Format: int64
+             * @description Unit budget of the grant on the most recently dispatched window;
+             *     `null` until a window carries one (nothing dispatched yet, or this
+             *     model is on the unpriced path — see `dispatch.rs`).
              */
-            last_effective_cap?: number | null;
+            last_grant_units?: number | null;
+            /**
+             * Format: int32
+             * @description Inputs in the most recently dispatched window; `null` until the first
+             *     window dispatches. This is what a user cap bounds on the unpriced path.
+             */
+            last_window_items?: number | null;
             /** @description Requests waiting in the model's FIFO queue. */
             queue_depth: number;
             /**
@@ -2245,6 +2487,12 @@ export interface components {
              *     windows right now.
              */
             replicas: components["schemas"]["ReplicaHealth"];
+            /**
+             * @description One entry per replica: which GPU it sits on and the freshest memory
+             *     sensing it reported. This is the raw material step 1b's per-GPU
+             *     ledger is built from.
+             */
+            replicas_detail: components["schemas"]["ReplicaTelemetryHealth"][];
             /**
              * Format: int64
              * @description Windows ever dispatched to a replica.
@@ -2573,6 +2821,66 @@ export interface components {
         ReplicaHealth: {
             free: number;
             total: number;
+        };
+        /**
+         * @description Per-replica GPU placement plus its freshest memory report. Every field
+         *     after `gpu` is `null` until the worker reports it (no torch, CPU/MPS
+         *     host, or no predict yet).
+         */
+        ReplicaTelemetryHealth: {
+            /** Format: int64 */
+            allocated_mb?: number | null;
+            /**
+             * Format: int64
+             * @description Process-level load footprint and how it was measured.
+             */
+            base_mb?: number | null;
+            base_method?: string | null;
+            /** @description Negotiated load precision, part of the calibration profile key. */
+            dtype?: string | null;
+            /**
+             * Format: int64
+             * @description Freshest device sample, and how long ago it was recorded.
+             */
+            free_mb?: number | null;
+            /**
+             * @description Which driver reported `free_mb`/`total_mb` (`"nvml"` | `"torch"`); the
+             *     two disagree by gigabytes, so a reader comparing samples needs it.
+             */
+            free_source?: string | null;
+            /**
+             * @description Resolved `CUDA_VISIBLE_DEVICES` pin the worker was *spawned* with — a
+             *     board UUID when the GPU inventory is known.
+             */
+            gpu?: string | null;
+            gpu_name?: string | null;
+            /**
+             * @description The board the worker itself reports being on, which is what step 1b's
+             *     ledger keys by: the pin above can be an index, absent, or a UUID CUDA
+             *     reordered, and only the worker can see what it actually got.
+             */
+            gpu_uuid?: string | null;
+            /**
+             * Format: int64
+             * @description Measurements this replica has reported since it loaded, including any
+             *     the bounded ring has since evicted.
+             */
+            measurements_recorded: number;
+            /** Format: int64 */
+            memory_age_ms?: number | null;
+            /**
+             * @description The tail of the measurement ring, oldest first — a sample of what 1b's
+             *     cost fit consumes, not the whole ring (health is a status page).
+             */
+            recent_batches: components["schemas"]["BatchHealth"][];
+            /** Format: int64 */
+            reserved_at_load_mb?: number | null;
+            /** Format: int64 */
+            reserved_mb?: number | null;
+            /** @description The worker venv's torch, part of the calibration profile key. */
+            torch_version?: string | null;
+            /** Format: int64 */
+            total_mb?: number | null;
         };
         Results: {
             /** Format: int64 */
@@ -4675,7 +4983,11 @@ export interface operations {
                 user_data_db?: string | null;
                 /** @description Inference ID List */
                 inference_ids: string[];
-                /** @description Batch Size */
+                /**
+                 * @description Max Batch Size: an optional cap on how many items are processed at
+                 *     once. Omitted (or null) means auto — the inference server sizes
+                 *     batches itself.
+                 */
                 batch_size?: number | null;
                 /** @description Confidence Threshold */
                 threshold?: number | null;
@@ -4706,7 +5018,11 @@ export interface operations {
                 user_data_db?: string | null;
                 /** @description Inference ID List */
                 inference_ids: string[];
-                /** @description Batch Size */
+                /**
+                 * @description Max Batch Size: an optional cap on how many items are processed at
+                 *     once. Omitted (or null) means auto — the inference server sizes
+                 *     batches itself.
+                 */
                 batch_size?: number | null;
                 /** @description Confidence Threshold */
                 threshold?: number | null;

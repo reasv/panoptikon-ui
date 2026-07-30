@@ -8,10 +8,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Group, InputObject, Model, transformData } from "@/components/table/columns/models"
 import { useExternalInputs } from "@/components/external-inputs"
 
-export type WizardModelSettings = Record<string, { batchSize: number; threshold?: number }>
+/// Per-model wizard overrides. Batch size is deliberately absent: it is a
+/// cap now, not a target, and new databases always start on auto
+/// (docs/batch-calibration-design.md, "Batch size UX").
+export type WizardModelSettings = Record<string, { threshold?: number }>
 
 type ModelWithDefaults = Model & {
-  default_batch_size?: number
   default_threshold?: number
 }
 
@@ -36,7 +38,6 @@ export function WizardModelSelection({
 
   function defaultsFor(group: Group, model: ModelWithDefaults) {
     return {
-      batchSize: model.default_batch_size ?? group.default_batch_size,
       threshold: model.default_threshold ?? group.default_threshold,
     }
   }
@@ -54,7 +55,7 @@ export function WizardModelSelection({
     onSelectedChange(ordered)
   }
 
-  function changeSetting(id: string, current: { batchSize: number; threshold?: number }, patch: Partial<{ batchSize: number; threshold: number }>) {
+  function changeSetting(id: string, current: { threshold?: number }, patch: Partial<{ threshold: number }>) {
     onSettingsChange({ ...settings, [id]: { ...current, ...patch } })
   }
 
@@ -106,16 +107,9 @@ export function WizardModelSelection({
                           </Label>
                         </div>
 
-                        {checked && (
+                        {checked && defaults.threshold !== undefined && defaults.threshold !== null && (
                           <div className="mt-4 grid gap-4 border-t pt-4 lg:grid-cols-2">
-                            <div className="space-y-3 rounded-md border bg-background p-4">
-                              <div className="flex items-start justify-between gap-3">
-                                <div><Label>Batch size</Label><p className="text-xs text-muted-foreground">Lower this if available GPU memory is limited.</p></div>
-                                <span className="whitespace-nowrap text-sm font-medium">{modelSettings.batchSize} <span className="font-normal text-muted-foreground">(default {defaults.batchSize})</span></span>
-                              </div>
-                              <Slider min={1} max={256} step={1} value={[modelSettings.batchSize]} onValueChange={([batchSize]) => changeSetting(id, modelSettings, { batchSize })} aria-label={`${model.inference_id} batch size`} />
-                            </div>
-                            {defaults.threshold !== undefined && defaults.threshold !== null && (
+                            {(
                               <div className="space-y-3 rounded-md border bg-background p-4">
                                 <div className="flex items-start justify-between gap-3">
                                   <div><Label>Confidence threshold</Label><p className="text-xs text-muted-foreground">Lower values retain more model results.</p></div>

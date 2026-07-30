@@ -113,7 +113,8 @@ export function GroupTab({ group }: { group: Group }) {
                     inference_ids: selectedValues.map(
                         (model) => `${group.group_name}/${model.inference_id}`,
                     ),
-                    batch_size: modelConfig.default_batch_size,
+                    // null = auto: the inference server sizes the batches.
+                    batch_size: modelConfig.default_batch_size ?? null,
                     threshold: modelConfig.default_threshold,
                 },
             },
@@ -145,7 +146,7 @@ export function GroupTab({ group }: { group: Group }) {
     )
     const addToSchedule = useCronJobSchedule()
     const addToCronSchedule = () => {
-        const batchSize = modelConfig.default_batch_size || undefined
+        const batchSize = modelConfig.default_batch_size || null
         const threshold = modelConfig.default_threshold === null ? undefined : modelConfig.default_threshold
         addToSchedule(selectedValues.map((model) => `${group.group_name}/${model.inference_id}`), batchSize, threshold)
         setSelected({})
@@ -268,7 +269,8 @@ export function ExistingDataTab({ groups }: { groups: Group[] }) {
             setter,
             count,
             description,
-            batch_size: specificConfig?.default_batch_size || groupConfig?.default_batch_size || groupData?.default_batch_size || 1,
+            // The user's cap chain only; no chain entry means auto (null).
+            batch_size: specificConfig?.default_batch_size || groupConfig?.default_batch_size || null,
             threshold: specificConfig?.default_threshold || groupConfig?.default_threshold || groupData?.default_threshold || undefined,
         }
     })
@@ -329,7 +331,7 @@ export function ExistingDataTab({ groups }: { groups: Group[] }) {
                         These are the models that have previously been run on your data and have
                         generated index data currently stored in the database.
                         You can use this list to quickly re-run jobs or delete data.
-                        Configure the batch size and threshold for each model in the individual group tabs.
+                        Configure the max batch size and threshold for each model in the individual group tabs.
                     </p>
                     <p className="text-wrap mt-3 text-gray-400">
                         Select one or more models and click on "Run Job(s) for Selected" in

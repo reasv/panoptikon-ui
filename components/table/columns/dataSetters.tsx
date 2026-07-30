@@ -1,12 +1,13 @@
 import { ColumnDef } from "@tanstack/react-table"
 import { components } from "@/lib/panoptikon"
 import { Checkbox } from "@/components/ui/checkbox"
+import { formatMaxBatchSize } from "@/components/scan/MaxBatchSize"
 export interface DataSetter {
 
     setter: string;
     count: number;
     description: string | undefined;
-    batch_size: number;
+    batch_size: number | null;
     threshold: number | undefined;
 
 }
@@ -51,7 +52,8 @@ export const dataSettersColumns: ColumnDef<DataSetter>[] = [
     {
         id: "batch_size",
         accessorKey: "batch_size",
-        header: "Configured Batch Size",
+        header: "Configured Max Batch Size",
+        cell: ({ row }) => formatMaxBatchSize(row.original.batch_size),
     },
     {
         id: "threshold",

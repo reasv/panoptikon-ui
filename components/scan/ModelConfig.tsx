@@ -8,6 +8,8 @@ import React from "react"
 import { useToast } from "@/components/ui/use-toast"
 import { components } from "@/lib/panoptikon"
 import { ConfidenceFilter } from "@/components/sidebar/options/confidenceFilter"
+import { MaxBatchSize } from "@/components/scan/MaxBatchSize"
+import { FilterContainer } from "@/components/sidebar/base/FilterContainer"
 
 export function ModelConfig(
     {
@@ -37,6 +39,14 @@ export function ModelConfig(
                 description: "The changes have been applied",
             })
         },
+        onError: (error) => {
+            const detail = (error as { detail?: string } | null)?.detail
+            toast({
+                title: "Settings not saved",
+                description: detail || "The server rejected the request",
+                variant: "destructive",
+            })
+        },
     })
     const { refetch } = $api.useQuery(
         "get",
@@ -51,49 +61,62 @@ export function ModelConfig(
         },
     )
 
-    const setValues = async (batchSize: number | null | undefined, threshold: number | null | undefined) => {
+    // Resolves whether the save landed: controls that show their new state
+    // before the refetch confirms it (the batch-size switch) need to be able
+    // to put it back.
+    const setValues = async (batchSize: number | null | undefined, threshold: number | null | undefined): Promise<boolean> => {
         const { data } = await refetch()
-        if (!data) return
+        if (!data) return false
         const systemConfig = data
         // The config without the current group
         const job_settings = systemConfig.job_settings !== undefined ? systemConfig.job_settings.filter((v) => !((v.group_name === modelConfig.group_name) && !v.inference_id)) : []
         // Add the new config
-        changeSettings.mutate({
-            body: {
-                ...systemConfig,
-                job_settings: [
-                    ...job_settings,
-                    {
-                        group_name: modelConfig.group_name,
-                        default_batch_size: batchSize,
-                        default_threshold: threshold,
-                    },
-                ],
-            },
-            params: { query: dbs }
+        return await new Promise<boolean>((resolve) => {
+            changeSettings.mutate({
+                body: {
+                    ...systemConfig,
+                    job_settings: [
+                        ...job_settings,
+                        {
+                            group_name: modelConfig.group_name,
+                            default_batch_size: batchSize,
+                            default_threshold: threshold,
+                        },
+                    ],
+                },
+                params: { query: dbs }
+            }, {
+                onSuccess: () => resolve(true),
+                onError: () => resolve(false),
+            })
         })
     }
 
     return (
-        <div className='grid gap-4 grid-cols-1 lg:grid-cols-2'>
-            {modelConfig.default_batch_size !== undefined && modelConfig.default_batch_size !== null && <ConfidenceFilter
-                label="Batch Size"
-                description="Set to a lower value if you have little VRAM"
-                min={1}
-                max={256}
-                step={1}
-                confidence={modelConfig.default_batch_size}
-                setConfidence={(value) => setValues(value, modelConfig.default_threshold)}
-            />}
-            {modelConfig.default_threshold !== undefined && modelConfig.default_threshold !== null && <ConfidenceFilter
-                label="Confidence Threshold"
-                description="Lower values will produce more data"
-                min={0}
-                max={1}
-                confidence={modelConfig.default_threshold}
-                setConfidence={(value) => setValues(modelConfig.default_batch_size, value)}
-            />}
-        </div>
+        <>
+            <div className='grid gap-4 grid-cols-1 lg:grid-cols-2'>
+                {modelConfig.default_threshold !== undefined && modelConfig.default_threshold !== null && <ConfidenceFilter
+                    label="Confidence Threshold"
+                    description="Lower values will produce more data"
+                    min={0}
+                    max={1}
+                    confidence={modelConfig.default_threshold}
+                    setConfidence={(value) => setValues(modelConfig.default_batch_size, value)}
+                />}
+            </div>
+            {/* The cap is an advanced setting: auto is right for almost
+                everyone, so it stays collapsed until someone goes looking. */}
+            <FilterContainer
+                label="Advanced"
+                description="Batch size limits for this model group"
+                storageKey={`modelConfigAdvanced-${modelConfig.group_name}`}
+            >
+                <MaxBatchSize
+                    value={modelConfig.default_batch_size}
+                    setValue={(value) => setValues(value, modelConfig.default_threshold)}
+                />
+            </FilterContainer>
+        </>
     )
 }
 
@@ -115,7 +138,9 @@ export function useModelConfig(group: Group) {
     const config = data && data.job_settings !== undefined ? data.job_settings.filter((v) => (v.group_name === group.group_name) && !v.inference_id) : []
     return config.length > 0 ? config[0] : {
         group_name: group.group_name,
-        default_batch_size: group.default_batch_size,
+        // Auto, not the registry's default_batch_size: that number is the
+        // inference side's own seed and was never the user's cap.
+        default_batch_size: null,
         default_threshold: group.default_threshold,
     }
 }
@@ -156,7 +181,8 @@ export function useCronJobSchedule() {
             placeholderData: keepPreviousData,
         },
     )
-    const addToSchedule = async (inference_ids: string[], batch_size?: number, threshold?: number) => {
+    // `batch_size` omitted (or null) schedules the model on auto.
+    const addToSchedule = async (inference_ids: string[], batch_size?: number | null, threshold?: number) => {
         const { data } = await refetch()
         if (!data) return
         const systemConfig = data

@@ -1,6 +1,7 @@
 import { ColumnDef } from "@tanstack/react-table"
 import { components } from "@/lib/panoptikon"
 import { Checkbox } from "@/components/ui/checkbox"
+import { formatMaxBatchSize } from "@/components/scan/MaxBatchSize"
 
 // A job type the UI doesn't know falls back to its own wire name rather than
 // a placeholder: unhelpful, but at least it says which job is running.
@@ -93,7 +94,14 @@ export const jobQueueColumns: ColumnDef<components["schemas"]["JobModel"]>[] = [
     {
         id: "batch_size",
         accessorKey: "batch_size",
-        header: "Batch Size",
+        header: "Max Batch Size",
+        // Only extraction jobs run models, so only they have a batch to cap:
+        // "Auto" on a folder rescan or a maintenance pass would claim a
+        // setting that does not exist for those jobs.
+        cell: ({ row }) =>
+            row.original.job_type === "data_extraction"
+                ? formatMaxBatchSize(row.original.batch_size)
+                : "",
     },
     {
         id: "threshold",

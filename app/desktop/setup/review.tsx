@@ -75,7 +75,7 @@ export function WizardReview({
         </SummaryCard>
 
         <SummaryCard icon={<Sparkles className="h-5 w-5" />} title="AI models">
-          {selectedModels.length === 0 ? <p className="text-muted-foreground">No models selected. The initial run will only scan files.</p> : <div className="space-y-2">{selectedModels.map((model) => <div key={model} className="rounded-md border p-2"><p className="break-all font-mono text-xs font-medium">{model}</p><p className="mt-1 text-xs text-muted-foreground">Batch {modelSettings[model]?.batchSize ?? "default"}{modelSettings[model]?.threshold !== undefined ? ` · threshold ${modelSettings[model].threshold}` : ""}</p></div>)}</div>}
+          {selectedModels.length === 0 ? <p className="text-muted-foreground">No models selected. The initial run will only scan files.</p> : <div className="space-y-2">{selectedModels.map((model) => <div key={model} className="rounded-md border p-2"><p className="break-all font-mono text-xs font-medium">{model}</p><p className="mt-1 text-xs text-muted-foreground">Auto batch size{modelSettings[model]?.threshold !== undefined ? ` · threshold ${modelSettings[model].threshold}` : ""}</p></div>)}</div>}
         </SummaryCard>
 
         <SummaryCard icon={<CalendarClock className="h-5 w-5" />} title="Routine processing">

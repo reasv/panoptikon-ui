@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { ArrowUpDown } from "lucide-react"
 import { components } from "@/lib/panoptikon"
 import { Checkbox } from "@/components/ui/checkbox"
+import { formatMaxBatchSize } from "@/components/scan/MaxBatchSize"
 
 
 export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
@@ -162,7 +163,9 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
     },
     {
         accessorKey: "batch_size",
-        header: "Batch Size",
+        header: "Max Batch Size",
+        // The log column is NOT NULL, so a job that ran on auto stored 0.
+        cell: ({ row }) => formatMaxBatchSize(row.original.batch_size),
     },
     {
         accessorKey: "threshold",
