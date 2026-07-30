@@ -29,7 +29,6 @@ export function TextEmbSearch() {
                         model={filter.model}
                         index={filter.index}
                         variant={filter.variant}
-                        k={filter.k}
                         setValue={(value) => setFilter(value)}
                     />
                 </>
@@ -61,7 +60,6 @@ export function ImgEmbSearch() {
                         clipXmodal={filter.clip_xmodal}
                         index={filter.index}
                         variant={filter.variant}
-                        k={filter.k}
                         setValue={(value) => setFilter(value)}
                     />
                 </>

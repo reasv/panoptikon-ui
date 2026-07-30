@@ -942,7 +942,7 @@ export interface paths {
         put?: never;
         /**
          * Rebuild a quant profile's artifact for an embedding space
-         * @description Marks the embedding space containing the given setter for rebuild under the given profile (artifact recomputed at a bumped revision) and enqueues a reconcile job. The affected setters search exact until the rebuild completes. Explicit user action by design — artifact recomputation reshuffles coarse order and is never background-silent.
+         * @description Marks the embedding space containing the given setter for rebuild under the given profile (the int8 scale is recomputed and every code rewritten at a bumped revision) and enqueues a reconcile job. The affected setters search exact until the rebuild completes. Explicit user action by design — a recomputed scale invalidates every code already stored for the space, so search results move; that is never background-silent.
          */
         post: operations["rebuild_vector_quant_pair"];
         delete?: never;
@@ -2853,16 +2853,14 @@ export interface components {
              *     brute-forces full-precision vectors; `quant` demands a quant profile
              *     and errors when it isn't ready. `ann` is reserved.
              *
-             *     Under a quant profile the displayed head order is always re-scored
-             *     against full-precision vectors (see `k`), and `order_rank` is a rank,
-             *     not a raw distance.
+             *     A quant profile scores int8 codes in a single pass; `order_rank` has
+             *     exactly the same semantics as under `exact`.
              */
             index?: components["schemas"]["IndexMode"];
             /**
              * Format: int64
-             * @description The exactness horizon: the coarse-top-k candidates re-scored with
-             *     full-precision distances. Ignored by `exact`. Keep it fixed across a
-             *     pagination session.
+             * @description Deprecated: ignored. Reserved for a future ANN index mode (top-k
+             *     retrieval depth).
              */
             k?: number;
             /**
@@ -2906,16 +2904,14 @@ export interface components {
              *     brute-forces full-precision vectors; `quant` demands a quant profile
              *     and errors when it isn't ready. `ann` is reserved.
              *
-             *     Under a quant profile the displayed head order is always re-scored
-             *     against full-precision vectors (see `k`), and `order_rank` is a rank,
-             *     not a raw distance.
+             *     A quant profile scores int8 codes in a single pass; `order_rank` has
+             *     exactly the same semantics as under `exact`.
              */
             index?: components["schemas"]["IndexMode"];
             /**
              * Format: int64
-             * @description The exactness horizon: the coarse-top-k candidates re-scored with
-             *     full-precision distances. Ignored by `exact`. Keep it fixed across a
-             *     pagination session.
+             * @description Deprecated: ignored. Reserved for a future ANN index mode (top-k
+             *     retrieval depth).
              */
             k?: number;
             /**
@@ -3004,16 +3000,15 @@ export interface components {
              *     brute-forces full-precision vectors; `quant` demands a quant profile
              *     and errors when it isn't ready. `ann` is reserved.
              *
-             *     Under a quant profile both sides of the similarity self-join use
-             *     binary quants for the coarse pass, and `order_rank` is a rank, not a
-             *     raw distance.
+             *     Under a quant profile both sides of the similarity self-join read
+             *     int8 codes; `order_rank` has exactly the same semantics as under
+             *     `exact`.
              */
             index?: components["schemas"]["IndexMode"];
             /**
              * Format: int64
-             * @description The exactness horizon: the coarse-top-k candidates re-scored with
-             *     full-precision distances. Ignored by `exact`. Keep it fixed across a
-             *     pagination session.
+             * @description Deprecated: ignored. Reserved for a future ANN index mode (top-k
+             *     retrieval depth).
              */
             k?: number;
             /** @description The name of the embedding model used for similarity search */
@@ -3286,14 +3281,20 @@ export interface components {
             detail: string;
         };
         VectorQuantProfileConfig: {
-            /** @description Mean-center vectors before binarization (per embedding space). */
+            /**
+             * @description Deprecated: ignored since the int8 remap. Kept deserializable so
+             *     existing `[vector_quants]` sections still parse.
+             */
             centered?: boolean;
             name: string;
-            /** @description 'binary' in v1; 'int8' is a reserved future recipe slot. */
+            /**
+             * @description `int8` (global-symmetric absmax, docs/vector-int8-quant.md). `binary`
+             *     is retired: the load path maps it to `int8` (which triggers a
+             *     recipe-change rebuild), the config-commit path rejects it.
+             */
             quantizer: string;
         };
         VectorQuantProfileStatus: {
-            centered: boolean;
             is_default: boolean;
             name: string;
             quantizer: string;
@@ -3700,6 +3701,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DbCreateResponse"];
+                };
+            };
+            /** @description Server is in read-only mode */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
         };

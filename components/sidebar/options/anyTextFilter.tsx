@@ -107,7 +107,6 @@ function AnyTextImageEmbeddingSearch() {
                         clipXmodal={filter.clip_xmodal}
                         index={filter.index}
                         variant={filter.variant}
-                        k={filter.k}
                         setValue={(value) => setFilter(value)}
                     />
                     <RRFParams
@@ -137,7 +136,6 @@ function AnyTextAudioEmbeddingSearch() {
                         model={filter.model}
                         index={filter.index}
                         variant={filter.variant}
-                        k={filter.k}
                         setValue={(value) => setFilter(value)}
                     />
                     <RRFParams
@@ -170,7 +168,6 @@ function AnyTextSemanticTextSearch() {
                         model={filter.model}
                         index={filter.index}
                         variant={filter.variant}
-                        k={filter.k}
                         setValue={(value) => setFilter(value)}
                     />
                     <RRFParams

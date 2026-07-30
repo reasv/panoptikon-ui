@@ -74,7 +74,6 @@ export function ItemSimilaritySearchOptions({
                 clipXmodal={filter.clip_xmodal}
                 index={filter.index}
                 variant={filter.variant}
-                k={filter.k}
                 setValue={(value) => setFilter(value)}
             />
             {embeddingType === "clip" &&

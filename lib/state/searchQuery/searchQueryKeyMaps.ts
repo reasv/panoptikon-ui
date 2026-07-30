@@ -166,7 +166,6 @@ export const semanticTextSearchKeyMap = (p: typeof def) =>
       .parseAsStringEnum<vectorIndexMode>(["auto", "exact", "quant"])
       .withDefault("auto"),
     variant: p.parseAsString.withDefault(""),
-    k: p.parseAsInteger.withDefault(10000),
   })
 
 export const sourceTextKeyMap = (p: typeof def) =>
@@ -194,7 +193,6 @@ export const semanticImageSearchKeyMap = (p: typeof def) =>
       .parseAsStringEnum<vectorIndexMode>(["auto", "exact", "quant"])
       .withDefault("auto"),
     variant: p.parseAsString.withDefault(""),
-    k: p.parseAsInteger.withDefault(10000),
   })
 
 export const itemSimilarityKeyMap = (p: typeof def) =>
@@ -214,7 +212,6 @@ export const itemSimilarityKeyMap = (p: typeof def) =>
       .parseAsStringEnum<vectorIndexMode>(["auto", "exact", "quant"])
       .withDefault("auto"),
     variant: p.parseAsString.withDefault(""),
-    k: p.parseAsInteger.withDefault(10000),
   })
 
 export const filterSortKeyMap = (p: typeof def) =>
@@ -305,26 +302,26 @@ export type ATMatchPath = Required<
   Omit<components["schemas"]["MatchPathArgs"], "match" | "raw_fts5_match">
 >
 
-// The AnyText surfaces share the dedicated filters' keymaps, so index/variant/k
+// The AnyText surfaces share the dedicated filters' keymaps, so index/variant
 // are per-filter state here too, and each renders its own index controls.
 // `index` is re-declared because the schema admits the reserved `ann`, which
 // the URL parsers refuse.
 export type ATSemanticText = Required<
   Omit<
     components["schemas"]["SemanticTextArgs"],
-    "query" | "embed" | "src_text" | "index"
+    "query" | "embed" | "src_text" | "index" | "k"
   >
 > & { index: vectorIndexMode }
 export type ATSemanticImage = Required<
   Omit<
     components["schemas"]["SemanticImageArgs"],
-    "query" | "embed" | "src_text" | "index"
+    "query" | "embed" | "src_text" | "index" | "k"
   >
 > & { index: vectorIndexMode }
 export type ATSemanticAudio = Required<
   Omit<
     components["schemas"]["SemanticImageArgs"],
-    "query" | "embed" | "src_text" | "index"
+    "query" | "embed" | "src_text" | "index" | "k"
   >
 > & { index: vectorIndexMode }
 
@@ -364,7 +361,10 @@ export type KeymapComponents = {
   MatchTags: Required<MatchTagsArgs>
   FileFilters: FileFilters
   SemanticTextSearch: Required<
-    Omit<components["schemas"]["SemanticTextArgs"], "embed" | "src_text" | "index">
+    Omit<
+      components["schemas"]["SemanticTextArgs"],
+      "embed" | "src_text" | "index" | "k"
+    >
   > & { index: vectorIndexMode }
   SemanticTextSource: NonNullableProps<
     Required<components["schemas"]["SourceArgs"]>
@@ -374,13 +374,13 @@ export type KeymapComponents = {
   SemanticImageSearch: Required<
     Omit<
       components["schemas"]["SemanticImageArgs"],
-      "embed" | "src_text" | "force_distance_function" | "index"
+      "embed" | "src_text" | "force_distance_function" | "index" | "k"
     >
   > & { index: vectorIndexMode }
   ItemSimilarity: Required<
     Omit<
       components["schemas"]["SimilarityArgs"],
-      "embed" | "src_text" | "force_distance_function" | "index"
+      "embed" | "src_text" | "force_distance_function" | "index" | "k"
     >
   > & { index: vectorIndexMode }
   ItemSimilarityTextSource: Required<components["schemas"]["SourceArgs"]>
@@ -411,7 +411,7 @@ export type SimilaritySideBarComponents = {
   CLIPSimilarity: Required<
     Omit<
       components["schemas"]["SimilarityArgs"],
-      "target" | "distance_function" | "src_text" | "force_distance_function" | "index"
+      "target" | "distance_function" | "src_text" | "force_distance_function" | "index" | "k"
     >
   > & { index: vectorIndexMode }
   CLIPTextSource: Required<components["schemas"]["SourceArgs"]>
@@ -427,6 +427,7 @@ export type SimilaritySideBarComponents = {
       | "xmodal_i2i"
       | "force_distance_function"
       | "index"
+      | "k"
     >
   > & { index: vectorIndexMode }
   TextSource: Required<components["schemas"]["SourceArgs"]>

@@ -1,16 +1,8 @@
 import { $api } from "@/lib/api"
 import { useSelectedDBs } from "@/lib/state/database"
 import { ComboBoxResponsive } from "@/components/combobox"
-import { ConfidenceFilter } from "../options/confidenceFilter"
 import { components } from "@/lib/panoptikon"
 import { vectorIndexMode } from "@/lib/state/searchQuery/searchQueryKeyMaps"
-
-// The backend's default rescore depth is 10k; the track spans an order of
-// magnitude either side of it, which covers "cheap" through "near-exact" on
-// the collections this UI is used with.
-const K_MIN = 1000
-const K_MAX = 100000
-const K_STEP = 1000
 
 /**
  * Index mode selector for vector search surfaces: Auto (default), Exact,
@@ -111,57 +103,35 @@ export function VectorIndexModeSelector({
 }
 
 /**
- * The full vector-index controls: index mode, plus the rescore depth under
- * a quant index. An explicit `exact` never re-scores, so K is hidden there —
- * but it stays under `auto`, which can resolve to quant.
+ * The vector-index controls: the index mode selector. A quant profile scores
+ * int8 codes in a single pass, so there is nothing to tune next to it — the
+ * mode is the whole control surface.
  */
 export function VectorIndexControls({
     model,
     clipXmodal,
     index,
     variant,
-    k,
     setValue,
 }: {
     model: string
     clipXmodal?: boolean
     index: components["schemas"]["IndexMode"]
     variant: string | null
-    k: number
     setValue: (value: {
         index?: vectorIndexMode
         variant?: string
-        k?: number
     }) => void
 }) {
-    const rescores = index !== "exact" || !!variant
     return (
-        <>
-            <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
-                <VectorIndexModeSelector
-                    model={model}
-                    clipXmodal={clipXmodal}
-                    index={index}
-                    variant={variant}
-                    setValue={setValue}
-                />
-            </div>
-            {rescores && (
-                <ConfidenceFilter
-                    label={<span>Rescore Depth</span>}
-                    description={
-                        <span>
-                            Top candidates re-ranked by exact distance under a
-                            quantized index. Higher is more accurate, slower.
-                        </span>
-                    }
-                    confidence={k}
-                    setConfidence={(value) => setValue({ k: value })}
-                    min={K_MIN}
-                    max={K_MAX}
-                    step={K_STEP}
-                />
-            )}
-        </>
+        <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-left">
+            <VectorIndexModeSelector
+                model={model}
+                clipXmodal={clipXmodal}
+                index={index}
+                variant={variant}
+                setValue={setValue}
+            />
+        </div>
     )
 }
