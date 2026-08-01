@@ -241,6 +241,7 @@ export function ScanFailures() {
                         skipAfter={failure.skip_after}
                         active={failure.active}
                         ledger="scan"
+                        stage={failure.stage}
                     />
                     <TableCell>{prettyPrintDate(failure.last_seen)}</TableCell>
                 </TableRow>
@@ -403,8 +404,21 @@ const ACTIVE_LABEL = {
     extraction: { text: "skipped", title: "Confirmed; the work query skips this item." },
     scan: {
         text: "confirmed",
-        title: "Failures confirmed; a changed file is still retried on the next scan/job.",
+        title:
+            "Failures confirmed; a changed file is still retried on the next scan/job. " +
+            "A decode row never suppresses anything at any count: the file is indexed and " +
+            "only its visuals failed.",
     },
+} as const
+
+// A `decode` row belongs to a file that *is* indexed — only its thumbnail or
+// blurhash could not be produced — so neither "skipped" nor "will retry" is
+// true of it: the scan ledger schedules nothing for it either way. Saying so
+// beats showing a countdown to a threshold that does nothing.
+const AUDIT_ONLY_STAGE = "decode"
+const AUDIT_ONLY_LABEL = {
+    text: "audit only",
+    title: "Recorded for audit; retry scheduling is handled by the visuals cache.",
 } as const
 
 function AttemptsCell({
@@ -412,25 +426,29 @@ function AttemptsCell({
     skipAfter,
     active,
     ledger,
+    stage,
 }: {
     attempts: number
     skipAfter: number
     active: boolean
     ledger: keyof typeof ACTIVE_LABEL
+    stage?: string
 }) {
+    const auditOnly = ledger === "scan" && stage === AUDIT_ONLY_STAGE
     const activeLabel = ACTIVE_LABEL[ledger]
+    const state = auditOnly
+        ? AUDIT_ONLY_LABEL
+        : active
+          ? activeLabel
+          : {
+                text: "will retry",
+                title: "Recorded but not yet confirmed; this will be tried again.",
+            }
     return (
         <TableCell className="tabular-nums">
             {attempts}/{skipAfter}
-            <span
-                className="text-muted-foreground"
-                title={
-                    active
-                        ? activeLabel.title
-                        : "Recorded but not yet confirmed; this will be tried again."
-                }
-            >
-                {active ? ` · ${activeLabel.text}` : " · will retry"}
+            <span className="text-muted-foreground" title={state.title}>
+                {` · ${state.text}`}
             </span>
         </TableCell>
     )

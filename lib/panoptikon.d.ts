@@ -2779,6 +2779,10 @@ export interface components {
              *     have the `last_modified`/`file_size` the failure was recorded against,
              *     so a file that has been repaired or otherwise modified since is
              *     re-attempted on the next scan even though this reads true.
+             *
+             *     A `decode`-stage row never suppresses anything at any `attempts`: its
+             *     file *is* indexed (only the visuals failed), so the row is audit-only
+             *     and retry scheduling is the visuals cache's, not this ledger's.
              */
             active: boolean;
             /** Format: int64 */
@@ -2808,7 +2812,7 @@ export interface components {
             path: string;
             /** Format: int64 */
             skip_after: number;
-            /** @description `mime`, `metadata` or `decode`. */
+            /** @description `mime`, `metadata`, `header` or `decode`. */
             stage: string;
         };
         ScanFailuresResponse: {
