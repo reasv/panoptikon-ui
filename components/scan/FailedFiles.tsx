@@ -23,6 +23,11 @@ import {
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { prettyPrintDate } from "@/components/table/utils"
+import {
+    HoverCard,
+    HoverCardContent,
+    HoverCardTrigger,
+} from "@/components/ui/hover-card"
 import { useCopyPath } from "@/components/imageButtons"
 import { useFailedFilesTab } from "@/lib/state/ScanTabs"
 import { ReactNode, useEffect, useState } from "react"
@@ -401,12 +406,37 @@ function ClassCell({ errorClass, blocker }: { errorClass: string; blocker?: stri
     )
 }
 
+// Errors are recorded up to 2000 bytes and the interesting part is rarely in
+// the first truncated line, while the native `title` tooltip clamps long text
+// and cannot be read at leisure. The full message lives in a hover card
+// instead: wrapped, scrollable past ~20 lines, and selectable, because a
+// Radix hover card stays open while the pointer is over its content. A click
+// copies the whole error with the same feedback as the path cell.
 function ErrorCell({ error }: { error: string }) {
+    const copyPath = useCopyPath()
     return (
         <TableCell className="max-w-96">
-            <div className="truncate" title={error}>
-                {error}
-            </div>
+            <HoverCard openDelay={300}>
+                <HoverCardTrigger asChild>
+                    <div
+                        className="truncate cursor-pointer hover:underline"
+                        onClick={() => copyPath(error)}
+                    >
+                        {error}
+                    </div>
+                </HoverCardTrigger>
+                <HoverCardContent
+                    align="start"
+                    className="w-auto max-w-2xl max-h-96 overflow-y-auto"
+                >
+                    <p className="text-sm font-mono whitespace-pre-wrap break-words">
+                        {error}
+                    </p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                        Click the cell to copy the full error
+                    </p>
+                </HoverCardContent>
+            </HoverCard>
         </TableCell>
     )
 }
