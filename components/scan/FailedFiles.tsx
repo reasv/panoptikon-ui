@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { prettyPrintDate } from "@/components/table/utils"
+import { useCopyPath } from "@/components/imageButtons"
 import { useFailedFilesTab } from "@/lib/state/ScanTabs"
 import { ReactNode, useEffect, useState } from "react"
 
@@ -359,12 +360,31 @@ function FailureTable({
 }
 
 // Paths are long and the interesting end is the right one, but truncating
-// there would hide the filename; the full path is on the title either way.
+// there would hide the filename; the full path is on the title, and a click
+// copies it — `useCopyPath` is the shared path-copy (text/plain so the
+// browser cannot prefix `file://`, plus the insecure-origin fallback). The
+// extraction ledger's sha256 fallback rides the same affordance: it is the
+// identifier a user would search by once the file row is gone.
 function PathCell({ path, fallback }: { path?: string | null; fallback: string }) {
+    const copyPath = useCopyPath()
+    const value = path || fallback
+    if (!value) {
+        return (
+            <TableCell className="max-w-96">
+                <div className="truncate font-mono text-muted-foreground">
+                    (file no longer indexed)
+                </div>
+            </TableCell>
+        )
+    }
     return (
         <TableCell className="max-w-96">
-            <div className="truncate font-mono" title={path || fallback}>
-                {path || fallback || "(file no longer indexed)"}
+            <div
+                className="truncate font-mono cursor-pointer hover:underline"
+                title={`${value}\nClick to copy`}
+                onClick={() => copyPath(value)}
+            >
+                {value}
             </div>
         </TableCell>
     )

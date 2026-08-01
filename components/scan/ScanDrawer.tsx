@@ -16,7 +16,9 @@ import { useScanDrawerOpen } from "@/lib/state/scanDrawer"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 
 export function ScanInternal() {
-    return <>
+    // pb-4: cards only carry a top margin (FilterContainer), so without this
+    // the last card sits flush against the scroll viewport's bottom edge.
+    return <div className="pb-4">
         <div className='grid gap-4 grid-cols-1 lg:grid-cols-2'>
             <SwitchDB />
             <CreateNewDB />
@@ -29,7 +31,7 @@ export function ScanInternal() {
         <JobQueue />
         <JobHistory />
         <FailedFiles />
-    </>
+    </div>
 }
 
 export function ScanDrawer() {
