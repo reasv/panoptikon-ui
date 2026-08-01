@@ -232,8 +232,20 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
         },
     },
     {
+        id: "errors",
         accessorKey: "errors",
         header: "Errors",
+        // The split is what tells "the library has some bad files" apart from
+        // "this job was broken": the input half is media the ledger has a
+        // verdict on (see the Failed Files card), the rest is systemic.
+        cell: ({ row }) => {
+            const errors = row.getValue("errors") as number
+            const inputErrors = row.original.input_errors
+            if (errors === 0 || !inputErrors) {
+                return errors
+            }
+            return `${errors} (${inputErrors} input)`
+        },
     },
     {
         accessorKey: "total_remaining",

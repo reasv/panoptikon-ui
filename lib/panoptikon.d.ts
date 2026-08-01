@@ -528,7 +528,7 @@ export interface paths {
         put?: never;
         /**
          * Run a batch prediction on a model
-         * @description Runs a batch of inputs through a model, auto-loading it into the given cache slot first if needed. The response encoding depends on the outputs: exactly one binary output is returned raw as `application/octet-stream`; all-binary outputs use `multipart/mixed`; anything else is the JSON `{"outputs": [...]}` envelope.
+         * @description Runs a batch of inputs through a model, auto-loading it into the given cache slot first if needed. The response encoding depends on the outputs: exactly one binary output is returned raw as `application/octet-stream`; all-binary outputs use `multipart/mixed`; anything else is the JSON `{"outputs": [...]}` envelope. An input the model rejected on its own occupies its output slot as `{"__error__": {"class": "input"|"transient", "message": ...}}`, which always selects the JSON envelope.
          */
         post: operations["predict"];
         delete?: never;
@@ -789,6 +789,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/data/failures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List recorded data extraction failures
+         * @description The extraction failure ledger: media a setter has already rejected, which the work query therefore skips. Read-only by design — a row is cleared when the file's content changes, when a missing dependency appears, or by a shipped retry directive, never by an API call. Newest first, paginated with limit/offset against `total`.
+         */
+        get: operations["get_extraction_failures"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/data/history": {
         parameters: {
             query?: never;
@@ -984,6 +1004,26 @@ export interface paths {
         post?: never;
         /** Cancel queued jobs */
         delete: operations["cancel_queued"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/scan/failures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List recorded file scan failures
+         * @description The filescan failure ledger: paths the scan could not get as far as an item for. A confirmed row (`active`) is skipped only while the file still has the mtime and size the failure was recorded against, so a repaired or modified file is re-attempted on the next scan regardless. Read-only by design — a row is cleared when the file's mtime or size changes, when the path stops being walked, when a missing dependency appears, or by a shipped retry directive. Newest first, paginated with limit/offset against `total`.
+         */
+        get: operations["get_scan_failures"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1671,6 +1711,77 @@ export interface components {
             /** Format: double */
             lowest_language_confidence?: number | null;
         };
+        /** @description One recorded extraction failure, as served to the audit surface. */
+        ExtractionFailure: {
+            /**
+             * @description `attempts >= skip_after`: the verdict is confirmed and the work query
+             *     is skipping this item. False means the verdict is recorded but
+             *     unconfirmed and will be retried.
+             */
+            active: boolean;
+            /** Format: int64 */
+            attempts: number;
+            /**
+             * @description The missing dependency for a `blocked` row (`pdfium`, `html-renderer`
+             *     or `ffmpeg`), null otherwise.
+             */
+            blocker?: string | null;
+            /** @description Human-readable message, clamped when it was recorded. */
+            error: string;
+            /** @description `input`, `blocked` or `resource`. */
+            error_class: string;
+            first_seen: string;
+            /**
+             * Format: int64
+             * @description Ledger row id. Stable for as long as the row lives, which is what the
+             *     UI keys rows on.
+             */
+            id: number;
+            /**
+             * Format: int64
+             * @description The last job that saw this failure. Null only when it was recorded
+             *     outside a job. This is *not* a foreign key and nothing nulls it when
+             *     job rows are cleaned up, so the id may name a job that no longer
+             *     exists — the ledger has to outlive the job history it refers to.
+             */
+            last_job_id?: number | null;
+            last_seen: string;
+            /** @description The item's mime type as recorded when the failure happened. */
+            mime_type: string;
+            /**
+             * @description One of the paths this item is stored under, chosen deterministically
+             *     (an available file first, then the lexicographically smallest path).
+             *     An item can have several files and the ledger keys on the item, so
+             *     this is a representative, not the whole story. Null when every file of
+             *     the item has gone away.
+             */
+            path?: string | null;
+            setter_name: string;
+            sha256: string;
+            /**
+             * Format: int64
+             * @description Attempts needed before the verdict suppresses the item.
+             */
+            skip_after: number;
+            /** @description `prepare` or `inference`. */
+            stage: string;
+        };
+        ExtractionFailuresResponse: {
+            failures: components["schemas"]["ExtractionFailure"][];
+            /**
+             * Format: int64
+             * @description How many failures match the filters, ignoring the page window — the
+             *     denominator for `limit`/`offset` paging.
+             */
+            total: number;
+        };
+        FailedFor: {
+            /**
+             * @description This Item has an active extraction-failure record for this setter name
+             *     (the pipeline rejected its media, or a dependency it needs is missing)
+             */
+            failed_for: string;
+        };
         FileRecordResponse: {
             filename: string;
             /** Format: int64 */
@@ -1938,6 +2049,14 @@ export interface components {
             image_files: number;
             /** Format: double */
             inference_time: number;
+            /**
+             * Format: int64
+             * @description How many of `errors` were verdicts about the media itself (the
+             *     `input`/`blocked`/`resource` ledger classes) rather than systemic
+             *     failures. The remainder is what decides whether a job where everything
+             *     failed completes with a warning or hard-fails.
+             */
+            input_errors: number;
             /** Format: int64 */
             items_in_db: number;
             /** Format: int64 */
@@ -2527,7 +2646,9 @@ export interface components {
         PredictJsonResponse: {
             /**
              * @description One output per input; binary outputs are wrapped as
-             *     `{"__type__": "base64", "content": "<base64>"}`.
+             *     `{"__type__": "base64", "content": "<base64>"}`, and an input the
+             *     model rejected on its own is
+             *     `{"__error__": {"class": "input" | "transient", "message": "..."}}`.
              */
             outputs: components["schemas"]["Value"][];
         };
@@ -2551,7 +2672,7 @@ export interface components {
             /** @description This Item or Item Data must have been processed by this setter name and have data derived from it */
             processed_by: string;
         };
-        QueryElement: components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"] | components["schemas"]["Match"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["SimilarTo"] | components["schemas"]["MatchTags"] | components["schemas"]["InBookmarks"] | components["schemas"]["ProcessedBy"] | components["schemas"]["HasUnprocessedData"];
+        QueryElement: components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"] | components["schemas"]["Match"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["SimilarTo"] | components["schemas"]["MatchTags"] | components["schemas"]["InBookmarks"] | components["schemas"]["ProcessedBy"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["FailedFor"];
         QueueCancelResponse: {
             cancelled_jobs: number[];
         };
@@ -2650,6 +2771,54 @@ export interface components {
             screenful_h?: number | null;
         };
         ScalarValue: number | string;
+        /** @description One recorded filescan failure, as served to the audit surface. */
+        ScanFailure: {
+            /**
+             * @description `attempts >= skip_after`: the verdict is confirmed. Not the same as
+             *     "this path will be skipped": the walker also requires the file to still
+             *     have the `last_modified`/`file_size` the failure was recorded against,
+             *     so a file that has been repaired or otherwise modified since is
+             *     re-attempted on the next scan even though this reads true.
+             */
+            active: boolean;
+            /** Format: int64 */
+            attempts: number;
+            blocker?: string | null;
+            error: string;
+            /** @description `input`, `blocked` or `resource`. */
+            error_class: string;
+            first_seen: string;
+            /** Format: int64 */
+            id: number;
+            /**
+             * Format: int64
+             * @description The last scan that saw this failure. Null only when it was recorded
+             *     outside a scan. This is *not* a foreign key and nothing nulls it when
+             *     `file_scans` rows are cleaned up, so the id may name a scan that no
+             *     longer exists.
+             */
+            last_scan_id?: number | null;
+            last_seen: string;
+            /** @description The extension-based guess, or null when the guess is what failed. */
+            mime_type?: string | null;
+            /**
+             * @description The path is the key of this ledger: these failures happen before an
+             *     item — or even a hash — exists.
+             */
+            path: string;
+            /** Format: int64 */
+            skip_after: number;
+            /** @description `mime`, `metadata` or `decode`. */
+            stage: string;
+        };
+        ScanFailuresResponse: {
+            failures: components["schemas"]["ScanFailure"][];
+            /**
+             * Format: int64
+             * @description How many failures match the filters, ignoring the page window.
+             */
+            total: number;
+        };
         SearchCacheDbGroup: {
             bytes: number;
             /** @description Cached spans, not client pages: one 320-row prefetch is 2 spans. */
@@ -4738,6 +4907,62 @@ export interface operations {
             };
         };
     };
+    get_extraction_failures: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+                /**
+                 * @description Only failures recorded for this setter. Deliberately *not* validated
+                 *     against the known setters: the vocabulary is free-form and depends on
+                 *     which models the user has ever run, so there is no closed list to check
+                 *     against. A typo therefore answers "no failures", which is acceptable
+                 *     here — unlike `error_class`, whose vocabulary is closed and enforced,
+                 *     because a mistyped class silently reading as "nothing is wrong" is
+                 *     exactly what an audit surface must not do.
+                 */
+                setter?: string | null;
+                /** @description `input`, `blocked` or `resource`. Anything else is a 400. */
+                error_class?: string | null;
+                /**
+                 * @description `prepare` (the gateway could not produce the model's input) or
+                 *     `inference` (the worker rejected it).
+                 */
+                stage?: string | null;
+                /** @description Prefix of the recorded mime type, e.g. `image/`. */
+                mime_prefix?: string | null;
+                /**
+                 * @description Page size. Defaults to 100; values outside 1..=1000 are clamped into
+                 *     that range rather than rejected. Deliberately unconstrained in the
+                 *     schema: a generated validating client must not refuse a request the
+                 *     server accepts.
+                 */
+                limit?: number | null;
+                /**
+                 * @description Rows to skip. Values below 0 are clamped to 0 (start at the beginning),
+                 *     not rejected — same reason as `limit`.
+                 */
+                offset?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recorded extraction failures */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtractionFailuresResponse"];
+                };
+            };
+        };
+    };
     get_extraction_history: {
         parameters: {
             query?: {
@@ -5085,6 +5310,52 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QueueCancelResponse"];
+                };
+            };
+        };
+    };
+    get_scan_failures: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+                /** @description `input`, `blocked` or `resource`. Anything else is a 400. */
+                error_class?: string | null;
+                /** @description `mime`, `metadata` or `decode`. */
+                stage?: string | null;
+                /**
+                 * @description Prefix of the recorded mime type, e.g. `image/`. Rows whose mime guess
+                 *     is what failed have no mime type and match no prefix.
+                 */
+                mime_prefix?: string | null;
+                /**
+                 * @description Page size. Defaults to 100; values outside 1..=1000 are clamped into
+                 *     that range rather than rejected. Deliberately unconstrained in the
+                 *     schema: a generated validating client must not refuse a request the
+                 *     server accepts.
+                 */
+                limit?: number | null;
+                /**
+                 * @description Rows to skip. Values below 0 are clamped to 0 (start at the beginning),
+                 *     not rejected — same reason as `limit`.
+                 */
+                offset?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recorded scan failures */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanFailuresResponse"];
                 };
             };
         };

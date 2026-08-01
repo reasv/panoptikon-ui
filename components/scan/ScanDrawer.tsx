@@ -8,6 +8,7 @@ import { ContinuousScan } from "@/components/scan/ContinuousScan"
 import { GroupList } from "@/components/scan/GroupLists"
 import { JobQueue } from "@/components/scan/JobQueue"
 import { JobHistory } from "@/components/scan/JobHistory"
+import { FailedFiles } from "@/components/scan/FailedFiles"
 import { FolderLists } from "@/components/scan/FolderLists"
 import { Button } from "@/components/ui/button"
 import { SidebarClose } from "lucide-react"
@@ -27,6 +28,7 @@ export function ScanInternal() {
         <GroupList />
         <JobQueue />
         <JobHistory />
+        <FailedFiles />
     </>
 }
 
