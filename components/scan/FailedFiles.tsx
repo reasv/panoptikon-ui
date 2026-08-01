@@ -75,7 +75,7 @@ export function FailedFiles() {
                     )}
                 </div>
             }
-            description="Files the scan or a model could not process. These are skipped on later runs, so they are the reason for work that never completes."
+            description="Files the scan or a model could not process. Confirmed failures are skipped on later runs; unconfirmed ones get another attempt, and audit-only entries record files that were indexed without visuals."
             storageKey="failedFiles"
             // The card is collapsed by default and its two tables poll every
             // 2.5s; without this they keep polling behind a closed card on

@@ -5327,7 +5327,7 @@ export interface operations {
                 user_data_db?: string | null;
                 /** @description `input`, `blocked` or `resource`. Anything else is a 400. */
                 error_class?: string | null;
-                /** @description `mime`, `metadata` or `decode`. */
+                /** @description `mime`, `metadata`, `header` or `decode`. */
                 stage?: string | null;
                 /**
                  * @description Prefix of the recorded mime type, e.g. `image/`. Rows whose mime guess
