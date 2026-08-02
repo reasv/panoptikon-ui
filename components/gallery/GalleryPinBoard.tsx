@@ -466,7 +466,47 @@ export function PinBoard(
         // someone else's structural write (see the pin-count trigger).
         history?: "push" | "replace",
         manualGesture = false,
+        // True only for RGL's own layout reports (the wrapper on the
+        // GridLayout prop below); everything else is a verb write.
+        fromRgl = false,
     ) => {
+        // Verb writes during crop mode get compacted HERE: the compactor
+        // prop is off while a crop session runs (see GridLayout below), so
+        // a verb's computed layout — which relies on compaction to resolve
+        // its overlaps (Resize Item growth, rotation footprint swaps,
+        // Compress Up's freed rows) — would otherwise commit and render
+        // overlapping until crop exit. The crop-mode item is held as a
+        // static wall so the open crop window never moves under the
+        // session, and anchors are walls here for the same reason they are
+        // in RGL's own pass. RGL reports are exempt: a gesture release must
+        // commit exactly what's on screen, echo normalizations must stay
+        // identity, and the crop-release write must not reflow the board
+        // mid-session — the rows the box vacates on a shrink have to stay
+        // free for the next handle pull.
+        if (cropKey !== null && !fromRgl) {
+            // compact() clones its input and returns the compacted clone,
+            // so the caller's layout — often the render memo's array itself
+            // on orientation-only writes — stays untouched; the map only
+            // injects the wall flags and the bounds clamp.
+            currentLayout = [...fastVerticalCompactor.compact(
+                currentLayout.map((l) => {
+                    // RGL's correctBounds clamp (not exported), applied
+                    // before compacting the way RGL's layout sync applies
+                    // it: verbs may emit out-of-bounds boxes (Resize Item
+                    // grows w in place, past the right edge), and clamping
+                    // only later — in RGL's post-write sync — would slide
+                    // the box into neighbours AFTER this pass compacted.
+                    let x = l.x
+                    let w = l.w
+                    if (x + w > grid.columns) x = grid.columns - w
+                    if (x < 0) { x = 0; w = grid.columns }
+                    const wall = l.i === cropKey || itemLocks[l.i] === "anchor"
+                    return wall || x !== l.x || w !== l.w
+                        ? { ...l, x, w, static: wall || l.static }
+                        : l
+                }),
+                grid.columns)]
+        }
         // Verbs hand their manual-crop remap in directly; the pending ref
         // exists only for the crop-mode resize release, which cannot pass
         // anything (RGL fires that layout report itself). The direct
@@ -1768,7 +1808,7 @@ export function PinBoard(
                         }
                         onLayoutChange([...currentLayout], drops, undefined,
                             undefined, undefined, echo ? "replace" : undefined,
-                            manual)
+                            manual, true)
                     }}
                     // The crop-mode exemption: there the drag/resize IS the
                     // crop edit, not a layout statement — it composes with
@@ -1791,10 +1831,14 @@ export function PinBoard(
                     // layout matches the visual box and the anchor holds;
                     // leaving crop mode re-compacts, which is where v1
                     // ended up too (the crop committed at release is
-                    // immune to that move, see onResizeStop). The vertical
-                    // compactor is the skyline O(n log n) one from extras;
-                    // same semantics as the classic quadratic compactor for
-                    // non-overlapping, non-static layouts like ours.
+                    // immune to that move, see onResizeStop). Verb writes
+                    // don't wait for that: they compact themselves inside
+                    // onLayoutChange while crop mode is on, since their
+                    // layouts assume a compaction pass RGL isn't providing
+                    // here. The vertical compactor is the skyline
+                    // O(n log n) one from extras; same semantics as the
+                    // classic quadratic compactor for non-overlapping,
+                    // non-static layouts like ours.
                     compactor={cropKey !== null ? noCompactor : fastVerticalCompactor}
                     onResizeStart={(_currentLayout, oldItem, newItem, _placeholder, e, node) => {
                         if (!oldItem || !newItem || oldItem.i !== cropKey) return
