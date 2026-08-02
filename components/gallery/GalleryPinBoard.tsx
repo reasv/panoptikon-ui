@@ -993,9 +993,39 @@ export function PinBoard(
     // different heights, where it hangs above the LOWER item's top edge:
     // a two-item bbox is mostly empty diagonal space, and two items are
     // usually selected to swap, so the seam between them is where the
-    // mouse is. When the anchor is too close to the board's top for the
-    // bar to fit, it pins just below the top edge instead (over the
-    // selection — the drag grip below is the escape hatch for that).
+    // mouse is.
+    //
+    // FLIP BELOW: when EVERY selected item is against the board's top
+    // edge, the bar goes below the selection's bottom edge instead of
+    // being clamped over its top — the old clamp smeared it across the
+    // pin/crop/anchor/lock overlay buttons that live at a pin's top edge.
+    // "Against the top" is fit-based, not y === 0: an item counts iff a
+    // bar cannot hang above IT (py(l.y) < EDGE + h + GAP). A v2 row is
+    // 10px, so items at y = 1..3 sit inside that same smear strip and a
+    // literal y === 0 test would miss them; the threshold tracks the
+    // measured bar height like the rest of this math. The "every"
+    // quantifier is deliberate: a mixed selection reaching lower rows
+    // would put a below-the-bbox bar far from the action, so it keeps the
+    // above/clamp behavior. The flip also wins BEFORE the two-item seam
+    // rule — both items against the top means there is no usable seam.
+    //
+    // FITS-OR-FALL-BACK: the flip is taken only when the below position
+    // fully clears the selection inside the VISIBLE viewport, i.e. is at
+    // or above scrollTop + clientHeight - h - EDGE (one-shot read of the
+    // scroll viewport at placement time — the bar stays in content
+    // coordinates and scrolls with the board afterwards; this memo does
+    // not re-run on scroll, by design). That spot routinely sits below
+    // clampPos's content-bottom cap, since the flip fires precisely on
+    // boards whose content ends near the selection — so the cap itself is
+    // relaxed to `max(content bottom, viewport bottom)` rather than being
+    // bypassed for the flip alone. A bar may legitimately hang past the
+    // last row into empty board space, and the manual park and the
+    // release snap below share that same envelope, so a flipped bar can be
+    // nudged sideways without jumping back over the selection. If the
+    // below spot can't clear the selection (an item filling the whole
+    // view), the flip is not taken at all and the existing top placement
+    // applies unchanged: covering the top beats hovering over the video
+    // timeline and loop controls at a pin's bottom edge.
     const toolbarRef = useRef<HTMLDivElement | null>(null)
     const [toolbarSize, setToolbarSize] = useState({ w: 320, h: 34 })
     // ResizeObserver rather than a one-shot measure: the bar's width also
@@ -1029,19 +1059,67 @@ export function PinBoard(
         const px = (x: number) => grid.padding + x * unitX
         const py = (y: number) => grid.padding + y * rowStep(grid)
         const maxY = layout.reduce((acc, l) => Math.max(acc, l.y + l.h), 0)
+        // Radix scrolls the viewport child, not the root the ref is on; its
+        // scroll coordinates are this content space (the grid area is the
+        // viewport's content, at offset 0). One-shot read at placement
+        // time — the bar stays in content coordinates and scrolls with the
+        // board afterwards; this memo does not re-run on scroll, by design.
+        // No viewport element = nothing to measure against = the viewport
+        // relaxation below contributes nothing (-Infinity).
+        const view = scrollAreaRef.current
+            ?.querySelector<HTMLElement>("[data-radix-scroll-area-viewport]")
+        const viewportCapY = view
+            ? view.scrollTop + view.clientHeight - toolbarSize.h - TOOLBAR_EDGE
+            : -Infinity
         // The bar never leaves the board: x within the inner width, y
-        // between the top edge and the bottom of the board's content
+        // between the top edge and the LOWER of two caps — the bottom of
+        // the board's content, or the bottom of the currently visible
+        // viewport. A bar may legitimately hang past the last row into
+        // empty board space (that is exactly what the flip below does on a
+        // short board), so the content cap alone is too tight; the viewport
+        // cap keeps such a bar on screen. Reachability envelope = content
+        // bottom OR visible viewport, whichever is lower.
+        //
+        // Behavior-neutral for the automatic anchor: its y = py(l.y) - GAP
+        // - h sits at least rowStep + GAP - margin - EDGE ABOVE the content
+        // cap (a selected item's y + h <= maxY), and rowStep + GAP > margin
+        // + EDGE on both grids (v1 66 > 14, v2 16 > 9). Only manual parks
+        // and the flip can reach the relaxed zone.
         const clampPos = (x: number, y: number) => ({
             x: Math.min(
                 Math.max(x, TOOLBAR_EDGE),
                 Math.max(TOOLBAR_EDGE, gridWidth - toolbarSize.w - TOOLBAR_EDGE)),
             y: Math.min(
                 Math.max(y, TOOLBAR_EDGE),
-                Math.max(TOOLBAR_EDGE, py(maxY) - grid.margin - toolbarSize.h - TOOLBAR_EDGE)),
+                Math.max(TOOLBAR_EDGE, Math.max(
+                    py(maxY) - grid.margin - toolbarSize.h - TOOLBAR_EDGE,
+                    viewportCapY))),
         })
+        // Manual park runs through the same relaxed cap as the flip, so
+        // grabbing the grip while the bar is in a flipped position does not
+        // yank it up by GAP + h + EDGE and refuse to be dragged back down.
         if (toolbarManual) return clampPos(toolbarManual.x, toolbarManual.y)
         const rects = layout.filter(l => selectedSet.has(l.i))
         if (rects.length === 0) return null
+        const bboxCenterX = () => {
+            const x0 = Math.min(...rects.map(l => l.x))
+            const x1 = Math.max(...rects.map(l => l.x + l.w))
+            return (px(x0) + px(x1) - grid.margin) / 2
+        }
+        // Flip below a wholly top-edge selection, when it fits (see above).
+        // No viewport element = viewportCapY is -Infinity = nothing to fit
+        // against = no flip.
+        if (rects.every(l => py(l.y) < TOOLBAR_EDGE + toolbarSize.h + TOOLBAR_GAP)) {
+            const y1 = Math.max(...rects.map(l => l.y + l.h))
+            const flipY = py(y1) - grid.margin + TOOLBAR_GAP
+            if (flipY <= viewportCapY) {
+                // Both axes go through clampPos: the fits gate IS
+                // `flipY <= viewportCapY`, so the relaxed y cap passes it
+                // through untouched (it is the max of that and the content
+                // cap). Uniform with every other return here.
+                return clampPos(bboxCenterX() - toolbarSize.w / 2, flipY)
+            }
+        }
         let anchorTop: number
         let centerX: number
         if (rects.length === 2 && rects[0].y !== rects[1].y) {
@@ -1049,22 +1127,24 @@ export function PinBoard(
             anchorTop = py(lower.y)
             centerX = px(lower.x) + (lower.w * unitX - grid.margin) / 2
         } else {
-            const x0 = Math.min(...rects.map(l => l.x))
-            const x1 = Math.max(...rects.map(l => l.x + l.w))
             anchorTop = py(Math.min(...rects.map(l => l.y)))
-            centerX = (px(x0) + px(x1) - grid.margin) / 2
+            centerX = bboxCenterX()
         }
         return clampPos(centerX - toolbarSize.w / 2, anchorTop - TOOLBAR_GAP - toolbarSize.h)
     }, [selected.length, toolbarManual, layout, selectedSet, gridWidth, grid, toolbarSize])
     // Dragging the grip moves the bar freely; on release it snaps
     // vertically to the nearest resting spot — just above an item's top
-    // edge, or pinned below the board's top — so a parked bar sits at the
-    // same kind of place the automatic anchor picks. Only items the bar
-    // horizontally overlaps at its drop position count as snap targets: a
-    // top edge on the far side of the board is not a visible line here,
-    // and snapping to it would park the bar at a seemingly random height
-    // through the middle of whatever it IS over. Horizontal stays
-    // wherever it was dropped (clamped to the board).
+    // edge, just below an item's bottom edge (the automatic anchor rests
+    // there too, since the top-edge flip), or pinned below the board's
+    // top — so a parked bar sits at the same kind of place the automatic
+    // anchor picks. Only items the bar horizontally overlaps at its drop
+    // position count as snap targets: an edge on the far side of the
+    // board is not a visible line here, and snapping to it would park the
+    // bar at a seemingly random height through the middle of whatever it
+    // IS over. Horizontal stays wherever it was dropped (clamped to the
+    // board). Vertically the snap shares the renderer's reachability
+    // envelope (content bottom OR visible viewport, whichever is lower),
+    // so every spot it picks survives the next clampPos unchanged.
     const onToolbarGripDown = (e: React.PointerEvent) => {
         if (e.button !== 0) return
         const area = gridAreaRef.current
@@ -1094,11 +1174,32 @@ export function PinBoard(
                 Math.max(raw.x, TOOLBAR_EDGE),
                 Math.max(TOOLBAR_EDGE, gridWidth - toolbarSize.w - TOOLBAR_EDGE))
             const xr = xl + toolbarSize.w
+            // Below-edge candidates are held to the renderer's own y cap: a
+            // spot clampPos would immediately drag back up over the item is
+            // not a resting spot. That cap is the RELAXED one — content
+            // bottom or visible viewport bottom, whichever is lower — so
+            // the below-the-last-row spot still exists on short boards,
+            // which is exactly where the flip fires; with the content cap
+            // alone the nearest surviving candidate was TOOLBAR_EDGE and
+            // the bar parked over the very overlay buttons this placement
+            // exists to uncover. Fresh viewport read: this is a release
+            // handler, so the board may have been scrolled since placement.
+            // An accepted b satisfies EDGE <= b <= belowCap, so the
+            // renderer's clampPos leaves it exactly where it was dropped.
+            const maxY = layout.reduce((acc, l) => Math.max(acc, l.y + l.h), 0)
+            const view = scrollAreaRef.current
+                ?.querySelector<HTMLElement>("[data-radix-scroll-area-viewport]")
+            const belowCap = Math.max(
+                py(maxY) - grid.margin - toolbarSize.h - TOOLBAR_EDGE,
+                view ? view.scrollTop + view.clientHeight - toolbarSize.h - TOOLBAR_EDGE : -Infinity)
             let best = TOOLBAR_EDGE
             for (const l of layout) {
                 if (px(l.x) >= xr || px(l.x + l.w) - grid.margin <= xl) continue
                 const c = py(l.y) - TOOLBAR_GAP - toolbarSize.h
                 if (c >= TOOLBAR_EDGE && Math.abs(c - raw.y) < Math.abs(best - raw.y)) best = c
+                const b = py(l.y + l.h) - grid.margin + TOOLBAR_GAP
+                if (b >= TOOLBAR_EDGE && b <= belowCap
+                    && Math.abs(b - raw.y) < Math.abs(best - raw.y)) best = b
             }
             setToolbarManual({ x: raw.x, y: best })
         }
