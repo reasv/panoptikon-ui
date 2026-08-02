@@ -7,6 +7,7 @@ import {
   matchPathKeyMap,
   matchTextKeyMap,
   inBookmarksKeyMap,
+  inPinboardsKeyMap,
   semanticTextSearchKeyMap,
   semanticImageSearchKeyMap,
   queryOptionsKeyMap,
@@ -62,6 +63,10 @@ const scopedCaches = {
   inBookmarks: createScopedSearchParamsCache(
     "bm",
     inBookmarksKeyMap(def as any)
+  ),
+  inPinboards: createScopedSearchParamsCache(
+    "pb",
+    inPinboardsKeyMap(def as any)
   ),
   semanticTextSearch: createScopedSearchParamsCache(
     "st",
@@ -156,6 +161,12 @@ export function getInBookmarksCache(
   return scopedCaches.inBookmarks.parse(params)
 }
 
+export function getInPinboardsCache(
+  params: SearchParams
+): KeymapComponents["InPinboards"] {
+  return scopedCaches.inPinboards.parse(params)
+}
+
 export function getSemanticTextSearchCache(
   params: SearchParams
 ): KeymapComponents["SemanticTextSearch"] {
@@ -230,6 +241,7 @@ export function getFullQueryCache(params: SearchParams): KeymapComponents {
     MatchTags: getMatchTagsCache(params),
     FileFilters: getFileFiltersCache(params),
     InBookmarks: getInBookmarksCache(params),
+    InPinboards: getInPinboardsCache(params),
     SemanticTextSearch: getSemanticTextSearchCache(params),
     SemanticTextSource: getSemanticTextSourceCache(params),
     SemanticImageSearch: getSemanticImageSearchCache(params),

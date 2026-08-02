@@ -1,6 +1,7 @@
 import { SwitchDB } from "./options/switchDB"
 import { SwitchBookmarkNs } from "./options/bookmarks"
 import { BookmarksFilter } from "./options/bookmarkFilter"
+import { PinboardsFilter } from "./options/pinboardFilter"
 import { AnyTextFilter } from "./options/anyTextFilter"
 import { OrderBy } from "./options/orderBy"
 import { PageSizeSlider } from "./options/pageSize"
@@ -16,6 +17,7 @@ export function SearchOptions() {
             <SwitchDB />
             <SwitchBookmarkNs />
             <BookmarksFilter />
+            <PinboardsFilter />
             <OrderBy />
             <PageSizeSlider />
             <AnyTextFilter />

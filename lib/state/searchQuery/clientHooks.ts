@@ -10,6 +10,7 @@ import {
   matchPathKeyMap,
   matchTextKeyMap,
   inBookmarksKeyMap,
+  inPinboardsKeyMap,
   semanticTextSearchKeyMap,
   semanticImageSearchKeyMap,
   queryOptionsKeyMap,
@@ -251,6 +252,14 @@ export function useBookmarksFilter(): [
   return [state, useResetPage(set)] as const
 }
 
+export function usePinboardsFilter(): [
+  KeymapComponents["InPinboards"],
+  SetFn<KeymapComponents["InPinboards"]>
+] {
+  const [state, set] = useScopedQueryStates("pb", inPinboardsKeyMap(def as any))
+  return [state, useResetPage(set)] as const
+}
+
 export function useSemanticTextSearch(): [
   KeymapComponents["SemanticTextSearch"],
   SetFn<KeymapComponents["SemanticTextSearch"]>
@@ -432,6 +441,7 @@ export const useSearchQueryState = () => {
     MatchTags: useMatchTags()[0],
     FileFilters: useFileFilters()[0],
     InBookmarks: useBookmarksFilter()[0],
+    InPinboards: usePinboardsFilter()[0],
     SemanticTextSearch: useSemanticTextSearch()[0],
     SemanticTextSource: useSemanticTextSource()[0],
     SemanticImageSearch: useSemanticImageSearch()[0],
@@ -471,6 +481,7 @@ export const useResetSearchQueryState = () => {
     useMatchTags()[1],
     useFileFilters()[1],
     useBookmarksFilter()[1],
+    usePinboardsFilter()[1],
     useSemanticTextSearch()[1],
     useSemanticImageSearch()[1],
     useQueryOptions()[1],

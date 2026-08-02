@@ -69,6 +69,33 @@ export function queryFromState(
     }
     available_filter_orders.push("bookmark_time")
   }
+  // Pinboards
+  // Not an order source: pinboard membership has no per-item rank, so unlike
+  // the bookmarks block above this registers nothing in
+  // `available_filter_orders` and never touches `actual_order_by`.
+  if (state.InPinboards.filter) {
+    // "boards" with nothing selected is left inactive rather than widened to
+    // "any board": the latter would silently change the result set the moment
+    // the mode is picked, before the user has said which boards they mean.
+    const selectedBoards =
+      state.InPinboards.mode === "boards" ? state.InPinboards.pinboard_ids : []
+    if (state.InPinboards.mode !== "boards" || selectedBoards.length > 0) {
+      const inPinboard: components["schemas"]["InPinboard"] = {
+        in_pinboard: {
+          filter: true,
+          // Empty = membership in *any* of the user's boards.
+          pinboard_ids: selectedBoards,
+          user: state.InPinboards.user,
+        },
+      }
+      // Always its own element in `and_`: the backend enum is untagged and
+      // resolves by the first matching key, so merging `in_pinboard` into a
+      // sibling filter's object would decode as the sibling.
+      queryFilters.and_.push(
+        state.InPinboards.mode === "unpinned" ? { not_: inPinboard } : inPinboard
+      )
+    }
+  }
   // Match Path text
   const sort_path = state.OrderArgs.order_by === "match_path"
   const path_match_asc: boolean = state.OrderArgs.order !== "desc"

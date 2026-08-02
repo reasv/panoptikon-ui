@@ -155,6 +155,22 @@ export const inBookmarksKeyMap = (p: typeof def) =>
     include_wildcard: p.parseAsBoolean.withDefault(true),
   })
 
+// How the pinboard membership filter is composed into the query:
+// - "any": member of any of the user's boards (empty `pinboard_ids`)
+// - "boards": member of at least one of the selected boards
+// - "unpinned": the NOT composition — pinned to no board at all
+export type inPinboardsMode = "any" | "boards" | "unpinned"
+
+export const inPinboardsKeyMap = (p: typeof def) =>
+  applyOptionsToMap({
+    filter: p.parseAsBoolean.withDefault(false),
+    mode: p
+      .parseAsStringEnum<inPinboardsMode>(["any", "boards", "unpinned"])
+      .withDefault("any"),
+    pinboard_ids: p.parseAsArrayOf(p.parseAsInteger).withDefault([]),
+    user: p.parseAsString.withDefault("user"),
+  })
+
 export const semanticTextSearchKeyMap = (p: typeof def) =>
   applyOptionsToMap({
     query: p.parseAsString.withDefault(""),
@@ -356,6 +372,12 @@ export type KeymapComponents = {
   MatchText: Required<components["schemas"]["MatchTextArgs"]>
   EmbedArgs: Required<components["schemas"]["EmbedArgs"]>
   InBookmarks: Required<components["schemas"]["InBookmarksArgs"]>
+  // `mode` is UI-only state: the three modes are three different compositions
+  // of the same filter args (see `inPinboardsMode`), and "unpinned" is the
+  // element wrapped in `not_`, which has no representation in the args.
+  InPinboards: Required<components["schemas"]["InPinboardArgs"]> & {
+    mode: inPinboardsMode
+  }
   MatchPath: Required<components["schemas"]["MatchPathArgs"]>
   OrderArgs: Required<OrderArgsType>
   MatchTags: Required<MatchTagsArgs>

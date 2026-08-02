@@ -8,6 +8,7 @@ import {
   matchPathKeyMap,
   matchTextKeyMap,
   inBookmarksKeyMap,
+  inPinboardsKeyMap,
   semanticTextSearchKeyMap,
   semanticImageSearchKeyMap,
   queryOptionsKeyMap,
@@ -33,6 +34,7 @@ export const serializers = {
   matchPath: createScopedSerializer("path", matchPathKeyMap(def)),
   matchText: createScopedSerializer("txt", matchTextKeyMap(def)),
   inBookmarks: createScopedSerializer("bm", inBookmarksKeyMap(def)),
+  inPinboards: createScopedSerializer("pb", inPinboardsKeyMap(def)),
   semanticTextSearch: createScopedSerializer(
     "st",
     semanticTextSearchKeyMap(def)
