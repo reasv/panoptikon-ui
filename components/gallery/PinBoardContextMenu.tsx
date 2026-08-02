@@ -1,7 +1,7 @@
 import type { LayoutItem } from "react-grid-layout";
 import { ContextMenuCheckboxItem, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger } from "../ui/context-menu";
 import { useGalleryPinAutoCrop, useGalleryPinSelectionCrop } from "@/lib/state/gallery";
-import { BoardGlobalMenuItems, contextMenuKit } from "./PinboardGlobalMenu";
+import { BoardGlobalMenuItems, DESTRUCTIVE_MENU_ITEM, contextMenuKit } from "./PinboardGlobalMenu";
 import type { PinboardBoardApi } from "@/lib/state/pinboardBoardApi";
 import { CropRect, PinLock, PinOrientation, TrimRange, isIdentityOrientation } from "@/lib/pinboardCrop";
 import { GridParams } from "@/lib/pinboardGrid";
@@ -30,6 +30,9 @@ export function PinBoardCtx({
     trim,
     onTrimChange,
     onDuplicate,
+    onUnpin,
+    onRemove,
+    onRemoveAllBut,
     lock,
     onLockChange,
     pinboardRef,
@@ -69,6 +72,13 @@ export function PinBoardCtx({
     trim: TrimRange | null,
     onTrimChange: (trim: TrimRange | null) => void,
     onDuplicate: () => void,
+    // Record splices, owned by the board: this pin's own removal (the
+    // context-menu twin of the overlay unpin button) and the two
+    // selection-scoped removals, which also back the below-viewport purge
+    // in the board-global section
+    onUnpin: () => void,
+    onRemove: (keys: string[]) => void,
+    onRemoveAllBut: (keys: string[]) => void,
     // This pin's layout lock and its setter
     lock: PinLock,
     onLockChange: (lock: PinLock) => void,
@@ -121,6 +131,7 @@ export function PinBoardCtx({
         sendSelectionToRegion,
         hasLocks,
         hasAnchors,
+        belowViewportKeys,
     } = usePinboardLayoutActions({
         layout, crops, autoCrops, locks, orients, highWater, dbs, grid, pinboardRef, onLayoutChange,
         layoutAutoCrop: autoLayoutCrop,
@@ -155,6 +166,8 @@ export function PinBoardCtx({
         rerollLayout, refitToView, reflowKeepProportions, growInPlace,
         hasLocks, hasAnchors,
         highWater, isV1, upgradeGrid: onUpgradeGrid,
+        belowViewportCount: () => belowViewportKeys()?.length ?? null,
+        removeBelowViewport: () => onRemove(belowViewportKeys() ?? []),
     }
     // Width presets are fixed fractions of the board width, so the menu is
     // the same on every grid resolution; the step sizes scale with the
@@ -182,6 +195,11 @@ export function PinBoardCtx({
                 </ContextMenuSub>
             )}
             <ContextMenuItem onClick={onDuplicate}>Duplicate</ContextMenuItem>
+            {/* Removes THIS copy, not the first record matching the sha256 —
+                the layout key carries the record offset. Same weight as the
+                hover overlay's unpin button (a single click there too), so
+                it skips the destructive styling the bulk removals carry. */}
+            <ContextMenuItem onClick={onUnpin}>Unpin</ContextMenuItem>
             {/* Layout locks for this pin; the same toggles exist as overlay
                 buttons. Anchored = position+size fixed (RGL static, an
                 obstacle every fill packs around); size-locked = keeps w x h
@@ -310,6 +328,25 @@ export function PinBoardCtx({
                             <ContextMenuItem onClick={() => usePinSelection.getState().clear()}>
                                 Clear Selection
                                 <ContextMenuShortcut>Esc</ContextMenuShortcut>
+                            </ContextMenuItem>
+                            {/* The destructive pair sits last, below Clear
+                                Selection. No confirm dialog: one record
+                                write is one history entry, so the browser
+                                Back button restores the removed pins (the
+                                toast says so). The shortcut label needs the
+                                destructive foreground — its default muted
+                                tone disappears on the filled row. */}
+                            <ContextMenuSeparator />
+                            <ContextMenuItem className={DESTRUCTIVE_MENU_ITEM}
+                                onClick={() => onRemove(selected)}>
+                                Remove Selected
+                                <ContextMenuShortcut className="text-destructive-foreground/80">
+                                    Del
+                                </ContextMenuShortcut>
+                            </ContextMenuItem>
+                            <ContextMenuItem className={DESTRUCTIVE_MENU_ITEM}
+                                onClick={() => onRemoveAllBut(selected)}>
+                                Remove All but Selected
                             </ContextMenuItem>
                         </ContextMenuSubContent>
                     </ContextMenuSub>

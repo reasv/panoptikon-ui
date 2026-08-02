@@ -104,13 +104,17 @@ export function usePinboardLayoutActions({
     // the remaining two hField slots — the orientation verbs need all four
     // in ONE write, since a rotation changes the geometry AND both crop
     // rects AND the orientation, and two record writes in a tick clobber
-    // each other (see rebuildRecords in GalleryPinBoard)
+    // each other (see rebuildRecords in GalleryPinBoard).
+    // history overrides the write's history mode; only doFill's callers
+    // reach it (see its `history` option). Omitted everywhere else, which
+    // means push — a verb the user invoked is its own undo step.
     onLayoutChange: (
         layout: LayoutItem[],
         autoCropOverrides?: Record<string, CropRect | null>,
         newHighWater?: number,
         orientationOverrides?: Record<string, PinOrientation | null>,
         manualCropOverrides?: Record<string, CropRect | null>,
+        history?: "push" | "replace",
     ) => void,
 }) {
     const layoutBuildData = useRef<LayoutBuildData | null>(null)
@@ -145,10 +149,13 @@ export function usePinboardLayoutActions({
     }
 
     // Grid rows above the fold: the block a fill action must span exactly,
-    // so that items parked below the fold can't compact up into view
-    function foldRows(buildData: LayoutBuildData): number {
+    // so that items parked below the fold can't compact up into view.
+    // Takes the raw container height rather than build data: the removal
+    // verbs need this line synchronously, and ensureBuildData is an async
+    // metadata fetch a record splice has no use for.
+    function foldRows(containerHeight: number): number {
         return Math.max(1, Math.floor(
-            (buildData.containerHeight - 2 * grid.padding + grid.margin) / rowStep(grid)
+            (containerHeight - 2 * grid.padding + grid.margin) / rowStep(grid)
         ))
     }
 
@@ -214,8 +221,26 @@ export function usePinboardLayoutActions({
     // ratcheted high water, whichever is larger. Fills report the height
     // they targeted back through onLayoutChange, so the ratchet only ever
     // moves when a fill actually runs.
-    function targetRows(buildData: LayoutBuildData): number {
-        return Math.max(foldRows(buildData), highWater)
+    function targetRows(containerHeight: number): number {
+        return Math.max(foldRows(containerHeight), highWater)
+    }
+
+    // Keys of the items parked below the board's working area — the staging
+    // band evictions and region sends push things into. The line is the fill
+    // target (fold or ratchet, whichever is deeper): using the ratchet keeps
+    // the cut conservative on a window smaller than the one the board was
+    // laid out for. "Mostly below" is the vertical midpoint STRICTLY past
+    // the line, so an item the line bisects survives. Null when the
+    // container can't be measured (hidden tab, unmounted scroll area) —
+    // callers disable the verb rather than compute against a 0px viewport.
+    // Locks are ignored: a lock pins geometry, not existence.
+    function belowViewportKeys(): string[] | null {
+        const containerHeight = pinboardRef.current?.clientHeight || 0
+        if (containerHeight < 100) return null
+        const line = targetRows(containerHeight)
+        return layout
+            .filter(l => !l.i.endsWith("__preview") && l.y + l.h / 2 > line)
+            .map(l => l.i)
     }
 
     // Anchored items inside the target rectangle, as obstacles to pack
@@ -281,6 +306,7 @@ export function usePinboardLayoutActions({
         skipIfCovered = false,
         keepProportions = false,
         resetRatchet = false,
+        history,
     }: {
         visibleOnly?: boolean,
         skipIfCovered?: boolean,
@@ -290,10 +316,18 @@ export function usePinboardLayoutActions({
         // Refit to the current view: target the fold even when the ratchet
         // is higher, and lower the ratchet to it
         resetRatchet?: boolean,
+        // History mode for the resulting record write. Default (push) is
+        // right for every fill the user asked for — it is its own undo
+        // step. "replace" is for a fill that merely FOLLOWS someone else's
+        // structural write and belongs in that write's history entry: this
+        // fill is async (it awaits a metadata fetch), so nuqs cannot merge
+        // it with the write that triggered it, and a push would park a
+        // second entry between the user and the board they want back.
+        history?: "push" | "replace",
     }): Promise<string | null> {
         const buildData = await ensureBuildData()
         if (!buildData) return null
-        const total = resetRatchet ? foldRows(buildData) : targetRows(buildData)
+        const total = resetRatchet ? foldRows(buildData.containerHeight) : targetRows(buildData.containerHeight)
         // A layout already reaching the target was made for this viewport or
         // a bigger one (both viewport-growth triggers are height-only, so the
         // width can't have changed under it) — repainting it would make
@@ -349,12 +383,17 @@ export function usePinboardLayoutActions({
         const newLayout = [...packed, ...placement.placed, ...rest]
         onLayoutChange(newLayout,
             verbAutoCrops(buildData, newLayout,
-                new Set(participants.map(l => l.i)), layoutAutoCrop), total)
+                new Set(participants.map(l => l.i)), layoutAutoCrop), total,
+            undefined, undefined, history)
         return null
     }
 
-    function fillViewport(visibleOnly: boolean, skipIfCovered = false) {
-        return doFill({ visibleOnly, skipIfCovered })
+    function fillViewport(
+        visibleOnly: boolean,
+        skipIfCovered = false,
+        history?: "push" | "replace",
+    ) {
+        return doFill({ visibleOnly, skipIfCovered, history })
     }
 
     // Cycle to the next distinct near-best composition and re-fill. The
@@ -384,7 +423,7 @@ export function usePinboardLayoutActions({
     async function fillViewportRows(rowCount: number): Promise<string | null> {
         const buildData = await ensureBuildData()
         if (!buildData) return null
-        const total = targetRows(buildData)
+        const total = targetRows(buildData.containerHeight)
         const travellers = buildData.sortedLayout.filter(l => isSizeLocked(l.i))
         const participants = buildData.sortedLayout.filter(l => !isLocked(l.i))
         if (participants.length === 0 && travellers.length === 0) return null
@@ -516,7 +555,7 @@ export function usePinboardLayoutActions({
     async function growInPlace(): Promise<string | null> {
         const buildData = await ensureBuildData()
         if (!buildData) return null
-        const total = targetRows(buildData)
+        const total = targetRows(buildData.containerHeight)
         const mins = minPinUnits(grid, buildData.columnWidth)
         if (layout.some(l => isLocked(l.i) && l.y < total)) {
             const travellers = buildData.sortedLayout.filter(l =>
@@ -792,7 +831,7 @@ export function usePinboardLayoutActions({
         }
         const sizeLocked = selectedItems.filter(l => locks[l.i] === "size")
         const flexible = selectedItems.filter(l => !isLocked(l.i))
-        const total = targetRows(buildData)
+        const total = targetRows(buildData.containerHeight)
         const box = regionBox(preset, grid.columns, total)
         const overlapping = (a: GridRect, b: GridRect) =>
             a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
@@ -1153,7 +1192,7 @@ export function usePinboardLayoutActions({
     async function autoCropToCells(visibleOnly: boolean) {
         const buildData = await ensureBuildData()
         if (!buildData) return
-        const total = foldRows(buildData)
+        const total = foldRows(buildData.containerHeight)
         const overrides: Record<string, CropRect | null> = {}
         for (const l of layout) {
             if (visibleOnly && l.y >= total) continue
@@ -1334,7 +1373,7 @@ export function usePinboardLayoutActions({
         // Vertically: bounded by items overlapping the EXPANDED width, so
         // diagonal neighbors bound the bands rather than sit inside them
         let top = 0
-        let bottom = Math.max(targetRows(buildData), y1)
+        let bottom = Math.max(targetRows(buildData.containerHeight), y1)
         for (const o of fixed) {
             if (o.x < right && o.x + o.w > left) {
                 if (o.y + o.h <= y0) top = Math.max(top, o.y + o.h)
@@ -1414,6 +1453,11 @@ export function usePinboardLayoutActions({
         sendSelectionToRect,
         autoCropSelection,
         clearAutoCropSelection,
+        // Key set for the below-viewport purge. The splice itself is a
+        // RECORD write, which this hook has no access to (it writes
+        // geometry through onLayoutChange), so the caller owning
+        // updateRecords does the removal.
+        belowViewportKeys,
         // Lock presence flags for the menus: hasLocks greys the verbs that
         // rebuild whole rows (any lock breaks them), hasAnchors the ones
         // that only a fixed position breaks (center, mirror)

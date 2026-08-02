@@ -28,6 +28,14 @@ export type PinboardBoardApi = Pick<
     highWater: number
     isV1: boolean
     upgradeGrid: () => void
+    // How many items sit below the board's working area right now, or null
+    // when the board can't be measured. A function, not a value: the menus
+    // call it while rendering their content — which Radix mounts when the
+    // menu opens — so the label's count is the one at open time.
+    belowViewportCount: () => number | null
+    // Record splice, so it lives with the board's other record writers
+    // rather than in the layout-verb hook
+    removeBelowViewport: () => void
 }
 
 interface PinboardBoardApiState {

@@ -27,12 +27,13 @@ import { CropRect, PinLock, PinOrientation, TrimRange, clampCrop, composeCrops, 
 import { useVideoTrim } from '@/lib/videoTrim'
 import { CropGeometry, CropView } from './CropView'
 import { VideoTimeline } from './VideoTimeline'
-import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightFromLine, ArrowRightToLine, Check, ChevronDown, Columns3, Crop, Dices, Expand, FlipHorizontal, FlipHorizontal2, FlipVertical, FlipVertical2, FoldHorizontal, GripVertical, LayoutDashboard, LockOpen, Maximize, RotateCcw, RotateCw, Ruler, Scaling, SquareDashed, X, type LucideIcon } from 'lucide-react'
+import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightFromLine, ArrowRightToLine, Check, ChevronDown, Columns3, Crop, Dices, Expand, FlipHorizontal, FlipHorizontal2, FlipVertical, FlipVertical2, FoldHorizontal, GripVertical, LayoutDashboard, ListX, LockOpen, Maximize, RotateCcw, RotateCw, Ruler, Scaling, SquareDashed, Trash2, X, type LucideIcon } from 'lucide-react'
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuSeparator,
+    DropdownMenuShortcut,
     DropdownMenuSub,
     DropdownMenuSubContent,
     DropdownMenuSubTrigger,
@@ -49,6 +50,7 @@ import { usePinboardCarry } from '@/lib/state/pinboardCarry'
 import { HoleTargetOverlay } from './HoleTargetOverlay'
 import { PinboardBoardApi, usePinboardBoardApi } from '@/lib/state/pinboardBoardApi'
 import { PinboardFullscreenBar } from './PinboardMenu'
+import { DESTRUCTIVE_MENU_ITEM } from './PinboardGlobalMenu'
 
 const ALL_RESIZE_HANDLES: LayoutItem["resizeHandles"] =
     ["s", "w", "e", "n", "sw", "nw", "se", "ne"]
@@ -99,6 +101,14 @@ interface SelectionVerb {
     min?: number
     exact?: number
     noAnchors?: boolean
+    // Removes pins: rendered with the destructive treatment on every
+    // surface, and grouped last (the bar keeps BAR_ORDER, so a pinned
+    // removal lands at the end of the pinned run)
+    destructive?: boolean
+    // Keyboard equivalent, shown on the dropdown row the way the context
+    // menu's twin already shows it — the two surfaces offer the same verb
+    // and must advertise the same key
+    shortcut?: string
 }
 const SELECTION_VERBS: SelectionVerb[] = [
     {
@@ -169,6 +179,18 @@ const SELECTION_VERBS: SelectionVerb[] = [
     {
         id: "clearCrop", label: "Clear Auto-Crops", icon: Maximize,
         title: "Remove the selected items' auto crops, letterboxing the full image",
+    },
+    // The removal pair sits last everywhere. No confirm dialog: one record
+    // write is one history entry, so the browser Back button restores the
+    // board whole — the toast says so.
+    {
+        id: "removeSel", label: "Remove Selected", icon: Trash2, min: 1, destructive: true,
+        shortcut: "Del",
+        title: "Remove the selected items from the board (Del; the browser Back button restores them)",
+    },
+    {
+        id: "removeRest", label: "Remove All but Selected", icon: ListX, min: 1, destructive: true,
+        title: "Remove every item that is NOT selected (the browser Back button restores them)",
     },
 ]
 const TOOLBAR_VERBS_KEY = "pinboardToolbarVerbs"
@@ -422,7 +444,11 @@ export function PinBoard(
         newHighWater?: number,
         orientationOverrides?: Record<string, PinOrientation | null>,
         verbManualCrops?: Record<string, CropRect | null>,
-        echo = false,
+        // History mode for the record write; undefined means the hook's
+        // default push. Two kinds of caller ask for "replace": RGL's own
+        // normalization reports (see gestureRef), and a fill that rides
+        // someone else's structural write (see the pin-count trigger).
+        history?: "push" | "replace",
         manualGesture = false,
     ) => {
         // Verbs hand their manual-crop remap in directly; the pending ref
@@ -478,7 +504,7 @@ export function PinBoard(
                 autoCropOverrides, manualCropOverrides, orientationOverrides),
             {
                 ...(newHighWater !== undefined ? { highWater: newHighWater } : {}),
-                ...(echo ? { history: "replace" as const } : {}),
+                ...(history ? { history } : {}),
             },
         )
     }
@@ -507,6 +533,72 @@ export function PinBoard(
             if (record.length < 5) return prev
             return [...prev, ...record]
         })
+    }
+
+    // Remove one pin by its exact record — the context menu's Unpin, the
+    // same removal the overlay pin button does (silent: a single unpin is a
+    // one-click action the button has always performed without ceremony).
+    // Key-matched against `prev` like every other writer here, never a bare
+    // splice at the render-time offset: the key embeds both the offset AND
+    // the sha256, and only the pair identifies the record inside the
+    // functional updater's own (possibly newer) base.
+    const onUnpinPin = (key: string) => {
+        updateRecords((prev) => {
+            const next: string[] = []
+            for (let i = 0; i < prev.length; i += 5) {
+                if (`${i}-${prev[i]}` !== key) next.push(...prev.slice(i, i + 5))
+            }
+            return next
+        })
+    }
+
+    // Bulk removal, the one write every multi-remove surface goes through
+    // (the selection verbs, the Delete key, the below-viewport purge).
+    // Key-matched filtering rather than offset splices, so a key that no
+    // longer names a record simply matches nothing instead of cutting a
+    // stranger out of the middle of the array. ONE updateRecords call is
+    // one URL write and one history entry — so the browser Back button
+    // restores the board whole, which is what the toast promises instead
+    // of a confirm dialog. Locks are ignored: a lock pins geometry, not
+    // existence (Clear Board ignores them too). The selection is
+    // deliberately not preserved — every surviving key's offset shifts, so
+    // the board's own prune clears it.
+    const removePins = (keys: string[]) => {
+        const keySet = new Set(keys)
+        // The count the toast reports is resolved OUTSIDE the mutate,
+        // against the live records: mutate runs twice (updateRecords
+        // precomputes against its own records to detect the lifecycle
+        // edges, then again inside the functional write) and must stay
+        // free of side effects. Stale keys match nothing, so this is the
+        // true removed count — zero of them means nothing to write at all.
+        let count = 0
+        for (let i = 0; i < records.length; i += 5) {
+            if (keySet.has(`${i}-${records[i]}`)) count++
+        }
+        if (count === 0) return
+        updateRecords((prev) => {
+            const next: string[] = []
+            for (let i = 0; i < prev.length; i += 5) {
+                if (!keySet.has(`${i}-${prev[i]}`)) next.push(...prev.slice(i, i + 5))
+            }
+            return next
+        })
+        toast({
+            title: `Removed ${count} ${count === 1 ? "pin" : "pins"}`,
+            description: "Press the browser Back button to restore them.",
+            duration: 4000,
+        })
+    }
+    // "All but Selected" inverts against the LIVE board; with everything
+    // selected it removes nothing and updateRecords' no-change guard
+    // swallows the write. The drag preview's sentinel record is never a
+    // removal target (menus can't normally be open mid-drag, but the
+    // marquee can outlive one).
+    const removeAllBut = (keys: string[]) => {
+        const keep = new Set(keys)
+        removePins(layout
+            .map(l => l.i)
+            .filter(k => !keep.has(k) && !k.endsWith("__preview")))
     }
 
     // Writing the manual crop also clears the auto slot: the manual crop is
@@ -609,6 +701,7 @@ export function PinBoard(
         changeLayout, fillViewportRows, justifyCurrentRows, autoCropToCells,
         clearAutoCrops, shiftLayout, mirrorLayout, rerollLayout, refitToView,
         reflowKeepProportions, growInPlace, hasLocks, hasAnchors,
+        belowViewportKeys,
     } = usePinboardLayoutActions({
         layout, crops, autoCrops, locks: itemLocks, orients, highWater, dbs, grid,
         layoutAutoCrop: autoLayoutCrop,
@@ -628,6 +721,8 @@ export function PinBoard(
             rerollLayout, refitToView, reflowKeepProportions, growInPlace,
             hasLocks, hasAnchors,
             highWater, isV1, upgradeGrid,
+            belowViewportCount: () => belowViewportKeys()?.length ?? null,
+            removeBelowViewport: () => removePins(belowViewportKeys() ?? []),
         } satisfies PinboardBoardApi)
     })
     useEffect(() => {
@@ -1209,6 +1304,38 @@ export function PinBoard(
         window.addEventListener("keydown", onKey)
         return () => window.removeEventListener("keydown", onKey)
     }, [readingOrder])
+    // Delete runs Remove Selected — the keyboard twin of the toolbar verb.
+    // Backspace is deliberately NOT bound: it is the browser-back gesture
+    // on some setups, and Back is this feature's undo.
+    useEffect(() => {
+        if (selected.length === 0) return
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key !== "Delete") return
+            // A press aimed at a text field is that field's own edit
+            const t = e.target as HTMLElement | null
+            if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return
+            // Crop mode, hole targeting and a live carry each own the
+            // keyboard while they run (Escape already routes to them
+            // first), and a splice under them would shift the record
+            // offsets they are holding mid-gesture
+            if (cropKey !== null || holeActiveRef.current || carrySha) return
+            // An open dialog OWNS Delete: the library dialog, the rename
+            // dialog and the confirm dialogs (deleting a saved version,
+            // say) all sit over the board, and a press aimed at one of
+            // them must not silently take the board's pins away behind
+            // the overlay. Matched against the document rather than the
+            // event target — Radix parks focus on the dialog content or
+            // on <body>, neither of which a closest() from the press can
+            // relate back to the board.
+            if (document.querySelector('[role="dialog"]')) return
+            e.preventDefault()
+            removePins(selected)
+        }
+        window.addEventListener("keydown", onKey)
+        return () => window.removeEventListener("keydown", onKey)
+        // records: the splice closes over this render's board state, so the
+        // listener must be re-bound when the board changes underneath it
+    }, [selected, records, cropKey, carrySha])
     // Pressing anywhere that isn't a pin, the selection toolbar or a popup
     // menu — the board background, the rest of the app — deselects, the
     // way every file manager does. Ctrl/shift presses are exempt so
@@ -1340,8 +1467,18 @@ export function PinBoard(
         if (explicitPlacement) return
         if (!autoLayoutRef.current) return
         // Fire-and-forget: fillViewport is async (fetches metadata) and
-        // no-ops on its own when the container can't be measured
-        void fillViewportRef.current(false)
+        // no-ops on its own when the container can't be measured.
+        // REPLACE, not push: this fill is the tail of somebody else's
+        // structural write (a pin add, or a removal), and it must land in
+        // that write's history entry. Being async — it awaits a metadata
+        // fetch — nuqs cannot merge it, so a push would leave a second
+        // entry holding the removed-but-not-repacked board. That entry is
+        // what one Back press would reach, while removePins' toast
+        // promises Back restores the pins; the same asymmetry would make
+        // Back after a pin add land on a half-integrated board. Only the
+        // explicit fills (menu verbs, the viewport-growth trigger) are
+        // their own undo step and keep push.
+        void fillViewportRef.current(false, false, "replace")
     }, [records])
     // Viewport-growth trigger: explicit user actions that give the board
     // more room — maximizing it, hiding the gallery thumbnails — re-run the
@@ -1512,7 +1649,8 @@ export function PinBoard(
                             }
                         }
                         onLayoutChange([...currentLayout], drops, undefined,
-                            undefined, undefined, echo, manual)
+                            undefined, undefined, echo ? "replace" : undefined,
+                            manual)
                     }}
                     // The crop-mode exemption: there the drag/resize IS the
                     // crop edit, not a layout statement — it composes with
@@ -1756,6 +1894,9 @@ export function PinBoard(
                                     onCropChange={(crop) => onItemCropChange(i, crop)}
                                     onTrimChange={(trim) => onItemTrimChange(i, trim)}
                                     onDuplicate={() => onDuplicatePin(i)}
+                                    onUnpin={() => onUnpinPin(i)}
+                                    onRemove={removePins}
+                                    onRemoveAllBut={removeAllBut}
                                     scrollAreaRef={scrollAreaRef}
                                     grid={grid}
                                     isV1={isV1}
@@ -1838,6 +1979,8 @@ export function PinBoard(
                                 case "rotateImageL": runVerb("Rotate Images", orientSelection(selected, "ccw")); break
                                 case "rotateImageR": runVerb("Rotate Images", orientSelection(selected, "cw")); break
                                 case "clearCrop": clearAutoCropSelection(selected); break
+                                case "removeSel": removePins(selected); break
+                                case "removeRest": removeAllBut(selected); break
                             }
                         }}
                         onRegion={(preset) => runVerb("Send to Region", sendSelectionToRegion(selected, preset))}
@@ -1921,6 +2064,58 @@ function SelectionToolbar({
     // stamps data-state on the trigger)
     const menuBtn = cn(btn,
         "data-[state=open]:bg-blue-100 data-[state=open]:text-blue-700 data-[state=open]:hover:bg-blue-200")
+    // One row renderer for both halves of the dropdown: the ordinary verbs
+    // (plus the region submenu) first, the removals last behind a separator
+    const verbRow = (v: SelectionVerb) => {
+        const disabled = verbDisabled(v)
+        return (
+            // Not Radix-disabled even when the verb is: that would make the
+            // row inert and unpinnable (e.g. Swap could never leave the bar
+            // except with exactly two items selected). The row just looks
+            // disabled and ignores selects instead.
+            <DropdownMenuItem key={v.id} title={v.title}
+                className={cn(v.destructive && DESTRUCTIVE_MENU_ITEM)}
+                onSelect={(e) => {
+                    // A select that originated on the pin toggle is never a
+                    // verb invocation — Radix fires select from pointerup,
+                    // so this guard backs up the toggle's own propagation
+                    // stops
+                    const t = (e as CustomEvent<{ originalEvent?: Event }>)
+                        .detail?.originalEvent?.target as HTMLElement | null
+                    if (t?.closest?.("[data-pin-toggle]")) { e.preventDefault(); return }
+                    if (disabled) { e.preventDefault(); return }
+                    onVerb(v.id)
+                }}
+            >
+                <span className={cn(
+                    "flex items-center gap-2",
+                    disabled && "opacity-40",
+                )}>
+                    <v.icon className="w-4 h-4" />
+                    {v.label}
+                </span>
+                {/* Shortcut label takes over the row's ml-auto, so the pin
+                    toggle keeps its place at the far right instead of the
+                    two auto margins splitting the free space between them.
+                    The muted default tone disappears on a filled
+                    destructive row — same override as the context menu's
+                    twin row. */}
+                {v.shortcut && (
+                    <DropdownMenuShortcut className={cn(
+                        v.destructive && "text-destructive-foreground/80",
+                    )}>
+                        {v.shortcut}
+                    </DropdownMenuShortcut>
+                )}
+                <PinToggle
+                    isPinned={pinned.includes(v.id)}
+                    onToggle={() => togglePin(v.id)}
+                    onDestructive={v.destructive}
+                    className={v.shortcut ? "ml-2" : undefined}
+                />
+            </DropdownMenuItem>
+        )
+    }
     return (
         <div
             ref={innerRef}
@@ -1954,40 +2149,7 @@ function SelectionToolbar({
                     </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-64">
-                    {SELECTION_VERBS.map(v => {
-                        const disabled = verbDisabled(v)
-                        const isPinned = pinned.includes(v.id)
-                        return (
-                            // Not Radix-disabled even when the verb is: that
-                            // would make the row inert and unpinnable (e.g.
-                            // Swap could never leave the bar except with
-                            // exactly two items selected). The row just
-                            // looks disabled and ignores selects instead.
-                            <DropdownMenuItem key={v.id} title={v.title}
-                                onSelect={(e) => {
-                                    // A select that originated on the pin
-                                    // toggle is never a verb invocation —
-                                    // Radix fires select from pointerup, so
-                                    // this guard backs up the toggle's own
-                                    // propagation stops
-                                    const t = (e as CustomEvent<{ originalEvent?: Event }>)
-                                        .detail?.originalEvent?.target as HTMLElement | null
-                                    if (t?.closest?.("[data-pin-toggle]")) { e.preventDefault(); return }
-                                    if (disabled) { e.preventDefault(); return }
-                                    onVerb(v.id)
-                                }}
-                            >
-                                <span className={cn(
-                                    "flex items-center gap-2",
-                                    disabled && "opacity-40",
-                                )}>
-                                    <v.icon className="w-4 h-4" />
-                                    {v.label}
-                                </span>
-                                <PinToggle isPinned={isPinned} onToggle={() => togglePin(v.id)} />
-                            </DropdownMenuItem>
-                        )
-                    })}
+                    {SELECTION_VERBS.filter(v => !v.destructive).map(verbRow)}
                     {/* The region presets live in one submenu (seven
                         rarely-simultaneous targets would flood the list);
                         its pin toggle puts a menu-opening icon button on
@@ -2019,6 +2181,10 @@ function SelectionToolbar({
                             ))}
                         </DropdownMenuSubContent>
                     </DropdownMenuSub>
+                    {/* The removals close the list, fenced off from the
+                        verbs that only rearrange what's there */}
+                    <DropdownMenuSeparator />
+                    {SELECTION_VERBS.filter(v => v.destructive).map(verbRow)}
                 </DropdownMenuContent>
             </DropdownMenu>
             {BAR_ORDER.filter(id => pinned.includes(id)).map(id => {
@@ -2048,8 +2214,14 @@ function SelectionToolbar({
                 if (!v) return null
                 return (
                     <button key={id}
+                        // A pinned removal keeps the destructive fill it has
+                        // in the menus — the bar's own white pill is not a
+                        // theme surface, but the destructive tokens carry
+                        // their own foreground, so they read in both themes
                         className={cn(btn, v.id === "hole" && holeActive
-                            && "bg-blue-100 text-blue-700 hover:bg-blue-200")}
+                            && "bg-blue-100 text-blue-700 hover:bg-blue-200",
+                            v.destructive
+                            && "bg-destructive text-destructive-foreground hover:bg-destructive/90")}
                         disabled={verbDisabled(v)}
                         onClick={() => onVerb(v.id)} title={v.title}>
                         <v.icon className="w-4 h-4" />
@@ -2088,17 +2260,29 @@ function SelectionToolbar({
 // a same-glyph color change alone reads as enabled either way. All three
 // pointer phases are stopped so toggling never selects the row or closes
 // the menu (Radix fires item select from pointerup via item.click()).
+// On a destructive row (filled bg-destructive) the fixed grey/blue tones
+// have no relation to the surface under them, so onDestructive switches
+// the box to currentColor — which the row has already set to
+// text-destructive-foreground, the one tone guaranteed to read on that
+// fill in both themes. The pinned box inverts it: filled with the
+// foreground, its check drawn in the row's own destructive colour.
 function PinToggle({
     isPinned,
     onToggle,
+    onDestructive = false,
+    className,
 }: {
     isPinned: boolean
     onToggle: () => void
+    onDestructive?: boolean
+    className?: string
 }) {
     return (
         <button
             data-pin-toggle
-            className="ml-auto rounded p-0.5 hover:bg-gray-200"
+            className={cn("ml-auto rounded p-0.5",
+                onDestructive ? "hover:bg-white/20" : "hover:bg-gray-200",
+                className)}
             title={isPinned
                 ? "Shown on the toolbar — click to remove"
                 : "Show directly on the toolbar"}
@@ -2115,10 +2299,19 @@ function PinToggle({
             <span className={cn(
                 "flex h-4 w-4 items-center justify-center rounded border",
                 isPinned
-                    ? "border-blue-600 bg-blue-600 text-white"
-                    : "border-gray-400 text-transparent hover:border-gray-600",
+                    ? onDestructive
+                        // bg-current, NOT a colour set on this same span:
+                        // currentColor resolves against the element's own
+                        // `color`, so tinting the check here would tint the
+                        // fill with it too. The check gets its colour below.
+                        ? "border-current bg-current"
+                        : "border-blue-600 bg-blue-600 text-white"
+                    : onDestructive
+                        ? "border-current text-transparent"
+                        : "border-gray-400 text-transparent hover:border-gray-600",
             )}>
-                <Check className="w-3 h-3" />
+                <Check className={cn("w-3 h-3",
+                    isPinned && onDestructive && "text-destructive")} />
             </span>
         </button>
     )
@@ -2150,6 +2343,9 @@ function PinBoardPin({
     onCropChange,
     onTrimChange,
     onDuplicate,
+    onUnpin,
+    onRemove,
+    onRemoveAllBut,
     scrollAreaRef,
     grid,
     isV1,
@@ -2192,6 +2388,12 @@ function PinBoardPin({
     onCropChange: (crop: CropRect | null) => void
     onTrimChange: (trim: TrimRange | null) => void
     onDuplicate: () => void
+    // Removal writers, all record splices owned by the board (this
+    // component only holds geometry): this pin's own Unpin, and the two
+    // selection-scoped removals the context menu mirrors from the toolbar
+    onUnpin: () => void
+    onRemove: (keys: string[]) => void
+    onRemoveAllBut: (keys: string[]) => void
     scrollAreaRef: React.RefObject<HTMLDivElement | null>
     grid: GridParams
     isV1: boolean
@@ -2406,6 +2608,9 @@ function PinBoardPin({
                     trim={trim}
                     onTrimChange={onTrimChange}
                     onDuplicate={onDuplicate}
+                    onUnpin={onUnpin}
+                    onRemove={onRemove}
+                    onRemoveAllBut={onRemoveAllBut}
                     lock={lock}
                     onLockChange={onLockChange}
                     pinboardRef={scrollAreaRef}

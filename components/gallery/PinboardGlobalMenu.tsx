@@ -1,5 +1,5 @@
 "use client"
-import { Grid2x2Plus, Maximize2, Minimize2 } from "lucide-react"
+import { Grid2x2Plus, Maximize2, Minimize2, Trash2 } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import {
     useGalleryFullscreen,
@@ -64,6 +64,15 @@ interface MenuKit {
     }>
     Shortcut: React.ComponentType<{ children?: React.ReactNode }>
 }
+
+// Destructive menu rows are styled like the destructive BUTTON — same
+// fill, same foreground, focus standing in for hover (the convention set
+// by the cancel-job menu in scan/JobQueue). Not red text: the dark theme's
+// --destructive is a 30%-lightness button background that reads as
+// disabled grey when used as a text color.
+export const DESTRUCTIVE_MENU_ITEM =
+    "cursor-pointer bg-destructive text-destructive-foreground"
+    + " focus:bg-destructive/90 focus:text-destructive-foreground"
 
 export const contextMenuKit: MenuKit = {
     Item: ContextMenuItem,
@@ -212,6 +221,27 @@ export function BoardGlobalMenuItems({
                 </SubContent>
             </Sub>
             <Separator />
+            {/* Purges the staging band under the board's working area — where
+                evictions and region sends park what didn't fit. Destructive,
+                so it stays OUT of the Layout submenu and carries the live
+                count instead of a vague label; 0 (or an unmeasurable board)
+                disables it. Back-button undo, like the selection removals. */}
+            {(() => {
+                const below = api.belowViewportCount()
+                return (
+                    <Item
+                        className={below ? DESTRUCTIVE_MENU_ITEM : undefined}
+                        disabled={!below}
+                        onClick={api.removeBelowViewport}
+                    >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        {/* One string: the row is a flex container, so a
+                            separate `(N)` child would become its own flex
+                            item and lose the space before it */}
+                        {`Remove Items Below Viewport${below === null ? "" : ` (${below})`}`}
+                    </Item>
+                )
+            })()}
             <Sub>
                 <SubTrigger inset>Layout</SubTrigger>
                 <SubContent className="w-56">

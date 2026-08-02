@@ -48,7 +48,12 @@ import {
 import { usePinboardBoardApi } from "@/lib/state/pinboardBoardApi"
 import { PinboardLibraryDialog } from "./PinboardLibrary"
 import { PinboardHistoryPanel } from "./PinboardHistory"
-import { BoardGlobalMenuItems, LayoutMenuItems, dropdownMenuKit } from "./PinboardGlobalMenu"
+import {
+    BoardGlobalMenuItems,
+    DESTRUCTIVE_MENU_ITEM,
+    LayoutMenuItems,
+    dropdownMenuKit,
+} from "./PinboardGlobalMenu"
 
 // The library actions and their dialogs, shared by the two surfaces that
 // offer them: the tab chevron's dropdown and the fullscreen toolbar. Save
@@ -262,12 +267,14 @@ export function PinboardMenu() {
                     <DropdownMenuSeparator />
                     {/* The destructive verb sits last, below everything.
                         It confirms first (see usePinboardDialogs), so a
-                        stray click can't wipe the board. Explicit red text
-                        tones, NOT text-destructive: the dark theme's
-                        --destructive is a 30%-lightness button background
-                        that reads as disabled grey when used as text. */}
+                        stray click can't wipe the board. Styled with the
+                        shared destructive-row class (filled, like the
+                        destructive button) — the same dropdown already
+                        shows it on Remove Below Viewport a few rows up,
+                        and two looks for the same class of verb in one
+                        menu reads as two different things. */}
                     <DropdownMenuItem
-                        className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
+                        className={DESTRUCTIVE_MENU_ITEM}
                         onClick={openClear}
                     >
                         <Trash2 className="mr-2 h-4 w-4" />
