@@ -31,7 +31,8 @@ export {
 } from "./searchRequest"
 
 /**
- * The query the update lock considers *committed*, as a request hash.
+ * The query the update lock considers *committed*: its request hash, plus
+ * whatever request value the caller wants frozen to the same moment.
  *
  * With the lock off there is nothing to withhold, so the live query is always
  * the committed one — which also means that turning the lock on freezes
@@ -43,16 +44,24 @@ export {
  * render gating the search on a stale answer, and that render is visible: it
  * is either a query that fires when it shouldn't or a results pane that
  * blanks when it shouldn't.
+ *
+ * The always-mounted caller (`useSearch`) gates on the *key*: its query keeps
+ * the previous answer in cache, so withholding is enough. A consumer that
+ * mounts on demand cannot do that — a ref seeded at mount time is trivially
+ * equal to the live key, which is precisely the uncommitted query it must not
+ * run — so it needs the committed *value* instead, and must be handed it from
+ * here rather than re-deriving it. Hence one hook returning both.
  */
-function useCommittedQueryKey(
+function useCommittedQuery<T>(
   liveKey: string,
+  liveValue: T,
   instantSearch: boolean,
   commitToken: number
-): string {
-  const committed = useRef(liveKey)
+): { key: string; value: T } {
+  const committed = useRef({ key: liveKey, value: liveValue })
   const seenToken = useRef(commitToken)
   if (instantSearch || seenToken.current !== commitToken) {
-    committed.current = liveKey
+    committed.current = { key: liveKey, value: liveValue }
   }
   seenToken.current = commitToken
   return committed.current
@@ -109,7 +118,18 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   // by a render, and during that render the query key is still the previously
   // committed one — already in cache, so leaving it enabled costs nothing.
   const liveKey = hashKey([liveRequest])
-  const committedKey = useCommittedQueryKey(liveKey, instantSearch, commitToken)
+  // The frozen value is taken from the *live* request, not the throttled one:
+  // a commit lands on the render that bumps the token, and the throttle is
+  // still a render behind then — freezing the trailing value would leave the
+  // library running the previous query until the next commit. Consumers
+  // throttle what they get from here, which reproduces this query's own
+  // "throttled, once live == committed" behaviour.
+  const { key: committedKey, value: committedQuery } = useCommittedQuery(
+    liveKey,
+    { searchQuery: liveRequest.searchQuery, dbs: liveRequest.dbs },
+    instantSearch,
+    commitToken
+  )
   const queryEnabled =
     searchEnabled &&
     (instantSearch || committedKey === liveKey) &&
@@ -193,6 +213,10 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     isError,
     refetch: refetchAll,
     isFetching,
+    // For on-demand consumers of the same search (the grid's Library tab):
+    // the query this hook would run, gated by the update lock exactly as this
+    // hook gates its own. See useCommittedQuery.
+    committedQuery,
     resultsAreStale,
     nResults,
     page,

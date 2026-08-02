@@ -100,8 +100,14 @@ export function PinboardLibraryDialog({
     const emptyLibrary =
         data != null && boards.length === 0 && nameQuery.trim() === ""
 
-    const invalidate = () =>
+    const invalidate = () => {
         queryClient.invalidateQueries({ queryKey: ["get", "/api/pinboards"] })
+        // The grid's Library tab searches the same boards; a rename or delete
+        // here must reach it too.
+        queryClient.invalidateQueries({
+            queryKey: ["post", "/api/pinboards/search"],
+        })
+    }
 
     const openBoard = async (board: PinboardSummary) => {
         const { data: detail } = await fetchClient.GET(
@@ -286,40 +292,11 @@ export function PinboardLibraryDialog({
                     }}
                     onCancel={() => setConfirmDelete(null)}
                 />
-                <Dialog
-                    open={previewBoard != null}
-                    onOpenChange={(next) => {
-                        if (!next) setPreviewBoard(null)
-                    }}
-                >
-                    <DialogContent className="w-fit max-w-[92vw] p-3 gap-2">
-                        <DialogTitle className="pr-8 text-sm font-medium leading-normal truncate">
-                            {previewBoard?.name || (
-                                <span className="italic text-muted-foreground">Untitled</span>
-                            )}
-                            {previewBoard && (
-                                <span className="ml-2 font-normal text-xs text-muted-foreground">
-                                    {previewBoard.item_count}{" "}
-                                    {previewBoard.item_count === 1 ? "item" : "items"} ·{" "}
-                                    {getLocale(new Date(previewBoard.time_updated))}
-                                </span>
-                            )}
-                        </DialogTitle>
-                        {previewBoard?.head_version_id != null && (
-                            <img
-                                src={pinboardPreviewURL(
-                                    dbs,
-                                    previewBoard.id,
-                                    previewBoard.head_version_id,
-                                    PREVIEW_POPOVER_WIDTH
-                                )}
-                                alt={previewBoard.name || "Pinboard preview"}
-                                className="max-h-[80vh] max-w-full w-auto h-auto rounded border"
-                                draggable={false}
-                            />
-                        )}
-                    </DialogContent>
-                </Dialog>
+                <PinboardPreviewDialog
+                    board={previewBoard}
+                    dbs={dbs}
+                    onClose={() => setPreviewBoard(null)}
+                />
                 <Dialog
                     open={renameTarget != null}
                     onOpenChange={(next) => {
@@ -347,6 +324,56 @@ export function PinboardLibraryDialog({
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
+            </DialogContent>
+        </Dialog>
+    )
+}
+
+// The stacked full-size preview modal a card's corner icon opens. Shared by
+// every host that renders PinboardCard (the library dialog, the grid's
+// Library tab) — `board` null means closed.
+export function PinboardPreviewDialog({
+    board,
+    dbs,
+    onClose,
+}: {
+    board: PinboardSummary | null
+    dbs: { index_db: string | null; user_data_db: string | null }
+    onClose: () => void
+}) {
+    return (
+        <Dialog
+            open={board != null}
+            onOpenChange={(next) => {
+                if (!next) onClose()
+            }}
+        >
+            <DialogContent className="w-fit max-w-[92vw] p-3 gap-2">
+                <DialogTitle className="pr-8 text-sm font-medium leading-normal truncate">
+                    {board?.name || (
+                        <span className="italic text-muted-foreground">Untitled</span>
+                    )}
+                    {board && (
+                        <span className="ml-2 font-normal text-xs text-muted-foreground">
+                            {board.item_count}{" "}
+                            {board.item_count === 1 ? "item" : "items"} ·{" "}
+                            {getLocale(new Date(board.time_updated))}
+                        </span>
+                    )}
+                </DialogTitle>
+                {board?.head_version_id != null && (
+                    <img
+                        src={pinboardPreviewURL(
+                            dbs,
+                            board.id,
+                            board.head_version_id,
+                            PREVIEW_POPOVER_WIDTH
+                        )}
+                        alt={board.name || "Pinboard preview"}
+                        className="max-h-[80vh] max-w-full w-auto h-auto rounded border"
+                        draggable={false}
+                    />
+                )}
             </DialogContent>
         </Dialog>
     )
@@ -422,6 +449,7 @@ export function PinboardCard({
     board,
     dbs,
     href,
+    matchCount,
     onOpen,
     onDelete,
     onRename,
@@ -431,9 +459,12 @@ export function PinboardCard({
     board: PinboardSummary
     dbs: { index_db: string | null; user_data_db: string | null }
     href: string
+    /** How many of the board's items a search matched; absent = no badge. */
+    matchCount?: number
     onOpen: () => void
-    onDelete: () => void
-    onRename: () => void
+    /** Omitted where the host offers no rename/delete (the Library tab). */
+    onDelete?: () => void
+    onRename?: () => void
     onPreview: () => void
     onHover: (board: PinboardSummary | null, anchor?: DOMRect) => void
 }) {
@@ -509,6 +540,20 @@ export function PinboardCard({
                         />
                     </div>
                 )}
+                {/* Match badge: how much of the board the search hit. Sits on
+                    the preview rather than in the footer so the card's own
+                    metadata line is untouched (and identical in the library
+                    dialog, which passes no matchCount). */}
+                {matchCount !== undefined && (
+                    <span
+                        title={`${matchCount} of ${board.item_count} items match`}
+                        className="absolute left-2 top-1.5 rounded border bg-background/80 px-1.5 py-0.5 text-[11px] font-medium tabular-nums"
+                    >
+                        {matchCount === board.item_count
+                            ? matchCount
+                            : `${matchCount} / ${board.item_count}`}
+                    </span>
+                )}
                 {versionId != null && (
                     <button
                         type="button"
@@ -550,22 +595,28 @@ export function PinboardCard({
                         {board.item_count} {board.item_count === 1 ? "item" : "items"} ·{" "}
                         {compactDate(updated)}
                     </span>
-                    <span className="hidden group-hover/card:flex items-center gap-1">
-                        <button
-                            title="Rename"
-                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRename() }}
-                            className="hover:text-foreground"
-                        >
-                            <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                            title="Delete"
-                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete() }}
-                            className="hover:text-destructive"
-                        >
-                            <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                    </span>
+                    {(onRename || onDelete) && (
+                        <span className="hidden group-hover/card:flex items-center gap-1">
+                            {onRename && (
+                                <button
+                                    title="Rename"
+                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRename() }}
+                                    className="hover:text-foreground"
+                                >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                            )}
+                            {onDelete && (
+                                <button
+                                    title="Delete"
+                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete() }}
+                                    className="hover:text-destructive"
+                                >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                            )}
+                        </span>
+                    )}
                 </span>
             </div>
         </a>

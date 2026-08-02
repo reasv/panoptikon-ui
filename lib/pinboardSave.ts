@@ -14,6 +14,7 @@ import {
   useGalleryHidePinBoard,
   useGalleryPinBoardId,
   useGalleryPinBoardLayout,
+  useGridLibraryTab,
   useGridPinboardTab,
 } from "@/lib/state/gallery"
 import { useSelectedDBs } from "@/lib/state/database"
@@ -108,6 +109,7 @@ export function usePinboardActions() {
   const [pbid, setPbid] = useGalleryPinBoardId()
   const setHidePinBoard = useGalleryHidePinBoard()[1]
   const setGridPinboardTab = useGridPinboardTab()[1]
+  const setGridLibraryTab = useGridLibraryTab()[1]
   const flagValues = usePinboardFlagValues()
   const stampFlags = useStampBoardFlags()
   const dbs = useSelectedDBs()[0]
@@ -121,6 +123,11 @@ export function usePinboardActions() {
     })
     queryClient.invalidateQueries({
       queryKey: ["get", "/api/pinboards/{pinboard_id}/versions"],
+    })
+    // A save changes which images a board contains, so the grid's Library
+    // tab (boards matching the current search) is stale too.
+    queryClient.invalidateQueries({
+      queryKey: ["post", "/api/pinboards/search"],
     })
   }
 
@@ -244,6 +251,10 @@ export function usePinboardActions() {
     // the grid's Results tab succeeds invisibly.
     setHidePinBoard(false, { history })
     setGridPinboardTab(true, { history })
+    // The board tab takes over, so the Library tab it may have been opened
+    // from stands down (pins win the precedence either way, but leaving gpl
+    // set would send the Results tab to the library instead).
+    setGridLibraryTab(false, { history })
     stampFlags(flags, { history })
   }
 

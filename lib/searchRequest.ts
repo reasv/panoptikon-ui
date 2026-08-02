@@ -94,6 +94,42 @@ export function buildResultsRequest(
   }
 }
 
+/** The argument shape of `POST /api/pinboards/search`. */
+export interface PinboardSearchArgs {
+  params: { query: { index_db: string | null; user_data_db: string | null } }
+  body: components["schemas"]["PqlQuery"]
+}
+
+/**
+ * The pinboard-library request: the same PQL query the results and count
+ * requests run, intersected server-side with every board's pinned items.
+ *
+ * The endpoint ignores pagination, partitioning and the results/count flags
+ * — there is one result shape — so they are dropped rather than passed
+ * along: a page turn or a page-size change must not re-key this query for an
+ * answer that cannot have changed. Same reasoning as the count request's
+ * pinned page constants.
+ */
+export function buildPinboardSearchRequest({
+  searchQuery,
+  dbs,
+}: Pick<SearchRequestParts, "searchQuery" | "dbs">): PinboardSearchArgs {
+  const {
+    page,
+    page_size,
+    partition_by,
+    results,
+    count,
+    check_path,
+    prefetch_rows,
+    ...query
+  } = searchQuery
+  return {
+    params: { query: { ...dbs } },
+    body: query,
+  }
+}
+
 /**
  * The count request. Compiled without pagination and cached under a
  * pagination-free key server-side, so neither the page nor the page size can

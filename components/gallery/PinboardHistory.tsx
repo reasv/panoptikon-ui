@@ -181,6 +181,12 @@ export function PinboardHistoryPanel({
         queryClient.invalidateQueries({
             queryKey: ["get", "/api/pinboards/{pinboard_id}/versions"],
         })
+        // Deleting the head version changes what the board contains — and
+        // deleting the last one removes the board outright — so the grid's
+        // Library tab (boards matching the current search) is stale too.
+        queryClient.invalidateQueries({
+            queryKey: ["post", "/api/pinboards/search"],
+        })
         if (outcome?.deleted_board) {
             clearStash(pbid)
             // The board is gone; the layout on screen simply becomes an

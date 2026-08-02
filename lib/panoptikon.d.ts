@@ -1100,6 +1100,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/pinboards/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Find the pinboards whose images match a search
+         * @description Runs the same PQL query `/api/search/pql` would run, intersects its full result set with every pinboard's pinned items, and returns the boards that intersect — not files. Membership is the board's head version only, by sha256, so a pin whose item is no longer indexed never matches.
+         *
+         *     The result is unpaginated: the response carries every matching board, ordered by the position of its best-ranked matching image (the direction-adjusted extreme of the search's first order key), then by match fraction, then by match count, then by the library's activity score. Multi-key orders are approximated by their primary key. `page`, `page_size`, `partition_by`, `count`, `results` and `check_path` in the body are ignored: there is one result shape.
+         */
+        post: operations["search_pql_pinboards"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/pinboards/{pinboard_id}": {
         parameters: {
             query?: never;
@@ -1436,6 +1458,14 @@ export interface components {
             items: boolean;
             /** @description POST /api/open/file/{sha256} */
             open_files: boolean;
+            /**
+             * @description POST /api/pinboards/search
+             *
+             *     Separate from `pinboards` because that probe is a *write*: a policy
+             *     granting read-only board access would report `pinboards: false` while
+             *     the library search still works.
+             */
+            pinboard_search: boolean;
             /** @description POST /api/pinboards */
             pinboards: boolean;
             /** @description POST /api/jobs/folders/rescan */
@@ -1930,6 +1960,41 @@ export interface components {
              *     Include all sub-namespaces of the given namespaces (namespace.*).
              */
             sub_ns?: boolean;
+            user?: string;
+        };
+        /**
+         * @description Restrict search to items pinned on a pinboard.
+         *
+         *     Not sortable: pinboard membership has no natural per-item rank, so this
+         *     follows the `ProcessedBy`/`FailedFor` shape (no `SortableOptions`, no
+         *     `order_rank` column, never an order source) rather than the `InBookmarks`
+         *     one.
+         */
+        InPinboard: {
+            /**
+             * @description Restrict search to items pinned on a pinboard
+             *
+             *     Only include items that are members of the head version of a pinboard.
+             */
+            in_pinboard: components["schemas"]["InPinboardArgs"];
+        };
+        InPinboardArgs: {
+            /**
+             * @description Enable the filter
+             *
+             *     Must be set to True, this option only exists to make sure the filter is not empty,
+             *     given that that all fields are optional.
+             */
+            filter?: boolean;
+            /**
+             * @description Pinboard IDs
+             *
+             *     List of pinboard IDs to filter by. An item matches if it is pinned in the
+             *     head (current) version of at least one of them.
+             *     If empty, membership in *any* of the user's pinboards matches.
+             */
+            pinboard_ids?: number[];
+            /** @description The user whose pinboards are searched. */
             user?: string;
         };
         /**
@@ -2443,6 +2508,48 @@ export interface components {
          * @enum {string}
          */
         PinboardOrder: "activity" | "updated";
+        /**
+         * @description One matching board: the `PinboardSummaryResponse` fields the library card
+         *     renders, plus how much of the board the search matched.
+         */
+        PinboardSearchMatch: {
+            /** Format: int64 */
+            head_version_id?: number | null;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            item_count: number;
+            /**
+             * Format: int64
+             * @description Unix seconds of the board's last activity — opening it counts, not
+             *     just saving. Null only for rows predating the activity columns.
+             */
+            last_seen?: number | null;
+            /**
+             * Format: int64
+             * @description Distinct items on the board's head version that the search matched.
+             */
+            match_count: number;
+            name?: string | null;
+            /** Format: int64 */
+            preview_h?: number | null;
+            /** Format: int64 */
+            preview_w?: number | null;
+            /** Format: int64 */
+            screenful_h?: number | null;
+            time_added: string;
+            time_updated: string;
+            /** Format: int64 */
+            version_count: number;
+        };
+        PinboardSearchResponse: {
+            metrics: components["schemas"]["SearchMetrics"];
+            /**
+             * @description Every board with at least one matching image, unpaginated, in the
+             *     server's default order (see the endpoint description).
+             */
+            pinboards: components["schemas"]["PinboardSearchMatch"][];
+        };
         PinboardSummaryResponse: {
             /** Format: int64 */
             head_version_id?: number | null;
@@ -2684,7 +2791,7 @@ export interface components {
             /** @description This Item or Item Data must have been processed by this setter name and have data derived from it */
             processed_by: string;
         };
-        QueryElement: components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"] | components["schemas"]["Match"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["SimilarTo"] | components["schemas"]["MatchTags"] | components["schemas"]["InBookmarks"] | components["schemas"]["ProcessedBy"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["FailedFor"];
+        QueryElement: components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"] | components["schemas"]["Match"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["SimilarTo"] | components["schemas"]["MatchTags"] | components["schemas"]["InBookmarks"] | components["schemas"]["ProcessedBy"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["FailedFor"] | components["schemas"]["InPinboard"];
         QueueCancelResponse: {
             cancelled_jobs: number[];
         };
@@ -5493,6 +5600,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SavePinboardResponse"];
+                };
+            };
+        };
+    };
+    search_pql_pinboards: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+                /** @description The user whose pinboards to search. */
+                user?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The PQL Search query whose results the boards are intersected with */
+        requestBody?: {
+            content: {
+                "application/json": null | components["schemas"]["PqlQuery"];
+            };
+        };
+        responses: {
+            /** @description Matching pinboards */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PinboardSearchResponse"];
                 };
             };
         };

@@ -16,13 +16,15 @@ import { ScrollBar } from "@/components/ui/scroll-area"
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { SideBar } from "@/components/sidebar/SideBar"
 import { SearchResultImage } from "@/components/SearchResultImage"
-import { useGalleryFullscreen, useGalleryIndex, useGalleryPinBoardLayout, useGridPinboardTab } from "@/lib/state/gallery"
+import { useGalleryFullscreen, useGalleryIndex, useGalleryPinBoardLayout, useGridLibraryTab, useGridPinboardTab } from "@/lib/state/gallery"
 import { useSideBarOpen } from "@/lib/state/sideBar"
 import { selectedDBsSerializer, useSelectedDBs } from "@/lib/state/database"
 import { useSearch } from "@/lib/searchHooks"
+import type { SearchRequestParts } from "@/lib/searchRequest"
 import { ImageGallery, PinboardTabChip } from '@/components/gallery/ImageGallery'
 import { PinBoard } from '@/components/gallery/GalleryPinBoard'
 import { PinboardLibraryButton } from '@/components/gallery/PinboardLibrary'
+import { PinboardSearchGrid } from '@/components/gallery/PinboardSearchGrid'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { usePinboardURLLoader } from '@/lib/pinboardLinks'
 import { ImageSimilarityHeader } from '@/components/ImageSimilarityHeader'
@@ -36,6 +38,8 @@ import { components } from "@/lib/panoptikon"
 import { useGridScrollAnchor } from "@/lib/state/gridScroll"
 import { DesktopUpdateRibbon } from "@/components/DesktopUpdateRibbon"
 import { SearchMetricsHoverCard } from "@/components/SearchMetricsCard"
+import { $api } from "@/lib/api"
+import { useClientConfig } from "@/lib/useClientConfig"
 
 export function SearchPageContent({ initialQuery, isRestrictedMode }:
     { initialQuery: SearchQueryArgs, isRestrictedMode: boolean }) {
@@ -63,7 +67,7 @@ export function SearchPageContent({ initialQuery, isRestrictedMode }:
 
 export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVisible = false }:
     { initialQuery: SearchQueryArgs, isRestrictedMode: boolean, updateRibbonVisible?: boolean }) {
-    const { data, error, isError, refetch, isFetching, resultsAreStale, nResults, page, pageSize, setPage, searchEnabled, getPageURL } = useSearch({ initialQuery })
+    const { data, error, isError, refetch, isFetching, resultsAreStale, nResults, page, pageSize, setPage, searchEnabled, getPageURL, committedQuery } = useSearch({ initialQuery })
     const { toast } = useToast()
     // Random ordering is now a stable shuffle pinned by a seed, so refetching
     // deliberately returns the *same* results — that stability is the point.
@@ -240,6 +244,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                         showPagination={showPagination}
                         savedScrollOffsetRef={gridScrollOffsetRef}
                         updateRibbonVisible={updateRibbonVisible}
+                        committedQuery={committedQuery}
                     />
             }
             {
@@ -318,6 +323,7 @@ export function GridPanel({
     showPagination = true,
     savedScrollOffsetRef,
     updateRibbonVisible = false,
+    committedQuery,
 }: {
     results: SearchResult[],
     resultMetrics?: components["schemas"]["SearchMetrics"],
@@ -329,10 +335,33 @@ export function GridPanel({
     showPagination?: boolean,
     savedScrollOffsetRef?: React.MutableRefObject<number>,
     updateRibbonVisible?: boolean,
+    /** The search the Library tab runs — see useSearch's committedQuery. */
+    committedQuery: Pick<SearchRequestParts, "searchQuery" | "dbs">,
 }) {
     const pinboard = useGalleryPinBoardLayout()[0]
     const [pinboardTab, setPinboardTab] = useGridPinboardTab()
+    const [libraryTab, setLibraryTab] = useGridLibraryTab()
     const [fs, setFs] = useGalleryFullscreen()
+    const dbs = useSelectedDBs()[0]
+    const clientConfig = useClientConfig()
+    // Always-on (unlike the library dialog's copy, which waits for the dialog
+    // to open): the Library tab must appear as soon as a board exists, and
+    // every save/rename/delete already invalidates this key. Gated on the
+    // read-side pinboard capability so a policy without board access never
+    // fires it. This panel remounts whenever the gallery opens and closes, so
+    // the answer is held rather than re-fetched per mount (staleTime) and not
+    // re-fetched on refocus either — invalidation is what moves it.
+    const library = $api.useQuery(
+        "get",
+        "/api/pinboards",
+        { params: { query: { ...dbs } } },
+        {
+            enabled: clientConfig.data?.pinboardSearchEnabled === true,
+            staleTime: 5 * 60 * 1000,
+            refetchOnWindowFocus: false,
+        }
+    )
+    const libraryHasBoards = (library.data?.pinboards?.length ?? 0) > 0
     // The tab choice only matters on a non-empty board (the tabs don't
     // render otherwise). The length guard still matters for a ?pbl link:
     // gpb=true arrives before the loader has resolved the layout, and the
@@ -345,6 +374,30 @@ export function GridPanel({
     // lands here instead. Without this the board would be replaced by an
     // empty grid — the one thing the URL asked not to show.
     const showPinboard = pinboard.length > 0 && (pinboardTab || fs)
+    // Tab precedence: pins > library > results. The open board wins because
+    // it is the one view a URL can be maximized into; the library needs a
+    // non-empty library for the same reason the board tab needs pins — the
+    // flag can arrive (a shared link, a back navigation) before the boards
+    // query has answered.
+    const showLibrary = !showPinboard && libraryTab && libraryHasBoards
+    // A gpl that outlived its library: the last board was deleted, or the URL
+    // was carried to a user_data_db that has none. Left set, the flag would
+    // silently yank the view back to Library the moment a board reappears.
+    //
+    // Only on a *settled successful* empty answer — never while the query is
+    // loading (a cold load has gpl before the boards land, which is exactly
+    // the case the precedence comment above keeps working), never on an error
+    // (an unreachable backend is not an empty library), and never when the
+    // query is disabled. The write is one-way — it can only take gpl from
+    // true to false, and the guard then stops matching — so it cannot cycle.
+    // Replace, not push: this is a correction to a state that no longer
+    // exists, not somewhere to navigate back to.
+    useEffect(() => {
+        if (!libraryTab) return
+        if (!library.isSuccess || library.isFetching) return
+        if (libraryHasBoards) return
+        setLibraryTab(false, { history: "replace" })
+    }, [libraryTab, library.isSuccess, library.isFetching, libraryHasBoards, setLibraryTab])
     // Maximize hotkey, same chord as the gallery's. Registered only while
     // the board is shown here — the two hosts are never mounted together,
     // so it can't double-fire.
@@ -370,13 +423,23 @@ export function GridPanel({
                         <span><AnimatedNumber value={totalCount} /> {totalCount === 1 ? "Result" : "Results"} in {resultMetrics?.execute}s</span>
                     </SearchMetricsHoverCard>
                 </h2>
-                {pinboard.length > 0 && (
+                {(pinboard.length > 0 || libraryHasBoards) && (
                     <Tabs
-                        value={showPinboard ? "pins" : "results"}
-                        onValueChange={(value) => setPinboardTab(value === "pins")}
+                        value={showPinboard ? "pins" : showLibrary ? "library" : "results"}
+                        onValueChange={(value) => {
+                            // One tab is selected, so the other flag stands
+                            // down — same tick, so nuqs writes one URL update
+                            setPinboardTab(value === "pins")
+                            setLibraryTab(value === "library")
+                        }}
                     >
                         <TabsList className="flex">
-                            <PinboardTabChip active={showPinboard} />
+                            {pinboard.length > 0 && <PinboardTabChip active={showPinboard} />}
+                            {libraryHasBoards && (
+                                <TabsTrigger value="library" className="shrink-0 px-3">
+                                    Library
+                                </TabsTrigger>
+                            )}
                             <TabsTrigger value="results" className="shrink-0 px-3">
                                 Results
                             </TabsTrigger>
@@ -394,6 +457,12 @@ export function GridPanel({
                 <PinBoard
                     variant="grid"
                     thumbnailsOpen={false}
+                    showPagination={showPagination}
+                    updateRibbonVisible={updateRibbonVisible}
+                />
+            ) : showLibrary ? (
+                <PinboardSearchGrid
+                    committedQuery={committedQuery}
                     showPagination={showPagination}
                     updateRibbonVisible={updateRibbonVisible}
                 />

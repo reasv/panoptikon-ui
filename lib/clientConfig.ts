@@ -19,6 +19,7 @@ export interface ClientConfig {
   desktopManaged: boolean
   desktopShellAvailable: boolean
   relayEnabled: boolean
+  pinboardSearchEnabled: boolean
 }
 
 // [policies.client] keys are free-form; these are the by-convention keys the
@@ -50,6 +51,13 @@ export function deriveClientConfig(response: ClientConfigResponse): ClientConfig
     desktopManaged: response.desktop_managed === true,
     desktopShellAvailable: response.desktop_shell_available === true,
     relayEnabled: client["relay_enabled"] !== false,
+    // The ruleset lets this policy *read* the pinboard library and search it.
+    // Consumers that fetch board data unprompted (the grid's Library tab)
+    // gate on it so a policy without board access never fires a request it
+    // would 403. Deliberately not the `pinboards` capability: that one probes
+    // a write (POST /api/pinboards), so a read-only-boards policy would lose
+    // the Library tab even though both of its requests would succeed.
+    pinboardSearchEnabled: capabilities.pinboard_search !== false,
   }
 }
 

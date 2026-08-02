@@ -65,6 +65,21 @@ const useGridPinboardTab = () =>
       history: "push",
     })
   )
+// The grid results view's Library tab: true shows the pinboard-library
+// search (boards whose images match the current search) in place of the
+// results. Unlike gpb this flag is board-lifecycle-INDEPENDENT — the
+// library exists whether or not a board is open, so nothing clears it when
+// the current board is destroyed — and it is never read by
+// isPinboardMaximized: the Library tab is a search consumer, not a board.
+// Precedence lives in the tab host (GridPanel): pins > library > results.
+const useGridLibraryTab = () =>
+  useQueryState(
+    "gpl",
+    parseAsBoolean.withDefault(false).withOptions({
+      clearOnDefault: true,
+      history: "push",
+    })
+  )
 const useGalleryPinGrid = () =>
   useQueryState(
     "pg",
@@ -167,6 +182,7 @@ export {
   useGalleryFullscreen,
   useGalleryHidePinBoard,
   useGridPinboardTab,
+  useGridLibraryTab,
   useGalleryPinGrid,
   useGalleryPinAutoLayout,
   useGalleryPinAutoCrop,
