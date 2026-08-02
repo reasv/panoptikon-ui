@@ -3,7 +3,7 @@ import { ContextMenuCheckboxItem, ContextMenuContent, ContextMenuItem, ContextMe
 import { useGalleryPinAutoCrop, useGalleryPinSelectionCrop } from "@/lib/state/gallery";
 import { BoardGlobalMenuItems, contextMenuKit } from "./PinboardGlobalMenu";
 import type { PinboardBoardApi } from "@/lib/state/pinboardBoardApi";
-import { CropRect, PinLock, TrimRange } from "@/lib/pinboardCrop";
+import { CropRect, PinLock, PinOrientation, TrimRange } from "@/lib/pinboardCrop";
 import { GridParams } from "@/lib/pinboardGrid";
 import { useFileOpenActions } from "@/hooks/fileOpen";
 import { REGION_PRESETS, usePinboardLayoutActions } from "@/hooks/pinboardLayout";
@@ -21,6 +21,7 @@ export function PinBoardCtx({
     crops,
     autoCrops,
     locks,
+    orients,
     highWater,
     cropMode,
     hasCrop,
@@ -53,6 +54,9 @@ export function PinBoardCtx({
     crops: Record<string, CropRect | null>,
     autoCrops: Record<string, CropRect | null>,
     locks: Record<string, PinLock>,
+    // Per-pin D4 orientations; the layout math needs them to read the
+    // natural dimensions in display space
+    orients: Record<string, PinOrientation | null>,
     highWater: number,
     cropMode: boolean,
     hasCrop: boolean,
@@ -111,7 +115,7 @@ export function PinBoardCtx({
         hasLocks,
         hasAnchors,
     } = usePinboardLayoutActions({
-        layout, crops, autoCrops, locks, highWater, dbs, grid, pinboardRef, onLayoutChange,
+        layout, crops, autoCrops, locks, orients, highWater, dbs, grid, pinboardRef, onLayoutChange,
         layoutAutoCrop: autoLayoutCrop,
         selectionAutoCrop: selectionCrop,
     })

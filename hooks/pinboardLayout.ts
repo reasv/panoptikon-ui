@@ -3,7 +3,7 @@ import type { LayoutItem } from "react-grid-layout";
 import { fetchClient } from "@/lib/api";
 import { components } from "@/lib/panoptikon";
 import { RefObject, useEffect, useRef } from "react";
-import { CropRect, PinLock, computeAutoCrop } from "@/lib/pinboardCrop";
+import { CropRect, PinLock, PinOrientation, computeAutoCrop, orientedSize } from "@/lib/pinboardCrop";
 import { GridParams, minPinUnits, rowStep } from "@/lib/pinboardGrid";
 import {
     ArrangedItem,
@@ -29,6 +29,12 @@ import {
 // board, and they must agree.
 let mosaicVariant = 0
 
+// Default for the optional `orients` param. Module-scope because it sits in
+// the build-data invalidation deps below: an inline `= {}` default would be
+// a fresh object every render, so any caller omitting the param would throw
+// away the cached measurements on every render.
+const NO_ORIENTS: Record<string, PinOrientation | null> = Object.freeze({})
+
 // Layout keys are `${recordIndex}-${sha256Prefix}` (the same image can be
 // pinned more than once); the sha256 part is what the API understands
 function keyToSha256(key: string): string {
@@ -44,6 +50,7 @@ export function usePinboardLayoutActions({
     crops,
     autoCrops,
     locks = {},
+    orients = NO_ORIENTS,
     highWater = 0,
     layoutAutoCrop = false,
     selectionAutoCrop = true,
@@ -60,6 +67,11 @@ export function usePinboardLayoutActions({
     // every fill packs around) or "size" (treated the same by layout
     // actions; only manual drags distinguish them)
     locks?: Record<string, PinLock>,
+    // Per-item D4 orientations. The whole of this file works in DISPLAY
+    // space (crops are stored there too), so orientation enters only by
+    // swapping the natural dimensions of odd quarter turns — see
+    // croppedDimensions, which every fit, pack and resize path reads from.
+    orients?: Record<string, PinOrientation | null>,
     // The board's layout-height ratchet in grid rows (see pinboardGrid.ts)
     highWater?: number,
     // The standing auto-crop settings, one per verb class: layoutAutoCrop
@@ -87,13 +99,13 @@ export function usePinboardLayoutActions({
     const layoutBuildData = useRef<LayoutBuildData | null>(null)
     useEffect(() => {
         layoutBuildData.current = null
-    }, [layout, crops, dbs, grid])
+    }, [layout, crops, orients, dbs, grid])
 
     // Cached build data, or null when the container can't be measured (in
     // which case layout actions no-op rather than destroy the arrangement)
     async function ensureBuildData(): Promise<LayoutBuildData | null> {
         if (!layoutBuildData.current) {
-            layoutBuildData.current = await getLayoutBuildData({ layout, crops, dbs, grid, pinboardRef })
+            layoutBuildData.current = await getLayoutBuildData({ layout, crops, orients, dbs, grid, pinboardRef })
         }
         return layoutBuildData.current
     }
@@ -1255,36 +1267,42 @@ interface LayoutBuildData {
         } | undefined
     },
     crops: Record<string, CropRect | null>,
+    orients: Record<string, PinOrientation | null>,
     columnWidth: number,
     grid: GridParams,
     containerHeight: number,
     sortedLayout: LayoutItem[],
 }
 
-// Effective source dimensions of an item: the image size scaled by its
+// Effective DISPLAY dimensions of an item: the image size as the pin's
+// orientation shows it (w/h swapped on odd quarter turns) scaled by its
 // MANUAL crop rect (the rebase), so cropped items keep the aspect of the
-// user's chosen region. Auto crops are deliberately excluded: they are
-// derived from cell sizes, so feeding them back into the layout math would
-// make every layout action see the previous action's output as the truth.
+// user's chosen region. Orienting first is what keeps the crop fractions —
+// which are stored in display space — applying to the right axes; every
+// fit, pack and resize path reads its aspects from here, so that single
+// swap is the whole of orientation support in the layout math. Auto crops
+// are deliberately excluded: they are derived from cell sizes, so feeding
+// them back into the layout math would make every layout action see the
+// previous action's output as the truth.
 function croppedDimensions(buildData: LayoutBuildData, key: string): [number, number] {
     const item = buildData.metadata[key]?.item
     const crop = buildData.crops[key]
-    return [
-        (item?.width || 1) * (crop?.w ?? 1),
-        (item?.height || 1) * (crop?.h ?? 1),
-    ]
+    const [w, h] = orientedSize(item?.width || 1, item?.height || 1, buildData.orients[key])
+    return [w * (crop?.w ?? 1), h * (crop?.h ?? 1)]
 }
 
 async function getLayoutBuildData(
     {
         layout,
         crops,
+        orients,
         dbs,
         grid,
         pinboardRef,
     }: {
         layout: LayoutItem[],
         crops: Record<string, CropRect | null>,
+        orients: Record<string, PinOrientation | null>,
         dbs: {
             index_db: string | null,
             user_data_db: string | null,
@@ -1306,7 +1324,7 @@ async function getLayoutBuildData(
     // and the margins between columns, split evenly
     const columnWidth = Math.max(1, (clientWidth - 2 * grid.padding - (grid.columns - 1) * grid.margin) / grid.columns)
     const sortedLayout = sortLayout(layout)
-    return { metadata, crops, columnWidth, grid, containerHeight, sortedLayout }
+    return { metadata, crops, orients, columnWidth, grid, containerHeight, sortedLayout }
 }
 
 function sortLayout(layout: LayoutItem[]): LayoutItem[] {

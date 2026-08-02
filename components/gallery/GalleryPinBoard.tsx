@@ -23,7 +23,7 @@ import { $api } from '@/lib/api'
 import { MediaControls } from './PlayButton'
 import React from 'react'
 import { useVideoPlayerState } from '@/lib/videoPlayerState'
-import { CropRect, PinLock, PinOrientation, TrimRange, clampCrop, composeCrops, isEmptyTrim, packHField, parseHField } from '@/lib/pinboardCrop'
+import { CropRect, PinLock, PinOrientation, TrimRange, clampCrop, composeCrops, isEmptyTrim, isIdentityOrientation, packHField, parseHField } from '@/lib/pinboardCrop'
 import { useVideoTrim } from '@/lib/videoTrim'
 import { CropGeometry, CropView } from './CropView'
 import { VideoTimeline } from './VideoTimeline'
@@ -557,7 +557,7 @@ export function PinBoard(
         clearAutoCrops, shiftLayout, mirrorLayout, rerollLayout, refitToView,
         reflowKeepProportions, growInPlace, hasLocks, hasAnchors,
     } = usePinboardLayoutActions({
-        layout, crops, autoCrops, locks: itemLocks, highWater, dbs, grid,
+        layout, crops, autoCrops, locks: itemLocks, orients, highWater, dbs, grid,
         layoutAutoCrop: autoLayoutCrop,
         selectionAutoCrop: selectionCrop,
         pinboardRef: scrollAreaRef,
@@ -1686,11 +1686,13 @@ export function PinBoard(
                                     crops={crops}
                                     autoCrops={autoCrops}
                                     locks={itemLocks}
+                                    orients={orients}
                                     highWater={highWater}
                                     crop={crops[i] ?? null}
                                     autoCrop={autoCrops[i] ?? null}
                                     trim={trims[i] ?? null}
                                     lock={itemLocks[i] ?? null}
+                                    orientation={orients[i] ?? null}
                                     lockBadgesVisible={lockBadgesVisible}
                                     onLockChange={(lock) => setLockForKeys([i], lock)}
                                     cropMode={cropKey === i}
@@ -2074,11 +2076,13 @@ function PinBoardPin({
     crops,
     autoCrops,
     locks,
+    orients,
     highWater,
     crop,
     autoCrop,
     trim,
     lock,
+    orientation,
     lockBadgesVisible,
     onLockChange,
     cropMode,
@@ -2107,6 +2111,7 @@ function PinBoardPin({
     crops: Record<string, CropRect | null>
     autoCrops: Record<string, CropRect | null>
     locks: Record<string, PinLock>
+    orients: Record<string, PinOrientation | null>
     highWater: number
     // Manual crop (the editable base) and the derived fit-to-cell auto crop
     crop: CropRect | null
@@ -2114,6 +2119,8 @@ function PinBoardPin({
     trim: TrimRange | null
     // This pin's layout lock and its single-item setter
     lock: PinLock
+    // This pin's D4 orientation; null is identity
+    orientation: PinOrientation | null
     // While true (the board was recently hovered), ACTIVE lock toggles are
     // shown on every locked pin so locks are visible at a glance
     lockBadgesVisible: boolean
@@ -2173,6 +2180,8 @@ function PinBoardPin({
     // has no dimensions and can't place a stored crop. The crop math only
     // uses the aspect ratio, which the thumbnail preserves, so the element's
     // own dimensions are an exact stand-in the moment it can paint.
+    // Both sources report SOURCE dimensions (an element knows nothing of the
+    // pin's orientation); CropView swaps them for odd quarter turns.
     const [mediaDims, setMediaDims] = useState<{ w: number; h: number } | null>(null)
     const noteMediaDims = (w: number, h: number) => {
         if (!w || !h) return
@@ -2256,8 +2265,12 @@ function PinBoardPin({
                             uncropped: rest mode with a null crop is a plain
                             contain fit) so toggling crop mode only restyles the
                             <video> instead of remounting it, which would reset
-                            the playback position */}
-                        {(cropMode || effectiveCrop || showVideo) ?
+                            the playback position. Oriented items route here for
+                            the same reason the crop does — CropView owns the
+                            source-to-display transform, and duplicating it on
+                            the plain contain-fit branch below would be a second
+                            copy of the same eight cases. */}
+                        {(cropMode || effectiveCrop || showVideo || !isIdentityOrientation(orientation)) ?
                             <CropView
                                 crop={cropMode ? crop : effectiveCrop}
                                 cropMode={cropMode}
@@ -2265,6 +2278,7 @@ function PinBoardPin({
                                 imageExtentRef={imageExtentRef}
                                 naturalWidth={naturalSize?.w}
                                 naturalHeight={naturalSize?.h}
+                                orientation={orientation}
                                 onCropChange={onCropChange}
                                 ghostSrc={showVideo ? undefined : thumbnail}
                                 renderMedia={(style) => showVideo ?
@@ -2323,6 +2337,7 @@ function PinBoardPin({
                     crops={crops}
                     autoCrops={autoCrops}
                     locks={locks}
+                    orients={orients}
                     highWater={highWater}
                     cropMode={cropMode}
                     hasCrop={!!(crop || autoCrop)}

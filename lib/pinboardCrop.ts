@@ -283,6 +283,25 @@ export function orientRect(rect: CropRect, op: OrientationOp): CropRect {
   }
 }
 
+// The SOURCE-space rect a display-space crop selects: the convention's
+// point map run backwards (mirror first, since it is applied last, then
+// unwind the clockwise turns). Every consumer that hands a crop to
+// something reading SOURCE pixels — canvas drawImage source rects, CSS
+// object-view-box, which is consumed before `transform` applies — must go
+// through here; display space is only correct once the render transform
+// is in play. Built out of orientRect's per-op maps, which are exactly
+// those point maps, so this cannot drift from what the rotate/flip actions
+// do to the stored rects.
+export function sourceRect(
+  c: CropRect,
+  o: PinOrientation | null
+): CropRect {
+  if (!o) return c
+  let r = o.flipped ? orientRect(c, "flipH") : c
+  for (let i = 0; i < o.quarterTurns; i++) r = orientRect(r, "ccw")
+  return r
+}
+
 // Natural dimensions as seen in display space. Feeding these to the
 // layout/fit math (which is written entirely in display space) is the
 // whole cost of supporting orientation there — no coordinate mapping.

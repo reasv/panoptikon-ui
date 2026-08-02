@@ -23,7 +23,14 @@
 // screenfulH still marks one save-time screenful measured from the top of
 // the (cropped) image, for consumers that want the above-the-fold cut.
 
-import { composeCrops, parseHField } from "@/lib/pinboardCrop"
+import {
+  PinOrientation,
+  composeCrops,
+  isIdentityOrientation,
+  orientedSize,
+  parseHField,
+  sourceRect,
+} from "@/lib/pinboardCrop"
 import { GridParams, parseBoard, rowStep } from "@/lib/pinboardGrid"
 import { computeRestGeometry } from "@/components/gallery/CropView"
 import { getFileURL } from "@/lib/utils"
@@ -54,6 +61,43 @@ interface PinPlacement {
   width: number
   height: number
   crop: ReturnType<typeof composeCrops>
+  orient: PinOrientation | null
+}
+
+// Set up the canvas so a source-proportioned drawImage lands with its
+// ORIENTED bounding box exactly filling (L,T,W,H); returns the destination
+// rect to draw at. Canvas transforms post-multiply, so the calls read in
+// the same order as the codec's composition
+// (display = flipH^flipped o rotateCW^quarterTurns) and as CropView's CSS
+// transform list: the mirror acts on the already-rotated box, and each
+// piece carries the translate that brings the result back into the
+// positive quadrant. Identity never touches the matrix, so unoriented pins
+// keep the exact draw call they had before orientation existed.
+function orientDraw(
+  ctx: CanvasRenderingContext2D,
+  L: number,
+  T: number,
+  W: number,
+  H: number,
+  o: PinOrientation | null
+): [number, number, number, number] {
+  if (isIdentityOrientation(o)) return [L, T, W, H]
+  ctx.translate(L, T)
+  if (o!.flipped) {
+    ctx.translate(W, 0)
+    ctx.scale(-1, 1)
+  }
+  if (o!.quarterTurns === 1) {
+    ctx.translate(W, 0)
+    ctx.rotate(Math.PI / 2)
+  } else if (o!.quarterTurns === 2) {
+    ctx.translate(W, H)
+    ctx.rotate(Math.PI)
+  } else if (o!.quarterTurns === 3) {
+    ctx.translate(0, H)
+    ctx.rotate(-Math.PI / 2)
+  }
+  return o!.quarterTurns % 2 ? [0, 0, H, W] : [0, 0, W, H]
 }
 
 // react-grid-layout's cell-to-pixel mapping, as used by GalleryPinBoard
@@ -85,7 +129,7 @@ function parsePlacements(
   for (let i = 0; i + 4 < records.length; i += 5) {
     const [sha256, x, y, w, hField] = records.slice(i, i + 5)
     if (sha256 === "__preview") continue
-    const { h, crop, autoCrop } = parseHField(hField)
+    const { h, crop, autoCrop, orient } = parseHField(hField)
     placements.push({
       sha256,
       ...cellRect(
@@ -97,6 +141,7 @@ function parsePlacements(
         h
       ),
       crop: composeCrops(crop, autoCrop),
+      orient,
     })
   }
   return placements
@@ -218,18 +263,33 @@ export async function composeBoardPreview(
       const nh = img.naturalHeight
       if (nw > 0 && nh > 0) {
         const c = p.crop ?? { x: 0, y: 0, w: 1, h: 1 }
-        const geo = computeRestGeometry(cellW, cellH, c, nw, nh)
-        ctx.drawImage(
-          img,
-          c.x * nw,
-          c.y * nh,
-          c.w * nw,
-          c.h * nh,
+        // Crops are stored in display space, so the fit runs on the
+        // ORIENTED dimensions — exactly as CropView computes it — while
+        // drawImage's source rect has to be mapped back to source space.
+        const [ow, oh] = orientedSize(nw, nh, p.orient)
+        const geo = computeRestGeometry(cellW, cellH, c, ow, oh)
+        const s = sourceRect(c, p.orient)
+        ctx.save()
+        const [dx, dy, dw, dh] = orientDraw(
+          ctx,
           cellLeft + geo.visL,
           cellTop + geo.visT,
           geo.visW,
-          geo.visH
+          geo.visH,
+          p.orient
         )
+        ctx.drawImage(
+          img,
+          s.x * nw,
+          s.y * nh,
+          s.w * nw,
+          s.h * nh,
+          dx,
+          dy,
+          dw,
+          dh
+        )
+        ctx.restore()
       }
     } else {
       // Missing item (deleted from the index, network failure): a flat
