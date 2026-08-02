@@ -3,7 +3,17 @@ import type { LayoutItem } from "react-grid-layout";
 import { fetchClient } from "@/lib/api";
 import { components } from "@/lib/panoptikon";
 import { RefObject, useEffect, useRef } from "react";
-import { CropRect, PinLock, PinOrientation, computeAutoCrop, orientedSize } from "@/lib/pinboardCrop";
+import {
+    CropRect,
+    OrientationOp,
+    PinLock,
+    PinOrientation,
+    composeOrientation,
+    computeAutoCrop,
+    isIdentityOrientation,
+    orientRect,
+    orientedSize,
+} from "@/lib/pinboardCrop";
 import { GridParams, minPinUnits, rowStep } from "@/lib/pinboardGrid";
 import {
     ArrangedItem,
@@ -89,11 +99,18 @@ export function usePinboardLayoutActions({
     pinboardRef: RefObject<HTMLDivElement | null>,
     // autoCropOverrides ride along with the layout so both land in one
     // record write (one URL update, one history entry); newHighWater, when
-    // given, updates the board's ratchet in that same write
+    // given, updates the board's ratchet in that same write.
+    // orientationOverrides/manualCropOverrides are the same mechanism for
+    // the remaining two hField slots — the orientation verbs need all four
+    // in ONE write, since a rotation changes the geometry AND both crop
+    // rects AND the orientation, and two record writes in a tick clobber
+    // each other (see rebuildRecords in GalleryPinBoard)
     onLayoutChange: (
         layout: LayoutItem[],
         autoCropOverrides?: Record<string, CropRect | null>,
         newHighWater?: number,
+        orientationOverrides?: Record<string, PinOrientation | null>,
+        manualCropOverrides?: Record<string, CropRect | null>,
     ) => void,
 }) {
     const layoutBuildData = useRef<LayoutBuildData | null>(null)
@@ -948,6 +965,186 @@ export function usePinboardLayoutActions({
         })
         onLayoutChange(newLayout, verbAutoCrops(buildData, newLayout, new Set(), false))
     }
+
+    // ---- Orientation (rotate / flip) ----------------------------------
+    //
+    // The three hField slots an orientation change touches, collected for
+    // one write. Both crop slots are ALWAYS emitted for every key touched:
+    // rebuildRecords reads the manual slot's presence as "the base moved",
+    // and the explicit auto entry is what tells it the auto crop travelled
+    // with it instead of going stale.
+    interface OrientOverrides {
+        orient: Record<string, PinOrientation | null>
+        manual: Record<string, CropRect | null>
+        auto: Record<string, CropRect | null>
+    }
+
+    // Carry one item through a sequence of user ops: the orientation
+    // composes, and each crop slot is remapped through the SAME op so the
+    // region it selects keeps framing the same content (a flip happens
+    // inside the crop window, not behind it). The two slots are remapped
+    // INDEPENDENTLY and never as their composition — composeCrops clamps at
+    // MIN_CROP_FRAC, so remapping the composite is not the same map for
+    // sub-2% composites. The auto slot's rect is expressed in the manual
+    // window's own normalized frame, where the op is the identical map.
+    function orientOne(key: string, ops: OrientationOp[], out: OrientOverrides) {
+        let orient = orients[key] ?? null
+        let manual = crops[key] ?? null
+        let auto = autoCrops[key] ?? null
+        for (const op of ops) {
+            orient = composeOrientation(orient, op)
+            if (manual) manual = orientRect(manual, op)
+            if (auto) auto = orientRect(auto, op)
+        }
+        out.orient[key] = isIdentityOrientation(orient) ? null : orient
+        out.manual[key] = manual
+        out.auto[key] = auto
+    }
+    const emptyOrientOverrides = (): OrientOverrides =>
+        ({ orient: {}, manual: {}, auto: {} })
+
+    // The op sequence that returns an orientation to identity, built by
+    // construction rather than by inverting the D4 closed form: undo the
+    // mirror first (flipH is self-inverse and leaves the stored
+    // quarterTurns alone), then unwind the turns one user-level "rotate
+    // left" at a time. Each step is a real user op, so the crop rects can
+    // ride the same sequence through orientRect and land exactly where a
+    // manual undo would have put them.
+    function inverseOps(o: PinOrientation): OrientationOp[] {
+        const ops: OrientationOp[] = []
+        let cur: PinOrientation = o
+        if (cur.flipped) {
+            ops.push("flipH")
+            cur = composeOrientation(cur, "flipH")
+        }
+        while (cur.quarterTurns !== 0) {
+            ops.push("ccw")
+            cur = composeOrientation(cur, "ccw")
+        }
+        return ops
+    }
+
+    // A quarter turn swaps the box's PIXEL dimensions, not its grid units
+    // (columns and rows have different pixel scales): the new column span is
+    // the one whose pixel width best matches the current pixel height, and
+    // the new row span the one whose pixel height best matches the current
+    // pixel width. Taken unclamped that is a GENUINE pixel swap, which is
+    // exactly what keeps the remapped auto crop an exact fit — the cell
+    // shape rotates with the content, so the cell that framed the crop
+    // before still frames the turned crop after. Re-deriving the height from
+    // an aspect instead would be wrong for every item whose cell does not
+    // match its base aspect (auto-cropped items — the default-on path — and
+    // hand-letterboxed ones): it strands the remapped crop in a wrong-shaped
+    // cell, letterboxed and with a jumped footprint. The aspect path is only
+    // the FALLBACK for when the width clamps (board narrower than the former
+    // height, or the min-pin floor) and the swap is unattainable: then
+    // findOptimalHeight restores the aspect at the clamped width. That
+    // aspect is the turned one — the natural dims swap with the quarter turn
+    // AND the manual crop's w/h swap with it (orientRect), so the product's
+    // factors just trade places; that is why the fallback can read the OLD
+    // stored maps through croppedDimensions and pass them in ch/cw order and
+    // still be exact. x/y are kept: RGL's compactor resolves the footprint
+    // change, pushing neighbors down as it does for a resize.
+    function turnedBox(
+        buildData: LayoutBuildData,
+        l: LayoutItem,
+        minW: number,
+        minH: number,
+    ): { w: number, h: number } {
+        const [cw, ch] = croppedDimensions(buildData, l.i)
+        const wantW = Math.round(
+            (pixelHeight(l.h, grid) + grid.margin)
+            / (buildData.columnWidth + grid.margin)
+        )
+        const newW = Math.min(grid.columns, Math.max(minW, wantW))
+        return {
+            w: newW,
+            h: newW === wantW
+                ? Math.max(minH, Math.round(
+                    (pixelWidth(l.w, buildData.columnWidth, grid.margin) + grid.margin)
+                    / rowStep(grid)))
+                : findOptimalHeight(newW, grid, buildData.columnWidth, ch, cw, minH),
+        }
+    }
+
+    // Turning ops resize the box, so they follow Resize Item's lock rule;
+    // flips move nothing and are allowed on locked items.
+    const isTurn = (op: OrientationOp) => op === "cw" || op === "ccw"
+
+    // Commit an orientation change: the geometry (unchanged for flips) and
+    // all three record slots in ONE write. `turnKeys` non-empty means the
+    // boxes of those keys swap their pixel dimensions, which needs the
+    // measured column width — unmeasurable container means no write at all,
+    // like every other geometry verb.
+    async function commitOrientation(
+        out: OrientOverrides,
+        turnKeys: string[],
+    ): Promise<void> {
+        if (turnKeys.length === 0) {
+            onLayoutChange(layout, out.auto, undefined, out.orient, out.manual)
+            return
+        }
+        const buildData = await ensureBuildData()
+        if (!buildData) return
+        const { minW, minH } = minPinUnits(grid, buildData.columnWidth)
+        const turning = new Set(turnKeys)
+        const newLayout = layout.map(l => turning.has(l.i)
+            ? { ...l, ...turnedBox(buildData, l, minW, minH) }
+            : l)
+        onLayoutChange(newLayout, out.auto, undefined, out.orient, out.manual)
+    }
+
+    // Rotate or flip a single item's IMAGE. Silent no-op on a locked item
+    // for the turning ops (the menu greys them; the guard is what makes the
+    // rule hold for any other caller).
+    async function orientItem(layoutKey: string, op: OrientationOp): Promise<void> {
+        if (isTurn(op) && isLocked(layoutKey)) return
+        const out = emptyOrientOverrides()
+        orientOne(layoutKey, [op], out)
+        await commitOrientation(out, isTurn(op) ? [layoutKey] : [])
+    }
+
+    // Back to the stored image, crops included. The box turns back only
+    // when the orientation held an odd number of quarter turns — a 180 or a
+    // bare mirror leaves the aspect alone — so that is also the only case
+    // a lock can block.
+    async function resetOrientation(layoutKey: string): Promise<void> {
+        const current = orients[layoutKey] ?? null
+        if (isIdentityOrientation(current)) return
+        const turns = current!.quarterTurns % 2 === 1
+        if (turns && isLocked(layoutKey)) return
+        const out = emptyOrientOverrides()
+        orientOne(layoutKey, inverseOps(current!), out)
+        await commitOrientation(out, turns ? [layoutKey] : [])
+    }
+
+    // The same over a selection, one write for the whole group. Flips are
+    // per-item, geometry-free and self-inverse, so they apply regardless of
+    // locks. Rotation resizes every box, so a locked member makes it refuse
+    // outright ("atomic or not at all", the placeTravellers convention) —
+    // turning only part of the group would be the footgun the region-send
+    // refusal already guards against.
+    async function orientSelection(
+        keys: string[], op: OrientationOp,
+    ): Promise<string | null> {
+        const keySet = new Set(keys)
+        const items = layout.filter(l => keySet.has(l.i))
+        if (items.length === 0) return null
+        const turning = isTurn(op)
+        if (turning) {
+            const locked = items.filter(l => isLocked(l.i)).length
+            if (locked > 0) {
+                return locked === 1
+                    ? "A locked item is selected — unlock or deselect it first"
+                    : `${locked} locked items are selected — unlock or deselect them first`
+            }
+        }
+        const out = emptyOrientOverrides()
+        for (const l of items) orientOne(l.i, [op], out)
+        await commitOrientation(out, turning ? items.map(l => l.i) : [])
+        return null
+    }
+
     // Fit every item (or only those starting above the fold) to its current
     // cell by writing its auto-crop slot. Near-fits (>= 98% of the base)
     // get null. The geometry is untouched: the current layout plus the
@@ -1199,6 +1396,9 @@ export function usePinboardLayoutActions({
         clearAutoCrops,
         changeItemSize,
         setItemSize,
+        orientItem,
+        resetOrientation,
+        orientSelection,
         shiftLayout,
         shiftSelection,
         mirrorLayout,

@@ -27,7 +27,7 @@ import { CropRect, PinLock, PinOrientation, TrimRange, clampCrop, composeCrops, 
 import { useVideoTrim } from '@/lib/videoTrim'
 import { CropGeometry, CropView } from './CropView'
 import { VideoTimeline } from './VideoTimeline'
-import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightFromLine, ArrowRightToLine, Check, ChevronDown, Columns3, Crop, Dices, Expand, FlipHorizontal2, FlipVertical2, FoldHorizontal, GripVertical, LayoutDashboard, LockOpen, Maximize, Ruler, Scaling, SquareDashed, X, type LucideIcon } from 'lucide-react'
+import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightFromLine, ArrowRightToLine, Check, ChevronDown, Columns3, Crop, Dices, Expand, FlipHorizontal, FlipHorizontal2, FlipVertical, FlipVertical2, FoldHorizontal, GripVertical, LayoutDashboard, LockOpen, Maximize, RotateCcw, RotateCw, Ruler, Scaling, SquareDashed, X, type LucideIcon } from 'lucide-react'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -144,6 +144,27 @@ const SELECTION_VERBS: SelectionVerb[] = [
     {
         id: "mirrorV", label: "Mirror Vertically", icon: FlipVertical2, min: 2, noAnchors: true,
         title: "Mirror the selected items' arrangement about their horizontal middle",
+    },
+    // Image orientation, not arrangement: the Mirror pair above moves the
+    // items, these turn the pictures. Deliberately the non-"2" lucide
+    // glyphs so the two families read differently on the bar. Rotation is
+    // NOT statically greyed on locks — the verb refuses with a toast saying
+    // how many locked items are in the way, which beats an unexplained grey.
+    {
+        id: "flipImageH", label: "Flip Images Horizontally", icon: FlipHorizontal, min: 1,
+        title: "Flip each selected image left-to-right (the pictures themselves, not their positions)",
+    },
+    {
+        id: "flipImageV", label: "Flip Images Vertically", icon: FlipVertical, min: 1,
+        title: "Flip each selected image top-to-bottom (the pictures themselves, not their positions)",
+    },
+    {
+        id: "rotateImageL", label: "Rotate Images Left", icon: RotateCcw, min: 1,
+        title: "Turn each selected image a quarter turn left; every box swaps its width and height (refused while the selection holds a locked item)",
+    },
+    {
+        id: "rotateImageR", label: "Rotate Images Right", icon: RotateCw, min: 1,
+        title: "Turn each selected image a quarter turn right; every box swaps its width and height (refused while the selection holds a locked item)",
     },
     {
         id: "clearCrop", label: "Clear Auto-Crops", icon: Maximize,
@@ -300,11 +321,21 @@ export function PinBoard(
     // tick do not compose — nuqs resolves each functional updater against
     // a stateRef that only advances when React runs the queued updater, so
     // the second write rebuilds from the first one's base and clobbers it.
+    // orientationOverrides is the same for the ORIENTATION slot (null =
+    // identity), which the rotate/flip verbs write together with the
+    // geometry and both remapped crop rects — one write, one history entry.
+    // PRECEDENCE between the two crop overrides: an explicit
+    // autoCropOverride for a key wins over the implicit clear a manual-crop
+    // write performs. The clear exists because a new manual crop is a new
+    // base for the derived auto crop; an orientation remap moves BOTH slots
+    // through the same transform, so the auto crop is still an exact fit
+    // and the verb states it explicitly rather than losing it.
     const rebuildRecords = (
         prev: string[],
         currentLayout: LayoutItem[],
         autoCropOverrides?: Record<string, CropRect | null>,
         manualCropOverrides?: Record<string, CropRect | null>,
+        orientationOverrides?: Record<string, PinOrientation | null>,
     ) => {
         const byKey = new Map(
             currentLayout.filter((e) => e.i !== "__preview").map((l) => [l.i, l])
@@ -319,12 +350,16 @@ export function PinBoard(
             }
             const { crop, autoCrop, trim, lock, orient } = parseHField(prev[i + 4])
             const hasManual = manualCropOverrides && key in manualCropOverrides
+            const hasAuto = autoCropOverrides && key in autoCropOverrides
             const nextCrop = hasManual ? manualCropOverrides[key] : crop
-            const nextAuto = hasManual
-                ? null // manual crop is the auto crop's base; the old auto is stale
-                : autoCropOverrides && key in autoCropOverrides
-                    ? autoCropOverrides[key]
+            const nextAuto = hasAuto
+                ? autoCropOverrides[key]
+                : hasManual
+                    ? null // manual crop is the auto crop's base; the old auto is stale
                     : autoCrop
+            const nextOrient = orientationOverrides && key in orientationOverrides
+                ? orientationOverrides[key]
+                : orient
             next.push(
                 prev[i],
                 item.x.toString(),
@@ -337,7 +372,7 @@ export function PinBoard(
                     autoCrop: nextAuto,
                     trim,
                     lock,
-                    orient,
+                    orient: nextOrient,
                 }),
             )
         }
@@ -385,11 +420,27 @@ export function PinBoard(
         currentLayout: LayoutItem[],
         autoCropOverrides?: Record<string, CropRect | null>,
         newHighWater?: number,
+        orientationOverrides?: Record<string, PinOrientation | null>,
+        verbManualCrops?: Record<string, CropRect | null>,
         echo = false,
         manualGesture = false,
     ) => {
-        const manualCropOverrides = pendingManualCropRef.current ?? undefined
-        pendingManualCropRef.current = null
+        // Verbs hand their manual-crop remap in directly; the pending ref
+        // exists only for the crop-mode resize release, which cannot pass
+        // anything (RGL fires that layout report itself). The direct
+        // argument takes precedence. The two can't collide, but not because
+        // verbs are unreachable in crop mode — they are, from any other
+        // pin's menu and from the toolbar. What rules it out is the ref's
+        // lifetime: onResizeStop sets it and RGL's own layout report
+        // consumes it in the SAME synchronous tick, so no click-driven verb
+        // can interleave. The clear is conditional anyway, so if that
+        // invariant is ever broken a verb write can't silently swallow a
+        // queued crop — it stays queued for the write that consumes it.
+        const pending = pendingManualCropRef.current
+        const manualCropOverrides = verbManualCrops ?? pending ?? undefined
+        if (pending !== null && manualCropOverrides === pending) {
+            pendingManualCropRef.current = null
+        }
         // RGL fires onLayoutChange on every layouts-prop change and on mount,
         // not only on user interaction. If nothing actually moved, writing an
         // equal value back would push a redundant history entry and re-trigger
@@ -397,7 +448,8 @@ export function PinBoard(
         // guard is also what keeps merely *viewing* a v1 board from migrating
         // it: updateRecords only converts on writes. A fill that changed only
         // the ratchet still writes (updateRecords compares the ratchet too).
-        const candidate = rebuildRecords(records, currentLayout, autoCropOverrides, manualCropOverrides)
+        const candidate = rebuildRecords(records, currentLayout,
+            autoCropOverrides, manualCropOverrides, orientationOverrides)
         if (
             candidate.length === records.length &&
             candidate.every((v, i) => v === records[i]) &&
@@ -422,7 +474,8 @@ export function PinBoard(
             })
         }
         updateRecords(
-            (prev) => rebuildRecords(prev, currentLayout, autoCropOverrides, manualCropOverrides),
+            (prev) => rebuildRecords(prev, currentLayout,
+                autoCropOverrides, manualCropOverrides, orientationOverrides),
             {
                 ...(newHighWater !== undefined ? { highWater: newHighWater } : {}),
                 ...(echo ? { history: "replace" as const } : {}),
@@ -552,7 +605,7 @@ export function PinBoard(
     const {
         fillViewport, arrangeSelection, swapItems, autoCropSelection,
         clearAutoCropSelection, growSelection, mirrorSelection, shiftSelection,
-        sendSelectionToRegion, sendSelectionToRect,
+        sendSelectionToRegion, sendSelectionToRect, orientSelection,
         changeLayout, fillViewportRows, justifyCurrentRows, autoCropToCells,
         clearAutoCrops, shiftLayout, mirrorLayout, rerollLayout, refitToView,
         reflowKeepProportions, growInPlace, hasLocks, hasAnchors,
@@ -1458,7 +1511,8 @@ export function PinBoard(
                                 }
                             }
                         }
-                        onLayoutChange([...currentLayout], drops, undefined, echo, manual)
+                        onLayoutChange([...currentLayout], drops, undefined,
+                            undefined, undefined, echo, manual)
                     }}
                     // The crop-mode exemption: there the drag/resize IS the
                     // crop edit, not a layout statement — it composes with
@@ -1779,6 +1833,10 @@ export function PinBoard(
                                 case "shiftRight": shiftSelection(selected, "right"); break
                                 case "mirrorH": void mirrorSelection(selected, "horizontal"); break
                                 case "mirrorV": void mirrorSelection(selected, "vertical"); break
+                                case "flipImageH": runVerb("Flip Images", orientSelection(selected, "flipH")); break
+                                case "flipImageV": runVerb("Flip Images", orientSelection(selected, "flipV")); break
+                                case "rotateImageL": runVerb("Rotate Images", orientSelection(selected, "ccw")); break
+                                case "rotateImageR": runVerb("Rotate Images", orientSelection(selected, "cw")); break
                                 case "clearCrop": clearAutoCropSelection(selected); break
                             }
                         }}
@@ -2106,6 +2164,8 @@ function PinBoardPin({
         currentLayout: LayoutItem[],
         autoCropOverrides?: Record<string, CropRect | null>,
         newHighWater?: number,
+        orientationOverrides?: Record<string, PinOrientation | null>,
+        manualCropOverrides?: Record<string, CropRect | null>,
     ) => void
     layout: LayoutItem[]
     crops: Record<string, CropRect | null>

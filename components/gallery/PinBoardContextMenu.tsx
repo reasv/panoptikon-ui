@@ -3,7 +3,7 @@ import { ContextMenuCheckboxItem, ContextMenuContent, ContextMenuItem, ContextMe
 import { useGalleryPinAutoCrop, useGalleryPinSelectionCrop } from "@/lib/state/gallery";
 import { BoardGlobalMenuItems, contextMenuKit } from "./PinboardGlobalMenu";
 import type { PinboardBoardApi } from "@/lib/state/pinboardBoardApi";
-import { CropRect, PinLock, PinOrientation, TrimRange } from "@/lib/pinboardCrop";
+import { CropRect, PinLock, PinOrientation, TrimRange, isIdentityOrientation } from "@/lib/pinboardCrop";
 import { GridParams } from "@/lib/pinboardGrid";
 import { useFileOpenActions } from "@/hooks/fileOpen";
 import { REGION_PRESETS, usePinboardLayoutActions } from "@/hooks/pinboardLayout";
@@ -43,11 +43,15 @@ export function PinBoardCtx({
     file_url: string
     // autoCropOverrides ride along with the layout so both land in one
     // record write (one URL update, one history entry); newHighWater
-    // updates the board's layout-height ratchet in the same write
+    // updates the board's layout-height ratchet in the same write, and the
+    // orientation/manual-crop maps carry the remaining hField slots the
+    // rotate/flip verbs rewrite alongside the geometry
     onLayoutChange: (
         layout: LayoutItem[],
         autoCropOverrides?: Record<string, CropRect | null>,
         newHighWater?: number,
+        orientationOverrides?: Record<string, PinOrientation | null>,
+        manualCropOverrides?: Record<string, CropRect | null>,
     ) => void
     layout: LayoutItem[],
     // Manual crops (the layout-math base) and derived fit-to-cell auto crops
@@ -100,6 +104,9 @@ export function PinBoardCtx({
         clearAutoCropSelection,
         changeItemSize: changeItemSizeByKey,
         setItemSize: setItemSizeByKey,
+        orientItem,
+        resetOrientation,
+        orientSelection,
         shiftLayout,
         shiftSelection,
         mirrorLayout,
@@ -133,6 +140,13 @@ export function PinBoardCtx({
     // The size actions target this menu's own pin
     const changeItemSize = (increase: number) => changeItemSizeByKey(layoutKey, increase)
     const setItemSize = (size: number) => setItemSizeByKey(layoutKey, size)
+    // This pin's orientation, read from the map the board already threads
+    // through for the layout math; null is identity and hides the reset
+    const orientation = orients[layoutKey] ?? null
+    // Undoing an odd number of quarter turns turns the box back too, so
+    // that alone is the case a lock can forbid (a 180 or a bare mirror
+    // leaves the box aspect untouched)
+    const resetTurnsBox = !!orientation && orientation.quarterTurns % 2 === 1
     // The board-global section (shared with the pinboard tab menu) gets
     // its verbs from this menu's own layout-actions instance
     const boardApi: PinboardBoardApi = {
@@ -263,6 +277,26 @@ export function PinBoardCtx({
                                 onClick={() => mirrorSelection(selected, "vertical")}>
                                 Mirror Vertically
                             </ContextMenuItem>
+                            {/* The Mirror pair above rearranges the items;
+                                these turn the pictures themselves. Rotation
+                                is all-or-nothing on a locked selection and
+                                says so in a toast rather than greying. */}
+                            <ContextMenuItem
+                                onClick={() => runVerb("Flip Images", orientSelection(selected, "flipH"))}>
+                                Flip Images Horizontally
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                                onClick={() => runVerb("Flip Images", orientSelection(selected, "flipV"))}>
+                                Flip Images Vertically
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                                onClick={() => runVerb("Rotate Images", orientSelection(selected, "ccw"))}>
+                                Rotate Images Left
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                                onClick={() => runVerb("Rotate Images", orientSelection(selected, "cw"))}>
+                                Rotate Images Right
+                            </ContextMenuItem>
                             <ContextMenuItem onClick={() => clearAutoCropSelection(selected)}>
                                 Clear Auto-Crops
                             </ContextMenuItem>
@@ -319,6 +353,40 @@ export function PinBoardCtx({
                     <ContextMenuItem onClick={() => changeItemSize(-stepUnit)}>-{stepUnit}/{grid.columns} Width</ContextMenuItem>
                     <ContextMenuItem onClick={() => changeItemSize(-4 * stepUnit)}>-{4 * stepUnit}/{grid.columns} Width</ContextMenuItem>
                     <ContextMenuItem onClick={() => changeItemSize(-6 * stepUnit)}>-{6 * stepUnit}/{grid.columns} Width</ContextMenuItem>
+                </ContextMenuSubContent>
+            </ContextMenuSub>
+            {/* Orientation of the IMAGE (the Selection submenu's Mirror
+                entries move items instead). A quarter turn swaps the box's
+                pixel dimensions, so it follows Resize Item's lock rule —
+                greyed, not silently ignored; flips move nothing and stay
+                available. Repeating composes: two turns are 180 degrees,
+                and every op is exactly undone by its opposite. */}
+            <ContextMenuSub>
+                <ContextMenuSubTrigger inset>Rotate / Flip</ContextMenuSubTrigger>
+                <ContextMenuSubContent className="w-48">
+                    <ContextMenuItem disabled={lock !== null}
+                        onClick={() => void orientItem(layoutKey, "ccw")}>
+                        Rotate Left
+                    </ContextMenuItem>
+                    <ContextMenuItem disabled={lock !== null}
+                        onClick={() => void orientItem(layoutKey, "cw")}>
+                        Rotate Right
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={() => void orientItem(layoutKey, "flipH")}>
+                        Flip Horizontally
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={() => void orientItem(layoutKey, "flipV")}>
+                        Flip Vertically
+                    </ContextMenuItem>
+                    {!isIdentityOrientation(orientation) && (
+                        <>
+                            <ContextMenuSeparator />
+                            <ContextMenuItem disabled={lock !== null && resetTurnsBox}
+                                onClick={() => void resetOrientation(layoutKey)}>
+                                Reset Orientation
+                            </ContextMenuItem>
+                        </>
+                    )}
                 </ContextMenuSubContent>
             </ContextMenuSub>
             <BoardGlobalMenuItems kit={contextMenuKit} api={boardApi} />
