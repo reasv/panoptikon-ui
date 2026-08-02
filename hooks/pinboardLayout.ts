@@ -4,10 +4,12 @@ import { fetchClient } from "@/lib/api";
 import { components } from "@/lib/panoptikon";
 import { RefObject, useEffect, useRef } from "react";
 import {
+    AUTO_CROP_MAX_LETTERBOX_PX,
     CropRect,
     OrientationOp,
     PinLock,
     PinOrientation,
+    composeCrops,
     composeOrientation,
     computeAutoCrop,
     isIdentityOrientation,
@@ -1425,6 +1427,267 @@ export function usePinboardLayoutActions({
         return null
     }
 
+    // ---- Compress ------------------------------------------------------
+    //
+    // Effective content size in DISPLAY (oriented) space: the oriented
+    // natural dimensions scaled by the EFFECTIVE crop — the manual rebase
+    // COMPOSED with the auto slot. croppedDimensions deliberately excludes
+    // the auto crop (it is derived from cell sizes, so feeding it back would
+    // make every layout action see the previous one's output as truth), but
+    // the letterbox test asks a different question: what is on screen in
+    // this cell right now. An auto-cropped item fills its cell exactly, and
+    // reading it through the composition is what makes compress leave it
+    // alone. Null when the natural dimensions are unknown (metadata fetch
+    // failed): croppedDimensions' 1:1 fallback would read as letterboxing in
+    // every non-square cell and trigger a resize the user never asked for,
+    // so such an item is skipped instead of guessed at.
+    function effectiveDimensions(
+        buildData: LayoutBuildData, key: string,
+    ): [number, number] | null {
+        const item = buildData.metadata[key]?.item
+        if (!item?.width || !item?.height) return null
+        const [w, h] = orientedSize(item.width, item.height, buildData.orients[key])
+        // autoCrops is read from the hook's props, not from buildData (which
+        // caches only the manual slot) — always the live map
+        const eff = composeCrops(buildData.crops[key] ?? null, autoCrops[key] ?? null)
+        return [w * (eff?.w ?? 1), h * (eff?.h ?? 1)]
+    }
+
+    // Whether compressedSpan can measure this item at all. It returns null
+    // for two different reasons — "no letterbox on this axis" and "no usable
+    // natural dimensions" — and only the caller's refusal message needs to
+    // tell them apart, so the unmeasurable case is probed separately rather
+    // than widening compressedSpan's return type.
+    function measurable(buildData: LayoutBuildData, key: string): boolean {
+        const eff = effectiveDimensions(buildData, key)
+        return !!eff && eff[0] > 0 && eff[1] > 0
+    }
+
+    // The un-letterboxed span of one axis in grid units, or null when there
+    // is nothing to remove there. The bar width is `cell - content` at the
+    // contain-fit size, so a NEGATIVE difference (cell tighter than the
+    // content on this axis — bars on the other one) fails the threshold test
+    // too: compress only ever shrinks, it never grows a box back. Bars
+    // thinner than AUTO_CROP_MAX_LETTERBOX_PX are ignored for the same
+    // reason computeAutoCrop refuses to crop them, and sub-grid-unit bars
+    // round away through the [min, current] clamp.
+    function compressedSpan(
+        buildData: LayoutBuildData,
+        l: LayoutItem,
+        axis: "w" | "h",
+        minW: number,
+        minH: number,
+    ): number | null {
+        const eff = effectiveDimensions(buildData, l.i)
+        if (!eff) return null
+        const [effW, effH] = eff
+        if (!(effW > 0) || !(effH > 0)) return null
+        const aspect = effW / effH
+        const cellW = pixelWidth(l.w, buildData.columnWidth, buildData.grid.margin)
+        const cellH = pixelHeight(l.h, buildData.grid)
+        if (axis === "w") {
+            // Vertical bars: the contain-fit is height-bound, so the content
+            // spans aspect * cellH px and the rest is letterbox
+            const targetPx = aspect * cellH
+            if (cellW - targetPx < AUTO_CROP_MAX_LETTERBOX_PX) return null
+            const w = Math.min(l.w, Math.max(minW, Math.round(
+                (targetPx + buildData.grid.margin) / (buildData.columnWidth + buildData.grid.margin))))
+            return w < l.w ? w : null
+        }
+        const targetPx = cellW / aspect
+        if (cellH - targetPx < AUTO_CROP_MAX_LETTERBOX_PX) return null
+        const h = Math.min(l.h, Math.max(minH, Math.round(
+            (targetPx + buildData.grid.margin) / rowStep(buildData.grid))))
+        return h < l.h ? h : null
+    }
+
+    // Shrink each letterboxed selected item on one axis and keep the result
+    // compact — gap PRESERVATION, not gravity: nothing is re-homed, each
+    // mover keeps the distance it had toward the compression direction and
+    // simply follows whatever shrank ahead of it. Nothing outside the
+    // selection ever moves (the shiftSelection contract). Anchored selected
+    // items neither move nor resize and stay obstacles; size-locked ones
+    // take the push but not the resize (a move is inside their contract).
+    async function compressSelection(
+        keys: string[], dir: CompressDir,
+    ): Promise<string | null> {
+        const buildData = await ensureBuildData()
+        if (!buildData) return null
+        const keySet = new Set(keys)
+        const selectedItems = buildData.sortedLayout.filter(l => keySet.has(l.i))
+        if (selectedItems.length === 0) return null
+        const { minW, minH } = minPinUnits(grid, buildData.columnWidth)
+        const movers = selectedItems.filter(l => !isAnchored(l.i))
+        if (movers.length === 0) {
+            return selectedItems.length === 1
+                ? "The selected item is anchored — unanchor it to compress it"
+                : "Every selected item is anchored — unanchor one to compress them"
+        }
+        // Only cells that actually changed size need crop maintenance; a
+        // pushed-but-unresized item's stored auto crop is still exact
+        const resized = new Set<string>()
+        // Size-locked items that WOULD have shrunk: the difference between
+        // "nothing here is letterboxed" and "the locks are in the way"
+        let blocked = 0
+        // Items whose natural dimensions aren't known yet (metadata still in
+        // flight or the fetch failed). They can't be tested for letterboxing
+        // at all, so reporting "nothing is letterboxed" would be a lie the
+        // user can't act on — a retry once metadata lands is the real advice.
+        let unknown = 0
+        // Refusal priority, most actionable first: a lock the user can
+        // release beats a wait, and both beat the generic no-op message.
+        // (The all-anchored case returns earlier, ahead of all three.)
+        const refusal = () => blocked > 0
+            ? (blocked === 1
+                ? "A letterboxed item in the selection is size-locked — unlock it to compress it"
+                : `${blocked} letterboxed items in the selection are size-locked — unlock one to compress them`)
+            : unknown > 0
+                ? (unknown === 1
+                    ? "Couldn't measure a selected item — try again once its metadata loads"
+                    : `Couldn't measure ${unknown} selected items — try again once their metadata loads`)
+                : "Nothing in the selection is letterboxed that way"
+        const byKey = new Map<string, LayoutItem>()
+        if (dir === "up") {
+            // Height shrink only, y untouched: the board's vertical
+            // compactor pulls everything up into the freed rows by itself,
+            // so gap bookkeeping here would only fight it. That is also why
+            // there is no Compress Down — the engine maintains vertical
+            // adjacency in one direction.
+            for (const l of movers) {
+                if (!measurable(buildData, l.i)) { unknown++; continue }
+                const h = compressedSpan(buildData, l, "h", minW, minH)
+                if (h === null) continue
+                if (isSizeLocked(l.i)) { blocked++; continue }
+                byKey.set(l.i, { ...l, h })
+                resized.add(l.i)
+            }
+            if (resized.size === 0) return refusal()
+            const newLayout = layout.map(l => byKey.get(l.i) ?? l)
+            const overrides =
+                verbAutoCrops(buildData, newLayout, resized, selectionAutoCrop)
+            // COMPRESS EXEMPTION from the stale-crop rule. With the setting
+            // OFF verbAutoCrops drops the auto crop of every cell whose size
+            // changed, on the premise that a crop fitted to the old cell is
+            // now wrong. That premise is false for the cells compress itself
+            // resized: compressedSpan measures the COMPOSED (manual x auto)
+            // content and sizes the cell to it, so the stored auto slot is
+            // the exact fit for the new cell BY CONSTRUCTION — the freshest
+            // it has ever been. Dropping it would restore the full frame and
+            // letterbox the item on the other axis, i.e. undo the verb. The
+            // stale-drop rule still governs bystanders, whose cells this
+            // write resized without consulting their content.
+            if (!selectionAutoCrop) for (const k of resized) delete overrides[k]
+            onLayoutChange(newLayout, overrides)
+            return null
+        }
+        const rowOverlap = (a: GridRect, b: GridRect) =>
+            a.y < b.y + b.h && b.y < a.y + a.h
+        // ENTITLEMENT geometry: the gap each mover is entitled to keep is
+        // measured against the ORIGINAL rects of EVERYTHING — statics AND
+        // other movers. The invariant this verb preserves is "each item keeps
+        // the distance it had to its direction-side neighbour, whether or not
+        // that neighbour is itself compressing", which is what makes a row of
+        // flush items stay flush: A shrinks and B, whose original gap to A's
+        // original edge was 0, follows to A's NEW edge and re-flushes.
+        // Measuring the gap against statics only was the bug — with the
+        // facing scan monotone in the settled set (settled ⊇ statics implies
+        // facing(settled) >= facing(statics)), the clamp
+        // min(l.x, facing(settled) + (l.x - facing(statics))) collapses to
+        // l.x for every mover, so movers never followed their moved
+        // neighbours and compression opened gaps instead of closing them.
+        // A mover's own rect is excluded for free: the facing predicates
+        // (o.x + o.w <= l.x on the left, o.x >= l.x + l.w on the right) are
+        // both false for the item being placed.
+        const originals: GridRect[] = layout
+            .map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h }))
+        // Everything this verb never moves — non-selected items plus the
+        // anchored selected ones. Used only to SEED the settled set (the
+        // board edges enter as the facing scan's default value).
+        const moverKeys = new Set(movers.map(l => l.i))
+        const statics: GridRect[] = layout
+            .filter(l => !moverKeys.has(l.i))
+            .map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h }))
+        // The settled set grows with each processed mover's NEW rect, so a
+        // mover placed against it lands behind whatever already shrank and
+        // slid. Leading-edge order (ascending x for Left, descending right
+        // edge for Right) is what guarantees a mover's direction-side
+        // neighbours are settled before it is placed.
+        const settled: GridRect[] = [...statics]
+        const order = [...movers].sort((a, b) => dir === "left"
+            ? a.x - b.x
+            : (b.x + b.w) - (a.x + a.w))
+        let moved = 0
+        for (const l of order) {
+            // Unmeasurable items still take the push — a move is not a
+            // resize — they just can't contribute a shrink, so they are
+            // counted for the refusal message and otherwise placed as-is
+            if (!measurable(buildData, l.i)) unknown++
+            const span = compressedSpan(buildData, l, "w", minW, minH)
+            let w = l.w
+            if (span !== null) {
+                if (isSizeLocked(l.i)) blocked++
+                else { w = span; resized.add(l.i) }
+            }
+            let x = l.x
+            if (dir === "left") {
+                // Facing edge of the nearest direction-side obstacle,
+                // measured over the ORIGINAL geometry (the gap this item is
+                // entitled to keep) and again over the settled set (where
+                // that side is now). Flush items (gap 0) stay flush through
+                // the whole cascade; free-floating ones keep their air.
+                const facing = (rects: GridRect[]) => rects.reduce((acc, o) =>
+                    rowOverlap(o, l) && o.x + o.w <= l.x
+                        ? Math.max(acc, o.x + o.w) : acc, 0)
+                const gap = l.x - facing(originals)
+                // MONOTONICITY INVARIANT: a Compress Left mover never ends
+                // up right of where it started. That plus the scan's
+                // `o.x + o.w <= l.x` filter is the whole overlap-safety
+                // argument. Left side: facing(settled) <= l.x, so
+                // x = min(l.x, facing(settled) + gap) >= facing(settled) —
+                // clear of every settled row-overlapping rect on the left.
+                // Right side: x <= l.x and w <= l.w put the new span inside
+                // the original one, which was already conflict-free; movers
+                // still to be placed there see THIS rect once it joins the
+                // settled set. The filter costs nothing for settled movers,
+                // ASSUMING A VALID INPUT BOARD: row-overlapping rects in a
+                // compacted layout are x-disjoint, so a mover processed
+                // earlier had its right edge <= l.x to begin with and only
+                // moved left. A pathological record (hand-edited URL state)
+                // carrying pre-existing overlaps is not repaired here, but
+                // it is never made worse either — on the no-move path the
+                // new rect is a subset of the old one. The 0 floor is
+                // likewise implied (facing >= 0) and kept as a cheap
+                // board-edge guard.
+                x = Math.max(0, Math.min(l.x, facing(settled) + gap))
+            } else {
+                // Mirror image: the RIGHT edge is the anchored one and moves
+                // monotonically rightward, bounded above by facing(settled)
+                // (>= l.x + l.w by the filter, <= columns by its default),
+                // so x = right - w >= l.x — the left edge only ever moves
+                // right, clearing everything on that side.
+                const facing = (rects: GridRect[]) => rects.reduce((acc, o) =>
+                    rowOverlap(o, l) && o.x >= l.x + l.w
+                        ? Math.min(acc, o.x) : acc, grid.columns)
+                const gap = facing(originals) - (l.x + l.w)
+                x = Math.max(l.x + l.w, facing(settled) - gap) - w
+            }
+            settled.push({ x, y: l.y, w, h: l.h })
+            if (x !== l.x || w !== l.w) byKey.set(l.i, { ...l, x, w })
+            if (x !== l.x) moved++
+        }
+        if (resized.size === 0 && moved === 0) return refusal()
+        const newLayout = layout.map(l => byKey.get(l.i) ?? l)
+        const overrides =
+            verbAutoCrops(buildData, newLayout, resized, selectionAutoCrop)
+        // Same compress exemption as the Up branch: these cells were sized
+        // from their COMPOSED content, so their stored auto crop is the fit
+        // for the new cell by construction and must survive the psc-off
+        // stale-drop, which would otherwise re-letterbox them vertically.
+        if (!selectionAutoCrop) for (const k of resized) delete overrides[k]
+        onLayoutChange(newLayout, overrides)
+        return null
+    }
+
     return {
         ensureBuildData,
         changeLayout,
@@ -1440,6 +1703,7 @@ export function usePinboardLayoutActions({
         orientSelection,
         shiftLayout,
         shiftSelection,
+        compressSelection,
         mirrorLayout,
         mirrorSelection,
         rerollLayout,
@@ -1640,6 +1904,10 @@ function regionBox(preset: RegionPreset, columns: number, rows: number): GridRec
 }
 
 export type ShiftMode = "left" | "right" | "center"
+
+// Compression directions. No "down": the grid compacts upward only, so a
+// downward variant would be undone by the engine on the next settle.
+export type CompressDir = "left" | "right" | "up"
 
 // Repack every item horizontally against one edge of its row (or centered),
 // preserving each item's row, width and height — only `x` changes. Rows are

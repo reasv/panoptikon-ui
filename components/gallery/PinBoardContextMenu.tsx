@@ -119,6 +119,7 @@ export function PinBoardCtx({
         orientSelection,
         shiftLayout,
         shiftSelection,
+        compressSelection,
         mirrorLayout,
         mirrorSelection,
         rerollLayout,
@@ -286,6 +287,24 @@ export function PinBoardCtx({
                             </ContextMenuItem>
                             <ContextMenuItem onClick={() => shiftSelection(selected, "right")}>
                                 Shift Right
+                            </ContextMenuItem>
+                            {/* Same family as the Shifts, one step further:
+                                each letterboxed item also loses its bars on
+                                that axis, and every item keeps the gap it
+                                had toward the compression side instead of
+                                falling flush. Up needs no gap logic — the
+                                vertical compactor closes the freed rows. */}
+                            <ContextMenuItem
+                                onClick={() => runVerb("Compress Left", compressSelection(selected, "left"))}>
+                                Compress Left
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                                onClick={() => runVerb("Compress Right", compressSelection(selected, "right"))}>
+                                Compress Right
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                                onClick={() => runVerb("Compress Up", compressSelection(selected, "up"))}>
+                                Compress Up
                             </ContextMenuItem>
                             <ContextMenuItem disabled={selHasAnchor}
                                 onClick={() => mirrorSelection(selected, "horizontal")}>

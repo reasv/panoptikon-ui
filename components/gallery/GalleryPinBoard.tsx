@@ -27,7 +27,7 @@ import { CropRect, PinLock, PinOrientation, TrimRange, clampCrop, composeCrops, 
 import { useVideoTrim } from '@/lib/videoTrim'
 import { CropGeometry, CropView } from './CropView'
 import { VideoTimeline } from './VideoTimeline'
-import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightFromLine, ArrowRightToLine, Check, ChevronDown, Columns3, Crop, Dices, Expand, FlipHorizontal, FlipHorizontal2, FlipVertical, FlipVertical2, FoldHorizontal, GripVertical, LayoutDashboard, ListX, LockOpen, Maximize, RotateCcw, RotateCw, Ruler, Scaling, SquareDashed, Trash2, X, type LucideIcon } from 'lucide-react'
+import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightFromLine, ArrowRightToLine, Check, ChevronDown, ChevronsLeft, ChevronsRight, ChevronsUp, Columns3, Crop, Dices, Expand, FlipHorizontal, FlipHorizontal2, FlipVertical, FlipVertical2, FoldHorizontal, GripVertical, LayoutDashboard, ListX, LockOpen, Maximize, RotateCcw, RotateCw, Ruler, Scaling, SquareDashed, Trash2, X, type LucideIcon } from 'lucide-react'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -146,6 +146,22 @@ const SELECTION_VERBS: SelectionVerb[] = [
     {
         id: "shiftRight", label: "Shift Right", icon: ArrowRightToLine,
         title: "Slide the selected items right until they hit something",
+    },
+    // Compress belongs to the Shift family — same "tidy this up sideways"
+    // gesture, except it also removes the letterboxing it finds and each
+    // item keeps its gap instead of falling flush. Chevrons, so the bar
+    // never confuses them with the Shift arrows.
+    {
+        id: "compressLeft", label: "Compress Left", icon: ChevronsLeft, min: 1,
+        title: "Shrink letterboxed items along this axis and close the gaps toward the left",
+    },
+    {
+        id: "compressRight", label: "Compress Right", icon: ChevronsRight, min: 1,
+        title: "Shrink letterboxed items along this axis and close the gaps toward the right",
+    },
+    {
+        id: "compressUp", label: "Compress Up", icon: ChevronsUp, min: 1,
+        title: "Shrink letterboxed items' heights; the board compacts the freed space upward",
     },
     {
         id: "mirrorH", label: "Mirror Horizontally", icon: FlipHorizontal2, min: 2, noAnchors: true,
@@ -697,6 +713,7 @@ export function PinBoard(
     const {
         fillViewport, arrangeSelection, swapItems, autoCropSelection,
         clearAutoCropSelection, growSelection, mirrorSelection, shiftSelection,
+        compressSelection,
         sendSelectionToRegion, sendSelectionToRect, orientSelection,
         changeLayout, fillViewportRows, justifyCurrentRows, autoCropToCells,
         clearAutoCrops, shiftLayout, mirrorLayout, rerollLayout, refitToView,
@@ -1972,6 +1989,9 @@ export function PinBoard(
                                 case "shiftLeft": shiftSelection(selected, "left"); break
                                 case "shiftCenter": shiftSelection(selected, "center"); break
                                 case "shiftRight": shiftSelection(selected, "right"); break
+                                case "compressLeft": runVerb("Compress Left", compressSelection(selected, "left")); break
+                                case "compressRight": runVerb("Compress Right", compressSelection(selected, "right")); break
+                                case "compressUp": runVerb("Compress Up", compressSelection(selected, "up")); break
                                 case "mirrorH": void mirrorSelection(selected, "horizontal"); break
                                 case "mirrorV": void mirrorSelection(selected, "vertical"); break
                                 case "flipImageH": runVerb("Flip Images", orientSelection(selected, "flipH")); break
