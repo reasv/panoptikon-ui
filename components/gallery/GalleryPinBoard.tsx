@@ -248,6 +248,11 @@ export function PinBoard(
     const [cropKey, setCropKey] = useState<string | null>(null)
     // True while the crop-mode item's box is being resized via a grid handle
     const [cropResizing, setCropResizing] = useState(false)
+    // Scroll-range floor held for the duration of that gesture, in px:
+    // the grid-area content height captured at resize start, rendered as
+    // an empty spacer so a shrinking box can't shrink the ScrollArea's
+    // scroll range mid-drag (see onResizeStart)
+    const [cropFreezeHeight, setCropFreezeHeight] = useState<number | null>(null)
     // Getter for the crop-mode image's viewport extent, set by its CropView
     const cropImageExtentRef = useRef<(() => CropGeometry | null) | null>(null)
     // Width of the grid area, observed by RGL's own hook (the successor of
@@ -1750,6 +1755,17 @@ export function PinBoard(
                 )
                     }`}
             >
+                {cropResizing && cropFreezeHeight !== null && (
+                    // Holds the ScrollArea's scroll range at its
+                    // gesture-start value while a crop-window edge is
+                    // dragged (see onResizeStart). Zero width, so it can
+                    // never affect horizontal layout or catch events.
+                    <div
+                        aria-hidden
+                        className="absolute top-0 left-0 w-0 pointer-events-none"
+                        style={{ height: cropFreezeHeight }}
+                    />
+                )}
                 {showGrid && (
                     // Faint overlay of react-grid-layout's cells, for
                     // eyeballing item sizes while debugging layouts. RGL's own
@@ -1843,6 +1859,21 @@ export function PinBoard(
                     onResizeStart={(_currentLayout, oldItem, newItem, _placeholder, e, node) => {
                         if (!oldItem || !newItem || oldItem.i !== cropKey) return
                         setCropResizing(true)
+                        // Freeze the scroll range for the gesture (the
+                        // spacer below): shrinking the lowest item's south
+                        // edge shrinks the grid, the ScrollArea clamps
+                        // scrollTop, and the board slides down under the
+                        // held pointer — the dragged edge then can't gain
+                        // on a target that retreats with it. Growth still
+                        // extends past the spacer normally.
+                        {
+                            const areaEl = gridAreaRef.current
+                            const gridEl = areaEl?.querySelector<HTMLElement>(".react-grid-layout")
+                            setCropFreezeHeight(Math.max(
+                                areaEl?.clientHeight ?? 0,
+                                gridEl?.offsetHeight ?? 0,
+                            ) || null)
+                        }
                         // In crop mode the box is the crop window: clamp its
                         // growth at the image's edges. A window past the image
                         // frames dead space the stored crop (box∩image) cannot
@@ -1889,6 +1920,7 @@ export function PinBoard(
                         gestureRef.current = true
                         if (cropKey === null) markManualGesture()
                         setCropResizing(false)
+                        setCropFreezeHeight(null)
                         if (newItem) {
                             newItem.maxW = undefined
                             newItem.maxH = undefined

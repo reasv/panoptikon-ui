@@ -182,8 +182,9 @@ export function CropView({
     crop: CropRect | null
     cropMode: boolean
     // True while the grid box is being resized via a handle in crop mode.
-    // The image stays anchored in screen space so the box edges cut into
-    // it (or move away from it, consuming/growing letterbox).
+    // The image stays anchored to the surrounding grid (see anchorFrame)
+    // so the box edges cut into it (or move away from it,
+    // consuming/growing letterbox).
     boxResizing: boolean
     // SOURCE dimensions as the media element reports them; the display
     // (oriented) ones are derived below
@@ -223,8 +224,26 @@ export function CropView({
     // D4 code (quarterTurns + 4·flipped, identity 0 like the codec) the
     // live transform was initialized against
     const orientCodeRef = useRef<number>(0)
-    // Image position in viewport coordinates, frozen while the box resizes
+    // Image position in the anchor frame (see anchorFrame), frozen while
+    // the box resizes
     const anchorRef = useRef<{ left: number; top: number; scale: number } | null>(null)
+    // The frozen image's frame of reference: the surrounding RGL content
+    // element, not the viewport. The two frames only differ by the scroll
+    // position, but that difference MOVES mid-gesture: shrinking the
+    // lowest item's south edge shrinks the grid's height and with it the
+    // scroll range, the browser clamps scrollTop, and the whole board —
+    // crop box included — shifts down on screen. An image frozen in
+    // viewport space then slides up out of the window, and the box∩image
+    // read at mouseup commits that sheared view as the crop. In grid
+    // space the box only ever moves by the handle's own travel, and the
+    // image stays glued to the board through any scroll. Falls back to
+    // the viewport (a zero frame) if no grid element surrounds the view.
+    const anchorFrame = (): { left: number; top: number } => {
+        const grid = containerRef.current?.closest(".react-grid-layout")
+        if (!grid) return { left: 0, top: 0 }
+        const r = grid.getBoundingClientRect()
+        return { left: r.left, top: r.top }
+    }
     const lastSizeRef = useRef<{ w: number; h: number } | null>(null)
     const panStateRef = useRef<{ startX: number; startY: number; t: Transform } | null>(null)
     const wheelCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -261,17 +280,23 @@ export function CropView({
                 // into the re-fit branch below, which re-centers the image
                 // on every step and eats BOTH sides of the resized axis.
                 if (boxResizingRef.current && !anchorRef.current) {
-                    anchorRef.current = { left: rect.left + t.x, top: rect.top + t.y, scale: t.scale }
+                    const f = anchorFrame()
+                    anchorRef.current = {
+                        left: rect.left - f.left + t.x,
+                        top: rect.top - f.top + t.y,
+                        scale: t.scale,
+                    }
                 }
                 const anchor = anchorRef.current
                 if (anchor) {
-                    // Box edges move around the screen-fixed image while the
+                    // Box edges move around the grid-fixed image while the
                     // handle is held; the region in the window is the crop
                     // that will be committed on release
+                    const f = anchorFrame()
                     const anchored = {
                         scale: anchor.scale,
-                        x: anchor.left - rect.left,
-                        y: anchor.top - rect.top,
+                        x: f.left + anchor.left - rect.left,
+                        y: f.top + anchor.top - rect.top,
                     }
                     applyTransform(anchored)
                 } else if (lastSizeRef.current &&
@@ -323,16 +348,19 @@ export function CropView({
                 right: rect.right,
                 bottom: rect.bottom,
             }
-            // Mid-drag the image is frozen at the anchor's screen position
+            // Mid-drag the image is frozen at the anchor's grid-frame
+            // position; the caller wants viewport rects, so map it out
+            // through the frame's current viewport origin
             const anchor = anchorRef.current
             if (anchor) {
+                const f = anchorFrame()
                 return {
                     box,
                     image: {
-                        left: anchor.left,
-                        top: anchor.top,
-                        right: anchor.left + nw * anchor.scale,
-                        bottom: anchor.top + nh * anchor.scale,
+                        left: f.left + anchor.left,
+                        top: f.top + anchor.top,
+                        right: f.left + anchor.left + nw * anchor.scale,
+                        bottom: f.top + anchor.top + nh * anchor.scale,
                     },
                 }
             }
@@ -404,7 +432,12 @@ export function CropView({
             // captures the anchor lazily in that case
             if (!el || !t) return
             const rect = el.getBoundingClientRect()
-            anchorRef.current = { left: rect.left + t.x, top: rect.top + t.y, scale: t.scale }
+            const f = anchorFrame()
+            anchorRef.current = {
+                left: rect.left - f.left + t.x,
+                top: rect.top - f.top + t.y,
+                scale: t.scale,
+            }
         } else {
             anchorRef.current = null
         }
