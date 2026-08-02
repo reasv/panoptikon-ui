@@ -147,21 +147,22 @@ export function v1ScaleFactors(to: GridParams): { sx: number; sy: number } {
 }
 
 // Rewrite v1 records on the target grid. Geometry scales by the lattice
-// factors; crop (manual and auto) and trim suffixes are normalized values
-// independent of the grid, so they pass through unchanged.
+// factors; every h-field extra (crops, trim, lock, orientation) is either a
+// normalized value or a flag, all independent of the grid, so they pass
+// through unchanged.
 export function migrateRecords(records: string[], to: GridParams): string[] {
   const { sx, sy } = v1ScaleFactors(to)
   const next: string[] = []
   for (let i = 0; i < records.length; i += 5) {
     const [sha256, x, y, w, hField] = records.slice(i, i + 5)
     if (hField === undefined) break
-    const { h, crop, autoCrop, trim, lock } = parseHField(hField)
+    const { h, ...extras } = parseHField(hField)
     next.push(
       sha256,
       Math.round(parseInt(x) * sx).toString(),
       Math.round(parseInt(y) * sy).toString(),
       Math.max(1, Math.round(parseInt(w) * sx)).toString(),
-      packHField(Math.max(1, Math.round(h * sy)), crop, autoCrop, trim, lock)
+      packHField(Math.max(1, Math.round(h * sy)), extras)
     )
   }
   return next

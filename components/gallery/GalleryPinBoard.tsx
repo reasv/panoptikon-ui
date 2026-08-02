@@ -23,7 +23,7 @@ import { $api } from '@/lib/api'
 import { MediaControls } from './PlayButton'
 import React from 'react'
 import { useVideoPlayerState } from '@/lib/videoPlayerState'
-import { CropRect, PinLock, TrimRange, clampCrop, composeCrops, isEmptyTrim, packHField, parseHField } from '@/lib/pinboardCrop'
+import { CropRect, PinLock, PinOrientation, TrimRange, clampCrop, composeCrops, isEmptyTrim, packHField, parseHField } from '@/lib/pinboardCrop'
 import { useVideoTrim } from '@/lib/videoTrim'
 import { CropGeometry, CropView } from './CropView'
 import { VideoTimeline } from './VideoTimeline'
@@ -197,13 +197,16 @@ export function PinBoard(
     // positions, see rglSettling below). Declared above the layout memo
     // because the minimum-size floors depend on the measured column width.
     const { width: gridWidth, containerRef: gridAreaRef } = useContainerWidth()
-    const [layout, pinnedFiles, crops, autoCrops, trims, itemLocks]: [
+    // Orientation is decoded alongside the other extras so every per-pin map
+    // is keyed by the same layout key.
+    const [layout, pinnedFiles, crops, autoCrops, trims, itemLocks, orients]: [
         LayoutItem[],
         [string, string, string, string][],
         Record<string, CropRect | null>,
         Record<string, CropRect | null>,
         Record<string, TrimRange | null>,
         Record<string, PinLock>,
+        Record<string, PinOrientation | null>,
     ] = useMemo(() => {
         const newLayout: LayoutItem[] = []
         const pinned: [string, string, string, string][] = []
@@ -211,6 +214,7 @@ export function PinBoard(
         const autoCropsMap: Record<string, CropRect | null> = {}
         const trimsMap: Record<string, TrimRange | null> = {}
         const locksMap: Record<string, PinLock> = {}
+        const orientsMap: Record<string, PinOrientation | null> = {}
         // Minimum-size floors for resize gestures. RGL applies minW/minH
         // through gesture-time constraints only — the layout sync never
         // clamps — so records already below the minimum (legacy boards,
@@ -223,11 +227,12 @@ export function PinBoard(
         for (let i = 0; i < records.length; i += 5) {
             const [sha256, x, y, w, hField] = records.slice(i, i + 5)
             const index = `${i}-${sha256}`
-            const { h, crop, autoCrop, trim, lock } = parseHField(hField)
+            const { h, crop, autoCrop, trim, lock, orient } = parseHField(hField)
             cropsMap[index] = crop
             autoCropsMap[index] = autoCrop
             trimsMap[index] = trim
             locksMap[index] = lock
+            orientsMap[index] = orient
             newLayout.push({
                 i: index,
                 x: parseInt(x),
@@ -261,7 +266,7 @@ export function PinBoard(
                 getFileURL(dbs, "file", "sha256", sha256),
             ])
         }
-        return [newLayout, pinned, cropsMap, autoCropsMap, trimsMap, locksMap]
+        return [newLayout, pinned, cropsMap, autoCropsMap, trimsMap, locksMap, orientsMap]
     }, [records, cropKey, dbs, grid, gridWidth])
 
     // Rebuilds the packed records from RGL's reported layout, in the EXISTING
@@ -312,7 +317,7 @@ export function PinBoard(
                 next.push(...prev.slice(i, i + 5))
                 continue
             }
-            const { crop, autoCrop, trim, lock } = parseHField(prev[i + 4])
+            const { crop, autoCrop, trim, lock, orient } = parseHField(prev[i + 4])
             const hasManual = manualCropOverrides && key in manualCropOverrides
             const nextCrop = hasManual ? manualCropOverrides[key] : crop
             const nextAuto = hasManual
@@ -325,9 +330,15 @@ export function PinBoard(
                 item.x.toString(),
                 item.y.toString(),
                 item.w.toString(),
-                // Crop/trim/lock suffixes stored in the h field survive box
-                // moves/resizes
-                packHField(item.h, nextCrop, nextAuto, trim, lock),
+                // Crop/trim/lock/orientation suffixes stored in the h field
+                // survive box moves/resizes
+                packHField(item.h, {
+                    crop: nextCrop,
+                    autoCrop: nextAuto,
+                    trim,
+                    lock,
+                    orient,
+                }),
             )
         }
         return next
@@ -426,8 +437,8 @@ export function PinBoard(
             const next = [...prev]
             for (let i = 0; i < prev.length; i += 5) {
                 if (!keySet.has(`${i}-${prev[i]}`)) continue
-                const parsed = parseHField(prev[i + 4])
-                next[i + 4] = packHField(parsed.h, parsed.crop, parsed.autoCrop, parsed.trim, lock)
+                const { h, ...extras } = parseHField(prev[i + 4])
+                next[i + 4] = packHField(h, { ...extras, lock })
             }
             return next
         })
@@ -453,8 +464,8 @@ export function PinBoard(
             const next = [...prev]
             for (let i = 0; i < prev.length; i += 5) {
                 if (`${i}-${prev[i]}` === key) {
-                    const parsed = parseHField(prev[i + 4])
-                    next[i + 4] = packHField(parsed.h, crop, null, parsed.trim, parsed.lock)
+                    const { h, ...extras } = parseHField(prev[i + 4])
+                    next[i + 4] = packHField(h, { ...extras, crop, autoCrop: null })
                     break
                 }
             }
@@ -467,8 +478,8 @@ export function PinBoard(
             const next = [...prev]
             for (let i = 0; i < prev.length; i += 5) {
                 if (`${i}-${prev[i]}` === key) {
-                    const parsed = parseHField(prev[i + 4])
-                    next[i + 4] = packHField(parsed.h, parsed.crop, parsed.autoCrop, trim, parsed.lock)
+                    const { h, ...extras } = parseHField(prev[i + 4])
+                    next[i + 4] = packHField(h, { ...extras, trim })
                     break
                 }
             }
