@@ -1084,8 +1084,8 @@ export interface paths {
         };
         /**
          * List saved pinboards
-         * @description Lists the user's saved pinboards, most recently updated first, with head-version metadata (preview dimensions, item and version counts) but without layouts or preview blobs.
-         *     The `q` parameter matches pinboard names via FTS prefix search.
+         * @description Lists the user's saved pinboards with head-version metadata (preview dimensions, item and version counts) but without layouts or preview blobs.
+         *     Ordered by `order`: `activity` (default) ranks by a recency strip followed by a decaying visit score — opening a board counts as activity, not just saving it — while `updated` is plain last-saved-first. The order applies identically under the `q` name search (FTS prefix match).
          */
         get: operations["list_pinboards"];
         put?: never;
@@ -2437,6 +2437,12 @@ export interface components {
         PinboardListResponse: {
             pinboards: components["schemas"]["PinboardSummaryResponse"][];
         };
+        /**
+         * @description Library list ordering. `Activity` is the recency+frequency hybrid;
+         *     `Updated` is the historical `time_updated DESC` order.
+         * @enum {string}
+         */
+        PinboardOrder: "activity" | "updated";
         PinboardSummaryResponse: {
             /** Format: int64 */
             head_version_id?: number | null;
@@ -2444,6 +2450,12 @@ export interface components {
             id: number;
             /** Format: int64 */
             item_count: number;
+            /**
+             * Format: int64
+             * @description Unix seconds of the board's last activity — opening it counts, not
+             *     just saving. Null only for rows predating the activity columns.
+             */
+            last_seen?: number | null;
             name?: string | null;
             /** Format: int64 */
             preview_h?: number | null;
@@ -5431,6 +5443,11 @@ export interface operations {
                 user?: string;
                 /** @description Optional name search (FTS prefix match on pinboard names). */
                 q?: string;
+                /**
+                 * @description List ordering: `activity` (recency + decaying visit frequency, the
+                 *     default) or `updated` (last saved first).
+                 */
+                order?: components["schemas"]["PinboardOrder"];
             };
             header?: never;
             path?: never;

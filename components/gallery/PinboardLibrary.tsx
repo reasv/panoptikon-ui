@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input"
 import { $api, fetchClient } from "@/lib/api"
@@ -22,6 +23,11 @@ import { pinboardPreviewURL } from "@/lib/pinboardPreview"
 import { useToast } from "@/components/ui/use-toast"
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query"
 import { pinboardOpenHref } from "@/lib/pinboardLinks"
+import {
+    PinboardLibraryOrder,
+    usePinboardCleanLinks,
+    usePinboardLibraryOrder,
+} from "@/lib/state/pinboardLibraryPrefs"
 import { cn, compactDate, dateTitle, getLocale } from "@/lib/utils"
 import {
     PreviewPopover,
@@ -52,6 +58,8 @@ export function PinboardLibraryDialog({
     const pathname = usePathname()
     const searchParams = useSearchParams()
     const [nameQuery, setNameQuery] = useState("")
+    const [order, setOrder] = usePinboardLibraryOrder()
+    const [cleanLinks, setCleanLinks] = usePinboardCleanLinks()
     const searchInputRef = useRef<HTMLInputElement>(null)
     // Hovered card + its rect, captured when the pointer enters the card's
     // preview icon (a short delay so grazing it doesn't flash the popover).
@@ -73,7 +81,11 @@ export function PinboardLibraryDialog({
         "/api/pinboards",
         {
             params: {
-                query: { ...dbs, q: nameQuery.trim() === "" ? undefined : nameQuery },
+                query: {
+                    ...dbs,
+                    q: nameQuery.trim() === "" ? undefined : nameQuery,
+                    order,
+                },
             },
         },
         // keepPreviousData: while a keystroke's refetch is in flight, keep
@@ -142,27 +154,30 @@ export function PinboardLibraryDialog({
                     results page, so the first-run state hides it and takes
                     over the whole body below */}
                 {!emptyLibrary && (
-                    <div className="relative max-w-xs">
-                        <Input
-                            ref={searchInputRef}
-                            value={nameQuery}
-                            onChange={(e) => setNameQuery(e.target.value)}
-                            placeholder="Search by name"
-                            className="pr-8"
-                        />
-                        {nameQuery !== "" && (
-                            <button
-                                type="button"
-                                title="Clear search"
-                                onClick={() => {
-                                    setNameQuery("")
-                                    searchInputRef.current?.focus()
-                                }}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                            >
-                                <X className="h-4 w-4" />
-                            </button>
-                        )}
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="relative w-full max-w-xs">
+                            <Input
+                                ref={searchInputRef}
+                                value={nameQuery}
+                                onChange={(e) => setNameQuery(e.target.value)}
+                                placeholder="Search by name"
+                                className="pr-8"
+                            />
+                            {nameQuery !== "" && (
+                                <button
+                                    type="button"
+                                    title="Clear search"
+                                    onClick={() => {
+                                        setNameQuery("")
+                                        searchInputRef.current?.focus()
+                                    }}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                >
+                                    <X className="h-4 w-4" />
+                                </button>
+                            )}
+                        </div>
+                        <SortToggle order={order} onChange={setOrder} />
                     </div>
                 )}
                 {/* Fixed height: result-count changes while searching must
@@ -180,7 +195,13 @@ export function PinboardLibraryDialog({
                                     key={board.id}
                                     board={board}
                                     dbs={dbs}
-                                    href={pinboardOpenHref(pathname, searchParams, board.id, "head")}
+                                    href={pinboardOpenHref(
+                                        pathname,
+                                        searchParams,
+                                        board.id,
+                                        "head",
+                                        cleanLinks ? "clean" : "carry"
+                                    )}
                                     onOpen={() => openBoard(board)}
                                     onDelete={() => setConfirmDelete(board)}
                                     onRename={() => openRename(board)}
@@ -217,6 +238,22 @@ export function PinboardLibraryDialog({
                                 No pinboards match
                             </p>
                         ) : null}
+                    </div>
+                )}
+                {!emptyLibrary && (
+                    <div className="flex items-center gap-2">
+                        <Checkbox
+                            id="pinboard-clean-links"
+                            checked={cleanLinks}
+                            onCheckedChange={(next) => setCleanLinks(next === true)}
+                        />
+                        <label
+                            htmlFor="pinboard-clean-links"
+                            title="Boards opened in a new tab (middle-click, Ctrl-click) start maximized with nothing else open. When off, new tabs inherit your current view settings instead (never the sidebar or search)."
+                            className="cursor-pointer select-none text-xs text-muted-foreground"
+                        >
+                            Open maximized in new tabs
+                        </label>
                     </div>
                 )}
                 {hovered && hovered.board.head_version_id != null && (
@@ -312,6 +349,42 @@ export function PinboardLibraryDialog({
                 </Dialog>
             </DialogContent>
         </Dialog>
+    )
+}
+
+// A two-option segmented control rather than a Select: with two choices the
+// unselected one is its own label for what the other ordering is.
+function SortToggle({
+    order,
+    onChange,
+}: {
+    order: PinboardLibraryOrder
+    onChange: (order: PinboardLibraryOrder) => void
+}) {
+    const option = (value: PinboardLibraryOrder, label: string, title: string) => (
+        <button
+            type="button"
+            title={title}
+            onClick={() => onChange(value)}
+            className={cn(
+                "rounded-sm px-2 py-1 text-xs",
+                order === value
+                    ? "bg-background shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+            )}
+        >
+            {label}
+        </button>
+    )
+    return (
+        <div className="flex shrink-0 items-center gap-0.5 rounded-md border bg-muted/50 p-0.5">
+            {option(
+                "activity",
+                "Activity",
+                "Boards you keep coming back to first — opening a board counts, not just saving it"
+            )}
+            {option("updated", "Last saved", "Most recently saved first")}
+        </div>
     )
 }
 

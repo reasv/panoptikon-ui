@@ -18,32 +18,64 @@ import {
   useGalleryPinBoardLoad,
 } from "@/lib/state/gallery"
 import { markPinboardNavigation } from "@/lib/pinboardNavigation"
-import { PINBOARD_DEFAULTABLE_KEYS } from "@/lib/pinboardDefaults"
 import { useStampBoardFlags } from "@/lib/state/pinboard"
 import { useToast } from "@/components/ui/use-toast"
 
 /**
+ * How much of the current tab's view a board link reproduces.
+ * - `clean`: a maximized board over an otherwise-default view.
+ * - `carry`: the current board-affecting view params, and nothing else.
+ */
+export type PinboardLinkMode = "clean" | "carry"
+
+// Copied in both modes: boards are per-database objects, so without the DB
+// selection the link resolves against whatever the opening tab defaults to.
+const DB_KEYS = ["index_db", "user_data_db"]
+// Carried in carry mode: exactly the params that decide how the board is
+// presented — maximized, gallery tab choice, thumbnails. Sidebar (sb/sbt)
+// and search state are never carried in either mode.
+const CARRIED_VIEW_KEYS = ["gf", "ghp", "gt"]
+
+/**
  * Href opening pinboard `pinboardId` at its head (target: "head") or at a
- * specific version id. Built on top of the current search params so the
- * rest of the view (database selection, gallery index) carries over.
+ * specific version id, for new-tab opens (middle-click, ctrl-click,
+ * right-click → open in new tab).
+ *
+ * Built from scratch rather than on top of the current query string: the
+ * source tab's sidebar, search and board-scoped flags must not ride along
+ * (the loader stamps the target board's own stored flags when it resolves
+ * `pbl`), and an allowlist is the only construction where a parameter
+ * added later doesn't silently start leaking.
  */
 export function pinboardOpenHref(
   pathname: string,
   search: { toString(): string },
   pinboardId: number,
-  target: "head" | number
+  target: "head" | number,
+  mode: PinboardLinkMode
 ): string {
-  const params = new URLSearchParams(search.toString())
+  const current = new URLSearchParams(search.toString())
+  const params = new URLSearchParams()
+  const copy = (keys: string[]) => {
+    for (const key of keys) {
+      const value = current.get(key)
+      if (value !== null) params.set(key, value)
+    }
+  }
+
+  copy(DB_KEYS)
   params.set("pbid", String(pinboardId))
   params.set("pbl", String(target))
-  params.delete("pinboard")
-  // The source tab's board-scoped flags must not ride along: the loader
-  // stamps the target board's stored flags when it resolves `pbl`.
-  for (const key of PINBOARD_DEFAULTABLE_KEYS) params.delete(key)
-  params.set("ghp", "false")
-  // Land on the pinboard tab either way: ghp covers an open gallery, gpb
-  // the grid view (a link opened in a fresh tab has no gallery index)
+  // A fresh tab has no gallery index, so without the board tab fronted in
+  // the grid host the user lands on an empty results grid.
   params.set("gpb", "true")
+  if (mode === "clean") {
+    // With a board present and gpb on, gf is what makes isPinboardMaximized
+    // true: the tab opens as the board and nothing else.
+    params.set("gf", "true")
+  } else {
+    copy(CARRIED_VIEW_KEYS)
+  }
   return `${pathname}?${params.toString()}`
 }
 

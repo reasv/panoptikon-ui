@@ -26,6 +26,7 @@ import { markPinboardNavigation } from "@/lib/pinboardNavigation"
 import { useToast } from "@/components/ui/use-toast"
 import { useQueryClient } from "@tanstack/react-query"
 import { pinboardOpenHref } from "@/lib/pinboardLinks"
+import { usePinboardCleanLinks } from "@/lib/state/pinboardLibraryPrefs"
 import { getLocale, cn, compactDate, dateTitle } from "@/lib/utils"
 import { components } from "@/lib/panoptikon"
 import {
@@ -110,6 +111,9 @@ export function PinboardHistoryPanel({
     const [pbid, setPbid] = useGalleryPinBoardId()
     const pathname = usePathname()
     const searchParams = useSearchParams()
+    // Version links follow the library's new-tab setting: one board-link
+    // behavior, wherever the link lives.
+    const [cleanLinks] = usePinboardCleanLinks()
     const { toast } = useToast()
     const queryClient = useQueryClient()
     // Bumped after stash writes so the pinned entry re-reads
@@ -249,7 +253,13 @@ export function PinboardHistoryPanel({
                             label={version.name_at_save || "Untitled"}
                             sublabel={`${compactDate(new Date(version.time_added))} · ${version.item_count} ${version.item_count === 1 ? "item" : "items"}`}
                             sublabelTitle={dateTitle(new Date(version.time_added))}
-                            href={pinboardOpenHref(pathname, searchParams, pbid, version.id)}
+                            href={pinboardOpenHref(
+                                pathname,
+                                searchParams,
+                                pbid,
+                                version.id,
+                                cleanLinks ? "clean" : "carry"
+                            )}
                             previewSrc={pinboardPreviewURL(dbs, pbid, version.id, 160)}
                             selected={layoutsEqual(version.layout, savedLayout)}
                             onSelect={() => swapTo(version.layout)}
