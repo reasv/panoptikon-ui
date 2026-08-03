@@ -8,6 +8,7 @@ import {
     Grid3x3,
     History,
     LibraryBig,
+    Magnet,
     Minimize2,
     PenLine,
     Save,
@@ -403,6 +404,8 @@ export function PinboardFullscreenBar() {
     const [showGrid, setShowGrid] = useGalleryPinGrid()
     const [autoLayout] = useGalleryPinAutoLayout()
     const [autoLayoutCrop, setAutoLayoutCrop] = useGalleryPinAutoCrop()
+    // Gravity is token state, not a board flag: read off the parsed board
+    const { float, setFloat } = usePinBoard()
     const boardApi = usePinboardBoardApi(s => s.api)
     const { save, pbid, board, openLibrary, openHistory, openRename, dialogs } =
         usePinboardDialogs()
@@ -508,6 +511,18 @@ export function PinboardFullscreenBar() {
                         onClick={() => setShowGrid(!showGrid)}
                     >
                         <Grid3x3 className="h-5 w-5" />
+                    </ToolbarButton>
+                    {/* Gravity: items settle upward automatically. Lives in
+                        the layout token, so this is a layout write — Back
+                        undoes the settle it produces. */}
+                    <ToolbarButton
+                        title={float
+                            ? "Gravity off: items stay where you put them. Click to turn on and settle the board upward"
+                            : "Gravity on: items settle upward automatically. Click to turn off"}
+                        active={!float}
+                        onClick={() => setFloat(!float)}
+                    >
+                        <Magnet className="h-5 w-5" />
                     </ToolbarButton>
                     {boardApi?.isV1 && (
                         <ToolbarButton title="Upgrade Board Grid" onClick={() => boardApi.upgradeGrid()}>

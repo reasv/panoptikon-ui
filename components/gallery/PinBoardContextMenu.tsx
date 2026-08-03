@@ -23,6 +23,7 @@ export function PinBoardCtx({
     locks,
     orients,
     highWater,
+    float,
     cropMode,
     hasCrop,
     onToggleCrop,
@@ -65,6 +66,9 @@ export function PinBoardCtx({
     // natural dimensions in display space
     orients: Record<string, PinOrientation | null>,
     highWater: number,
+    // Gravity off (the layout token's float switch): the size and rotation
+    // verbs this menu owns resolve their own overlaps then
+    float: boolean,
     cropMode: boolean,
     hasCrop: boolean,
     onToggleCrop: () => void,
@@ -134,7 +138,8 @@ export function PinBoardCtx({
         hasAnchors,
         belowViewportKeys,
     } = usePinboardLayoutActions({
-        layout, crops, autoCrops, locks, orients, highWater, dbs, grid, pinboardRef, onLayoutChange,
+        layout, crops, autoCrops, locks, orients, highWater, float,
+        dbs, grid, pinboardRef, onLayoutChange,
         layoutAutoCrop: autoLayoutCrop,
         selectionAutoCrop: selectionCrop,
     })
@@ -292,7 +297,10 @@ export function PinBoardCtx({
                                 that axis, and every item keeps the gap it
                                 had toward the compression side instead of
                                 falling flush. Up needs no gap logic — the
-                                vertical compactor closes the freed rows. */}
+                                vertical compactor closes the freed rows,
+                                and with gravity off it is simply an
+                                in-place letterbox trim (nothing closes
+                                them; see verbTitle in GalleryPinBoard). */}
                             <ContextMenuItem
                                 onClick={() => runVerb("Compress Left", compressSelection(selected, "left"))}>
                                 Compress Left

@@ -5,7 +5,7 @@ import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, u
 import { consumePinboardExplicitPlacement, consumePinboardNavigation, consumePinboardPendingEdit, markPinboardExplicitPlacement } from '@/lib/pinboardNavigation'
 import { usePinBoard } from '@/lib/state/pinboard'
 import { GridParams, minPinUnits, rowStep, v1ScaleFactors } from '@/lib/pinboardGrid'
-import { placeNewPin } from '@/lib/pinboardPlace'
+import { placeNearest, placeNewPin } from '@/lib/pinboardPlace'
 import { PinButton } from './PinButton'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { GridLayout, noCompactor, useContainerWidth, type LayoutItem } from "react-grid-layout"
@@ -166,6 +166,9 @@ const SELECTION_VERBS: SelectionVerb[] = [
         id: "compressUp", label: "Compress Up", icon: ChevronsUp, min: 1,
         title: "Shrink letterboxed items' heights; the board compacts the freed space upward",
     },
+    // (Compress Up is the one verb whose MEANING depends on gravity: with
+    // it off nothing closes the rows the shrink frees, so the verb is a
+    // pure in-place letterbox trim. See verbTitle.)
     {
         id: "mirrorH", label: "Mirror Horizontally", icon: FlipHorizontal2, min: 2, noAnchors: true,
         title: "Mirror the selected items' arrangement about their vertical middle",
@@ -212,6 +215,14 @@ const SELECTION_VERBS: SelectionVerb[] = [
         title: "Remove every item that is NOT selected (the browser Back button restores them)",
     },
 ]
+// A verb's hover text at the board's current gravity. Only Compress Up
+// differs: its static title describes the settle that follows the shrink,
+// which simply does not happen on a free-floating board.
+function verbTitle(v: SelectionVerb, gravity: boolean): string {
+    if (v.id !== "compressUp" || gravity) return v.title
+    return "Shrink letterboxed items' heights in place, trimming the"
+        + " letterboxing; the freed space stays empty"
+}
 const TOOLBAR_VERBS_KEY = "pinboardToolbarVerbs"
 const DEFAULT_TOOLBAR_VERBS = ["arrange", "swap"]
 // Pinnable non-verb: the Send to Region submenu. On the bar it becomes an
@@ -246,7 +257,7 @@ export function PinBoard(
     const dbs = useSelectedDBs()[0]
     // Token-stripped records plus the board's grid parameters; writes migrate
     // v1 boards to the v2 grid (see lib/pinboardGrid.ts)
-    const { grid, records, isV1, highWater, updateRecords, upgradeGrid } = usePinBoard()
+    const { grid, records, isV1, highWater, float, updateRecords, upgradeGrid } = usePinBoard()
     // Key of the item currently in crop mode, if any
     const [cropKey, setCropKey] = useState<string | null>(null)
     // True while the crop-mode item's box is being resized via a grid handle
@@ -628,7 +639,11 @@ export function PinBoard(
         // identity, and the crop-release write must not reflow the board
         // mid-session — the rows the box vacates on a shrink have to stay
         // free for the next handle pull.
-        if (cropKey !== null && !fromRgl) {
+        // Skipped entirely while gravity is off: there the compactor prop is
+        // off for the whole board, not just for the crop session, and a verb
+        // write that settled anyway would be the one place the board still
+        // fell upward.
+        if (cropKey !== null && !fromRgl && !float) {
             // compact() clones its input and returns the compacted clone,
             // so the caller's layout — often the render memo's array itself
             // on orientation-only writes — stays untouched; the map only
@@ -726,13 +741,20 @@ export function PinBoard(
 
     // Append an identical copy of the pin's 5-string record (sha256, x, y, w,
     // packed h+crop). The offset embedded in the layout key locates the source
-    // record; compactType="vertical" then nudges the copy off the original.
+    // record; vertical compaction then nudges the copy off the original —
+    // except with gravity off, where nothing would ever separate the two, so
+    // the copy is placed explicitly at the free cell nearest the original.
     const onDuplicatePin = (key: string) => {
-        updateRecords((prev) => {
+        updateRecords((prev, grid) => {
             const offset = parseInt(key.split("-")[0])
             const record = prev.slice(offset, offset + 5)
             if (record.length < 5) return prev
-            return [...prev, ...record]
+            if (!float) return [...prev, ...record]
+            const { h } = parseHField(record[4])
+            const { x, y } = placeNearest(prev, grid, parseInt(record[3]), h,
+                { x: parseInt(record[1]), y: parseInt(record[2]) })
+            return [...prev, record[0], x.toString(), y.toString(),
+                record[3], record[4]]
         })
     }
 
@@ -905,7 +927,8 @@ export function PinBoard(
         reflowKeepProportions, growInPlace, hasLocks, hasAnchors,
         belowViewportKeys,
     } = usePinboardLayoutActions({
-        layout, crops, autoCrops, locks: itemLocks, orients, highWater, dbs, grid,
+        layout, crops, autoCrops, locks: itemLocks, orients, highWater, float,
+        dbs, grid,
         layoutAutoCrop: autoLayoutCrop,
         selectionAutoCrop: selectionCrop,
         pinboardRef: scrollAreaRef,
@@ -2012,7 +2035,15 @@ export function PinBoard(
                     // O(n log n) one from extras; same semantics as the
                     // classic quadratic compactor for non-overlapping,
                     // non-static layouts like ours.
-                    compactor={cropKey !== null ? noCompactor : fastVerticalCompactor}
+                    //
+                    // And off for the whole board whenever gravity is off
+                    // (the layout token's float switch) — that IS the
+                    // feature: items stay exactly where they were put.
+                    // noCompactor still pushes collisions apart during
+                    // drags, which is the desired no-gravity feel; the verbs
+                    // whose writes can create overlaps resolve them
+                    // themselves (see resolveGrowth in pinboardLayout).
+                    compactor={cropKey !== null || float ? noCompactor : fastVerticalCompactor}
                     onResizeStart={(_currentLayout, oldItem, newItem, _placeholder, e, node) => {
                         // Every resize freezes the board height (see
                         // gestureFreeze), crop-mode or not
@@ -2219,6 +2250,7 @@ export function PinBoard(
                                     locks={itemLocks}
                                     orients={orients}
                                     highWater={highWater}
+                                    float={float}
                                     crop={crops[i] ?? null}
                                     autoCrop={autoCrops[i] ?? null}
                                     trim={trims[i] ?? null}
@@ -2298,6 +2330,7 @@ export function PinBoard(
                         onGripDown={onToolbarGripDown}
                         count={selected.length}
                         cropOn={selectionCrop}
+                        gravity={!float}
                         selHasAnchor={selected.some(k => itemLocks[k] === "anchor")}
                         holeActive={holeVerb}
                         onVerb={(id) => {
@@ -2355,6 +2388,7 @@ function SelectionToolbar({
     onGripDown,
     count,
     cropOn,
+    gravity,
     selHasAnchor,
     holeActive = false,
     onVerb,
@@ -2368,6 +2402,8 @@ function SelectionToolbar({
     onGripDown: (e: React.PointerEvent) => void
     count: number
     cropOn: boolean
+    // The board's gravity, for the verbs whose description depends on it
+    gravity: boolean
     // Whether the selection contains an anchored item (greys the mirrors)
     selHasAnchor: boolean
     // Whether Move-to-Hole targeting is live (lights its button up; the
@@ -2415,7 +2451,7 @@ function SelectionToolbar({
             // row inert and unpinnable (e.g. Swap could never leave the bar
             // except with exactly two items selected). The row just looks
             // disabled and ignores selects instead.
-            <DropdownMenuItem key={v.id} title={v.title}
+            <DropdownMenuItem key={v.id} title={verbTitle(v, gravity)}
                 onSelect={(e) => {
                     // A select that originated on the pin toggle is never a
                     // verb invocation — Radix fires select from pointerup,
@@ -2553,7 +2589,7 @@ function SelectionToolbar({
                         className={cn(btn, v.id === "hole" && holeActive
                             && "bg-blue-100 text-blue-700 hover:bg-blue-200")}
                         disabled={verbDisabled(v)}
-                        onClick={() => onVerb(v.id)} title={v.title}>
+                        onClick={() => onVerb(v.id)} title={verbTitle(v, gravity)}>
                         <v.icon className="w-4 h-4" />
                     </button>
                 )
@@ -2640,6 +2676,7 @@ function PinBoardPin({
     locks,
     orients,
     highWater,
+    float,
     crop,
     autoCrop,
     trim,
@@ -2680,6 +2717,9 @@ function PinBoardPin({
     locks: Record<string, PinLock>
     orients: Record<string, PinOrientation | null>
     highWater: number
+    // Gravity off (the layout token's float switch); the size and rotation
+    // verbs resolve their own overlaps then
+    float: boolean
     // Manual crop (the editable base) and the derived fit-to-cell auto crop
     crop: CropRect | null
     autoCrop: CropRect | null
@@ -2912,6 +2952,7 @@ function PinBoardPin({
                     locks={locks}
                     orients={orients}
                     highWater={highWater}
+                    float={float}
                     cropMode={cropMode}
                     hasCrop={!!(crop || autoCrop)}
                     onToggleCrop={onCropModeToggle}

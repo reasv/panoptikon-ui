@@ -162,11 +162,38 @@ export function usePinBoard() {
       }
       // The ext switches (gravity, reference width) are board state that no
       // record mutation may drop: read off the token, written straight back.
-      // A v1 board has none by definition, and migration mints none.
+      // A v1 board has none by definition, and migration mints none — except
+      // at the creation edge, where the FIRST pin's token carries the user's
+      // gravity default (the token-backed member of the creation-defaults
+      // set; the parameter-backed ones are stamped above). Same tick, same
+      // write, so the new board enters history complete.
+      const ext =
+        records.length === 0 && next.length > 0
+          ? { float: !effectiveCreationDefaults().gravity, refWidth: 0 }
+          : { float, refWidth }
       return isV1
-        ? serializeBoard(V2_GRID, migrateRecords(next, V2_GRID), nextHighWater)
-        : serializeBoard(grid, next, nextHighWater, { float, refWidth })
+        ? serializeBoard(
+            V2_GRID, migrateRecords(next, V2_GRID), nextHighWater, ext)
+        : serializeBoard(grid, next, nextHighWater, ext)
     }, opts?.history ? { history: opts.history } : undefined)
+  }
+  // Gravity (RGL's upward compaction) on/off, stored as the token's float
+  // switch — a plain push write like every other layout write, so the back
+  // button undoes the whole-board settle that turning it back on produces.
+  // No-op on an empty board: there is no token to carry the switch, and a
+  // board that doesn't exist yet takes its gravity from the creation
+  // defaults above. A v1 board migrates, like any other real mutation.
+  const setFloat = (next: boolean) => {
+    setSavedLayout((prev) => {
+      const { grid, records, isV1, highWater, float, refWidth } =
+        parseBoard(prev)
+      if (records.length === 0 || float === next) return prev
+      const ext = { float: next, refWidth }
+      return isV1
+        ? serializeBoard(
+            V2_GRID, migrateRecords(records, V2_GRID), highWater, ext)
+        : serializeBoard(grid, records, highWater, ext)
+    })
   }
   // Convert a v1 board to the v2 grid in place, without touching the
   // arrangement — the explicit opt-in alternative to mutating the board
@@ -177,5 +204,5 @@ export function usePinBoard() {
       return serializeBoard(V2_GRID, migrateRecords(records, V2_GRID))
     })
   }
-  return { ...board, updateRecords, upgradeGrid }
+  return { ...board, updateRecords, upgradeGrid, setFloat }
 }

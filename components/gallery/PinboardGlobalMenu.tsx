@@ -9,6 +9,7 @@ import {
     useGalleryPinSelectionCrop,
 } from "@/lib/state/gallery"
 import { clearUserDefaults, saveUserDefaults } from "@/lib/pinboardDefaults"
+import { usePinBoard } from "@/lib/state/pinboard"
 import type { PinboardBoardApi } from "@/lib/state/pinboardBoardApi"
 import {
     ContextMenuCheckboxItem,
@@ -124,6 +125,9 @@ export function BoardGlobalMenuItems({
     const [autoLayout, setAutoLayout] = useGalleryPinAutoLayout()
     const [autoLayoutCrop, setAutoLayoutCrop] = useGalleryPinAutoCrop()
     const [selectionCrop] = useGalleryPinSelectionCrop()
+    // Gravity rides in the layout token rather than in a board flag, so it
+    // comes from the parsed board and is written through the same path
+    const { float, setFloat } = usePinBoard()
     const { toast } = useToast()
     const runVerb = useRunVerb()
     const { Item, CheckboxItem, Separator, Sub, SubTrigger, SubContent, Shortcut } = kit
@@ -145,6 +149,16 @@ export function BoardGlobalMenuItems({
                 onCheckedChange={(checked) => setShowGrid(!!checked)}
             >
                 Show Grid
+            </CheckboxItem>
+            {/* Gravity is the board's own upward compaction, stored in the
+                layout token (not a flag): turning it back on settles the
+                whole board in one jump, and the browser Back button undoes
+                that like any other layout write. */}
+            <CheckboxItem
+                checked={!float}
+                onCheckedChange={(checked) => setFloat(!checked)}
+            >
+                <span title="Items settle upward automatically">Gravity</span>
             </CheckboxItem>
             {/* When on, the board re-runs Fill Viewport (all items) whenever
                 a pin is added, removed or duplicated, or the board viewport
@@ -196,12 +210,14 @@ export function BoardGlobalMenuItems({
                             pbc: autoLayoutCrop,
                             psc: selectionCrop,
                             pg: showGrid,
+                            gravity: !float,
                         })
                         toast({
                             title: "New-Board Defaults Saved",
                             description: "New pinboards will start with this"
                                 + " board's current Auto-Layout, Auto-Crop,"
-                                + " selection-crop and grid settings.",
+                                + " selection-crop, grid and gravity"
+                                + " settings.",
                             duration: 4000,
                         })
                     }}>

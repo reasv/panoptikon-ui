@@ -17,6 +17,7 @@ import {
     orientedSize,
 } from "@/lib/pinboardCrop";
 import { GridParams, minPinUnits, rowStep } from "@/lib/pinboardGrid";
+import { resolveOverlapsDown } from "@/lib/pinboardOverlap";
 import {
     ArrangedItem,
     GridRect,
@@ -64,6 +65,7 @@ export function usePinboardLayoutActions({
     locks = {},
     orients = NO_ORIENTS,
     highWater = 0,
+    float = false,
     layoutAutoCrop = false,
     selectionAutoCrop = true,
     dbs,
@@ -86,6 +88,10 @@ export function usePinboardLayoutActions({
     orients?: Record<string, PinOrientation | null>,
     // The board's layout-height ratchet in grid rows (see pinboardGrid.ts)
     highWater?: number,
+    // Gravity OFF (the token's float switch): RGL's compactor is not
+    // running, so the verbs that grow an item's footprint must resolve the
+    // collisions they create themselves — see resolveGrowth.
+    float?: boolean,
     // The standing auto-crop settings, one per verb class: layoutAutoCrop
     // (the pbc URL flag) governs the board-layout family — fills, reroll,
     // refit, reflow, rows, justify, grow — and selectionAutoCrop (the psc
@@ -131,6 +137,26 @@ export function usePinboardLayoutActions({
             layoutBuildData.current = await getLayoutBuildData({ layout, crops, orients, dbs, grid, pinboardRef })
         }
         return layoutBuildData.current
+    }
+
+    // The gravity-off completion of a footprint-growing verb (Resize Item /
+    // Set Size, the rotations' box swap). With gravity ON this is identity:
+    // RGL's compactor resolves the overlaps the new footprint creates, which
+    // is what those verbs have always relied on. With it OFF nothing does,
+    // so the colliders are pushed down here instead (see pinboardOverlap).
+    // The changed boxes are clamped into the grid first: RGL's own
+    // correctBounds would otherwise slide an over-wide box left AFTER this
+    // pass, straight into a neighbour nothing would then move.
+    function resolveGrowth(newLayout: LayoutItem[], changedKeys: string[]): LayoutItem[] {
+        if (!float) return newLayout
+        const changed = new Set(changedKeys)
+        const clamped = newLayout.map(l => {
+            if (!changed.has(l.i)) return l
+            const w = Math.min(l.w, grid.columns)
+            const x = Math.max(0, Math.min(l.x, grid.columns - w))
+            return w === l.w && x === l.x ? l : { ...l, x, w }
+        })
+        return resolveOverlapsDown(clamped, changed)
     }
 
     const isLocked = (key: string) => !!locks[key]
@@ -971,7 +997,7 @@ export function usePinboardLayoutActions({
         const buildData = await ensureBuildData()
         if (!buildData) return
         const { minW, minH } = minPinUnits(grid, buildData.columnWidth)
-        const newLayout = layout.map(l => {
+        const newLayout = resolveGrowth(layout.map(l => {
             if (l.i === layoutKey) {
                 const [w, h] = croppedDimensions(buildData, l.i)
                 const newW = Math.max(minW, l.w + increase)
@@ -982,7 +1008,7 @@ export function usePinboardLayoutActions({
                 }
             }
             return l
-        })
+        }), [layoutKey])
         // An explicit size command is gesture-like: it does not re-fit, it
         // just drops the auto crop its own resize made stale
         onLayoutChange(newLayout, verbAutoCrops(buildData, newLayout, new Set(), false))
@@ -992,7 +1018,7 @@ export function usePinboardLayoutActions({
         const buildData = await ensureBuildData()
         if (!buildData) return
         const { minW, minH } = minPinUnits(grid, buildData.columnWidth)
-        const newLayout = layout.map(l => {
+        const newLayout = resolveGrowth(layout.map(l => {
             if (l.i === layoutKey) {
                 const [w, h] = croppedDimensions(buildData, l.i)
                 const newW = Math.max(minW, size)
@@ -1003,7 +1029,7 @@ export function usePinboardLayoutActions({
                 }
             }
             return l
-        })
+        }), [layoutKey])
         onLayoutChange(newLayout, verbAutoCrops(buildData, newLayout, new Set(), false))
     }
 
@@ -1085,7 +1111,8 @@ export function usePinboardLayoutActions({
     // factors just trade places; that is why the fallback can read the OLD
     // stored maps through croppedDimensions and pass them in ch/cw order and
     // still be exact. x/y are kept: RGL's compactor resolves the footprint
-    // change, pushing neighbors down as it does for a resize.
+    // change, pushing neighbors down as it does for a resize — or, with
+    // gravity off, resolveGrowth does it in the compactor's stead.
     function turnedBox(
         buildData: LayoutBuildData,
         l: LayoutItem,
@@ -1129,9 +1156,9 @@ export function usePinboardLayoutActions({
         if (!buildData) return
         const { minW, minH } = minPinUnits(grid, buildData.columnWidth)
         const turning = new Set(turnKeys)
-        const newLayout = layout.map(l => turning.has(l.i)
+        const newLayout = resolveGrowth(layout.map(l => turning.has(l.i)
             ? { ...l, ...turnedBox(buildData, l, minW, minH) }
-            : l)
+            : l), turnKeys)
         onLayoutChange(newLayout, out.auto, undefined, out.orient, out.manual)
     }
 

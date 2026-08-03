@@ -72,3 +72,36 @@ export function placeNewPin(
   }
   return { x: 0, y: Math.max(...rects.map((r) => r.y + r.h)) }
 }
+
+// Where a duplicate lands. With gravity on, the copy is appended at the
+// original's own position and compaction nudges it off; with gravity off
+// nothing separates them, so the copy has to be placed explicitly at the
+// free cell NEAREST the original — the same brute-force nearest-slot scan
+// the size-locked travellers of the pack verbs use, ties breaking top to
+// bottom then left to right. The scan window reaches one item-height past
+// the deepest occupied row, so a free slot always exists.
+export function placeNearest(
+  records: string[],
+  grid: GridParams,
+  w: number,
+  h: number,
+  aim: { x: number; y: number }
+): { x: number; y: number } {
+  const rects = occupiedRects(records)
+  if (rects.length === 0) return { x: 0, y: 0 }
+  const pinW = Math.max(1, Math.round(w))
+  const pinH = Math.max(1, Math.round(h))
+  const maxX = Math.max(0, grid.columns - pinW)
+  const maxY = Math.max(...rects.map((r) => r.y + r.h))
+  let best: { x: number; y: number; d: number } | null = null
+  for (let y = 0; y <= maxY; y++) {
+    for (let x = 0; x <= maxX; x++) {
+      const d = (x - aim.x) ** 2 + (y - aim.y) ** 2
+      if (best && d >= best.d) continue
+      const slot = { x, y, w: pinW, h: pinH }
+      if (rects.some((r) => overlaps(slot, r))) continue
+      best = { x, y, d }
+    }
+  }
+  return best ? { x: best.x, y: best.y } : { x: aim.x, y: maxY }
+}
