@@ -21,6 +21,7 @@ const {
   colStep,
   foldRows,
   mosaicGeometry,
+  solveWithinCanvasLimits,
 } = await import("../lib/pinboardGeometry.ts")
 const { V2_GRID, effectiveGrid, rowStep } = await import("../lib/pinboardGrid.ts")
 
@@ -30,6 +31,16 @@ function check(name, ok, detail = "") {
   console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? `\n  ${detail}` : ""}`)
   all &&= !!ok
   return ok
+}
+
+// mosaicGeometry answers with a tagged result (a box, or WHY there is no
+// box); the geometry assertions below want the box itself.
+function geometryOf(input) {
+  const result = mosaicGeometry(input)
+  if (!result.ok) {
+    throw new Error(`expected a capture box, got failure "${result.failure}"`)
+  }
+  return result.geometry
 }
 
 const G = V2_GRID // 108 cols, rowHeight 5, margin 5, padding 5
@@ -103,7 +114,7 @@ const records = [
 const rows = 40
 
 {
-  const full = mosaicGeometry({
+  const full = geometryOf({
     records, grid: G, layoutWidth: W, seamless: false,
     extent: "full", visibleRows: rows,
   })
@@ -122,7 +133,7 @@ const rows = 40
 }
 
 {
-  const vis = mosaicGeometry({
+  const vis = geometryOf({
     records, grid: G, layoutWidth: W, seamless: false,
     extent: "visible", visibleRows: rows,
   })
@@ -138,7 +149,7 @@ const rows = 40
   )
   // The straddler: a pin whose top is inside the box but whose bottom is
   // past it stays in the placement list (the canvas edge clips it)
-  const straddle = mosaicGeometry({
+  const straddle = geometryOf({
     records: ["cccccccccc", "0", String(rows - 2), "20", "12"],
     grid: G, layoutWidth: W, seamless: false,
     extent: "visible", visibleRows: rows,
@@ -156,7 +167,7 @@ const rows = 40
 {
   // Visible extent on a board shorter than the fold: the box is the
   // content, not a screenful of empty background
-  const short = mosaicGeometry({
+  const short = geometryOf({
     records: ["aaaaaaaaaa", "0", "0", "20", "12"],
     grid: G, layoutWidth: W, seamless: false,
     extent: "visible", visibleRows: rows,
@@ -170,7 +181,7 @@ const rows = 40
 }
 
 {
-  const seam = mosaicGeometry({
+  const seam = geometryOf({
     records, grid: G, layoutWidth: W, seamless: true,
     extent: "visible", visibleRows: rows,
   })
@@ -189,7 +200,7 @@ const rows = 40
 
 {
   // Offset board: the crop box follows the content, keeping one padding
-  const off = mosaicGeometry({
+  const off = geometryOf({
     records: ["aaaaaaaaaa", "50", "10", "20", "12"],
     grid: G, layoutWidth: W, seamless: false,
     extent: "full", visibleRows: rows,
@@ -204,13 +215,47 @@ const rows = 40
   )
 }
 
-check(
-  "an empty board has no geometry",
-  mosaicGeometry({
+{
+  const empty = mosaicGeometry({
     records: [], grid: G, layoutWidth: W, seamless: false,
     extent: "full", visibleRows: rows,
-  }) === null
-)
+  })
+  check(
+    "an empty board has no geometry",
+    empty.ok === false && empty.failure === "no-pins",
+    JSON.stringify(empty)
+  )
+}
+
+{
+  // A board whose every pin sits BELOW the fill line: the visible box cuts
+  // to nothing (its top is already past its bottom). That must be
+  // distinguishable from a broken board, because the fix is the extent
+  // switch, not a retry.
+  const below = ["dddddddddd", "0", String(rows + 10), "20", "12"]
+  const input = {
+    records: below, grid: G, layoutWidth: W, seamless: false,
+    extent: "visible", visibleRows: rows,
+  }
+  const vis = mosaicGeometry(input)
+  check(
+    "a board entirely below the fold reports empty-visible",
+    vis.ok === false && vis.failure === "empty-visible",
+    JSON.stringify(vis)
+  )
+  const seam = mosaicGeometry({ ...input, seamless: true })
+  check(
+    "…seamless too",
+    seam.ok === false && seam.failure === "empty-visible",
+    JSON.stringify(seam)
+  )
+  const full = mosaicGeometry({ ...input, extent: "full" })
+  check(
+    "…and the same board composites fine on the full extent",
+    full.ok === true && full.geometry.height > 0,
+    JSON.stringify(full.ok ? full.geometry.height : full)
+  )
+}
 
 // ---- proportional grid: the mosaic scales with the target width --------
 
@@ -260,26 +305,72 @@ check("canvasClampFactor is 1 for an ordinary canvas", canvasClampFactor(3840, 8
   )
 }
 {
-  // The real loop: shrink the TARGET WIDTH by the factor and re-solve —
-  // the geometry must then fit (this is what composeBoardMosaic does).
+  // The real loop (the one composeBoardMosaic runs): shrink the TARGET
+  // WIDTH by the factor and re-solve — the geometry must then fit.
   const tall = ["aaaaaaaaaa", "0", "0", "108", "40000"]
-  let width = 3840
-  let geo = null
-  for (let i = 0; i < 4; i++) {
-    geo = mosaicGeometry({
+  const res = solveWithinCanvasLimits(3840, (width) =>
+    mosaicGeometry({
       records: tall, grid: effectiveGrid(G, width / 1503), layoutWidth: width,
       seamless: false, extent: "full", visibleRows: rows,
     })
-    const f = canvasClampFactor(geo.width, geo.height)
-    if (f >= 1) break
-    width = Math.max(1, Math.floor(width * f * 0.999))
-  }
+  )
   check(
     "re-solving at the clamped width yields a drawable canvas",
-    geo.width <= MAX_CANVAS_SIDE &&
-      geo.height <= MAX_CANVAS_SIDE &&
-      geo.width * geo.height <= MAX_CANVAS_AREA,
-    `${geo.width}x${geo.height} at target ${width}`
+    res.ok &&
+      res.geometry.width <= MAX_CANVAS_SIDE &&
+      res.geometry.height <= MAX_CANVAS_SIDE &&
+      res.geometry.width * res.geometry.height <= MAX_CANVAS_AREA,
+    res.ok ? `${res.geometry.width}x${res.geometry.height} at target ${res.layoutWidth}` : JSON.stringify(res)
+  )
+  check(
+    "the clamp is reported back to the caller",
+    res.ok && res.clampedWidth !== null && res.clampedWidth < 3840,
+    res.ok ? `${res.clampedWidth}` : ""
+  )
+}
+
+{
+  // A request that fits straight away is not reported as clamped.
+  const res = solveWithinCanvasLimits(1920, (width) =>
+    mosaicGeometry({
+      records, grid: effectiveGrid(G, width / 1503), layoutWidth: width,
+      seamless: false, extent: "full", visibleRows: rows,
+    })
+  )
+  check(
+    "an honored request reports no clamp",
+    res.ok && res.clampedWidth === null && res.layoutWidth === 1920,
+    JSON.stringify(res.ok ? { w: res.layoutWidth, c: res.clampedWidth } : res)
+  )
+}
+
+{
+  // The exit rule: the loop is left by a solve that FIT. A solver that
+  // never fits must fail — handing the last oversized geometry back would
+  // allocate a canvas the browser returns blank (or OOMs on).
+  let calls = 0
+  const oversized = {
+    placements: [], cropLeft: 0, cropTop: 0,
+    width: MAX_CANVAS_SIDE * 3, height: MAX_CANVAS_SIDE * 3,
+  }
+  const res = solveWithinCanvasLimits(3840, () => {
+    calls++
+    return { ok: true, geometry: oversized }
+  })
+  check(
+    "a solve that never fits fails instead of allocating",
+    res.ok === false && res.failure === "too-large",
+    JSON.stringify(res)
+  )
+  check("…after spending every pass", calls === 4, `calls=${calls}`)
+  check(
+    "a failing solve propagates its own reason",
+    (() => {
+      const r = solveWithinCanvasLimits(3840, () => ({
+        ok: false, failure: "empty-visible",
+      }))
+      return r.ok === false && r.failure === "empty-visible"
+    })()
   )
 }
 

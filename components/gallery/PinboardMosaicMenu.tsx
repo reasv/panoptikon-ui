@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { useSyncExternalStore } from "react"
 import { useToast } from "@/components/ui/use-toast"
 import {
     useGalleryPinBoardLayout,
@@ -30,9 +30,55 @@ import type { MenuKit } from "./PinboardGlobalMenu"
 // the user is looking at, at 1:1 — and the rest upscale from it.
 const MOSAIC_PRESETS = [1920, 2560, 3840]
 
-/** Non-zero measurement, or the window as the unmounted-board fallback. */
+// The in-progress toast outlives the composite by design; it is dismissed
+// on completion, so this is only the ceiling for an export that never
+// returns at all.
+const PROGRESS_TOAST_MS = 10 * 60 * 1000
+
+/**
+ * Non-zero measurement, or the window as the unmounted-board fallback.
+ *
+ * The fallback OVERSTATES the viewport for the height (the board's scroll
+ * pane is shorter than the window: header, toolbar, chrome), so an export
+ * fired while the board is unmounted captures a few more rows than the fold
+ * would. Accepted, and deliberately the same trade pinboardSave.ts makes
+ * for the width (`findBoardElement()?.clientWidth ?? window.innerWidth`):
+ * an approximate capture beats refusing to export, and the case only
+ * arises when nothing is on screen to measure.
+ */
 function measured(px: number | undefined, fallback: number): number {
     return px && px > 0 ? px : fallback
+}
+
+// Re-entrancy guard, at module scope on purpose: Radix unmounts the menu
+// (and with it any component state) the moment a row is selected, so a
+// useState flag would be destroyed by the very click it is meant to guard
+// against — leaving a second click free to start a second full-resolution
+// composite and OOM the tab. The flag is checked and set synchronously in
+// `save` and cleared in its finally; the subscription exists only so the
+// rows of a REOPENED menu can still render themselves disabled.
+let exporting = false
+const exportListeners = new Set<() => void>()
+
+function setExporting(value: boolean) {
+    exporting = value
+    for (const listener of exportListeners) listener()
+}
+
+function subscribeExporting(onChange: () => void) {
+    exportListeners.add(onChange)
+    return () => {
+        exportListeners.delete(onChange)
+    }
+}
+
+/** True while any mosaic export is in flight, anywhere in the app. */
+export function useMosaicExporting(): boolean {
+    return useSyncExternalStore(
+        subscribeExporting,
+        () => exporting,
+        () => false,
+    )
 }
 
 export function useMosaicExport(boardName?: string | null) {
@@ -43,23 +89,30 @@ export function useMosaicExport(boardName?: string | null) {
     const [extent] = usePinboardMosaicExtent()
     const { toast } = useToast()
     // Compositing is async (every thumbnail is a network fetch), so the
-    // rows disable themselves for the duration rather than letting a
-    // second click start a second full-resolution composite.
-    const [busy, setBusy] = useState(false)
+    // rows disable themselves for the duration; the guard that actually
+    // stops a second composite is the module-level flag above.
+    const busy = useMosaicExporting()
 
     // `targetWidth` null means the live board width (the "Window" preset).
     const save = async (targetWidth: number | null) => {
-        if (busy || layout.length === 0) return
+        if (exporting || layout.length === 0) return
+        setExporting(true)
         const boardWidth = measured(
             findBoardElement()?.clientWidth, window.innerWidth)
         const boardHeight = measured(
             findBoardViewport()?.clientHeight, window.innerHeight)
-        setBusy(true)
-        toast({ title: "Saving mosaic…", duration: 2000 })
+        // A big composite can take a while, and a silent wait is what
+        // invites the second click: the in-progress toast stays up until
+        // the outcome replaces it.
+        const progress = toast({
+            title: "Saving mosaic…",
+            description: "Compositing the board",
+            duration: PROGRESS_TOAST_MS,
+        })
         try {
             const background =
                 getComputedStyle(document.body).backgroundColor || "#09090b"
-            const mosaic = await composeBoardMosaic({
+            const result = await composeBoardMosaic({
                 layout,
                 dbs,
                 boardWidth,
@@ -70,32 +123,51 @@ export function useMosaicExport(boardName?: string | null) {
                 proportional,
                 background,
             })
-            if (!mosaic) throw new Error("nothing to composite")
-            const stem = sanitizeFilePart(boardName ?? "") || "pinboard"
-            downloadBlob(mosaic.blob, `${stem}-${timestampStamp()}.jpg`)
-            // The canvas guard had to shrink the request: say so, or the
-            // file silently isn't the preset that was clicked.
-            if (mosaic.clampedWidth !== null) {
-                toast({
-                    title: "Mosaic scaled down",
-                    description: "That size exceeds what browsers can draw"
-                        + ` on one canvas; saved at ${mosaic.width}×`
-                        + `${mosaic.height} instead.`,
-                    duration: 6000,
-                })
+            progress.dismiss()
+            if (!result.ok) {
+                // "Everything is below the fold" is a wrong extent, not a
+                // broken export, so it says which switch fixes it.
+                if (result.failure === "empty-visible") {
+                    toast({
+                        title: "Nothing above the fold",
+                        description: "Every pin on this board sits below the"
+                            + " visible area — switch the mosaic to Entire"
+                            + " Board to capture it.",
+                        duration: 6000,
+                    })
+                    return
+                }
+                throw new Error(`mosaic geometry: ${result.failure}`)
             }
+            const mosaic = result.mosaic
+            const stem = sanitizeFilePart(boardName ?? "") || "pinboard"
+            const filename = `${stem}-${timestampStamp()}.jpg`
+            downloadBlob(mosaic.blob, filename)
+            // The canvas guard may have had to shrink the request: say so,
+            // or the file silently isn't the preset that was clicked.
+            const clamped = mosaic.clampedWidth !== null
+            toast({
+                title: clamped ? "Mosaic saved, scaled down" : "Mosaic saved",
+                description: clamped
+                    ? `${filename} — that size exceeds what browsers can draw`
+                        + ` on one canvas, so it was saved at ${mosaic.width}×`
+                        + `${mosaic.height}.`
+                    : `${filename} (${mosaic.width}×${mosaic.height})`,
+                duration: clamped ? 6000 : 4000,
+            })
         } catch (err) {
             console.error("pinboard mosaic export failed", err)
+            progress.dismiss()
             toast({
                 title: "Error",
                 description: "Failed to save the mosaic image",
                 duration: 4000,
             })
         } finally {
-            setBusy(false)
+            setExporting(false)
         }
     }
-    return { save, busy, hasPins: layout.length > 0 }
+    return { save, busy }
 }
 
 /**

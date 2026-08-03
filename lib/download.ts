@@ -6,6 +6,12 @@
 // dance — and the revoke, without which every export leaks its blob for
 // the life of the document.
 
+// How long the object URL is kept alive after the click. WebKit can cancel
+// a download whose blob is revoked in the adjacent task turn (the download
+// has been queued, but the data has not been read yet), so the revoke waits
+// out any plausible save — FileSaver.js's 40s convention.
+const REVOKE_DELAY_MS = 40_000
+
 /** Triggers a browser download of `blob` under `filename`. */
 export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
@@ -17,13 +23,14 @@ export function downloadBlob(blob: Blob, filename: string): void {
   document.body.appendChild(a)
   a.click()
   a.remove()
-  // Revoking synchronously can cancel the download in some browsers; one
-  // turn later the navigation has been queued.
-  setTimeout(() => URL.revokeObjectURL(url), 0)
+  setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS)
 }
 
-// Path separators and the characters Windows reserves.
-const UNSAFE_FILENAME_CHARS = /[\\/:*?"<>|]/g
+// Path separators, the characters Windows reserves, and the C0 control
+// range plus DEL (a name carrying a newline or a NUL is rejected outright
+// by some filesystems and silently truncated by others).
+// eslint-disable-next-line no-control-regex
+const UNSAFE_FILENAME_CHARS = /[\\/:*?"<>|\u0000-\u001f\u007f]/g
 
 /**
  * A user-supplied name reduced to something every filesystem accepts:

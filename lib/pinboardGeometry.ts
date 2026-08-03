@@ -19,6 +19,16 @@
 //   container padding. Same grid, same arrangement, no gaps; each item's
 //   fit/crop is then recomputed for the bigger rect by the caller, so
 //   nothing is stretched.
+//
+// Seamless width, by design: a full-width seamless row spans
+// `layoutWidth - 2*padding + margin`, not `layoutWidth` — the columns are
+// solved on the padded lattice (that is what keeps the two compositors
+// showing the SAME board) and the step lattice then reclaims the padding
+// but not the gutter RGL never spends past the last column. So a "3840 px
+// Wide" seamless mosaic comes out a handful of pixels narrower than 3840.
+// Accepted: matching the nominal preset exactly would mean re-solving the
+// column width for seamless mode, i.e. a different arrangement from the
+// board on screen.
 
 // Type-only imports are spelled out: node's --experimental-strip-types
 // (how scripts/mosaic.test.mjs exercises this module) cannot erase a type
@@ -150,6 +160,24 @@ export interface MosaicGeometry {
   height: number
 }
 
+/**
+ * Why a board has no capture box. Distinguished rather than collapsed into
+ * null because "empty-visible" is not a failure at all — it is a board whose
+ * content all sits below the fill line, and the only thing wrong with it is
+ * the extent the user picked, which the caller can say out loud.
+ */
+export type MosaicFailure =
+  /** No drawable pins on the board. */
+  | "no-pins"
+  /** Pins exist, but every one of them starts below the visible cut. */
+  | "empty-visible"
+  /** Degenerate input (non-positive layout width, or a zero-size box). */
+  | "degenerate"
+
+export type MosaicGeometryResult =
+  | { ok: true; geometry: MosaicGeometry }
+  | { ok: false; failure: MosaicFailure }
+
 // Browser canvas limits. Chrome/Firefox/Safari all cap a canvas at 16384px
 // per side, and the area cap is lower still (Safari ~268M px, which is also
 // roughly where a 4-byte-per-pixel backing store hits 1 GiB). Exceeding
@@ -174,6 +202,48 @@ export function canvasClampFactor(width: number, height: number): number {
   )
 }
 
+export type ClampedSolveResult =
+  | {
+      ok: true
+      geometry: MosaicGeometry
+      /** The width it was actually solved at. */
+      layoutWidth: number
+      /** Set when the guard had to shrink the request; null when honored. */
+      clampedWidth: number | null
+    }
+  | { ok: false; failure: MosaicFailure | "too-large" }
+
+/**
+ * The mosaic solved at the largest drawable width at or below `targetWidth`.
+ *
+ * The geometry is pure math, so an oversized request is answered by
+ * RE-SOLVING at a smaller width — never by allocating a canvas the browser
+ * would hand back blank. One pass is exact up to rounding, so the remaining
+ * passes are slack; the loop is only ever left by a solve that FIT, and a
+ * run that exhausts its passes still oversized reports "too-large" rather
+ * than handing back a geometry no canvas can hold.
+ */
+export function solveWithinCanvasLimits(
+  targetWidth: number,
+  solveAt: (width: number) => MosaicGeometryResult,
+  passes = 4
+): ClampedSolveResult {
+  let width = Math.max(1, Math.round(targetWidth))
+  let clampedWidth: number | null = null
+  for (let i = 0; i < passes; i++) {
+    const solved = solveAt(width)
+    if (!solved.ok) return solved
+    const { width: w, height: h } = solved.geometry
+    const factor = canvasClampFactor(w, h)
+    if (factor >= 1) {
+      return { ok: true, geometry: solved.geometry, layoutWidth: width, clampedWidth }
+    }
+    width = Math.max(1, Math.floor(width * factor * 0.999))
+    clampedWidth = width
+  }
+  return { ok: false, failure: "too-large" }
+}
+
 /**
  * Canvas box and cell rects for a mosaic. Pure math: no DOM, no images.
  *
@@ -184,15 +254,16 @@ export function canvasClampFactor(width: number, height: number): number {
  * straddling that line are clipped by the canvas edge, exactly as the
  * preview's screenful cap clips today.
  *
- * Returns null for a board with no drawable pins.
+ * Returns a tagged failure (see MosaicFailure) instead of a box when there
+ * is nothing to draw.
  */
 export function mosaicGeometry(
   input: MosaicGeometryInput
-): MosaicGeometry | null {
+): MosaicGeometryResult {
   const { records, grid, layoutWidth, seamless, extent, visibleRows } = input
-  if (layoutWidth <= 0) return null
+  if (layoutWidth <= 0) return { ok: false, failure: "degenerate" }
   const placements = parsePlacements(records, grid, layoutWidth, seamless)
-  if (placements.length === 0) return null
+  if (placements.length === 0) return { ok: false, failure: "no-pins" }
 
   // Seamless cells absorb the padding and the margins, so the "gutter" the
   // bounding box keeps is zero there.
@@ -219,6 +290,12 @@ export function mosaicGeometry(
   )
   const width = Math.round(cropRight - cropLeft)
   const height = Math.round(captureBottom - cropTop)
-  if (width <= 0 || height <= 0) return null
-  return { placements, cropLeft, cropTop, width, height }
+  // A board whose content begins BELOW the fill line cuts to nothing: the
+  // top of the box is already past its bottom. That is a real board and a
+  // wrong extent, not a broken export, so it gets its own answer.
+  if (height <= 0 && extent === "visible") {
+    return { ok: false, failure: "empty-visible" }
+  }
+  if (width <= 0 || height <= 0) return { ok: false, failure: "degenerate" }
+  return { ok: true, geometry: { placements, cropLeft, cropTop, width, height } }
 }

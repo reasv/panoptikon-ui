@@ -590,30 +590,32 @@ export function PinboardFullscreenBar() {
                     {/* Save the board as an image. Its own dropdown rather
                         than a submenu here: the toolbar has no parent menu
                         to hang one off, exactly like Layout. Nothing to
-                        composite without pins, so it waits for the first
-                        one instead of offering a failing verb. */}
-                    {hasPins && (
-                        <DropdownMenu onOpenChange={setMenuOpen}>
-                            <DropdownMenuTrigger asChild>
-                                <button
-                                    title="Save the board as an image file"
-                                    className={cn(
-                                        "inline-flex shrink-0 items-center gap-1 px-2.5 text-sm transition-colors hover:bg-foreground/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
-                                        "data-[state=open]:bg-blue-500/15 data-[state=open]:text-blue-600 dark:data-[state=open]:text-blue-400",
-                                    )}
-                                >
-                                    Mosaic
-                                    <ChevronDown className="h-4 w-4" />
-                                </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="start" className="w-56">
-                                <MosaicMenuItems
-                                    kit={dropdownMenuKit}
-                                    boardName={board?.name}
-                                />
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-                    )}
+                        composite without pins, so it goes disabled — but it
+                        stays in the bar, like History and Rename above, and
+                        the tooltip says what would enable it. */}
+                    <DropdownMenu onOpenChange={setMenuOpen}>
+                        <DropdownMenuTrigger asChild>
+                            <button
+                                disabled={!hasPins}
+                                title={hasPins
+                                    ? "Save the board as an image file"
+                                    : "Pin something first — there is nothing to composite yet"}
+                                className={cn(
+                                    "inline-flex shrink-0 items-center gap-1 px-2.5 text-sm transition-colors hover:bg-foreground/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:hover:bg-transparent",
+                                    "data-[state=open]:bg-blue-500/15 data-[state=open]:text-blue-600 dark:data-[state=open]:text-blue-400",
+                                )}
+                            >
+                                Mosaic
+                                <ChevronDown className="h-4 w-4" />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-56">
+                            <MosaicMenuItems
+                                kit={dropdownMenuKit}
+                                boardName={board?.name}
+                            />
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                     <ToolbarDivider />
                     <ToolbarButton
                         title="Restore pinboard size (Ctrl+Shift+M)"

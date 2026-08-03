@@ -29,9 +29,10 @@
 
 import {
   MosaicExtent,
-  canvasClampFactor,
+  MosaicFailure,
   foldRows,
   mosaicGeometry,
+  solveWithinCanvasLimits,
 } from "@/lib/pinboardGeometry"
 import { effectiveGrid, gridScale, parseBoard } from "@/lib/pinboardGrid"
 import {
@@ -74,9 +75,20 @@ export interface ComposedMosaic {
   clampedWidth: number | null
 }
 
+/**
+ * Why no image came back. The geometry's own failures pass through, plus:
+ *   "too-large" — the clamp loop never converged on a drawable canvas.
+ *   "no-canvas" — the browser refused a 2D context.
+ */
+export type MosaicComposeFailure = MosaicFailure | "too-large" | "no-canvas"
+
+export type MosaicComposeResult =
+  | { ok: true; mosaic: ComposedMosaic }
+  | { ok: false; failure: MosaicComposeFailure }
+
 export async function composeBoardMosaic(
   opts: MosaicOptions
-): Promise<ComposedMosaic | null> {
+): Promise<MosaicComposeResult> {
   const {
     layout,
     dbs,
@@ -88,7 +100,8 @@ export async function composeBoardMosaic(
     background,
   } = opts
   const parsed = parseBoard(layout)
-  if (parsed.records.length === 0 || boardWidth <= 0) return null
+  if (parsed.records.length === 0) return { ok: false, failure: "no-pins" }
+  if (boardWidth <= 0) return { ok: false, failure: "degenerate" }
 
   // What the board is rendering with right now: the fold is measured
   // against THIS grid (it is a property of the window the user is looking
@@ -100,16 +113,11 @@ export async function composeBoardMosaic(
     parsed.highWater
   )
 
-  // Canvas guard: the geometry is pure math, so an oversized request is
-  // resolved by re-solving at a smaller width — never by allocating a
-  // canvas the browser would hand back blank. The loop is a formality
-  // (one pass is exact up to rounding); it terminates on the iteration
-  // count either way.
-  let width = Math.max(1, Math.round(opts.targetWidth))
-  let clampedWidth: number | null = null
-  let solved: ReturnType<typeof mosaicGeometry> = null
-  for (let i = 0; i < 4; i++) {
-    solved = mosaicGeometry({
+  // Canvas guard: an oversized request is re-solved smaller, and a request
+  // that never fits fails here rather than allocating (see
+  // solveWithinCanvasLimits).
+  const solved = solveWithinCanvasLimits(opts.targetWidth, (width) =>
+    mosaicGeometry({
       records: parsed.records,
       grid: effectiveGrid(parsed.grid, liveScale * (width / boardWidth)),
       layoutWidth: width,
@@ -117,20 +125,15 @@ export async function composeBoardMosaic(
       extent,
       visibleRows,
     })
-    if (!solved) return null
-    const factor = canvasClampFactor(solved.width, solved.height)
-    if (factor >= 1) break
-    width = Math.max(1, Math.floor(width * factor * 0.999))
-    clampedWidth = width
-  }
-  if (!solved) return null
-  const geo = solved
+  )
+  if (!solved.ok) return { ok: false, failure: solved.failure }
+  const { geometry: geo, layoutWidth: width, clampedWidth } = solved
 
   const canvas = document.createElement("canvas")
   canvas.width = geo.width
   canvas.height = geo.height
   const ctx = canvas.getContext("2d")
-  if (!ctx) return null
+  if (!ctx) return { ok: false, failure: "no-canvas" }
   ctx.fillStyle = background
   ctx.fillRect(0, 0, geo.width, geo.height)
 
@@ -165,5 +168,8 @@ export async function composeBoardMosaic(
   }
 
   const blob = await canvasToBlob(canvas, MOSAIC_MIME, JPEG_QUALITY)
-  return { blob, width: geo.width, height: geo.height, clampedWidth }
+  return {
+    ok: true,
+    mosaic: { blob, width: geo.width, height: geo.height, clampedWidth },
+  }
 }
