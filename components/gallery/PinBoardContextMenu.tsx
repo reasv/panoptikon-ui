@@ -1,7 +1,7 @@
 import type { LayoutItem } from "react-grid-layout";
 import { ContextMenuCheckboxItem, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger } from "../ui/context-menu";
 import { useGalleryPinAutoCrop, useGalleryPinSelectionCrop } from "@/lib/state/gallery";
-import { BoardGlobalMenuItems, DESTRUCTIVE_MENU_ITEM, contextMenuKit } from "./PinboardGlobalMenu";
+import { BoardGlobalMenuItems, contextMenuKit } from "./PinboardGlobalMenu";
 import type { PinboardBoardApi } from "@/lib/state/pinboardBoardApi";
 import { CropRect, PinLock, PinOrientation, TrimRange, isIdentityOrientation } from "@/lib/pinboardCrop";
 import { GridParams } from "@/lib/pinboardGrid";
@@ -198,8 +198,7 @@ export function PinBoardCtx({
             <ContextMenuItem onClick={onDuplicate}>Duplicate</ContextMenuItem>
             {/* Removes THIS copy, not the first record matching the sha256 —
                 the layout key carries the record offset. Same weight as the
-                hover overlay's unpin button (a single click there too), so
-                it skips the destructive styling the bulk removals carry. */}
+                hover overlay's unpin button (a single click there too). */}
             <ContextMenuItem onClick={onUnpin}>Unpin</ContextMenuItem>
             {/* Layout locks for this pin; the same toggles exist as overlay
                 buttons. Anchored = position+size fixed (RGL static, an
@@ -348,23 +347,20 @@ export function PinBoardCtx({
                                 Clear Selection
                                 <ContextMenuShortcut>Esc</ContextMenuShortcut>
                             </ContextMenuItem>
-                            {/* The destructive pair sits last, below Clear
-                                Selection. No confirm dialog: one record
-                                write is one history entry, so the browser
-                                Back button restores the removed pins (the
-                                toast says so). The shortcut label needs the
-                                destructive foreground — its default muted
-                                tone disappears on the filled row. */}
+                            {/* The removal pair sits last, below Clear
+                                Selection. No confirm dialog and no
+                                destructive styling: one record write is one
+                                history entry, so the browser Back button
+                                restores the removed pins (the toast says
+                                so), and a filled red row would advertise a
+                                finality these verbs don't have. The
+                                separator alone does the fencing. */}
                             <ContextMenuSeparator />
-                            <ContextMenuItem className={DESTRUCTIVE_MENU_ITEM}
-                                onClick={() => onRemove(selected)}>
+                            <ContextMenuItem onClick={() => onRemove(selected)}>
                                 Remove Selected
-                                <ContextMenuShortcut className="text-destructive-foreground/80">
-                                    Del
-                                </ContextMenuShortcut>
+                                <ContextMenuShortcut>Del</ContextMenuShortcut>
                             </ContextMenuItem>
-                            <ContextMenuItem className={DESTRUCTIVE_MENU_ITEM}
-                                onClick={() => onRemoveAllBut(selected)}>
+                            <ContextMenuItem onClick={() => onRemoveAllBut(selected)}>
                                 Remove All but Selected
                             </ContextMenuItem>
                         </ContextMenuSubContent>

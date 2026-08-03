@@ -50,7 +50,6 @@ import { usePinboardCarry } from '@/lib/state/pinboardCarry'
 import { HoleTargetOverlay } from './HoleTargetOverlay'
 import { PinboardBoardApi, usePinboardBoardApi } from '@/lib/state/pinboardBoardApi'
 import { PinboardFullscreenBar } from './PinboardMenu'
-import { DESTRUCTIVE_MENU_ITEM } from './PinboardGlobalMenu'
 
 const ALL_RESIZE_HANDLES: LayoutItem["resizeHandles"] =
     ["s", "w", "e", "n", "sw", "nw", "se", "ne"]
@@ -101,10 +100,13 @@ interface SelectionVerb {
     min?: number
     exact?: number
     noAnchors?: boolean
-    // Removes pins: rendered with the destructive treatment on every
-    // surface, and grouped last (the bar keeps BAR_ORDER, so a pinned
-    // removal lands at the end of the pinned run)
-    destructive?: boolean
+    // Removes pins: grouped last on every surface (the bar keeps
+    // BAR_ORDER, so a pinned removal lands at the end of the pinned run).
+    // Position only — these rows look like every other verb. They carry no
+    // destructive treatment because they are not destructive: one record
+    // write is one history entry, so the browser Back button restores the
+    // board whole, and a filled red row overstates an undoable edit.
+    removal?: boolean
     // Keyboard equivalent, shown on the dropdown row the way the context
     // menu's twin already shows it — the two surfaces offer the same verb
     // and must advertise the same key
@@ -200,12 +202,12 @@ const SELECTION_VERBS: SelectionVerb[] = [
     // write is one history entry, so the browser Back button restores the
     // board whole — the toast says so.
     {
-        id: "removeSel", label: "Remove Selected", icon: Trash2, min: 1, destructive: true,
+        id: "removeSel", label: "Remove Selected", icon: Trash2, min: 1, removal: true,
         shortcut: "Del",
         title: "Remove the selected items from the board (Del; the browser Back button restores them)",
     },
     {
-        id: "removeRest", label: "Remove All but Selected", icon: ListX, min: 1, destructive: true,
+        id: "removeRest", label: "Remove All but Selected", icon: ListX, min: 1, removal: true,
         title: "Remove every item that is NOT selected (the browser Back button restores them)",
     },
 ]
@@ -2413,7 +2415,6 @@ function SelectionToolbar({
             // except with exactly two items selected). The row just looks
             // disabled and ignores selects instead.
             <DropdownMenuItem key={v.id} title={v.title}
-                className={cn(v.destructive && DESTRUCTIVE_MENU_ITEM)}
                 onSelect={(e) => {
                     // A select that originated on the pin toggle is never a
                     // verb invocation — Radix fires select from pointerup,
@@ -2435,21 +2436,13 @@ function SelectionToolbar({
                 </span>
                 {/* Shortcut label takes over the row's ml-auto, so the pin
                     toggle keeps its place at the far right instead of the
-                    two auto margins splitting the free space between them.
-                    The muted default tone disappears on a filled
-                    destructive row — same override as the context menu's
-                    twin row. */}
+                    two auto margins splitting the free space between them. */}
                 {v.shortcut && (
-                    <DropdownMenuShortcut className={cn(
-                        v.destructive && "text-destructive-foreground/80",
-                    )}>
-                        {v.shortcut}
-                    </DropdownMenuShortcut>
+                    <DropdownMenuShortcut>{v.shortcut}</DropdownMenuShortcut>
                 )}
                 <PinToggle
                     isPinned={pinned.includes(v.id)}
                     onToggle={() => togglePin(v.id)}
-                    onDestructive={v.destructive}
                     className={v.shortcut ? "ml-2" : undefined}
                 />
             </DropdownMenuItem>
@@ -2488,7 +2481,7 @@ function SelectionToolbar({
                     </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-64">
-                    {SELECTION_VERBS.filter(v => !v.destructive).map(verbRow)}
+                    {SELECTION_VERBS.filter(v => !v.removal).map(verbRow)}
                     {/* The region presets live in one submenu (seven
                         rarely-simultaneous targets would flood the list);
                         its pin toggle puts a menu-opening icon button on
@@ -2523,7 +2516,7 @@ function SelectionToolbar({
                     {/* The removals close the list, fenced off from the
                         verbs that only rearrange what's there */}
                     <DropdownMenuSeparator />
-                    {SELECTION_VERBS.filter(v => v.destructive).map(verbRow)}
+                    {SELECTION_VERBS.filter(v => v.removal).map(verbRow)}
                 </DropdownMenuContent>
             </DropdownMenu>
             {BAR_ORDER.filter(id => pinned.includes(id)).map(id => {
@@ -2553,14 +2546,11 @@ function SelectionToolbar({
                 if (!v) return null
                 return (
                     <button key={id}
-                        // A pinned removal keeps the destructive fill it has
-                        // in the menus — the bar's own white pill is not a
-                        // theme surface, but the destructive tokens carry
-                        // their own foreground, so they read in both themes
+                        // A pinned removal is an ordinary bar button: it is
+                        // undoable, and a filled red pill on the bar shouts
+                        // louder than the verb deserves
                         className={cn(btn, v.id === "hole" && holeActive
-                            && "bg-blue-100 text-blue-700 hover:bg-blue-200",
-                            v.destructive
-                            && "bg-destructive text-destructive-foreground hover:bg-destructive/90")}
+                            && "bg-blue-100 text-blue-700 hover:bg-blue-200")}
                         disabled={verbDisabled(v)}
                         onClick={() => onVerb(v.id)} title={v.title}>
                         <v.icon className="w-4 h-4" />
@@ -2599,29 +2589,19 @@ function SelectionToolbar({
 // a same-glyph color change alone reads as enabled either way. All three
 // pointer phases are stopped so toggling never selects the row or closes
 // the menu (Radix fires item select from pointerup via item.click()).
-// On a destructive row (filled bg-destructive) the fixed grey/blue tones
-// have no relation to the surface under them, so onDestructive switches
-// the box to currentColor — which the row has already set to
-// text-destructive-foreground, the one tone guaranteed to read on that
-// fill in both themes. The pinned box inverts it: filled with the
-// foreground, its check drawn in the row's own destructive colour.
 function PinToggle({
     isPinned,
     onToggle,
-    onDestructive = false,
     className,
 }: {
     isPinned: boolean
     onToggle: () => void
-    onDestructive?: boolean
     className?: string
 }) {
     return (
         <button
             data-pin-toggle
-            className={cn("ml-auto rounded p-0.5",
-                onDestructive ? "hover:bg-white/20" : "hover:bg-gray-200",
-                className)}
+            className={cn("ml-auto rounded p-0.5 hover:bg-gray-200", className)}
             title={isPinned
                 ? "Shown on the toolbar — click to remove"
                 : "Show directly on the toolbar"}
@@ -2638,19 +2618,10 @@ function PinToggle({
             <span className={cn(
                 "flex h-4 w-4 items-center justify-center rounded border",
                 isPinned
-                    ? onDestructive
-                        // bg-current, NOT a colour set on this same span:
-                        // currentColor resolves against the element's own
-                        // `color`, so tinting the check here would tint the
-                        // fill with it too. The check gets its colour below.
-                        ? "border-current bg-current"
-                        : "border-blue-600 bg-blue-600 text-white"
-                    : onDestructive
-                        ? "border-current text-transparent"
-                        : "border-gray-400 text-transparent hover:border-gray-600",
+                    ? "border-blue-600 bg-blue-600 text-white"
+                    : "border-gray-400 text-transparent hover:border-gray-600",
             )}>
-                <Check className={cn("w-3 h-3",
-                    isPinned && onDestructive && "text-destructive")} />
+                <Check className="w-3 h-3" />
             </span>
         </button>
     )
