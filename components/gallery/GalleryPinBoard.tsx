@@ -248,11 +248,27 @@ export function PinBoard(
     const [cropKey, setCropKey] = useState<string | null>(null)
     // True while the crop-mode item's box is being resized via a grid handle
     const [cropResizing, setCropResizing] = useState(false)
-    // Scroll-range floor held for the duration of that gesture, in px:
-    // the grid-area content height captured at resize start, rendered as
-    // an empty spacer so a shrinking box can't shrink the ScrollArea's
-    // scroll range mid-drag (see onResizeStart)
-    const [cropFreezeHeight, setCropFreezeHeight] = useState<number | null>(null)
+    // Scroll-range floor held for the duration of ANY drag/resize
+    // gesture, in px: the grid-area content height captured at gesture
+    // start, rendered as an empty spacer below. RGL measures gesture
+    // positions against the grid container's on-screen rect (the item's
+    // offsetParent), so if a gesture shrinks the lowest item — pulling a
+    // south edge up, dragging the bottom item upward — the grid's height
+    // drop shrinks the ScrollArea's scroll range, the browser clamps
+    // scrollTop, the container shifts on screen, and a STATIONARY
+    // pointer reads as having moved further: each increment of shrink
+    // clamps more scroll and feeds itself, multiplying a small pull into
+    // a runaway jump. Holding the scroll range for the gesture's
+    // duration breaks the loop; the freed space collapses at release.
+    const [gestureFreezeHeight, setGestureFreezeHeight] = useState<number | null>(null)
+    const freezeScrollRange = () => {
+        const areaEl = gridAreaRef.current
+        const gridEl = areaEl?.querySelector<HTMLElement>(".react-grid-layout")
+        setGestureFreezeHeight(Math.max(
+            areaEl?.clientHeight ?? 0,
+            gridEl?.offsetHeight ?? 0,
+        ) || null)
+    }
     // Getter for the crop-mode image's viewport extent, set by its CropView
     const cropImageExtentRef = useRef<(() => CropGeometry | null) | null>(null)
     // Width of the grid area, observed by RGL's own hook (the successor of
@@ -1755,15 +1771,15 @@ export function PinBoard(
                 )
                     }`}
             >
-                {cropResizing && cropFreezeHeight !== null && (
+                {gestureFreezeHeight !== null && (
                     // Holds the ScrollArea's scroll range at its
-                    // gesture-start value while a crop-window edge is
-                    // dragged (see onResizeStart). Zero width, so it can
-                    // never affect horizontal layout or catch events.
+                    // gesture-start value while any drag/resize gesture
+                    // runs (see gestureFreezeHeight). Zero width, so it
+                    // can never affect horizontal layout or catch events.
                     <div
                         aria-hidden
                         className="absolute top-0 left-0 w-0 pointer-events-none"
-                        style={{ height: cropFreezeHeight }}
+                        style={{ height: gestureFreezeHeight }}
                     />
                 )}
                 {showGrid && (
@@ -1826,6 +1842,10 @@ export function PinBoard(
                             undefined, undefined, echo ? "replace" : undefined,
                             manual, true)
                     }}
+                    // Drags shrink the grid too (compaction pulls the rest
+                    // up when the bottom item moves), so they get the same
+                    // scroll-range freeze as resizes
+                    onDragStart={() => freezeScrollRange()}
                     // The crop-mode exemption: there the drag/resize IS the
                     // crop edit, not a layout statement — it composes with
                     // auto-layout (the manual crop survives as the base of
@@ -1833,6 +1853,7 @@ export function PinBoard(
                     onDragStop={() => {
                         gestureRef.current = true
                         if (cropKey === null) markManualGesture()
+                        setGestureFreezeHeight(null)
                     }}
                     // Size of the grey preview box (10x10 in v1 units)
                     droppingItem={{ i: '__preview', x: 0, y: 0, w: Math.round(10 * sx), h: Math.round(10 * sy) }}
@@ -1857,23 +1878,11 @@ export function PinBoard(
                     // non-static layouts like ours.
                     compactor={cropKey !== null ? noCompactor : fastVerticalCompactor}
                     onResizeStart={(_currentLayout, oldItem, newItem, _placeholder, e, node) => {
+                        // Every resize freezes the scroll range (see
+                        // gestureFreezeHeight), crop-mode or not
+                        freezeScrollRange()
                         if (!oldItem || !newItem || oldItem.i !== cropKey) return
                         setCropResizing(true)
-                        // Freeze the scroll range for the gesture (the
-                        // spacer below): shrinking the lowest item's south
-                        // edge shrinks the grid, the ScrollArea clamps
-                        // scrollTop, and the board slides down under the
-                        // held pointer — the dragged edge then can't gain
-                        // on a target that retreats with it. Growth still
-                        // extends past the spacer normally.
-                        {
-                            const areaEl = gridAreaRef.current
-                            const gridEl = areaEl?.querySelector<HTMLElement>(".react-grid-layout")
-                            setCropFreezeHeight(Math.max(
-                                areaEl?.clientHeight ?? 0,
-                                gridEl?.offsetHeight ?? 0,
-                            ) || null)
-                        }
                         // In crop mode the box is the crop window: clamp its
                         // growth at the image's edges. A window past the image
                         // frames dead space the stored crop (box∩image) cannot
@@ -1920,7 +1929,7 @@ export function PinBoard(
                         gestureRef.current = true
                         if (cropKey === null) markManualGesture()
                         setCropResizing(false)
-                        setCropFreezeHeight(null)
+                        setGestureFreezeHeight(null)
                         if (newItem) {
                             newItem.maxW = undefined
                             newItem.maxH = undefined
