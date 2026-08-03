@@ -126,8 +126,12 @@ export function BoardGlobalMenuItems({
     const [autoLayoutCrop, setAutoLayoutCrop] = useGalleryPinAutoCrop()
     const [selectionCrop] = useGalleryPinSelectionCrop()
     // Gravity rides in the layout token rather than in a board flag, so it
-    // comes from the parsed board and is written through the same path
-    const { float, setFloat } = usePinBoard()
+    // comes from the parsed board and is written through the same path.
+    // With no records there is no token to carry the switch — setFloat
+    // no-ops and !float would claim gravity is on however the user's
+    // creation default reads — so the toggle is disabled until a first pin.
+    const { float, setFloat, records } = usePinBoard()
+    const hasPins = records.length > 0
     const { toast } = useToast()
     const runVerb = useRunVerb()
     const { Item, CheckboxItem, Separator, Sub, SubTrigger, SubContent, Shortcut } = kit
@@ -156,9 +160,14 @@ export function BoardGlobalMenuItems({
                 that like any other layout write. */}
             <CheckboxItem
                 checked={!float}
+                disabled={!hasPins}
                 onCheckedChange={(checked) => setFloat(!checked)}
             >
-                <span title="Items settle upward automatically">Gravity</span>
+                <span title={hasPins
+                    ? "Items settle upward automatically"
+                    : "Pin something first — gravity is stored in the board layout"}>
+                    Gravity
+                </span>
             </CheckboxItem>
             {/* When on, the board re-runs Fill Viewport (all items) whenever
                 a pin is added, removed or duplicated, or the board viewport

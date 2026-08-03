@@ -24,6 +24,7 @@ export function PinBoardCtx({
     orients,
     highWater,
     float,
+    cropKey,
     cropMode,
     hasCrop,
     onToggleCrop,
@@ -69,6 +70,10 @@ export function PinBoardCtx({
     // Gravity off (the layout token's float switch): the size and rotation
     // verbs this menu owns resolve their own overlaps then
     float: boolean,
+    // The BOARD's open crop item (cropMode below is only whether it is this
+    // pin): an overlap resolution run for another pin's verb has to hold it
+    // still, so the crop window never moves mid-session
+    cropKey: string | null,
     cropMode: boolean,
     hasCrop: boolean,
     onToggleCrop: () => void,
@@ -138,7 +143,7 @@ export function PinBoardCtx({
         hasAnchors,
         belowViewportKeys,
     } = usePinboardLayoutActions({
-        layout, crops, autoCrops, locks, orients, highWater, float,
+        layout, crops, autoCrops, locks, orients, highWater, float, cropKey,
         dbs, grid, pinboardRef, onLayoutChange,
         layoutAutoCrop: autoLayoutCrop,
         selectionAutoCrop: selectionCrop,

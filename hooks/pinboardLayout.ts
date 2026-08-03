@@ -66,6 +66,7 @@ export function usePinboardLayoutActions({
     orients = NO_ORIENTS,
     highWater = 0,
     float = false,
+    cropKey = null,
     layoutAutoCrop = false,
     selectionAutoCrop = true,
     dbs,
@@ -92,6 +93,11 @@ export function usePinboardLayoutActions({
     // running, so the verbs that grow an item's footprint must resolve the
     // collisions they create themselves — see resolveGrowth.
     float?: boolean,
+    // The board's open crop item, if any. A verb fired from another pin
+    // mid-session must never move the crop window, so with gravity off it
+    // enters the overlap resolution as an immovable wall (with gravity on
+    // the board's own crop-mode compaction does that job).
+    cropKey?: string | null,
     // The standing auto-crop settings, one per verb class: layoutAutoCrop
     // (the pbc URL flag) governs the board-layout family — fills, reroll,
     // refit, reflow, rows, justify, grow — and selectionAutoCrop (the psc
@@ -147,6 +153,10 @@ export function usePinboardLayoutActions({
     // The changed boxes are clamped into the grid first: RGL's own
     // correctBounds would otherwise slide an over-wide box left AFTER this
     // pass, straight into a neighbour nothing would then move.
+    // An open crop session pins its own item: with gravity on the crop-mode
+    // block in GalleryPinBoard's onLayoutChange walls it off for the same
+    // reason, and with gravity off that block is skipped, so the wall has to
+    // come from here.
     function resolveGrowth(newLayout: LayoutItem[], changedKeys: string[]): LayoutItem[] {
         if (!float) return newLayout
         const changed = new Set(changedKeys)
@@ -156,7 +166,7 @@ export function usePinboardLayoutActions({
             const x = Math.max(0, Math.min(l.x, grid.columns - w))
             return w === l.w && x === l.x ? l : { ...l, x, w }
         })
-        return resolveOverlapsDown(clamped, changed)
+        return resolveOverlapsDown(clamped, changed, cropKey ? [cropKey] : undefined)
     }
 
     const isLocked = (key: string) => !!locks[key]

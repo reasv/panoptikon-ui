@@ -642,7 +642,9 @@ export function PinBoard(
         // Skipped entirely while gravity is off: there the compactor prop is
         // off for the whole board, not just for the crop session, and a verb
         // write that settled anyway would be the one place the board still
-        // fell upward.
+        // fell upward. The verbs resolve their own overlaps there instead
+        // (resolveGrowth in pinboardLayout), and the crop item is threaded
+        // into that pass as a wall — same invariant, other mechanism.
         if (cropKey !== null && !fromRgl && !float) {
             // compact() clones its input and returns the compacted clone,
             // so the caller's layout — often the render memo's array itself
@@ -928,6 +930,7 @@ export function PinBoard(
         belowViewportKeys,
     } = usePinboardLayoutActions({
         layout, crops, autoCrops, locks: itemLocks, orients, highWater, float,
+        cropKey,
         dbs, grid,
         layoutAutoCrop: autoLayoutCrop,
         selectionAutoCrop: selectionCrop,
@@ -2258,6 +2261,7 @@ export function PinBoard(
                                     orientation={orients[i] ?? null}
                                     lockBadgesVisible={lockBadgesVisible}
                                     onLockChange={(lock) => setLockForKeys([i], lock)}
+                                    cropKey={cropKey}
                                     cropMode={cropKey === i}
                                     boxResizing={cropKey === i && cropResizing}
                                     imageExtentRef={cropImageExtentRef}
@@ -2684,6 +2688,7 @@ function PinBoardPin({
     orientation,
     lockBadgesVisible,
     onLockChange,
+    cropKey,
     cropMode,
     boxResizing,
     imageExtentRef,
@@ -2732,6 +2737,10 @@ function PinBoardPin({
     // shown on every locked pin so locks are visible at a glance
     lockBadgesVisible: boolean
     onLockChange: (lock: PinLock) => void
+    // The board's open crop item, whichever pin it is; cropMode is just
+    // whether that is this one. The context menu's layout verbs need the
+    // board-wide key to hold the crop window still (see resolveGrowth).
+    cropKey: string | null
     cropMode: boolean
     boxResizing: boolean
     imageExtentRef?: React.MutableRefObject<(() => CropGeometry | null) | null>
@@ -2953,6 +2962,7 @@ function PinBoardPin({
                     orients={orients}
                     highWater={highWater}
                     float={float}
+                    cropKey={cropKey}
                     cropMode={cropMode}
                     hasCrop={!!(crop || autoCrop)}
                     onToggleCrop={onCropModeToggle}

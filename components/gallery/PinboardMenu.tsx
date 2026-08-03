@@ -404,8 +404,11 @@ export function PinboardFullscreenBar() {
     const [showGrid, setShowGrid] = useGalleryPinGrid()
     const [autoLayout] = useGalleryPinAutoLayout()
     const [autoLayoutCrop, setAutoLayoutCrop] = useGalleryPinAutoCrop()
-    // Gravity is token state, not a board flag: read off the parsed board
-    const { float, setFloat } = usePinBoard()
+    // Gravity is token state, not a board flag: read off the parsed board.
+    // An empty board has no token, so setFloat can't store the switch and
+    // float is not the board's answer — the toggle stays disabled there.
+    const { float, setFloat, records } = usePinBoard()
+    const hasPins = records.length > 0
     const boardApi = usePinboardBoardApi(s => s.api)
     const { save, pbid, board, openLibrary, openHistory, openRename, dialogs } =
         usePinboardDialogs()
@@ -514,12 +517,17 @@ export function PinboardFullscreenBar() {
                     </ToolbarButton>
                     {/* Gravity: items settle upward automatically. Lives in
                         the layout token, so this is a layout write — Back
-                        undoes the settle it produces. */}
+                        undoes the settle it produces. An empty board has no
+                        token to write it to (and no state to report), so
+                        the button waits for the first pin. */}
                     <ToolbarButton
-                        title={float
-                            ? "Gravity off: items stay where you put them. Click to turn on and settle the board upward"
-                            : "Gravity on: items settle upward automatically. Click to turn off"}
-                        active={!float}
+                        title={!hasPins
+                            ? "Pin something first — gravity is stored in the board layout"
+                            : float
+                                ? "Gravity off: items stay where you put them. Click to turn on and settle the board upward"
+                                : "Gravity on: items settle upward automatically. Click to turn off"}
+                        active={hasPins && !float}
+                        disabled={!hasPins}
                         onClick={() => setFloat(!float)}
                     >
                         <Magnet className="h-5 w-5" />

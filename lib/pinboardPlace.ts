@@ -78,8 +78,9 @@ export function placeNewPin(
 // nothing separates them, so the copy has to be placed explicitly at the
 // free cell NEAREST the original — the same brute-force nearest-slot scan
 // the size-locked travellers of the pack verbs use, ties breaking top to
-// bottom then left to right. The scan window reaches one item-height past
-// the deepest occupied row, so a free slot always exists.
+// bottom then left to right. The scan runs from row 0 down to the deepest
+// occupied BOTTOM edge — a row no existing pin can reach into, so it is
+// always free and the scan always has an answer.
 export function placeNearest(
   records: string[],
   grid: GridParams,
@@ -92,16 +93,19 @@ export function placeNearest(
   const pinW = Math.max(1, Math.round(w))
   const pinH = Math.max(1, Math.round(h))
   const maxX = Math.max(0, grid.columns - pinW)
-  const maxY = Math.max(...rects.map((r) => r.y + r.h))
-  let best: { x: number; y: number; d: number } | null = null
+  const maxY = Math.max(0, ...rects.map((r) => r.y + r.h))
+  // Seeded with the last row of the scan, which no rect can overlap (every
+  // rect ends at or above it): the worst-case slot is a real free slot, so
+  // the scan can only improve on it and there is no null case to handle.
+  let best = { x: 0, y: maxY, d: Infinity }
   for (let y = 0; y <= maxY; y++) {
     for (let x = 0; x <= maxX; x++) {
       const d = (x - aim.x) ** 2 + (y - aim.y) ** 2
-      if (best && d >= best.d) continue
+      if (d >= best.d) continue
       const slot = { x, y, w: pinW, h: pinH }
       if (rects.some((r) => overlaps(slot, r))) continue
       best = { x, y, d }
     }
   }
-  return best ? { x: best.x, y: best.y } : { x: aim.x, y: maxY }
+  return { x: best.x, y: best.y }
 }

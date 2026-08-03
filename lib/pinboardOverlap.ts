@@ -10,11 +10,16 @@
 // lands on), and nothing ever settles back up. Settling up is precisely the
 // behavior the user turned off.
 //
-// The changed items themselves never move — the verb's whole point is the
-// footprint it just wrote — and statics (anchored pins) are immovable walls:
-// they were not overlapped before the verb (an anchor is an obstacle every
-// layout packs around), so they only ever appear in the cascade's path, and
-// there they are pushed PAST, not through.
+// Two kinds of box never move. Statics (anchored pins) are immovable walls,
+// and so are the explicitly HELD keys — the open crop window, which a verb
+// fired from another pin must never shove out from under the session. Both
+// are pushed PAST, never through, by anything that lands on them, INCLUDING
+// a changed box: that mirrors what gravity-on does, where the compactor
+// moves the non-static side of such a collision.
+//
+// The changed boxes themselves are the verb's whole point, so they keep
+// their x always and their y wherever they can: only a wall, or an earlier
+// changed box, can displace one.
 
 import type { LayoutItem } from "react-grid-layout"
 
@@ -25,6 +30,16 @@ interface Rect {
   h: number
 }
 
+// A placed box the cascade has to reckon with. HOT ones start a cascade —
+// they are the changed footprints and the items already displaced by them —
+// while cold ones (walls, and movers that stayed put) only block a box that
+// is already on its way down. That distinction is what confines the cascade
+// to the changed footprint: an item nothing hot ever touches keeps its
+// position, pre-existing overlaps between untouched items included.
+interface Obstacle extends Rect {
+  hot: boolean
+}
+
 function overlaps(a: Rect, b: Rect): boolean {
   return (
     a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
@@ -32,41 +47,72 @@ function overlaps(a: Rect, b: Rect): boolean {
 }
 
 /**
- * Push every item colliding with a changed item down until nothing overlaps.
+ * Push what the changed footprints hit down until nothing overlaps.
  * Returns the input array itself when nothing had to move, so a verb that
  * created no collision commits exactly what it computed.
  *
- * Order matters and is fixed up front: the immovables (changed items and
- * statics) are obstacles from the start — a static further down the board
- * must block a cascade that reaches it, whatever the processing order — and
- * the movable items are then placed topmost-first, in their ORIGINAL
- * vertical order. That order is what makes one pass enough: when an item is
- * placed, everything that could push it down (anything originally above it,
- * plus every immovable) already has its final position.
+ * The pass is ordered, and one pass is enough because of the order:
+ *
+ *  - Walls (statics and `heldKeys`) are obstacles from the start and never
+ *    move, whatever the processing order.
+ *  - The changed items are placed next, topmost-first (y, then x, then key
+ *    for a total order). Each keeps its x and its y unless it overlaps a
+ *    wall or an already-placed changed item, in which case it drops past
+ *    it. So the topmost of two changed items that grew into each other
+ *    keeps its place and the later one moves — deterministically, without
+ *    either of them being left overlapping.
+ *  - The movers follow, in their ORIGINAL vertical order, and only those
+ *    reached by the cascade move: a mover starts falling only when it
+ *    overlaps a changed box or an already-pushed mover, and once falling it
+ *    clears every obstacle in its way, walls included. Everything else is
+ *    returned untouched, so an overlap that was already in the layout
+ *    between two items the change never reaches survives the pass — the
+ *    resolver separates what the verb collided, not what it found.
+ *
+ * The output therefore contains no overlap the resolver could have caused:
+ * every box it placed clears every box placed before it.
  */
 export function resolveOverlapsDown(
   layout: LayoutItem[],
-  changedKeys: Iterable<string>
+  changedKeys: Iterable<string>,
+  // Extra immovable keys for this write. The board passes the open crop
+  // item: a verb run on another pin mid-session must not reflow the crop
+  // window (see the crop-mode note in GalleryPinBoard's onLayoutChange).
+  heldKeys?: Iterable<string>
 ): LayoutItem[] {
   const changed = new Set(changedKeys)
-  const immovable = (l: LayoutItem) => changed.has(l.i) || l.static === true
-  const obstacles: Rect[] = []
+  const held = heldKeys ? new Set(heldKeys) : null
+  const isWall = (l: LayoutItem) => l.static === true || !!held?.has(l.i)
+  const obstacles: Obstacle[] = []
+  const changedItems: LayoutItem[] = []
   const movers: LayoutItem[] = []
   for (const l of layout) {
-    if (immovable(l)) obstacles.push({ x: l.x, y: l.y, w: l.w, h: l.h })
+    // Held wins over changed: the invariant is that the crop window does
+    // not move, and a verb that resized it wrote w/h, not x/y.
+    if (isWall(l)) obstacles.push({ x: l.x, y: l.y, w: l.w, h: l.h, hot: false })
+    else if (changed.has(l.i)) changedItems.push(l)
     else movers.push(l)
   }
-  // Stable sort on the original geometry: top to bottom, then left to right
-  movers.sort((a, b) => a.y - b.y || a.x - b.x)
-  const moved = new Map<string, number>()
-  for (const l of movers) {
+  // Stable sort on the original geometry: top to bottom, then left to
+  // right, then by key so equal boxes still have one fixed order.
+  const byRow = (a: LayoutItem, b: LayoutItem) =>
+    a.y - b.y || a.x - b.x || (a.i < b.i ? -1 : a.i > b.i ? 1 : 0)
+  changedItems.sort(byRow)
+  movers.sort(byRow)
+  // Drop a box until it clears every obstacle it must clear, then record it
+  // as an obstacle itself. `coldStart` false means every obstacle can
+  // displace it from the start (the changed boxes); true means only a hot
+  // one can set it in motion, after which everything blocks it (the
+  // movers). Each iteration lands the box on the bottom of the deepest
+  // obstacle it currently overlaps, so y strictly increases and no
+  // obstacle's bottom can be used twice; the guard is a bound, not an
+  // expected exit.
+  const settle = (l: LayoutItem, coldStart: boolean): number => {
     let y = l.y
-    // Each iteration clears the deepest obstacle currently overlapped, so
-    // at most one pass per obstacle can be needed; the bound is a guard, not
-    // an expected exit.
-    for (let guard = 0; guard <= obstacles.length; guard++) {
+    for (let guard = 0; guard <= obstacles.length + 1; guard++) {
       let bottom = -1
       for (const o of obstacles) {
+        if (coldStart && y === l.y && !o.hot) continue
         if (overlaps({ x: l.x, y, w: l.w, h: l.h }, o)) {
           bottom = Math.max(bottom, o.y + o.h)
         }
@@ -74,8 +120,18 @@ export function resolveOverlapsDown(
       if (bottom < 0) break
       y = bottom
     }
+    return y
+  }
+  const moved = new Map<string, number>()
+  for (const l of changedItems) {
+    const y = settle(l, false)
     if (y !== l.y) moved.set(l.i, y)
-    obstacles.push({ x: l.x, y, w: l.w, h: l.h })
+    obstacles.push({ x: l.x, y, w: l.w, h: l.h, hot: true })
+  }
+  for (const l of movers) {
+    const y = settle(l, true)
+    if (y !== l.y) moved.set(l.i, y)
+    obstacles.push({ x: l.x, y, w: l.w, h: l.h, hot: y !== l.y })
   }
   if (moved.size === 0) return layout
   return layout.map((l) => {
