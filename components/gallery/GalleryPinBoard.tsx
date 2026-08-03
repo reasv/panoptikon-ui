@@ -260,21 +260,27 @@ export function PinBoard(
     // pull into a runaway jump. Holding the height for the gesture's
     // duration breaks the loop.
     //
-    // The floor is a min-height on the grid-area wrapper (in-flow box
-    // height, so it extends the scroll range in every engine — an
-    // earlier absolutely-positioned spacer relied on abspos overflow
-    // reaching the Radix viewport's scrollable area, which is exactly
-    // the kind of propagation that varies with engine and intermediate
-    // boxes) plus, via the pinboard-freeze class and --pinboard-freeze
-    // variable, the same floor on .react-grid-layout itself so the
-    // board's visible bottom edge can't creep upward mid-gesture either
-    // (see globals.css). Release doesn't drop the floor instantly:
-    // releasing=true transitions the wrapper's min-height to 0 over
-    // 300ms, so the freed range collapses as a followable glide (the
-    // browser clamps scrollTop continuously along the way) instead of a
-    // snap fighting RGL's own 200ms container-height easing. Re-grabbing
-    // mid-glide re-captures the CURRENT rendered height, so successive
-    // adjustments never jump.
+    // The floor is a min-height on the .react-grid-layout element
+    // itself, applied through the pinboard-freeze class and the
+    // --pinboard-freeze variable stamped on the wrapper (see
+    // globals.css). The grid is the wrapper's in-flow child whose height
+    // already defines the scroll range at rest, so flooring it holds the
+    // range in every engine (an earlier absolutely-positioned spacer
+    // relied on abspos overflow reaching the Radix viewport's scrollable
+    // area — propagation that varies with engine and intermediate boxes)
+    // and pins the board's visible bottom edge at the same time. The
+    // floor must NOT be an inline min-height on the wrapper: the wrapper
+    // is a block inside the Radix ScrollArea's display:table inner div,
+    // and giving IT a min-height resets the viewport's scrollTop to 0
+    // outright — which shifted the grid rect by a full viewport at
+    // mousedown and made RGL collapse the grabbed item to its minimum
+    // before the pointer ever moved. Release doesn't drop the floor
+    // instantly: the pinboard-freeze-releasing class transitions the
+    // grid's min-height to 0 over 300ms, so the freed range collapses as
+    // a followable glide (the browser clamps scrollTop continuously
+    // along the way) instead of a snap fighting RGL's own 200ms
+    // container-height easing. Re-grabbing mid-glide re-captures the
+    // CURRENT rendered height, so successive adjustments never jump.
     const [gestureFreeze, setGestureFreeze] = useState<
         { h: number; releasing: boolean } | null>(null)
     const freezeScrollRange = () => {
@@ -1843,26 +1849,26 @@ export function PinBoard(
                     markPinboardExplicitPlacement()
                     pinItem.pinItem(sha256, r)
                 }}
-                // The gesture floor (see gestureFreeze): min-height beats
-                // the fixed height classes below, so during a gesture the
-                // wrapper's in-flow box — and with it the scroll range —
-                // can't shrink; the pinboard-freeze class extends the same
-                // floor to .react-grid-layout (globals.css). On release the
-                // min-height transitions to 0 and the browser walks
-                // scrollTop down with it, one followable glide.
+                // The gesture floor (see gestureFreeze): the wrapper only
+                // stamps the variable and the phase class — the min-height
+                // itself lives on .react-grid-layout via globals.css. Never
+                // move it onto this wrapper as an inline style: a
+                // min-height HERE (block inside the Radix viewport's
+                // display:table div) resets the viewport's scrollTop to 0.
+                // On release the grid's min-height transitions to 0 and the
+                // browser walks scrollTop down with it, one followable
+                // glide; the bubbled transitionend below ends the phase.
                 style={gestureFreeze ? {
-                    minHeight: gestureFreeze.releasing ? 0 : gestureFreeze.h,
-                    transition: gestureFreeze.releasing
-                        ? "min-height 300ms ease" : undefined,
                     ["--pinboard-freeze" as string]: `${gestureFreeze.h}px`,
                 } as React.CSSProperties : undefined}
                 onTransitionEnd={(e) => {
-                    if (e.target === e.currentTarget
-                        && e.propertyName === "min-height") {
+                    if (e.propertyName === "min-height"
+                        && e.target instanceof HTMLElement
+                        && e.target.classList.contains("react-grid-layout")) {
                         setGestureFreeze((f) => f?.releasing ? null : f)
                     }
                 }}
-                className={`relative grow ${rglSettling ? "rgl-mount-still " : ""}${gestureFreeze && !gestureFreeze.releasing ? "pinboard-freeze " : ""}${fs ? "h-[97vh]" : (
+                className={`relative grow ${rglSettling ? "rgl-mount-still " : ""}${gestureFreeze ? (gestureFreeze.releasing ? "pinboard-freeze-releasing " : "pinboard-freeze ") : ""}${fs ? "h-[97vh]" : (
                     variant === "grid" ?
                         // Grid host: gallery-without-thumbnails sizing, with
                         // the 48px update-ribbon offset the grid view

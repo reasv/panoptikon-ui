@@ -215,13 +215,23 @@
    scrollTop, the container's on-screen rect shifts, and RGL reads the
    shift as extra pointer movement — the runaway-resize loop), and must
    track growth instantly rather than through RGL's 200ms height easing
-   so the dragged edge stays under the pointer. The wrapper stamps
-   --pinboard-freeze and floors its own min-height inline (see
-   gestureFreeze in GalleryPinBoard); this rule extends the floor to the
-   grid element so the board's visible bottom edge holds still too. */
+   so the dragged edge stays under the pointer. The grid-area wrapper
+   stamps --pinboard-freeze and the phase class (see gestureFreeze in
+   GalleryPinBoard); the floor lives HERE, on the grid element — the
+   wrapper's own height already comes from this element's in-flow box,
+   and an inline min-height on the wrapper instead (a block inside the
+   Radix viewport's display:table div) resets the viewport's scrollTop
+   to 0, which is the mousedown-snap bug. On release the floor
+   transitions to 0 so the freed scroll range collapses as a followable
+   glide; the wrapper listens for the bubbled transitionend to end the
+   phase. */
 .pinboard-freeze .react-grid-layout {
   min-height: var(--pinboard-freeze);
   transition: none;
+}
+.pinboard-freeze-releasing .react-grid-layout {
+  min-height: 0;
+  transition: min-height 300ms ease;
 }
 
 /* Pinboard pin overlay fit: the overlay controls (pin/crop/select/find
