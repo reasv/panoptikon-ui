@@ -43,7 +43,7 @@ import {
 // without knowing about right-click. Radix keeps the two primitive sets
 // API-parallel, so one component takes whichever kit and the sections
 // cannot drift apart.
-interface MenuKit {
+export interface MenuKit {
     Item: React.ComponentType<{
         children?: React.ReactNode
         className?: string

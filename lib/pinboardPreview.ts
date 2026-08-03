@@ -22,22 +22,20 @@
 // fidelity for legible thumbnails — the deliberate choice here.
 // screenfulH still marks one save-time screenful measured from the top of
 // the (cropped) image, for consumers that want the above-the-fold cut.
+//
+// The cell mapping this draws with lives in pinboardGeometry.ts, and the
+// per-pin draw step (drawPin) is exported from here: the mosaic export
+// (pinboardMosaic.ts) is the same compositor at a chosen width, and the
+// two must not be able to drift into two different pictures of one board.
 
 import {
   PinOrientation,
-  composeCrops,
   isIdentityOrientation,
   orientedSize,
-  parseHField,
   sourceRect,
 } from "@/lib/pinboardCrop"
-import {
-  GridParams,
-  effectiveGrid,
-  gridScale,
-  parseBoard,
-  rowStep,
-} from "@/lib/pinboardGrid"
+import { effectiveGrid, gridScale, parseBoard } from "@/lib/pinboardGrid"
+import { PinPlacement, parsePlacements } from "@/lib/pinboardGeometry"
 import { computeRestGeometry } from "@/components/gallery/CropView"
 import { getFileURL } from "@/lib/utils"
 
@@ -49,7 +47,7 @@ export const PREVIEW_WIDTH = 1024
 export const CAPTURE_SCREENFULS = 2
 const WEBP_QUALITY = 0.82
 // Pin cards render with `rounded` (0.25rem); scaled into preview space.
-const PIN_CORNER_RADIUS_PX = 4
+export const PIN_CORNER_RADIUS_PX = 4
 
 export interface ComposedPreview {
   blob: Blob
@@ -57,17 +55,6 @@ export interface ComposedPreview {
   height: number
   /** One save-time screenful, in preview-image pixels. */
   screenfulH: number
-}
-
-interface PinPlacement {
-  sha256: string
-  // Cell rect in board pixels
-  left: number
-  top: number
-  width: number
-  height: number
-  crop: ReturnType<typeof composeCrops>
-  orient: PinOrientation | null
 }
 
 // Set up the canvas so a source-proportioned drawImage lands with its
@@ -106,54 +93,62 @@ function orientDraw(
   return o!.quarterTurns % 2 ? [0, 0, H, W] : [0, 0, W, H]
 }
 
-// react-grid-layout's cell-to-pixel mapping, as used by GalleryPinBoard
-function cellRect(
-  grid: GridParams,
-  boardWidth: number,
-  x: number,
-  y: number,
-  w: number,
-  h: number
-): { left: number; top: number; width: number; height: number } {
-  const colWidth =
-    (boardWidth - 2 * grid.padding - (grid.columns - 1) * grid.margin) /
-    grid.columns
-  return {
-    left: grid.padding + x * (colWidth + grid.margin),
-    top: grid.padding + y * rowStep(grid),
-    width: w * colWidth + (w - 1) * grid.margin,
-    height: h * grid.rowHeight + (h - 1) * grid.margin,
+// One pin onto the canvas, at a rect already in canvas coordinates: the
+// step both compositors share. `img` null (or a load failure the caller
+// turned into null) draws the placeholder tile instead of leaving a hole;
+// a loaded image with no intrinsic size draws nothing, which is what the
+// preview has always done. `cornerRadius` 0 draws square (seamless
+// mosaics, where rounded corners would punch holes in the tiling).
+export function drawPin(
+  ctx: CanvasRenderingContext2D,
+  p: PinPlacement,
+  img: HTMLImageElement | null,
+  cellLeft: number,
+  cellTop: number,
+  cellW: number,
+  cellH: number,
+  cornerRadius: number
+): void {
+  ctx.save()
+  if (cornerRadius > 0 && typeof ctx.roundRect === "function") {
+    ctx.beginPath()
+    ctx.roundRect(cellLeft, cellTop, cellW, cellH, cornerRadius)
+    ctx.clip()
   }
+
+  if (img) {
+    const nw = img.naturalWidth
+    const nh = img.naturalHeight
+    if (nw > 0 && nh > 0) {
+      const c = p.crop ?? { x: 0, y: 0, w: 1, h: 1 }
+      // Crops are stored in display space, so the fit runs on the
+      // ORIENTED dimensions — exactly as CropView computes it — while
+      // drawImage's source rect has to be mapped back to source space.
+      const [ow, oh] = orientedSize(nw, nh, p.orient)
+      const geo = computeRestGeometry(cellW, cellH, c, ow, oh)
+      const s = sourceRect(c, p.orient)
+      ctx.save()
+      const [dx, dy, dw, dh] = orientDraw(
+        ctx,
+        cellLeft + geo.visL,
+        cellTop + geo.visT,
+        geo.visW,
+        geo.visH,
+        p.orient
+      )
+      ctx.drawImage(img, s.x * nw, s.y * nh, s.w * nw, s.h * nh, dx, dy, dw, dh)
+      ctx.restore()
+    }
+  } else {
+    // Missing item (deleted from the index, network failure): a flat
+    // placeholder tile in the pin's spot rather than a hole.
+    ctx.fillStyle = "rgba(127, 127, 127, 0.35)"
+    ctx.fillRect(cellLeft, cellTop, cellW, cellH)
+  }
+  ctx.restore()
 }
 
-function parsePlacements(
-  records: string[],
-  grid: GridParams,
-  boardWidth: number
-): PinPlacement[] {
-  const placements: PinPlacement[] = []
-  for (let i = 0; i + 4 < records.length; i += 5) {
-    const [sha256, x, y, w, hField] = records.slice(i, i + 5)
-    if (sha256 === "__preview") continue
-    const { h, crop, autoCrop, orient } = parseHField(hField)
-    placements.push({
-      sha256,
-      ...cellRect(
-        grid,
-        boardWidth,
-        parseInt(x),
-        parseInt(y),
-        parseInt(w),
-        h
-      ),
-      crop: composeCrops(crop, autoCrop),
-      orient,
-    })
-  }
-  return placements
-}
-
-function loadImage(src: string): Promise<HTMLImageElement> {
+export function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image()
     img.onload = () => resolve(img)
@@ -162,15 +157,20 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   })
 }
 
-function canvasToWebP(canvas: HTMLCanvasElement): Promise<Blob> {
+export function canvasToBlob(
+  canvas: HTMLCanvasElement,
+  mime: string,
+  quality: number
+): Promise<Blob> {
   return new Promise((resolve, reject) => {
-    // toBlob falls back to PNG when the browser can't encode WebP; the
-    // gateway sniffs the actual format on serve, so that's fine.
+    // toBlob falls back to PNG when the browser can't encode the requested
+    // format; the gateway sniffs the actual format on serve, so that's fine
+    // for previews, and a download just gets a bigger file.
     canvas.toBlob(
       (blob) =>
         blob ? resolve(blob) : reject(new Error("canvas export failed")),
-      "image/webp",
-      WEBP_QUALITY
+      mime,
+      quality
     )
   })
 }
@@ -178,6 +178,18 @@ function canvasToWebP(canvas: HTMLCanvasElement): Promise<Blob> {
 /** The rendered pinboard grid element, when the board is on screen. */
 export function findBoardElement(): HTMLElement | null {
   return document.querySelector<HTMLElement>(".react-grid-layout.layout")
+}
+
+/**
+ * The board's scroll viewport, when the board is on screen: the element
+ * whose clientHeight the fill verbs measure the fold against (see
+ * usePinboardLayoutActions.foldRows — it is handed this same node as
+ * `pinboardRef`). Probed from the DOM rather than published through the
+ * board API because the export surfaces (tab chevron, fullscreen bar) also
+ * run with the board unmounted, exactly like findBoardElement.
+ */
+export function findBoardViewport(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("[data-pinboard-area]")
 }
 
 /**
@@ -261,63 +273,20 @@ export async function composeBoardPreview(
 
   for (let i = 0; i < visible.length; i++) {
     const p = visible[i]
-    const cellLeft = (p.left - cropLeft) * scale
-    const cellTop = (p.top - cropTop) * scale
-    const cellW = p.width * scale
-    const cellH = p.height * scale
-
-    ctx.save()
-    if (typeof ctx.roundRect === "function") {
-      ctx.beginPath()
-      ctx.roundRect(cellLeft, cellTop, cellW, cellH, PIN_CORNER_RADIUS_PX)
-      ctx.clip()
-    }
-
     const loaded = images[i]
-    if (loaded.status === "fulfilled") {
-      const img = loaded.value
-      const nw = img.naturalWidth
-      const nh = img.naturalHeight
-      if (nw > 0 && nh > 0) {
-        const c = p.crop ?? { x: 0, y: 0, w: 1, h: 1 }
-        // Crops are stored in display space, so the fit runs on the
-        // ORIENTED dimensions — exactly as CropView computes it — while
-        // drawImage's source rect has to be mapped back to source space.
-        const [ow, oh] = orientedSize(nw, nh, p.orient)
-        const geo = computeRestGeometry(cellW, cellH, c, ow, oh)
-        const s = sourceRect(c, p.orient)
-        ctx.save()
-        const [dx, dy, dw, dh] = orientDraw(
-          ctx,
-          cellLeft + geo.visL,
-          cellTop + geo.visT,
-          geo.visW,
-          geo.visH,
-          p.orient
-        )
-        ctx.drawImage(
-          img,
-          s.x * nw,
-          s.y * nh,
-          s.w * nw,
-          s.h * nh,
-          dx,
-          dy,
-          dw,
-          dh
-        )
-        ctx.restore()
-      }
-    } else {
-      // Missing item (deleted from the index, network failure): a flat
-      // placeholder tile in the pin's spot rather than a hole.
-      ctx.fillStyle = "rgba(127, 127, 127, 0.35)"
-      ctx.fillRect(cellLeft, cellTop, cellW, cellH)
-    }
-    ctx.restore()
+    drawPin(
+      ctx,
+      p,
+      loaded.status === "fulfilled" ? loaded.value : null,
+      (p.left - cropLeft) * scale,
+      (p.top - cropTop) * scale,
+      p.width * scale,
+      p.height * scale,
+      PIN_CORNER_RADIUS_PX
+    )
   }
 
-  const blob = await canvasToWebP(canvas)
+  const blob = await canvasToBlob(canvas, "image/webp", WEBP_QUALITY)
   return { blob, width: outWidth, height: outHeight, screenfulH }
 }
 

@@ -57,6 +57,7 @@ import {
     LayoutMenuItems,
     dropdownMenuKit,
 } from "./PinboardGlobalMenu"
+import { MosaicMenuItems, MosaicSubmenu } from "./PinboardMosaicMenu"
 
 // The library actions and their dialogs, shared by the two surfaces that
 // offer them: the tab chevron's dropdown and the fullscreen toolbar. Save
@@ -224,6 +225,11 @@ export function PinboardMenu() {
                         <SaveAll className="mr-2 h-4 w-4" />
                         Save as new copy
                     </DropdownMenuItem>
+                    {/* Saving the board as a picture sits with the two
+                        saves: same verb, different destination (the disk,
+                        not the server) — and like them it captures the
+                        live board, unsaved edits included. */}
+                    <MosaicSubmenu kit={dropdownMenuKit} boardName={board?.name} />
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={openLibrary}>
                         <LibraryBig className="mr-2 h-4 w-4" />
@@ -578,6 +584,33 @@ export function PinboardFullscreenBar() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="start" className="w-56">
                                 <LayoutMenuItems kit={dropdownMenuKit} api={boardApi} />
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    )}
+                    {/* Save the board as an image. Its own dropdown rather
+                        than a submenu here: the toolbar has no parent menu
+                        to hang one off, exactly like Layout. Nothing to
+                        composite without pins, so it waits for the first
+                        one instead of offering a failing verb. */}
+                    {hasPins && (
+                        <DropdownMenu onOpenChange={setMenuOpen}>
+                            <DropdownMenuTrigger asChild>
+                                <button
+                                    title="Save the board as an image file"
+                                    className={cn(
+                                        "inline-flex shrink-0 items-center gap-1 px-2.5 text-sm transition-colors hover:bg-foreground/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+                                        "data-[state=open]:bg-blue-500/15 data-[state=open]:text-blue-600 dark:data-[state=open]:text-blue-400",
+                                    )}
+                                >
+                                    Mosaic
+                                    <ChevronDown className="h-4 w-4" />
+                                </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-56">
+                                <MosaicMenuItems
+                                    kit={dropdownMenuKit}
+                                    boardName={board?.name}
+                                />
                             </DropdownMenuContent>
                         </DropdownMenu>
                     )}
