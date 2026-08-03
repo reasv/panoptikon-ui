@@ -483,6 +483,14 @@ export function PinboardCard({
 
     // All geometry in preview-image pixels: the image is previewW wide and
     // the viewport is a CARD_ASPECT window onto it, panned by `pan`.
+    //
+    // These numbers come from the board summary, the <img> from the browser
+    // cache, and version previews are served immutable — so right after a
+    // "Refresh Preview" that changed the recorded dimensions (a different
+    // board width, a new master resolution), an already-cached image is
+    // framed by the NEW pair: not merely stale, visibly misframed, until a
+    // hard refresh evicts it. The refresh toast says so; deliberately no
+    // cache-busting machinery for a one-time local operation.
     const previewW = board.preview_w ?? 1
     const previewH = board.preview_h ?? 1
     const viewportH = previewW / CARD_ASPECT

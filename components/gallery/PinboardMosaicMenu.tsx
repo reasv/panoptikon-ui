@@ -1,5 +1,4 @@
 "use client"
-import { useSyncExternalStore } from "react"
 import { useToast } from "@/components/ui/use-toast"
 import {
     useGalleryPinBoardLayout,
@@ -9,6 +8,7 @@ import { useSelectedDBs } from "@/lib/state/database"
 import { composeBoardMosaic } from "@/lib/pinboardMosaic"
 import { findBoardElement, findBoardViewport } from "@/lib/pinboardPreview"
 import { downloadBlob, sanitizeFilePart, timestampStamp } from "@/lib/download"
+import { createMenuGuard } from "@/lib/menuGuard"
 import {
     usePinboardMosaicExtent,
     usePinboardMosaicSeamless,
@@ -50,35 +50,14 @@ function measured(px: number | undefined, fallback: number): number {
     return px && px > 0 ? px : fallback
 }
 
-// Re-entrancy guard, at module scope on purpose: Radix unmounts the menu
-// (and with it any component state) the moment a row is selected, so a
-// useState flag would be destroyed by the very click it is meant to guard
-// against — leaving a second click free to start a second full-resolution
-// composite and OOM the tab. The flag is checked and set synchronously in
-// `save` and cleared in its finally; the subscription exists only so the
-// rows of a REOPENED menu can still render themselves disabled.
-let exporting = false
-const exportListeners = new Set<() => void>()
-
-function setExporting(value: boolean) {
-    exporting = value
-    for (const listener of exportListeners) listener()
-}
-
-function subscribeExporting(onChange: () => void) {
-    exportListeners.add(onChange)
-    return () => {
-        exportListeners.delete(onChange)
-    }
-}
+// Re-entrancy guard for the export: a second click would start a second
+// full-resolution composite and OOM the tab. Module-scoped because Radix
+// destroys the menu's component state on select — see lib/menuGuard.ts.
+const exportGuard = createMenuGuard()
 
 /** True while any mosaic export is in flight, anywhere in the app. */
 export function useMosaicExporting(): boolean {
-    return useSyncExternalStore(
-        subscribeExporting,
-        () => exporting,
-        () => false,
-    )
+    return exportGuard.useBusy()
 }
 
 export function useMosaicExport(boardName?: string | null) {
@@ -95,8 +74,8 @@ export function useMosaicExport(boardName?: string | null) {
 
     // `targetWidth` null means the live board width (the "Window" preset).
     const save = async (targetWidth: number | null) => {
-        if (exporting || layout.length === 0) return
-        setExporting(true)
+        if (exportGuard.busy || layout.length === 0) return
+        exportGuard.set(true)
         const boardWidth = measured(
             findBoardElement()?.clientWidth, window.innerWidth)
         const boardHeight = measured(
@@ -164,7 +143,7 @@ export function useMosaicExport(boardName?: string | null) {
                 duration: 4000,
             })
         } finally {
-            setExporting(false)
+            exportGuard.set(false)
         }
     }
     return { save, busy }

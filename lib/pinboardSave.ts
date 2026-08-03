@@ -30,6 +30,7 @@ import {
   findBoardElement,
 } from "@/lib/pinboardPreview"
 import { clearStash } from "@/lib/pinboardStash"
+import { createMenuGuard } from "@/lib/menuGuard"
 import { markPinboardNavigation } from "@/lib/pinboardNavigation"
 
 type Dbs = { index_db: string | null; user_data_db: string | null }
@@ -124,6 +125,18 @@ async function buildSaveBody(
 
 export function layoutsEqual(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i])
+}
+
+// Re-entrancy guard for "Refresh Preview". The verb is a menu row and Radix
+// closes the menu on select, so a second click lands on a fresh mount while
+// the first composite is still running — two full-resolution composites and
+// two PUTs racing over the same version's picture. Module-scoped for the
+// same reason the mosaic export's guard is; see lib/menuGuard.ts.
+const refreshGuard = createMenuGuard()
+
+/** True while a preview refresh is in flight, anywhere in the app. */
+export function useRefreshingPreview(): boolean {
+  return refreshGuard.useBusy()
 }
 
 export function usePinboardActions() {
@@ -267,7 +280,8 @@ export function usePinboardActions() {
    * there is no batch tool: the save-time width was never stored.
    */
   const refreshPreview = async () => {
-    if (pbid == null || savedLayout.length === 0) return
+    if (refreshGuard.busy || pbid == null || savedLayout.length === 0) return
+    refreshGuard.set(true)
     try {
       const { data: board } = await fetchClient.GET(
         "/api/pinboards/{pinboard_id}",
@@ -302,9 +316,14 @@ export function usePinboardActions() {
       toast({
         title: "Preview refreshed",
         // Previews are served with immutable cache headers, so sizes this
-        // browser already fetched keep showing the old picture.
-        description: "Reload with Ctrl+Shift+R if you still see the old one.",
-        duration: 4000,
+        // browser already fetched keep showing the old picture — and the
+        // NEW preview_w/preview_h now drive the card crop, so a cached old
+        // image is not merely stale, it is framed by the wrong numbers
+        // (visibly misaligned pan/crop) until it is evicted.
+        description:
+          "Reload with Ctrl+Shift+R if you still see the old one — until"
+          + " then cards may also look misframed.",
+        duration: 5000,
       })
     } catch (err) {
       console.error("pinboard preview refresh failed", err)
@@ -313,6 +332,8 @@ export function usePinboardActions() {
         description: "Failed to refresh the preview",
         duration: 3000,
       })
+    } finally {
+      refreshGuard.set(false)
     }
   }
 

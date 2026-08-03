@@ -35,7 +35,11 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import { layoutsEqual, usePinboardActions } from "@/lib/pinboardSave"
+import {
+    layoutsEqual,
+    usePinboardActions,
+    useRefreshingPreview,
+} from "@/lib/pinboardSave"
 import { usePinBoard } from "@/lib/state/pinboard"
 import { useSelectedDBs } from "@/lib/state/database"
 import { $api } from "@/lib/api"
@@ -79,7 +83,11 @@ function usePinboardDialogs() {
     const [renameValue, setRenameValue] = useState("")
     const [clearOpen, setClearOpen] = useState(false)
 
-    const { data: board } = $api.useQuery(
+    const {
+        data: board,
+        isPending: boardPending,
+        isError: boardError,
+    } = $api.useQuery(
         "get",
         "/api/pinboards/{pinboard_id}",
         {
@@ -90,6 +98,7 @@ function usePinboardDialogs() {
         },
         { enabled: pbid != null }
     )
+    const refreshingPreview = useRefreshingPreview()
 
     const openRename = () => {
         setRenameValue(board?.name ?? "")
@@ -169,19 +178,35 @@ function usePinboardDialogs() {
     // panel highlights the current version with.
     const headInSync =
         board?.head != null && layoutsEqual(board.head.layout, savedLayout)
+    // Why the row is unavailable has three distinct causes, and they must
+    // not share a tooltip: "unsaved changes" is a claim about the layout,
+    // and asserting it while the board query is still in flight (or failed,
+    // so `board` is simply absent) accuses the user of an edit that may not
+    // exist. Only a fetched head that disagrees with the live layout is a
+    // genuine mismatch.
+    const boardLoading = pbid != null && boardPending && !boardError
+    const noHead = boardError || board?.head == null
+    const saveFirstTitle = "Save this pinboard in order to refresh its"
+        + " preview image"
     const refreshTitle = pbid == null
-        ? "Save this pinboard in order to refresh its preview image"
-        : !headInSync
-            ? "Save first — the board has unsaved changes"
-            : "Re-render this board's preview image at the current window"
-                + " size and today's resolution"
+        ? saveFirstTitle
+        : refreshingPreview
+            ? "Refreshing the preview image…"
+            : boardLoading
+                ? "Loading board…"
+                : noHead
+                    ? saveFirstTitle
+                    : !headInSync
+                        ? "Save first — the board has unsaved changes"
+                        : "Re-render this board's preview image at the current"
+                            + " window size and today's resolution"
 
     return {
         save,
         pbid,
         board,
         refreshPreview,
-        canRefreshPreview: pbid != null && headInSync,
+        canRefreshPreview: pbid != null && headInSync && !refreshingPreview,
         refreshTitle,
         openLibrary: () => setLibraryOpen(true),
         openHistory: () => setHistoryOpen(true),
