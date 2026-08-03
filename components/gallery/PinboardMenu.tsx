@@ -11,6 +11,7 @@ import {
     Magnet,
     Minimize2,
     PenLine,
+    Proportions,
     Save,
     SaveAll,
     Trash2,
@@ -45,6 +46,7 @@ import {
     useGalleryPinAutoLayout,
     useGalleryPinBoardId,
     useGalleryPinGrid,
+    useGalleryPinProportional,
 } from "@/lib/state/gallery"
 import { usePinboardBoardApi } from "@/lib/state/pinboardBoardApi"
 import { PinboardLibraryDialog } from "./PinboardLibrary"
@@ -407,7 +409,10 @@ export function PinboardFullscreenBar() {
     // Gravity is token state, not a board flag: read off the parsed board.
     // An empty board has no token, so setFloat can't store the switch and
     // float is not the board's answer — the toggle stays disabled there.
-    const { float, setFloat, records } = usePinBoard()
+    // "Scale With Window" is a flag whose two edges both write the token,
+    // so it is gated on a board existing for the same reason.
+    const [proportional] = useGalleryPinProportional()
+    const { float, setFloat, setProportional, records } = usePinBoard()
     const hasPins = records.length > 0
     const boardApi = usePinboardBoardApi(s => s.api)
     const { save, pbid, board, openLibrary, openHistory, openRename, dialogs } =
@@ -531,6 +536,24 @@ export function PinboardFullscreenBar() {
                         onClick={() => setFloat(!float)}
                     >
                         <Magnet className="h-5 w-5" />
+                    </ToolbarButton>
+                    {/* Scale With Window: freeze the cell shape and let the
+                        whole grid zoom with the container. Needs the mounted
+                        board's measured width, so it waits for the board API
+                        exactly like the other token-writing toggles wait for
+                        a first pin. */}
+                    <ToolbarButton
+                        title={!hasPins || !boardApi
+                            ? "Pin something first — the frozen cell shape is stored in the board layout"
+                            : proportional
+                                ? "Scale With Window on: the board keeps its cell shape and scales with the window. Click to bake the current size in and turn off"
+                                : "Scale With Window off: resizing the window re-letterboxes the board. Click to freeze the current cell shape"}
+                        active={hasPins && proportional}
+                        disabled={!hasPins || !boardApi}
+                        onClick={() => boardApi
+                            && setProportional(!proportional, boardApi.boardWidth)}
+                    >
+                        <Proportions className="h-5 w-5" />
                     </ToolbarButton>
                     {boardApi?.isV1 && (
                         <ToolbarButton title="Upgrade Board Grid" onClick={() => boardApi.upgradeGrid()}>

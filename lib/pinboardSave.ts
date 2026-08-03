@@ -80,7 +80,10 @@ async function buildSaveBody(
     getComputedStyle(document.body).backgroundColor || "#09090b"
   let preview = null
   try {
-    preview = await composeBoardPreview(savedLayout, dbs, boardWidth, background)
+    // flags.pbp is "Scale With Window": the compositor needs it to lay the
+    // board out on the same effective grid the screen is using
+    preview = await composeBoardPreview(
+      savedLayout, dbs, boardWidth, background, !!flags.pbp)
   } catch (err) {
     // A failed composite must never block the save itself; the version
     // just has no preview image.

@@ -27,6 +27,10 @@ export type PinboardBoardApi = Pick<
 > & {
     highWater: number
     isV1: boolean
+    // The board's measured pixel width. "Scale With Window" freezes the
+    // current cell shape, so both toggle edges need the width the board is
+    // rendered at right now — and only a mounted board knows it.
+    boardWidth: number
     upgradeGrid: () => void
     // How many items sit below the board's working area right now, or null
     // when the board can't be measured. A function, not a value: the menus

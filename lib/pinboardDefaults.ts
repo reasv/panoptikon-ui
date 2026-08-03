@@ -18,13 +18,14 @@
 // board menu ("Save Current Settings as Default"). A user default equal to
 // the codec default simply stamps nothing — blank already means that.
 
-export type PinboardDefaultableKey = "pba" | "pbc" | "psc" | "pg"
+export type PinboardDefaultableKey = "pba" | "pbc" | "psc" | "pg" | "pbp"
 
 export const PINBOARD_DEFAULTABLE_KEYS: PinboardDefaultableKey[] = [
   "pba",
   "pbc",
   "psc",
   "pg",
+  "pbp",
 ]
 
 interface DefaultableFlag {
@@ -32,6 +33,9 @@ interface DefaultableFlag {
   codecDefault: boolean
   // What a newly created board starts with (before user overrides)
   creationDefault: boolean
+  // How the flag is named in the "settings saved as default" summary, so
+  // adding a key to the registry updates that sentence too
+  label: string
 }
 
 // New boards start with auto-layout + auto-crop ON: without them a fresh
@@ -42,10 +46,27 @@ export const PINBOARD_DEFAULTABLE_FLAGS: Record<
   PinboardDefaultableKey,
   DefaultableFlag
 > = {
-  pba: { codecDefault: false, creationDefault: true }, // auto-layout
-  pbc: { codecDefault: false, creationDefault: true }, // auto-crop to cells
-  psc: { codecDefault: true, creationDefault: true }, // selection-verb crop
-  pg: { codecDefault: false, creationDefault: false }, // grid background
+  // auto-layout
+  pba: { codecDefault: false, creationDefault: true, label: "Auto-Layout" },
+  // auto-crop to cells
+  pbc: { codecDefault: false, creationDefault: true, label: "Auto-Crop" },
+  // selection-verb crop
+  psc: { codecDefault: true, creationDefault: true, label: "selection-crop" },
+  // grid background
+  pg: { codecDefault: false, creationDefault: false, label: "grid" },
+  // proportional grid ("Scale With Window")
+  pbp: {
+    codecDefault: false,
+    creationDefault: false,
+    label: "scale-with-window",
+  },
+}
+
+// The flag names for the defaults-saved toast, in registry order.
+export function defaultableFlagLabels(): string[] {
+  return PINBOARD_DEFAULTABLE_KEYS.map(
+    (key) => PINBOARD_DEFAULTABLE_FLAGS[key].label
+  )
 }
 
 const STORAGE_KEY = "pinboardUserDefaults"

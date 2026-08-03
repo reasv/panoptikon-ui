@@ -40,6 +40,7 @@ export function PinBoardCtx({
     pinboardRef,
     dbs,
     grid,
+    gridWidth,
     isV1,
     onUpgradeGrid,
 }: {
@@ -92,7 +93,11 @@ export function PinBoardCtx({
     lock: PinLock,
     onLockChange: (lock: PinLock) => void,
     pinboardRef: React.RefObject<HTMLDivElement | null>,
+    // The EFFECTIVE grid the board renders with (the proportional scale is
+    // already folded in), and the board's measured pixel width — published
+    // onward as the board API's boardWidth
     grid: GridParams,
+    gridWidth: number,
     isV1: boolean,
     onUpgradeGrid: () => void,
     dbs: {
@@ -176,7 +181,7 @@ export function PinBoardCtx({
         autoCropToCells, clearAutoCrops, shiftLayout, mirrorLayout,
         rerollLayout, refitToView, reflowKeepProportions, growInPlace,
         hasLocks, hasAnchors,
-        highWater, isV1, upgradeGrid: onUpgradeGrid,
+        highWater, isV1, boardWidth: gridWidth, upgradeGrid: onUpgradeGrid,
         belowViewportCount: () => belowViewportKeys()?.length ?? null,
         removeBelowViewport: () => onRemove(belowViewportKeys() ?? []),
     }

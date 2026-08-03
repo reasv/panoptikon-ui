@@ -120,6 +120,20 @@ const useGalleryPinSelectionCrop = () =>
       history: "push",
     })
   )
+// Proportional grid ("Scale With Window"): the board's cell aspect is
+// frozen at the reference width stored in the layout token (see
+// pinboardGrid.ts) and the whole grid — row height, margin, padding —
+// scales by currentWidth/refWidth instead of letterboxing. Board-scoped
+// like the other flags; the reference width itself is version-scoped
+// because it is a property of the arrangement, not of the board.
+const useGalleryPinProportional = () =>
+  useQueryState(
+    "pbp",
+    parseAsBoolean.withDefault(false).withOptions({
+      clearOnDefault: true,
+      history: "push",
+    })
+  )
 const useGalleryPinBoardLayout = () =>
   useQueryState(
     "pinboard",
@@ -187,5 +201,6 @@ export {
   useGalleryPinAutoLayout,
   useGalleryPinAutoCrop,
   useGalleryPinSelectionCrop,
+  useGalleryPinProportional,
   usePinboardMaximized,
 }

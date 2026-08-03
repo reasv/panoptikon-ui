@@ -71,6 +71,54 @@ export function minPinUnits(
   }
 }
 
+// The proportional grid ("Scale With Window", the pbp board flag): with a
+// reference width stored in the token, the board's cell ASPECT is frozen at
+// the shape it had at that width and the whole vertical axis scales with the
+// container instead of letterboxing. Freezing the aspect while keeping
+// multi-cell items letterbox-free requires margin and padding to scale too
+// (an item's height is h*rowHeight + (h-1)*margin), so it is one uniform
+// zoom factor, not a rowHeight tweak. Columns never scale: they are
+// container-relative already.
+//
+// Scale 1 (feature off, no reference width, unmeasured container) returns
+// the base grid OBJECT — identity, so every memo keyed on the grid is
+// unchanged for boards that never touch the feature.
+export function gridScale(
+  proportional: boolean,
+  refWidth: number,
+  boardWidth: number
+): number {
+  return proportional && refWidth > 0 && boardWidth > 0
+    ? boardWidth / refWidth
+    : 1
+}
+
+// The grid every RENDER consumer must use. Floats are fine: RGL computes
+// item pixel rects from these values and rounds per item, absolutely (never
+// cumulatively), so fractional steps can't drift.
+export function effectiveGrid(grid: GridParams, scale: number): GridParams {
+  if (scale === 1) return grid
+  return {
+    columns: grid.columns,
+    rowHeight: grid.rowHeight * scale,
+    margin: grid.margin * scale,
+    padding: grid.padding * scale,
+  }
+}
+
+// The same values baked back to the integers a token can carry — what
+// turning the feature OFF stores, so the board keeps the size it had on
+// screen (inert up to a rounding of at most half a pixel per value).
+export function bakeGrid(grid: GridParams, scale: number): GridParams {
+  if (scale === 1) return grid
+  return {
+    columns: grid.columns,
+    rowHeight: Math.max(1, Math.round(grid.rowHeight * scale)),
+    margin: Math.max(0, Math.round(grid.margin * scale)),
+    padding: Math.max(0, Math.round(grid.padding * scale)),
+  }
+}
+
 // The optional "!<rows>" suffix is the board's layout-height ratchet: the
 // largest grid-row count any fill action has ever targeted. Fill actions
 // target max(current fold, ratchet), so adding items while the board is

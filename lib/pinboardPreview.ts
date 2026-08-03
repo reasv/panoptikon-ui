@@ -31,7 +31,13 @@ import {
   parseHField,
   sourceRect,
 } from "@/lib/pinboardCrop"
-import { GridParams, parseBoard, rowStep } from "@/lib/pinboardGrid"
+import {
+  GridParams,
+  effectiveGrid,
+  gridScale,
+  parseBoard,
+  rowStep,
+} from "@/lib/pinboardGrid"
 import { computeRestGeometry } from "@/components/gallery/CropView"
 import { getFileURL } from "@/lib/utils"
 
@@ -179,14 +185,25 @@ export function findBoardElement(): HTMLElement | null {
  * param array). `boardWidth` is the rendered board's pixel width; when the
  * board isn't currently rendered, callers fall back to window.innerWidth,
  * which is what the expanded view would give it.
+ *
+ * `proportional` is the board's "Scale With Window" flag (pbp). With it on,
+ * the board on screen is drawn on the token's reference width scaled to
+ * boardWidth, so the composite has to use the same effective grid or the
+ * saved preview would not match what the user is looking at.
  */
 export async function composeBoardPreview(
   savedLayout: string[],
   dbs: { index_db: string | null; user_data_db: string | null },
   boardWidth: number,
-  background: string
+  background: string,
+  proportional = false
 ): Promise<ComposedPreview | null> {
-  const { grid, records } = parseBoard(savedLayout)
+  const parsed = parseBoard(savedLayout)
+  const records = parsed.records
+  const grid = effectiveGrid(
+    parsed.grid,
+    gridScale(proportional, parsed.refWidth, boardWidth)
+  )
   const placements = parsePlacements(records, grid, boardWidth)
   if (placements.length === 0 || boardWidth <= 0) return null
 

@@ -6,9 +6,14 @@ import {
     useGalleryPinAutoCrop,
     useGalleryPinAutoLayout,
     useGalleryPinGrid,
+    useGalleryPinProportional,
     useGalleryPinSelectionCrop,
 } from "@/lib/state/gallery"
-import { clearUserDefaults, saveUserDefaults } from "@/lib/pinboardDefaults"
+import {
+    clearUserDefaults,
+    defaultableFlagLabels,
+    saveUserDefaults,
+} from "@/lib/pinboardDefaults"
 import { usePinBoard } from "@/lib/state/pinboard"
 import type { PinboardBoardApi } from "@/lib/state/pinboardBoardApi"
 import {
@@ -50,6 +55,9 @@ interface MenuKit {
         children?: React.ReactNode
         checked?: boolean
         disabled?: boolean
+        // Forwarded to the row element; Radix disables pointer events on a
+        // disabled row, so a hover explanation there must go in the label
+        title?: string
         onCheckedChange?: (checked: boolean) => void
     }>
     Separator: React.ComponentType<object>
@@ -125,12 +133,13 @@ export function BoardGlobalMenuItems({
     const [autoLayout, setAutoLayout] = useGalleryPinAutoLayout()
     const [autoLayoutCrop, setAutoLayoutCrop] = useGalleryPinAutoCrop()
     const [selectionCrop] = useGalleryPinSelectionCrop()
+    const [proportional] = useGalleryPinProportional()
     // Gravity rides in the layout token rather than in a board flag, so it
     // comes from the parsed board and is written through the same path.
     // With no records there is no token to carry the switch — setFloat
     // no-ops and !float would claim gravity is on however the user's
     // creation default reads — so the toggle is disabled until a first pin.
-    const { float, setFloat, records } = usePinBoard()
+    const { float, setFloat, setProportional, records } = usePinBoard()
     const hasPins = records.length > 0
     const { toast } = useToast()
     const runVerb = useRunVerb()
@@ -169,6 +178,25 @@ export function BoardGlobalMenuItems({
                     "(requires Auto-Layout)". One string — the row is a flex
                     container, so a separate child would lose the space. */}
                 {hasPins ? "Gravity" : "Gravity (pin something first)"}
+            </CheckboxItem>
+            {/* Freezes the current cell shape and scales the whole grid with
+                the container, instead of letting a resize re-letterbox
+                everything. The ON/OFF switch is a board flag, but both edges
+                also write the layout token (the reference width, and the
+                baked values on the way out), so like gravity it needs a
+                board that exists — and the width only a mounted board
+                knows. Inert in both directions by construction. */}
+            <CheckboxItem
+                checked={proportional}
+                disabled={!hasPins}
+                title={"Freeze the current cell shape; the board scales with"
+                    + " the window instead of letterboxing"}
+                onCheckedChange={(checked) =>
+                    setProportional(!!checked, api.boardWidth)}
+            >
+                {hasPins
+                    ? "Scale With Window"
+                    : "Scale With Window (pin something first)"}
             </CheckboxItem>
             {/* When on, the board re-runs Fill Viewport (all items) whenever
                 a pin is added, removed or duplicated, or the board viewport
@@ -220,14 +248,16 @@ export function BoardGlobalMenuItems({
                             pbc: autoLayoutCrop,
                             psc: selectionCrop,
                             pg: showGrid,
+                            pbp: proportional,
                             gravity: !float,
                         })
                         toast({
                             title: "New-Board Defaults Saved",
+                            // Named from the registry, so a flag added there
+                            // can't quietly go unmentioned here
                             description: "New pinboards will start with this"
-                                + " board's current Auto-Layout, Auto-Crop,"
-                                + " selection-crop, grid and gravity"
-                                + " settings.",
+                                + ` board's current ${defaultableFlagLabels()
+                                    .join(", ")} and gravity settings.`,
                             duration: 4000,
                         })
                     }}>

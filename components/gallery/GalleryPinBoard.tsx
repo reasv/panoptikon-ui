@@ -1,10 +1,10 @@
 import Image from 'next/image'
 import { cn, getFileURL } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
-import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid, useGalleryPinSelectionCrop } from '@/lib/state/gallery'
+import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid, useGalleryPinProportional, useGalleryPinSelectionCrop } from '@/lib/state/gallery'
 import { consumePinboardExplicitPlacement, consumePinboardNavigation, consumePinboardPendingEdit, markPinboardExplicitPlacement } from '@/lib/pinboardNavigation'
 import { usePinBoard } from '@/lib/state/pinboard'
-import { GridParams, minPinUnits, rowStep, v1ScaleFactors } from '@/lib/pinboardGrid'
+import { GridParams, effectiveGrid, gridScale, minPinUnits, rowStep, v1ScaleFactors } from '@/lib/pinboardGrid'
 import { placeNearest, placeNewPin } from '@/lib/pinboardPlace'
 import { PinButton } from './PinButton'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -257,7 +257,12 @@ export function PinBoard(
     const dbs = useSelectedDBs()[0]
     // Token-stripped records plus the board's grid parameters; writes migrate
     // v1 boards to the v2 grid (see lib/pinboardGrid.ts)
-    const { grid, records, isV1, highWater, float, updateRecords, upgradeGrid } = usePinBoard()
+    const {
+        grid, records, isV1, highWater, float, refWidth,
+        updateRecords, upgradeGrid, stampRefWidth,
+    } = usePinBoard()
+    // "Scale With Window" (the pbp board flag): see effGrid below
+    const [proportional] = useGalleryPinProportional()
     // Key of the item currently in crop mode, if any
     const [cropKey, setCropKey] = useState<string | null>(null)
     // True while the crop-mode item's box is being resized via a grid handle
@@ -412,6 +417,43 @@ export function PinBoard(
     // positions, see rglSettling below). Declared above the layout memo
     // because the minimum-size floors depend on the measured column width.
     const { width: gridWidth, containerRef: gridAreaRef } = useContainerWidth()
+    // The grid the board is RENDERED with. With "Scale With Window" on and a
+    // reference width in the layout token, the cell aspect is frozen at the
+    // shape it had at that width: the vertical axis — row height, margin and
+    // padding alike — scales by currentWidth/refWidth, so the whole board
+    // zooms with the window instead of letterboxing (see pinboardGrid.ts).
+    // Every grid CONSUMER below reads effGrid; the base `grid` stays the one
+    // and only serialization source, and `gridKey` stays keyed on it (keying
+    // the remount on effGrid would remount the board on every resize pixel).
+    // With the feature off this IS `grid`, by object identity, so nothing
+    // downstream can tell the difference.
+    const scale = gridScale(proportional, refWidth, gridWidth)
+    const effGrid = useMemo(
+        () => effectiveGrid(grid, scale), [grid, scale])
+    // A board whose flag is on but whose token carries no reference width —
+    // created with the flag as its creation default, or saved before the
+    // feature existed — adopts the width it is first measured at. Until then
+    // the scale is 1, so this is inert; the write replaces rather than
+    // pushes, since the user didn't ask for it. The measurement must come
+    // from the DOM, not from gridWidth: that starts at RGL's 1280 SSR
+    // placeholder, and stamping THAT would freeze the board at a width it
+    // was never rendered at.
+    // The latch keeps the stamp to ONE write while the URL update is in
+    // flight (this effect deliberately has no dep array — it needs a fresh
+    // DOM read every render until a real measurement exists); it clears
+    // itself as soon as the write lands or another board takes over.
+    const refWidthStamped = useRef(false)
+    useEffect(() => {
+        if (!proportional || refWidth > 0 || records.length === 0) {
+            refWidthStamped.current = false
+            return
+        }
+        if (refWidthStamped.current) return
+        const measured = gridAreaRef.current?.offsetWidth ?? 0
+        if (measured <= 0) return
+        refWidthStamped.current = true
+        stampRefWidth(measured)
+    })
     // Orientation is decoded alongside the other extras so every per-pin map
     // is keyed by the same layout key.
     const [layout, pinnedFiles, crops, autoCrops, trims, itemLocks, orients]: [
@@ -436,9 +478,9 @@ export function PinBoard(
         // relaxed degenerate layouts) render untouched and only snap up to
         // the minimum when actually resized. The crop-mode item is exempt:
         // its box is the crop window, which may legitimately be tiny.
-        const colWidth = (gridWidth - 2 * grid.padding
-            - (grid.columns - 1) * grid.margin) / grid.columns
-        const { minW, minH } = minPinUnits(grid, colWidth)
+        const colWidth = (gridWidth - 2 * effGrid.padding
+            - (effGrid.columns - 1) * effGrid.margin) / effGrid.columns
+        const { minW, minH } = minPinUnits(effGrid, colWidth)
         for (let i = 0; i < records.length; i += 5) {
             const [sha256, x, y, w, hField] = records.slice(i, i + 5)
             const index = `${i}-${sha256}`
@@ -482,7 +524,7 @@ export function PinBoard(
             ])
         }
         return [newLayout, pinned, cropsMap, autoCropsMap, trimsMap, locksMap, orientsMap]
-    }, [records, cropKey, dbs, grid, gridWidth])
+    }, [records, cropKey, dbs, effGrid, gridWidth])
 
     // Rebuilds the packed records from RGL's reported layout, in the EXISTING
     // record order: the item keys embed each record's offset, so persisting in
@@ -862,16 +904,21 @@ export function PinBoard(
     const scrollAreaRef = useRef<HTMLDivElement>(null);
     // v1 boards use v1-unit sizes for new/dropped pins so they stay
     // consistent pre-migration; on the finer v2 grid the same physical size
-    // is these units times the lattice scale factors
+    // is these units times the lattice scale factors.
+    // BASE grid on purpose: these are the GRID-UNIT sizes new pins get
+    // (drop ghost, carry ghost, the pin button's default), and the record
+    // writers that consume them work in base units too. The proportional
+    // scale then applies to them exactly as it applies to every other item
+    // on the board — scaling them here as well would double-count it.
     const { sx, sy } = v1ScaleFactors(grid)
     // Grid measurement config for RGL; identity keyed on the scalar params so
     // unrelated re-renders don't churn the grid's internal position memos
     const gridConfig = useMemo(() => ({
-        cols: grid.columns,
-        rowHeight: grid.rowHeight,
-        margin: [grid.margin, grid.margin] as [number, number],
-        containerPadding: [grid.padding, grid.padding] as [number, number],
-    }), [grid.columns, grid.rowHeight, grid.margin, grid.padding])
+        cols: effGrid.columns,
+        rowHeight: effGrid.rowHeight,
+        margin: [effGrid.margin, effGrid.margin] as [number, number],
+        containerPadding: [effGrid.padding, effGrid.padding] as [number, number],
+    }), [effGrid.columns, effGrid.rowHeight, effGrid.margin, effGrid.padding])
     // Height of the grid content for the debug grid background, which must
     // cover the full grid height — it grows past the viewport when an item
     // extends below the fold. Comes from RGL's own root element rather than
@@ -890,6 +937,9 @@ export function PinBoard(
         if (gridEl) ro.observe(gridEl)
         return () => ro.disconnect()
     }, [records, gridAreaRef])
+    // BASE grid, never effGrid: the remount exists for grid-parameter
+    // changes (the v1 -> v2 migration), and a key that followed the
+    // proportional scale would remount the whole board on every resize pixel
     const gridKey = `grid-${grid.columns}-${grid.rowHeight}-${grid.margin}-${grid.padding}`
     // Keep RGL's transitions off while HYDRATING only (see globals.css:
     // .rgl-mount-still): the SSR HTML paints items at percentage positions,
@@ -931,7 +981,10 @@ export function PinBoard(
     } = usePinboardLayoutActions({
         layout, crops, autoCrops, locks: itemLocks, orients, highWater, float,
         cropKey,
-        dbs, grid,
+        // Every packer and fit works in px against the RENDERED cell size,
+        // so the layout verbs take the effective grid (their measurement
+        // cache is keyed on it too, and drops when the scale changes)
+        dbs, grid: effGrid,
         layoutAutoCrop: autoLayoutCrop,
         selectionAutoCrop: selectionCrop,
         pinboardRef: scrollAreaRef,
@@ -948,7 +1001,7 @@ export function PinBoard(
             autoCropToCells, clearAutoCrops, shiftLayout, mirrorLayout,
             rerollLayout, refitToView, reflowKeepProportions, growInPlace,
             hasLocks, hasAnchors,
-            highWater, isV1, upgradeGrid,
+            highWater, isV1, boardWidth: gridWidth, upgradeGrid,
             belowViewportCount: () => belowViewportKeys()?.length ?? null,
             removeBelowViewport: () => removePins(belowViewportKeys() ?? []),
         } satisfies PinboardBoardApi)
@@ -1042,9 +1095,9 @@ export function PinBoard(
         if (!holeMode) return 0
         const areaH = gridAreaRef.current?.clientHeight ?? 0
         const fold = Math.max(1, Math.floor(
-            (areaH - 2 * grid.padding + grid.margin) / rowStep(grid)))
+            (areaH - 2 * effGrid.padding + effGrid.margin) / rowStep(effGrid)))
         return Math.max(highWater, fold)
-    }, [holeMode, highWater, grid, gridAreaRef])
+    }, [holeMode, highWater, effGrid, gridAreaRef])
     // Occupancy for the free mask. The verb MOVES the selection, so it
     // counts as lifted — its own cells are free to land back onto (e.g.
     // merging with an adjacent hole). Carried/dragged items are new;
@@ -1063,9 +1116,9 @@ export function PinBoard(
     // toasts. For the verb: every size-locked item must fit at its exact
     // size and the rect must have room for everyone at minimum size; for
     // single-item drops just the minimum pin size.
-    const holeColW = (gridWidth - 2 * grid.padding
-        - (grid.columns - 1) * grid.margin) / grid.columns
-    const { minW: holeMinW, minH: holeMinH } = minPinUnits(grid, holeColW)
+    const holeColW = (gridWidth - 2 * effGrid.padding
+        - (effGrid.columns - 1) * effGrid.margin) / effGrid.columns
+    const { minW: holeMinW, minH: holeMinH } = minPinUnits(effGrid, holeColW)
     const validHole = (r: GridRect): boolean => {
         if (holeMode !== "verb") return r.w >= holeMinW && r.h >= holeMinH
         const sel = layout.filter(l => selectedSet.has(l.i))
@@ -1265,10 +1318,10 @@ export function PinBoard(
     useEffect(() => { setToolbarManual(null) }, [selKey])
     const toolbarPos = useMemo(() => {
         if (selected.length === 0 || !gridWidth) return null
-        const colW = (gridWidth - 2 * grid.padding - (grid.columns - 1) * grid.margin) / grid.columns
-        const unitX = colW + grid.margin
-        const px = (x: number) => grid.padding + x * unitX
-        const py = (y: number) => grid.padding + y * rowStep(grid)
+        const colW = (gridWidth - 2 * effGrid.padding - (effGrid.columns - 1) * effGrid.margin) / effGrid.columns
+        const unitX = colW + effGrid.margin
+        const px = (x: number) => effGrid.padding + x * unitX
+        const py = (y: number) => effGrid.padding + y * rowStep(effGrid)
         const maxY = layout.reduce((acc, l) => Math.max(acc, l.y + l.h), 0)
         // Radix scrolls the viewport child, not the root the ref is on; its
         // scroll coordinates are this content space (the grid area is the
@@ -1303,7 +1356,7 @@ export function PinBoard(
             y: Math.min(
                 Math.max(y, TOOLBAR_EDGE),
                 Math.max(TOOLBAR_EDGE, Math.max(
-                    py(maxY) - grid.margin - toolbarSize.h - TOOLBAR_EDGE,
+                    py(maxY) - effGrid.margin - toolbarSize.h - TOOLBAR_EDGE,
                     viewportCapY))),
         })
         // Manual park runs through the same relaxed cap as the flip, so
@@ -1315,14 +1368,14 @@ export function PinBoard(
         const bboxCenterX = () => {
             const x0 = Math.min(...rects.map(l => l.x))
             const x1 = Math.max(...rects.map(l => l.x + l.w))
-            return (px(x0) + px(x1) - grid.margin) / 2
+            return (px(x0) + px(x1) - effGrid.margin) / 2
         }
         // Flip below a wholly top-edge selection, when it fits (see above).
         // No viewport element = viewportCapY is -Infinity = nothing to fit
         // against = no flip.
         if (rects.every(l => py(l.y) < TOOLBAR_EDGE + toolbarSize.h + TOOLBAR_GAP)) {
             const y1 = Math.max(...rects.map(l => l.y + l.h))
-            const flipY = py(y1) - grid.margin + TOOLBAR_GAP
+            const flipY = py(y1) - effGrid.margin + TOOLBAR_GAP
             if (flipY <= viewportCapY) {
                 // Both axes go through clampPos: the fits gate IS
                 // `flipY <= viewportCapY`, so the relaxed y cap passes it
@@ -1336,13 +1389,13 @@ export function PinBoard(
         if (rects.length === 2 && rects[0].y !== rects[1].y) {
             const lower = rects[0].y > rects[1].y ? rects[0] : rects[1]
             anchorTop = py(lower.y)
-            centerX = px(lower.x) + (lower.w * unitX - grid.margin) / 2
+            centerX = px(lower.x) + (lower.w * unitX - effGrid.margin) / 2
         } else {
             anchorTop = py(Math.min(...rects.map(l => l.y)))
             centerX = bboxCenterX()
         }
         return clampPos(centerX - toolbarSize.w / 2, anchorTop - TOOLBAR_GAP - toolbarSize.h)
-    }, [selected.length, toolbarManual, layout, selectedSet, gridWidth, grid, toolbarSize])
+    }, [selected.length, toolbarManual, layout, selectedSet, gridWidth, effGrid, toolbarSize])
     // Dragging the grip moves the bar freely; on release it snaps
     // vertically to the nearest resting spot — just above an item's top
     // edge, just below an item's bottom edge (the automatic anchor rests
@@ -1375,10 +1428,10 @@ export function PinBoard(
             window.removeEventListener("pointermove", onMove)
             window.removeEventListener("pointerup", onUp)
             const raw = posFrom(ev)
-            const colW = (gridWidth - 2 * grid.padding - (grid.columns - 1) * grid.margin) / grid.columns
-            const unitX = colW + grid.margin
-            const px = (x: number) => grid.padding + x * unitX
-            const py = (y: number) => grid.padding + y * rowStep(grid)
+            const colW = (gridWidth - 2 * effGrid.padding - (effGrid.columns - 1) * effGrid.margin) / effGrid.columns
+            const unitX = colW + effGrid.margin
+            const px = (x: number) => effGrid.padding + x * unitX
+            const py = (y: number) => effGrid.padding + y * rowStep(effGrid)
             // The bar's resting x-span (clamped like the renderer clamps),
             // for the horizontal-overlap test
             const xl = Math.min(
@@ -1401,14 +1454,14 @@ export function PinBoard(
             const view = scrollAreaRef.current
                 ?.querySelector<HTMLElement>("[data-radix-scroll-area-viewport]")
             const belowCap = Math.max(
-                py(maxY) - grid.margin - toolbarSize.h - TOOLBAR_EDGE,
+                py(maxY) - effGrid.margin - toolbarSize.h - TOOLBAR_EDGE,
                 view ? view.scrollTop + view.clientHeight - toolbarSize.h - TOOLBAR_EDGE : -Infinity)
             let best = TOOLBAR_EDGE
             for (const l of layout) {
-                if (px(l.x) >= xr || px(l.x + l.w) - grid.margin <= xl) continue
+                if (px(l.x) >= xr || px(l.x + l.w) - effGrid.margin <= xl) continue
                 const c = py(l.y) - TOOLBAR_GAP - toolbarSize.h
                 if (c >= TOOLBAR_EDGE && Math.abs(c - raw.y) < Math.abs(best - raw.y)) best = c
-                const b = py(l.y + l.h) - grid.margin + TOOLBAR_GAP
+                const b = py(l.y + l.h) - effGrid.margin + TOOLBAR_GAP
                 if (b >= TOOLBAR_EDGE && b <= belowCap
                     && Math.abs(b - raw.y) < Math.abs(best - raw.y)) best = b
             }
@@ -1893,8 +1946,8 @@ export function PinBoard(
                         return
                     }
                     const rect = e.currentTarget.getBoundingClientRect()
-                    const gx = (e.clientX - rect.left - grid.padding) / (holeColW + grid.margin)
-                    const gy = (e.clientY - rect.top - grid.padding) / rowStep(grid)
+                    const gx = (e.clientX - rect.left - effGrid.padding) / (holeColW + effGrid.margin)
+                    const gy = (e.clientY - rect.top - effGrid.padding) / rowStep(effGrid)
                     const r = pickRectAt(holeRects, gx, gy)
                     if (!r || !validHole(r)) {
                         holeToast("No hole under the drop — nothing was added")
@@ -1952,10 +2005,10 @@ export function PinBoard(
                     <GridBackground
                         className="z-0"
                         width={gridWidth}
-                        cols={grid.columns}
-                        rowHeight={grid.rowHeight}
-                        margin={[grid.margin, grid.margin]}
-                        containerPadding={[grid.padding, grid.padding]}
+                        cols={effGrid.columns}
+                        rowHeight={effGrid.rowHeight}
+                        margin={[effGrid.margin, effGrid.margin]}
+                        containerPadding={[effGrid.padding, effGrid.padding]}
                         rows="auto"
                         height={gridContentHeight}
                         color="rgba(128,128,128,0.18)"
@@ -2072,10 +2125,10 @@ export function PinBoard(
                             .exec(String((e.target as HTMLElement)?.className ?? ''))?.[1]
                         if (!handle) return
                         const { image, box } = geom
-                        const colWidth = (areaWidth - 2 * grid.padding
-                            - (grid.columns - 1) * grid.margin) / grid.columns
-                        const unitX = colWidth + grid.margin
-                        const unitY = grid.rowHeight + grid.margin
+                        const colWidth = (areaWidth - 2 * effGrid.padding
+                            - (effGrid.columns - 1) * effGrid.margin) / effGrid.columns
+                        const unitX = colWidth + effGrid.margin
+                        const unitY = effGrid.rowHeight + effGrid.margin
                         if (!(unitX > 0) || !(unitY > 0)) return
                         // Smallest span (units) whose moving edge reaches AT
                         // LEAST the image edge (span of w cells = w*unit −
@@ -2089,7 +2142,7 @@ export function PinBoard(
                         // pre-existing dead space doesn't snap the box on grab
                         // (growth is simply capped, shrinking stays free)
                         const cap = (px: number, unit: number, current: number) =>
-                            Math.max(current, Math.ceil((px + grid.margin) / unit))
+                            Math.max(current, Math.ceil((px + effGrid.margin) / unit))
                         if (handle.includes('e')) newItem.maxW = cap(image.right - box.left, unitX, newItem.w)
                         if (handle.includes('w')) newItem.maxW = cap(box.right - image.left, unitX, newItem.w)
                         if (handle.includes('s')) newItem.maxH = cap(image.bottom - box.top, unitY, newItem.h)
@@ -2169,10 +2222,10 @@ export function PinBoard(
                                 }),
                             }
                         }
-                        const colWidth = (areaWidth - 2 * grid.padding
-                            - (grid.columns - 1) * grid.margin) / grid.columns
-                        const unitX = colWidth + grid.margin
-                        const unitY = grid.rowHeight + grid.margin
+                        const colWidth = (areaWidth - 2 * effGrid.padding
+                            - (effGrid.columns - 1) * effGrid.margin) / effGrid.columns
+                        const unitX = colWidth + effGrid.margin
+                        const unitY = effGrid.rowHeight + effGrid.margin
                         if (!(unitX > 0) || !(unitY > 0)) return
                         const cells = (px: number, unit: number) =>
                             Math.max(0, Math.floor(px / unit))
@@ -2273,7 +2326,11 @@ export function PinBoard(
                                     onRemove={removePins}
                                     onRemoveAllBut={removeAllBut}
                                     scrollAreaRef={scrollAreaRef}
-                                    grid={grid}
+                                    // The pin's context menu runs its own
+                                    // layout-verb instance, so it needs the
+                                    // rendered grid like the board's does
+                                    grid={effGrid}
+                                    gridWidth={gridWidth}
                                     isV1={isV1}
                                     onUpgradeGrid={upgradeGrid}
                                     dbs={dbs}
@@ -2289,12 +2346,12 @@ export function PinBoard(
                 )}
                 {holeMode && gridWidth > 0 && (
                     <HoleTargetOverlay
-                        grid={grid}
+                        grid={effGrid}
                         gridWidth={gridWidth}
                         // Cover the full free mask even when the grid
                         // content ends above it (the empty bottom band)
                         contentHeight={Math.max(gridContentHeight,
-                            grid.padding + holeRows * rowStep(grid))}
+                            effGrid.padding + holeRows * rowStep(effGrid))}
                         rows={holeRows}
                         occupied={holeOccupied}
                         freeRects={holeRects}
@@ -2701,6 +2758,7 @@ function PinBoardPin({
     onRemoveAllBut,
     scrollAreaRef,
     grid,
+    gridWidth,
     isV1,
     onUpgradeGrid,
     dbs,
@@ -2755,7 +2813,11 @@ function PinBoardPin({
     onRemove: (keys: string[]) => void
     onRemoveAllBut: (keys: string[]) => void
     scrollAreaRef: React.RefObject<HTMLDivElement | null>
+    // The EFFECTIVE grid (see effGrid in the board) and the measured board
+    // width — the context menu publishes both onward for the board-global
+    // section's "Scale With Window" toggle
     grid: GridParams
+    gridWidth: number
     isV1: boolean
     onUpgradeGrid: () => void
     dbs: {
@@ -2977,6 +3039,7 @@ function PinBoardPin({
                     onLockChange={onLockChange}
                     pinboardRef={scrollAreaRef}
                     grid={grid}
+                    gridWidth={gridWidth}
                     isV1={isV1}
                     onUpgradeGrid={onUpgradeGrid}
                     dbs={dbs}
