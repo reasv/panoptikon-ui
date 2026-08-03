@@ -88,8 +88,9 @@ export function PinButton({
                 return next
             }
             // Default new-pin size is 10x10 in v1 units, scaled to the
-            // board's grid; the pin lands in the first free slot of the
-            // bottom row (see pinboardPlace.ts), never on top of anything
+            // board's grid; the pin lands in the first free slot found
+            // scanning starting at the bottom row (see pinboardPlace.ts),
+            // never on top of anything
             const { sx, sy } = v1ScaleFactors(grid)
             const w = Math.round(10 * sx)
             const h = Math.round(10 * sy)

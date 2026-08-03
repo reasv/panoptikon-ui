@@ -87,7 +87,10 @@ export function minPinUnits(
 // e.g. "v2~f", "v2!40~w1503", "v2.108.5.5.5!40~fw1503". The segment is
 // append-only and parsed leniently: an unknown letter must never make the
 // whole token unparseable, since falling back to the v1 branch would
-// reinterpret the token as a record and wreck the board.
+// reinterpret the token as a record and wreck the board. Hence the ext
+// capture accepts any run of characters that cannot be confused with the
+// earlier sections (anything but "!" and "~"), and unrecognized content
+// simply reads as switches at their defaults.
 export interface GridExt {
   // Gravity off: items stay exactly where they were put
   float: boolean
@@ -95,10 +98,13 @@ export interface GridExt {
   refWidth: number
 }
 
-export const NO_EXT: GridExt = { float: false, refWidth: 0 }
+// Frozen: this is the shared module default handed out by parseExt and
+// spread into ParsedBoard, so a stray mutation on any value that aliased it
+// would poison every later parse.
+export const NO_EXT: GridExt = Object.freeze({ float: false, refWidth: 0 })
 
 const TOKEN_RE =
-  /^v(\d+)(?:\.(\d+)\.(\d+)\.(\d+)\.(\d+))?(?:!(\d+))?(?:~([a-z0-9]*))?$/
+  /^v(\d+)(?:\.(\d+)\.(\d+)\.(\d+)\.(\d+))?(?:!(\d+))?(?:~([^!~]*))?$/
 
 function parseExt(ext: string | undefined): GridExt {
   if (!ext) return NO_EXT

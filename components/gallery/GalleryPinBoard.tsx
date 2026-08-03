@@ -3050,8 +3050,8 @@ export function usePinItem() {
         updateRecords((records, grid) => {
             // An explicit position (e.g. from a drop) is already in the
             // board's grid units; the fallback size is 2x2 in v1 units,
-            // placed in the first free slot of the bottom row (see
-            // pinboardPlace.ts)
+            // placed in the first free slot found scanning starting at the
+            // bottom row (see pinboardPlace.ts)
             const { sx, sy } = v1ScaleFactors(grid)
             const w = Math.round(2 * sx)
             const h = Math.round(2 * sy)
