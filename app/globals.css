@@ -209,6 +209,21 @@
   transition: none !important;
 }
 
+/* Pinboard gesture floor: while a drag/resize gesture is active the
+   board's grid container may not shrink below its gesture-start height
+   (a shrinking container shrinks the scroll range, the browser clamps
+   scrollTop, the container's on-screen rect shifts, and RGL reads the
+   shift as extra pointer movement — the runaway-resize loop), and must
+   track growth instantly rather than through RGL's 200ms height easing
+   so the dragged edge stays under the pointer. The wrapper stamps
+   --pinboard-freeze and floors its own min-height inline (see
+   gestureFreeze in GalleryPinBoard); this rule extends the floor to the
+   grid element so the board's visible bottom edge holds still too. */
+.pinboard-freeze .react-grid-layout {
+  min-height: var(--pinboard-freeze);
+  transition: none;
+}
+
 /* Pinboard pin overlay fit: the overlay controls (pin/crop/select/find
    buttons, media controls, trim buttons, timeline) are laid out in fixed
    Tailwind spacing units and would intersect once a pin shrinks below that
