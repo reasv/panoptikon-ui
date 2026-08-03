@@ -163,11 +163,12 @@ export function BoardGlobalMenuItems({
                 disabled={!hasPins}
                 onCheckedChange={(checked) => setFloat(!checked)}
             >
-                <span title={hasPins
-                    ? "Items settle upward automatically"
-                    : "Pin something first — gravity is stored in the board layout"}>
-                    Gravity
-                </span>
+                {/* Radix's disabled row carries pointer-events-none, so a
+                    title tooltip on it is never hoverable: the reason goes
+                    in the visible label instead, like the toolbar's
+                    "(requires Auto-Layout)". One string — the row is a flex
+                    container, so a separate child would lose the space. */}
+                {hasPins ? "Gravity" : "Gravity (pin something first)"}
             </CheckboxItem>
             {/* When on, the board re-runs Fill Viewport (all items) whenever
                 a pin is added, removed or duplicated, or the board viewport

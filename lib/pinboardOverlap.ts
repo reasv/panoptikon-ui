@@ -17,6 +17,12 @@
 // a changed box: that mirrors what gravity-on does, where the compactor
 // moves the non-static side of such a collision.
 //
+// Immovability and hotness are separate properties, though. A wall the verb
+// ALSO changed — the user runs Set Size or a rotation on the crop item
+// itself, or on an anchored pin — keeps its position (held/static wins:
+// those verbs write w/h, not x/y) while its grown footprint still pushes
+// whatever it grew into, exactly as a non-wall changed box would.
+//
 // The changed boxes themselves are the verb's whole point, so they keep
 // their x always and their y wherever they can: only a wall, or an earlier
 // changed box, can displace one.
@@ -31,10 +37,11 @@ interface Rect {
 }
 
 // A placed box the cascade has to reckon with. HOT ones start a cascade —
-// they are the changed footprints and the items already displaced by them —
-// while cold ones (walls, and movers that stayed put) only block a box that
-// is already on its way down. That distinction is what confines the cascade
-// to the changed footprint: an item nothing hot ever touches keeps its
+// they are the changed footprints (a wall's included, when the verb changed
+// that wall) and the items already displaced by them — while cold ones
+// (unchanged walls, and movers that stayed put) only block a box that is
+// already on its way down. That distinction is what confines the cascade to
+// the changed footprint: an item nothing hot ever touches keeps its
 // position, pre-existing overlaps between untouched items included.
 interface Obstacle extends Rect {
   hot: boolean
@@ -54,7 +61,9 @@ function overlaps(a: Rect, b: Rect): boolean {
  * The pass is ordered, and one pass is enough because of the order:
  *
  *  - Walls (statics and `heldKeys`) are obstacles from the start and never
- *    move, whatever the processing order.
+ *    move, whatever the processing order. A wall that is itself in
+ *    `changedKeys` is one of them — immovable, but hot, so the movers it
+ *    grew into still get out of its way.
  *  - The changed items are placed next, topmost-first (y, then x, then key
  *    for a total order). Each keeps its x and its y unless it overlaps a
  *    wall or an already-placed changed item, in which case it drops past
@@ -69,8 +78,12 @@ function overlaps(a: Rect, b: Rect): boolean {
  *    between two items the change never reaches survives the pass — the
  *    resolver separates what the verb collided, not what it found.
  *
- * The output therefore contains no overlap the resolver could have caused:
- * every box it placed clears every box placed before it.
+ * Every box the pass places therefore clears every box placed before it,
+ * and the only overlaps that can survive are between boxes it left exactly
+ * where it found them: untouched movers that already overlapped each other
+ * or a cold wall, and any pair of walls — including a changed wall grown
+ * onto a static, which the verb caused but no downward move can fix, since
+ * neither side is allowed to move at all.
  */
 export function resolveOverlapsDown(
   layout: LayoutItem[],
@@ -87,9 +100,12 @@ export function resolveOverlapsDown(
   const changedItems: LayoutItem[] = []
   const movers: LayoutItem[] = []
   for (const l of layout) {
-    // Held wins over changed: the invariant is that the crop window does
-    // not move, and a verb that resized it wrote w/h, not x/y.
-    if (isWall(l)) obstacles.push({ x: l.x, y: l.y, w: l.w, h: l.h, hot: false })
+    // Held/static wins over changed for POSITION — the invariant is that
+    // the crop window does not move, and a verb that resized it wrote w/h,
+    // not x/y — but not for hotness: a wall the verb changed keeps its y
+    // and still pushes what its new footprint reaches.
+    if (isWall(l))
+      obstacles.push({ x: l.x, y: l.y, w: l.w, h: l.h, hot: changed.has(l.i) })
     else if (changed.has(l.i)) changedItems.push(l)
     else movers.push(l)
   }
