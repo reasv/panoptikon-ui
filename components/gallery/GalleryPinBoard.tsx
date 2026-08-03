@@ -427,6 +427,16 @@ export function PinBoard(
     // the remount on effGrid would remount the board on every resize pixel).
     // With the feature off this IS `grid`, by object identity, so nothing
     // downstream can tell the difference.
+    //
+    // gridWidth is RGL's 1280px SSR placeholder until the observer's first
+    // measurement lands, so a board with a reference width far from 1280
+    // paints one frame at the wrong scale and reflows on hydration.
+    // Deliberately NOT gated on "the width is real": the server renders
+    // this same expression, so a client-only gate would paint a different
+    // first frame than the SSR HTML (a hydration mismatch) — and it would
+    // paint it at scale 1, which for a board authored at 3440px and shown
+    // at ~1030px is three times further off than the placeholder scale is.
+    // One frame at 1280/refWidth is the cheapest wrong answer available.
     const scale = gridScale(proportional, refWidth, gridWidth)
     const effGrid = useMemo(
         () => effectiveGrid(grid, scale), [grid, scale])
@@ -442,9 +452,19 @@ export function PinBoard(
     // flight (this effect deliberately has no dep array — it needs a fresh
     // DOM read every render until a real measurement exists); it clears
     // itself as soon as the write lands or another board takes over.
+    //
+    // v1 boards are excluded: the stamp writes the token, and writing a v1
+    // token migrates the board onto the v2 lattice — as a replace, so Back
+    // could not even undo it. Merely RENDERING a v1-era version whose flags
+    // carry pbp would then convert it, which is precisely what the
+    // lazy-migration rule forbids (see lib/state/pinboard.ts). A v1 board
+    // keeps no reference width, so its scale stays 1 and it renders exactly
+    // as it always has; the first real mutation migrates it, and from then
+    // on this effect stamps it like any other board. stampRefWidth refuses
+    // v1 boards itself as well — this is the cheap half of that guard.
     const refWidthStamped = useRef(false)
     useEffect(() => {
-        if (!proportional || refWidth > 0 || records.length === 0) {
+        if (!proportional || refWidth > 0 || records.length === 0 || isV1) {
             refWidthStamped.current = false
             return
         }
@@ -940,6 +960,13 @@ export function PinBoard(
     // BASE grid, never effGrid: the remount exists for grid-parameter
     // changes (the v1 -> v2 migration), and a key that followed the
     // proportional scale would remount the whole board on every resize pixel
+    // — including the rounded effective values, which change constantly
+    // while dragging a window edge.
+    // Turning "Scale With Window" OFF bakes the scaled values into the base
+    // grid, so it changes this key too and remounts once. The board's
+    // geometry is unchanged across that remount (that is what the bake is
+    // for); the mount fly-in it would replay is suppressed by the effect
+    // below.
     const gridKey = `grid-${grid.columns}-${grid.rowHeight}-${grid.margin}-${grid.padding}`
     // Keep RGL's transitions off while HYDRATING only (see globals.css:
     // .rgl-mount-still): the SSR HTML paints items at percentage positions,
@@ -963,6 +990,21 @@ export function PinBoard(
         const t = setTimeout(() => setRglSettling(false), 300)
         return () => clearTimeout(t)
     }, [rglSettling])
+    // The same suppression, re-armed for the ONE remount a base-grid change
+    // causes (gridKey above). RGL positions items in percentages until its
+    // own mount effect flips to px transforms — on every mount, not just
+    // hydration — so a remount replays the fly-in from the container
+    // origin. That is a flash on two transitions documented as inert: the
+    // OFF edge of "Scale With Window", which bakes the scaled values into
+    // the base grid, and the explicit v1 -> v2 grid upgrade. RGL sets its
+    // flag from a passive effect too, so this update batches into the same
+    // commit and the class is on the element before the transform changes.
+    const settledGridKey = useRef(gridKey)
+    useEffect(() => {
+        if (settledGridKey.current === gridKey) return
+        settledGridKey.current = gridKey
+        setRglSettling(true)
+    }, [gridKey])
     const pinItem = usePinItem()
     // The board's own layout-actions instance shares the machinery the
     // context menu uses (autoLayout itself is declared above

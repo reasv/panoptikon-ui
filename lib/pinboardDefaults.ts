@@ -34,7 +34,10 @@ interface DefaultableFlag {
   // What a newly created board starts with (before user overrides)
   creationDefault: boolean
   // How the flag is named in the "settings saved as default" summary, so
-  // adding a key to the registry updates that sentence too
+  // adding a key to the registry updates that sentence too. Use the
+  // control's own on-screen label, capitalized exactly as the menu shows
+  // it: the sentence sends the user looking for these switches, and a name
+  // that appears nowhere in the UI sends them looking for nothing.
   label: string
 }
 
@@ -49,16 +52,21 @@ export const PINBOARD_DEFAULTABLE_FLAGS: Record<
   // auto-layout
   pba: { codecDefault: false, creationDefault: true, label: "Auto-Layout" },
   // auto-crop to cells
-  pbc: { codecDefault: false, creationDefault: true, label: "Auto-Crop" },
-  // selection-verb crop
-  psc: { codecDefault: true, creationDefault: true, label: "selection-crop" },
+  pbc: {
+    codecDefault: false,
+    creationDefault: true,
+    label: "Auto-Crop to Cells",
+  },
+  // selection-verb crop (a toolbar icon toggle, so it has no menu label of
+  // its own — named for what it does, in the same Title Case as the rest)
+  psc: { codecDefault: true, creationDefault: true, label: "Selection Crop" },
   // grid background
-  pg: { codecDefault: false, creationDefault: false, label: "grid" },
-  // proportional grid ("Scale With Window")
+  pg: { codecDefault: false, creationDefault: false, label: "Show Grid" },
+  // proportional grid
   pbp: {
     codecDefault: false,
     creationDefault: false,
-    label: "scale-with-window",
+    label: "Scale With Window",
   },
 }
 

@@ -254,10 +254,14 @@ export function BoardGlobalMenuItems({
                         toast({
                             title: "New-Board Defaults Saved",
                             // Named from the registry, so a flag added there
-                            // can't quietly go unmentioned here
+                            // can't quietly go unmentioned here. Gravity is
+                            // spelled out because it is the one creation
+                            // default that isn't a registry flag (it rides
+                            // the layout token) — same on-screen name as
+                            // its menu row, like every registry label.
                             description: "New pinboards will start with this"
                                 + ` board's current ${defaultableFlagLabels()
-                                    .join(", ")} and gravity settings.`,
+                                    .join(", ")} and Gravity settings.`,
                             duration: 4000,
                         })
                     }}>

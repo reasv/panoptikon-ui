@@ -209,10 +209,20 @@ export function usePinBoard() {
   //         At that instant the scale is exactly 1, so nothing moves; from
   //         then on the grid scales with the window.
   //   OFF — bake the effective (scaled) grid values back into the token as
-  //         integers and keep a reference width of the current width, so
-  //         the board keeps its on-screen size and re-enabling is inert
-  //         again. Rounding is the only difference: under half a pixel per
-  //         value.
+  //         integers and DROP the reference width: it is dead state while
+  //         the flag is off (only gridScale reads it, and it is always
+  //         gated on the flag), and the ON edge always stamps a fresh one,
+  //         so re-enabling is inert again regardless. Dropping it is also
+  //         what makes an ON -> straight-OFF at the same width restore the
+  //         token byte for byte, instead of leaving a `~w<int>` nothing
+  //         consumes — enough of a difference for the next Save to mint a
+  //         new version rather than the settings-only no_op.
+  //         The bake is inert only up to rounding, and that rounding is
+  //         NOT small: it lands on the row STEP, which item positions
+  //         accumulate down the board, so the relative error is
+  //         1/(step*scale) — negligible near scale 1, up to a third of the
+  //         board's height at the small scales a wide reference width
+  //         produces in a narrow window (see bakeGrid in pinboardGrid.ts).
   //
   // The flag write rides the same tick as the layout write, so nuqs folds
   // them into ONE history entry (the first-pin edge does the same) and Back
@@ -231,12 +241,24 @@ export function usePinBoard() {
       // the stamping effect in GalleryPinBoard).
       if (width <= 0) return prev
       const scale = next ? 1 : gridScale(true, refWidth, width)
-      const ext = { float, refWidth: width }
+      // Turning OFF with nothing to bake and no reference to drop changes
+      // NOTHING — so it must not touch the token at all, migration
+      // included: a v1 board (no ext by definition, hence always this
+      // case) would otherwise convert to the v2 lattice on a toggle that
+      // cannot move a single pixel.
+      if (!next && scale === 1 && refWidth === 0) return prev
+      const ext = { float, refWidth: next ? width : 0 }
       const nextGrid = bakeGrid(grid, scale)
-      return isV1
+      const out = isV1
         ? serializeBoard(
             V2_GRID, migrateRecords(records, V2_GRID), highWater, ext)
         : serializeBoard(nextGrid, records, highWater, ext)
+      // Backstop for every other inert edge (re-stamping the width a board
+      // already carries): an unchanged token is handed back by identity, so
+      // no history entry and no new version can come of it.
+      return out.length === prev.length && out.every((v, i) => v === prev[i])
+        ? prev
+        : out
     })
     void flagSetters.pbp(next === PINBOARD_DEFAULTABLE_FLAGS.pbp.codecDefault
       ? null : next)
@@ -246,18 +268,25 @@ export function usePinBoard() {
   // or one whose token predates the feature. Never a user action, so it
   // REPLACES rather than pushing (the same rule RGL's normalization writes
   // follow), and it is inert: until it lands the scale is 1 anyway.
+  //
+  // A v1 board is never stamped. Serializing one migrates it to the v2
+  // lattice, and this write is render-triggered and un-undoable (replace,
+  // no Back entry), so stamping would convert a v1-era board to v2 merely
+  // because someone LOOKED at a version whose flags carry pbp — exactly
+  // the accident the lazy-migration rule at the top of this file forbids.
+  // v1 boards therefore render unscaled (no refWidth => scale 1, which is
+  // what they have always looked like) until a real mutation, or an
+  // explicit toggle, migrates them. The caller skips v1 boards too; this
+  // guard is the invariant's home.
   const stampRefWidth = (boardWidth: number) => {
     const width = Math.round(boardWidth)
     if (width <= 0) return
     setSavedLayout((prev) => {
       const { grid, records, isV1, highWater, float, refWidth } =
         parseBoard(prev)
-      if (records.length === 0 || refWidth > 0) return prev
-      const ext = { float, refWidth: width }
-      return isV1
-        ? serializeBoard(
-            V2_GRID, migrateRecords(records, V2_GRID), highWater, ext)
-        : serializeBoard(grid, records, highWater, ext)
+      if (isV1 || records.length === 0 || refWidth > 0) return prev
+      return serializeBoard(grid, records, highWater,
+        { float, refWidth: width })
     }, { history: "replace" })
   }
   // Convert a v1 board to the v2 grid in place, without touching the

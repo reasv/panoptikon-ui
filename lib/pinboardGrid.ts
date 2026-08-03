@@ -108,7 +108,18 @@ export function effectiveGrid(grid: GridParams, scale: number): GridParams {
 
 // The same values baked back to the integers a token can carry — what
 // turning the feature OFF stores, so the board keeps the size it had on
-// screen (inert up to a rounding of at most half a pixel per value).
+// screen. Exact at scale 1 (identity), approximate everywhere else, and
+// the approximation is worth stating honestly: each value rounds by under
+// half a pixel, but what item positions accumulate is the ROW STEP
+// (rowHeight + margin), whose error is therefore up to a full pixel per
+// row — and every item's top offset is its row index times that step, so
+// the whole board stretches or shrinks by up to one pixel per row step it
+// spans. In relative terms the error is bounded by 1/(step*scale), which
+// is invisible near scale 1 and large when the scale is small: a v2 board
+// (step 10px) authored at 3440px and switched off in a ~1030px window has
+// an exact step of 2.99px, which bakes to 1 + 1 = 2px — the board comes
+// out a third shorter. Small scales cannot do better; integers are all the
+// token can carry.
 export function bakeGrid(grid: GridParams, scale: number): GridParams {
   if (scale === 1) return grid
   return {
