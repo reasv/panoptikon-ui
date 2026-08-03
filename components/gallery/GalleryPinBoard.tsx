@@ -281,113 +281,26 @@ export function PinBoard(
     // along the way) instead of a snap fighting RGL's own 200ms
     // container-height easing. Re-grabbing mid-glide re-captures the
     // CURRENT rendered height, so successive adjustments never jump.
+    //
+    // The floor is all this does. No autoscroll, no synthetic events, no
+    // mid-gesture scroll assistance: three variants (marquee-style edge
+    // zone, beyond-edge trigger, wheel-driven synthetic-move follow) all
+    // failed user validation — anything that moves the view or the box
+    // beyond the pointer's own 1:1 travel reads as loss of control.
+    // Growth past the viewport edge happens blind and is corrected after
+    // release, which the floor makes safe: the post-release shrink of an
+    // overgrown board is the protected direction.
     const [gestureFreeze, setGestureFreeze] = useState<
         { h: number; releasing: boolean } | null>(null)
-    // The LIVE floor value, ratcheted upward mid-gesture by the
-    // autoscroll loop below (state alone would re-render the whole board
-    // per scrolled frame). Render reads it too, so a mid-gesture
-    // re-render can't stamp a stale variable over a ratcheted one.
-    const freezeHRef = useRef<number | null>(null)
     const freezeScrollRange = () => {
         const areaEl = gridAreaRef.current
         const gridEl = areaEl?.querySelector<HTMLElement>(".react-grid-layout")
         const h = Math.max(areaEl?.clientHeight ?? 0, gridEl?.offsetHeight ?? 0)
-        freezeHRef.current = h > 0 ? h : null
         setGestureFreeze(h > 0 ? { h, releasing: false } : null)
-        startGestureScrollTracking()
     }
     const releaseScrollFloor = () => {
-        stopGestureScrollTracking()
         setGestureFreeze((f) => f && !f.releasing ? { ...f, releasing: true } : f)
     }
-    // Pointer and scroll tracking while an RGL gesture is active. There
-    // is deliberately NO automatic edge-autoscroll here: any
-    // parked-pointer conveyor grows the box 1:1 with its own scrolling
-    // (every scrolled px re-measures into a px of box travel), which is
-    // unbounded in extent and reads as the box inflating on its own —
-    // two variants of it (eager inside-zone, then beyond-edge with a
-    // gentler cap) both failed user validation the same way. Instead
-    // growth is strictly 1:1 with the hand, and reaching past the
-    // viewport edge mid-gesture is done by the user SCROLLING — the
-    // mouse wheel works during a drag, each notch is a deliberate,
-    // self-limiting step. This block makes that safe and smooth:
-    // - every viewport scroll during the gesture dispatches a synthetic
-    //   mousemove at the last real pointer position, so RGL re-measures
-    //   against the moved container rect and the dragged box stays under
-    //   the pointer in CONTENT space (without it the board slides under
-    //   a stationary pointer, then snaps on the next real move);
-    // - every downward scroll RATCHETS the gesture floor up to
-    //   scrollTop+clientHeight — exactly the invariant that makes
-    //   scrollTop clamping impossible — because the start-captured floor
-    //   only covers the region below the gesture-start height: once the
-    //   user has wheeled down into gesture-grown territory, pulling the
-    //   box back up would otherwise shrink the live range above the
-    //   floor and re-enter the clamp feedback loop mid-gesture. The
-    //   ratchet writes --pinboard-freeze imperatively (see freezeHRef);
-    //   the accumulated overshoot collapses in the release glide like
-    //   everything else.
-    const gestureScrollRef = useRef<{
-        onMove: (e: MouseEvent) => void
-        onScroll: () => void
-        viewport: HTMLElement
-        lastScrollTop: number
-        lastX: number
-        lastY: number
-        hasPointer: boolean
-    } | null>(null)
-    const stopGestureScrollTracking = () => {
-        const g = gestureScrollRef.current
-        if (!g) return
-        window.removeEventListener("mousemove", g.onMove)
-        g.viewport.removeEventListener("scroll", g.onScroll)
-        gestureScrollRef.current = null
-    }
-    const startGestureScrollTracking = () => {
-        stopGestureScrollTracking()
-        const viewport = scrollAreaRef.current
-            ?.querySelector<HTMLElement>("[data-radix-scroll-area-viewport]")
-        if (!viewport) return
-        // The pin's own mousedown capture stamped the press position
-        // (RGL merges the pin div and the grid item, so handle presses
-        // pass through it too) — seed from it so a wheel turned before
-        // the first pointer move still keeps the box under the pointer
-        const seed = selectionMouseDownRef.current
-        const g = {
-            viewport,
-            lastScrollTop: viewport.scrollTop,
-            lastX: seed?.x ?? 0,
-            lastY: seed?.y ?? 0,
-            hasPointer: seed !== null,
-            onMove: (e: MouseEvent) => {
-                if (!e.isTrusted) return // our own synthetic moves
-                g.lastX = e.clientX
-                g.lastY = e.clientY
-                g.hasPointer = true
-            },
-            onScroll: () => {
-                const st = g.viewport.scrollTop
-                if (st === g.lastScrollTop) return
-                if (st > g.lastScrollTop) {
-                    const needed = Math.ceil(st + g.viewport.clientHeight)
-                    if (needed > (freezeHRef.current ?? 0)) {
-                        freezeHRef.current = needed
-                        gridAreaRef.current?.style.setProperty(
-                            "--pinboard-freeze", `${needed}px`)
-                    }
-                }
-                g.lastScrollTop = st
-                if (!g.hasPointer) return
-                document.dispatchEvent(new MouseEvent("mousemove", {
-                    bubbles: true, cancelable: true, view: window,
-                    clientX: g.lastX, clientY: g.lastY, buttons: 1,
-                }))
-            },
-        }
-        gestureScrollRef.current = g
-        window.addEventListener("mousemove", g.onMove)
-        viewport.addEventListener("scroll", g.onScroll)
-    }
-    useEffect(() => () => stopGestureScrollTracking(), [])
     // Getter for the crop-mode image's viewport extent, set by its CropView
     const cropImageExtentRef = useRef<(() => CropGeometry | null) | null>(null)
     // Width of the grid area, observed by RGL's own hook (the successor of
@@ -1882,16 +1795,12 @@ export function PinBoard(
                 // browser walks scrollTop down with it, one followable
                 // glide; the bubbled transitionend below ends the phase.
                 style={gestureFreeze ? {
-                    // The ref, not state.h: autoscroll ratchets the floor
-                    // mid-gesture without re-rendering (see freezeHRef)
-                    ["--pinboard-freeze" as string]:
-                        `${freezeHRef.current ?? gestureFreeze.h}px`,
+                    ["--pinboard-freeze" as string]: `${gestureFreeze.h}px`,
                 } as React.CSSProperties : undefined}
                 onTransitionEnd={(e) => {
                     if (e.propertyName === "min-height"
                         && e.target instanceof HTMLElement
                         && e.target.classList.contains("react-grid-layout")) {
-                        freezeHRef.current = null
                         setGestureFreeze((f) => f?.releasing ? null : f)
                     }
                 }}
