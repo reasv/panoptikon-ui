@@ -5,6 +5,7 @@ import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, u
 import { consumePinboardExplicitPlacement, consumePinboardNavigation, consumePinboardPendingEdit, markPinboardExplicitPlacement } from '@/lib/pinboardNavigation'
 import { usePinBoard } from '@/lib/state/pinboard'
 import { GridParams, minPinUnits, rowStep, v1ScaleFactors } from '@/lib/pinboardGrid'
+import { placeNewPin } from '@/lib/pinboardPlace'
 import { PinButton } from './PinButton'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { GridLayout, noCompactor, useContainerWidth, type LayoutItem } from "react-grid-layout"
@@ -3048,9 +3049,13 @@ export function usePinItem() {
     const pinItem = (sha256: string, pos?: { x: number, y: number, w: number, h: number }) => {
         updateRecords((records, grid) => {
             // An explicit position (e.g. from a drop) is already in the
-            // board's grid units; the fallback size is 2x2 in v1 units
+            // board's grid units; the fallback size is 2x2 in v1 units,
+            // placed in the first free slot of the bottom row (see
+            // pinboardPlace.ts)
             const { sx, sy } = v1ScaleFactors(grid)
-            const p = pos ?? { x: 0, y: 0, w: Math.round(2 * sx), h: Math.round(2 * sy) }
+            const w = Math.round(2 * sx)
+            const h = Math.round(2 * sy)
+            const p = pos ?? { ...placeNewPin(records, grid, w, h), w, h }
             return [
                 ...records,
                 sha256.slice(0, prefixLength),

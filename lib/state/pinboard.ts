@@ -149,7 +149,8 @@ export function usePinBoard() {
       }
     }
     setSavedLayout((prev) => {
-      const { grid, records, isV1, highWater } = parseBoard(prev)
+      const { grid, records, isV1, highWater, float, refWidth } =
+        parseBoard(prev)
       const next = mutate(records, grid)
       const nextHighWater = opts?.highWater ?? highWater
       if (
@@ -159,9 +160,12 @@ export function usePinBoard() {
       ) {
         return prev
       }
+      // The ext switches (gravity, reference width) are board state that no
+      // record mutation may drop: read off the token, written straight back.
+      // A v1 board has none by definition, and migration mints none.
       return isV1
         ? serializeBoard(V2_GRID, migrateRecords(next, V2_GRID), nextHighWater)
-        : serializeBoard(grid, next, nextHighWater)
+        : serializeBoard(grid, next, nextHighWater, { float, refWidth })
     }, opts?.history ? { history: opts.history } : undefined)
   }
   // Convert a v1 board to the v2 grid in place, without touching the

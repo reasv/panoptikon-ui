@@ -76,16 +76,55 @@ export function minPinUnits(
 // target max(current fold, ratchet), so adding items while the board is
 // shown in a smaller view never recompacts a layout made for a bigger one;
 // an explicit "refit to current view" resets it.
-const TOKEN_RE = /^v(\d+)(?:\.(\d+)\.(\d+)\.(\d+)\.(\d+))?(?:!(\d+))?$/
+//
+// The optional "~<ext>" suffix carries the board's remaining version-scoped
+// switches as one compact lowercase string in a fixed order:
+//
+//   f        free-float: gravity/compaction OFF (absent = ON, the original
+//            behavior)
+//   w<int>   reference width in px for the proportional grid (absent = none)
+//
+// e.g. "v2~f", "v2!40~w1503", "v2.108.5.5.5!40~fw1503". The segment is
+// append-only and parsed leniently: an unknown letter must never make the
+// whole token unparseable, since falling back to the v1 branch would
+// reinterpret the token as a record and wreck the board.
+export interface GridExt {
+  // Gravity off: items stay exactly where they were put
+  float: boolean
+  // Board width the layout's cell aspects were authored at (0 = unset)
+  refWidth: number
+}
+
+export const NO_EXT: GridExt = { float: false, refWidth: 0 }
+
+const TOKEN_RE =
+  /^v(\d+)(?:\.(\d+)\.(\d+)\.(\d+)\.(\d+))?(?:!(\d+))?(?:~([a-z0-9]*))?$/
+
+function parseExt(ext: string | undefined): GridExt {
+  if (!ext) return NO_EXT
+  const w = /w(\d+)/.exec(ext)
+  return { float: ext.startsWith("f"), refWidth: w ? parseInt(w[1]) : 0 }
+}
+
+// Emits nothing at all when both switches are at their defaults, so boards
+// that never touch them keep their exact historical token.
+function formatExt(ext?: Partial<GridExt>): string {
+  if (!ext) return ""
+  const refWidth =
+    ext.refWidth && ext.refWidth > 0 ? Math.round(ext.refWidth) : 0
+  const body = `${ext.float ? "f" : ""}${refWidth > 0 ? `w${refWidth}` : ""}`
+  return body ? `~${body}` : ""
+}
 
 export function parseVersionToken(
   token: string | undefined
-): { grid: GridParams; highWater: number } | null {
+): ({ grid: GridParams; highWater: number } & GridExt) | null {
   if (!token) return null
   const m = TOKEN_RE.exec(token)
   if (!m || parseInt(m[1]) < 2) return null
   const highWater = m[6] ? parseInt(m[6]) : 0
-  if (!m[2]) return { grid: V2_GRID, highWater }
+  const ext = parseExt(m[7])
+  if (!m[2]) return { grid: V2_GRID, highWater, ...ext }
   return {
     grid: {
       columns: parseInt(m[2]),
@@ -94,11 +133,16 @@ export function parseVersionToken(
       padding: parseInt(m[5]),
     },
     highWater,
+    ...ext,
   }
 }
 
-export function formatVersionToken(grid: GridParams, highWater = 0): string {
-  const suffix = highWater > 0 ? `!${highWater}` : ""
+export function formatVersionToken(
+  grid: GridParams,
+  highWater = 0,
+  ext?: Partial<GridExt>
+): string {
+  const suffix = `${highWater > 0 ? `!${highWater}` : ""}${formatExt(ext)}`
   if (
     grid.columns === V2_GRID.columns &&
     grid.rowHeight === V2_GRID.rowHeight &&
@@ -110,7 +154,10 @@ export function formatVersionToken(grid: GridParams, highWater = 0): string {
   return `v2.${grid.columns}.${grid.rowHeight}.${grid.margin}.${grid.padding}${suffix}`
 }
 
-export interface ParsedBoard {
+// ParsedBoard carries the ext switches too, so every write path can hand
+// them straight back to serializeBoard: whatever a board's token says must
+// survive every verb, drag, save and migration untouched.
+export interface ParsedBoard extends GridExt {
   grid: GridParams
   // The 5-string records, with the version token stripped. All layout keys
   // (`${offset}-${sha256}`) use offsets into THIS array, so they are stable
@@ -124,16 +171,28 @@ export interface ParsedBoard {
 export function parseBoard(param: string[]): ParsedBoard {
   const parsed = parseVersionToken(param[0])
   if (parsed) {
-    return { grid: parsed.grid, records: param.slice(1), isV1: false, highWater: parsed.highWater }
+    return {
+      grid: parsed.grid,
+      records: param.slice(1),
+      isV1: false,
+      highWater: parsed.highWater,
+      float: parsed.float,
+      refWidth: parsed.refWidth,
+    }
   }
-  return { grid: V1_GRID, records: param, isV1: true, highWater: 0 }
+  return { grid: V1_GRID, records: param, isV1: true, highWater: 0, ...NO_EXT }
 }
 
 // An empty board serializes to [] so nuqs clears the param entirely and the
 // next board starts fresh (on the v2 grid)
-export function serializeBoard(grid: GridParams, records: string[], highWater = 0): string[] {
+export function serializeBoard(
+  grid: GridParams,
+  records: string[],
+  highWater = 0,
+  ext?: Partial<GridExt>
+): string[] {
   if (records.length === 0) return []
-  return [formatVersionToken(grid, highWater), ...records]
+  return [formatVersionToken(grid, highWater, ext), ...records]
 }
 
 // Integer factors mapping v1 lattice coordinates onto another grid: x and w

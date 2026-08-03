@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils"
 import { usePinBoard } from "@/lib/state/pinboard"
 import { useGalleryHidePinBoard, useGalleryIndex } from "@/lib/state/gallery"
 import { v1ScaleFactors } from "@/lib/pinboardGrid"
+import { placeNewPin } from "@/lib/pinboardPlace"
 import { markPinboardPendingEdit } from "@/lib/pinboardNavigation"
 import { usePinboardCarry } from "@/lib/state/pinboardCarry"
 
@@ -87,15 +88,19 @@ export function PinButton({
                 return next
             }
             // Default new-pin size is 10x10 in v1 units, scaled to the
-            // board's grid
+            // board's grid; the pin lands in the first free slot of the
+            // bottom row (see pinboardPlace.ts), never on top of anything
             const { sx, sy } = v1ScaleFactors(grid)
+            const w = Math.round(10 * sx)
+            const h = Math.round(10 * sy)
+            const { x, y } = placeNewPin(prev, grid, w, h)
             return [
                 ...prev,
                 sha256.slice(0, prefixLength),
-                "0",
-                "0",
-                Math.round(10 * sx).toString(),
-                Math.round(10 * sy).toString(),
+                x.toString(),
+                y.toString(),
+                w.toString(),
+                h.toString(),
             ]
         })
     }
