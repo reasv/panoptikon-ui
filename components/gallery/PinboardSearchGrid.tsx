@@ -23,10 +23,14 @@ import { cn } from "@/lib/utils"
 import { PinboardCard, PinboardPreviewDialog } from "./PinboardLibrary"
 import {
     PreviewPopover,
-    PREVIEW_POPOVER_WIDTH,
     useDelayedHover,
     verticalPopoverBox,
 } from "./PinboardPreviewPopover"
+
+// These cards span a whole search panel, so they are several times the size
+// of the library dialog's — a 320px preview visibly stretches here. The
+// master is 2048 wide, so this is a real resolution gain, not an upscale.
+const SEARCH_CARD_PREVIEW_WIDTH = 768
 
 type PinboardMatch = components["schemas"]["PinboardSearchMatch"]
 // What PinboardCard hands back to its hover/preview callbacks: the match rows
@@ -160,6 +164,7 @@ export function PinboardSearchGrid({
                                 board={board}
                                 dbs={dbs}
                                 matchCount={board.match_count}
+                                previewWidth={SEARCH_CARD_PREVIEW_WIDTH}
                                 href={pinboardOpenHref(
                                     pathname,
                                     searchParams,
@@ -203,8 +208,7 @@ export function PinboardSearchGrid({
                     src={pinboardPreviewURL(
                         dbs,
                         hovered.board.id,
-                        hovered.board.head_version_id,
-                        PREVIEW_POPOVER_WIDTH
+                        hovered.board.head_version_id
                     )}
                     box={verticalPopoverBox(
                         hovered.anchor,

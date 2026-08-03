@@ -69,12 +69,20 @@ async function resolveItems(
   return [...items]
 }
 
-async function buildSaveBody(
+// The preview half of a save body: composited from the live board's
+// measured width, at PREVIEW_WIDTH. Shared with the preview refresh, which
+// is exactly this composite PUT onto an existing version — the two must
+// produce the same picture from the same board or a refresh would change
+// what the version looks like beyond its resolution.
+//
+// A failed composite is not an error here: it yields null fields, which a
+// save stores as "version without a picture". Callers that exist only to
+// produce an image (the refresh) check for that themselves.
+async function composePreviewFields(
   savedLayout: string[],
   dbs: Dbs,
   flags: Record<string, boolean>
 ) {
-  const items = await resolveItems(distinctPrefixes(savedLayout), dbs)
   const boardWidth = findBoardElement()?.clientWidth ?? window.innerWidth
   const background =
     getComputedStyle(document.body).backgroundColor || "#09090b"
@@ -90,12 +98,23 @@ async function buildSaveBody(
     console.error("pinboard preview composition failed", err)
   }
   return {
-    layout: savedLayout,
-    items,
     preview_b64: preview ? await blobToBase64(preview.blob) : null,
     preview_w: preview?.width ?? null,
     preview_h: preview?.height ?? null,
     screenful_h: preview?.screenfulH ?? null,
+  }
+}
+
+async function buildSaveBody(
+  savedLayout: string[],
+  dbs: Dbs,
+  flags: Record<string, boolean>
+) {
+  const items = await resolveItems(distinctPrefixes(savedLayout), dbs)
+  return {
+    layout: savedLayout,
+    items,
+    ...(await composePreviewFields(savedLayout, dbs, flags)),
     // Board-level editing-behavior flags ride every save; the gateway
     // stores them on the board (never a version), so a flags-only save
     // updates them under a layout no-op.
@@ -232,6 +251,72 @@ export function usePinboardActions() {
   }
 
   /**
+   * Re-composites the head version's preview at the board's CURRENT width
+   * and today's master resolution, and replaces the stored image on that
+   * version. No new version, no time_updated bump: the picture of a saved
+   * arrangement is not part of what was saved.
+   *
+   * Only valid while the live layout equals the head version's — otherwise
+   * the new picture would show something the version does not contain — so
+   * this re-checks that against a freshly fetched head rather than trusting
+   * the caller's cached copy. The menu's own enable/disable is UX; this is
+   * the guard.
+   *
+   * Exact geometry comes from compositing at the width the board is
+   * actually rendered at, which is why this lives on the mounted board and
+   * there is no batch tool: the save-time width was never stored.
+   */
+  const refreshPreview = async () => {
+    if (pbid == null || savedLayout.length === 0) return
+    try {
+      const { data: board } = await fetchClient.GET(
+        "/api/pinboards/{pinboard_id}",
+        { params: { path: { pinboard_id: pbid }, query: { ...dbs } } }
+      )
+      const head = board?.head
+      if (!head) throw new Error("board has no head version")
+      if (!layoutsEqual(head.layout, savedLayout)) {
+        toast({
+          title: "Save first",
+          description:
+            "The board has unsaved changes, so a new preview would not"
+            + " match its latest saved version.",
+          duration: 4000,
+        })
+        return
+      }
+      const preview = await composePreviewFields(savedLayout, dbs, flagValues)
+      if (!preview.preview_b64) throw new Error("composite produced no image")
+      const { error } = await fetchClient.PUT(
+        "/api/pinboards/{pinboard_id}/versions/{version_id}/preview",
+        {
+          params: {
+            path: { pinboard_id: pbid, version_id: head.id },
+            query: { ...dbs },
+          },
+          body: { ...preview, preview_b64: preview.preview_b64 },
+        }
+      )
+      if (error) throw new Error("preview refresh failed")
+      invalidate()
+      toast({
+        title: "Preview refreshed",
+        // Previews are served with immutable cache headers, so sizes this
+        // browser already fetched keep showing the old picture.
+        description: "Reload with Ctrl+Shift+R if you still see the old one.",
+        duration: 4000,
+      })
+    } catch (err) {
+      console.error("pinboard preview refresh failed", err)
+      toast({
+        title: "Error",
+        description: "Failed to refresh the preview",
+        duration: 3000,
+      })
+    }
+  }
+
+  /**
    * Loads a saved layout into the live board: a pure URL write, so
    * refresh, back/forward, and bookmarks keep working. nuqs batches the
    * same-tick setters into one history entry. `flags` is the board's
@@ -261,5 +346,5 @@ export function usePinboardActions() {
     stampFlags(flags, { history })
   }
 
-  return { save, rename, loadBoard, savedLayout, pbid, dbs }
+  return { save, rename, refreshPreview, loadBoard, savedLayout, pbid, dbs }
 }

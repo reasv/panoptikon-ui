@@ -7,8 +7,12 @@ import { createPortal } from "react-dom"
 // rows): a pointer-events-none image portaled to <body>. The portal matters:
 // callers live inside transformed containers (the translate-centered dialog),
 // where position:fixed would resolve against the transform, not the viewport.
-
-export const PREVIEW_POPOVER_WIDTH = 1024
+//
+// Callers pass no `maxw`: the popover is the largest consumer there is, and
+// the displayed size is computed from the board's stored preview_w/preview_h
+// against the viewport (see the box helpers below), never from the request
+// width. Asking for a specific width only bought a JPEG re-encode of an
+// already-lossy WebP master; the endpoint serves the stored bytes instead.
 
 const MARGIN = 8 // minimum gap to the viewport edges
 const GAP = 8 // gap between the popover and its anchor

@@ -32,7 +32,6 @@ import { components } from "@/lib/panoptikon"
 import {
     horizontalPopoverBox,
     PreviewPopover,
-    PREVIEW_POPOVER_WIDTH,
     useDelayedHover,
 } from "./PinboardPreviewPopover"
 
@@ -284,12 +283,7 @@ export function PinboardHistoryPanel({
             </ScrollArea>
             {hoveredRow && panelRef.current && (
                 <PreviewPopover
-                    src={pinboardPreviewURL(
-                        dbs,
-                        pbid,
-                        hoveredRow.version.id,
-                        PREVIEW_POPOVER_WIDTH
-                    )}
+                    src={pinboardPreviewURL(dbs, pbid, hoveredRow.version.id)}
                     box={horizontalPopoverBox(
                         panelRef.current.getBoundingClientRect(),
                         hoveredRow.anchor,

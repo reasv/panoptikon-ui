@@ -42,7 +42,16 @@ import { getFileURL } from "@/lib/utils"
 // Output width of the composited preview in pixels. One constant, tunable
 // without schema or API changes: preview_w/preview_h record what each
 // version was actually rendered at, and the serving endpoint downscales.
-export const PREVIEW_WIDTH = 1024
+//
+// This is the MASTER every displayed size derives from, so it has to be
+// wide enough for the largest consumer (the hover popover and the full-size
+// dialog, which now ask for the stored bytes untouched) rather than for the
+// cards. A full-width board composites at ~3440px, so 2048 still downscales
+// — but a 2-screenful WebP q0.82 at this width lands in the hundreds of KB,
+// far under MAX_PREVIEW_BYTES, and the serve endpoint's maxw clamp allows
+// up to 4096. Existing versions keep whatever they were saved at; "Refresh
+// Preview" is the opt-in way to re-render one at this width.
+export const PREVIEW_WIDTH = 2048
 // How many window-heights of board (from the top) the preview captures.
 export const CAPTURE_SCREENFULS = 2
 const WEBP_QUALITY = 0.82

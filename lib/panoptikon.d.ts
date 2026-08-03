@@ -1200,11 +1200,17 @@ export interface paths {
         };
         /**
          * Get the stored preview image for a pinboard version
-         * @description Serves the client-composited preview for one version. Versions are immutable, so responses carry immutable cache headers.
-         *     With `maxw`, the image is downscaled on the fly (JPEG) to at most that width; without it, the stored image is served as uploaded.
+         * @description Serves the client-composited preview for one version. Responses carry immutable cache headers.
+         *     With `maxw`, the image is downscaled on the fly (JPEG) to at most that width — unless the stored image is already no wider than `maxw`, in which case it is served as uploaded, exactly as it is without `maxw`. Asking for the full master therefore costs no second lossy pass.
          */
         get: operations["pinboard_version_preview"];
-        put?: never;
+        /**
+         * Replace the stored preview image of a pinboard version
+         * @description Overwrites one version's preview image and its recorded dimensions, leaving the layout, items and name-at-save untouched. The compositor is client-side, so this is how a board saved at an older preview resolution gets a better picture without minting a version: recomposite the head version's layout and PUT the result.
+         *     The board's `time_updated` is deliberately not bumped — re-rendering the picture of a version is not a content change, so it must not reorder the library.
+         *     Caveat: version previews are served with immutable cache headers (versions were immutable until this endpoint existed), so after a refresh, already-cached sizes persist in browsers and proxies until a hard refresh. Accepted as-is: this is a one-time local operation, not a cache-busting mechanism.
+         */
+        put: operations["update_pinboard_version_preview"];
         post?: never;
         delete?: never;
         options?: never;
@@ -3568,6 +3574,24 @@ export interface components {
         TextResponse: {
             text: components["schemas"]["ExtractedTextRecord"][];
         };
+        /**
+         * @description A replacement preview image for an existing version. Same field semantics
+         *     as the preview half of [`SaveVersionRequest`]; nothing else about the
+         *     version can be changed.
+         */
+        UpdatePreviewRequest: {
+            /** @description Base64-encoded preview image (WebP or PNG), composited client-side. */
+            preview_b64: string;
+            /** Format: int64 */
+            preview_h?: number | null;
+            /** Format: int64 */
+            preview_w?: number | null;
+            /**
+             * Format: int64
+             * @description Height in preview-image pixels of one save-time viewport screenful.
+             */
+            screenful_h?: number | null;
+        };
         Value: unknown;
         VectorQuantActionResponse: {
             detail: string;
@@ -5902,6 +5926,49 @@ export interface operations {
                 content?: never;
             };
             /** @description No preview stored for this version */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_pinboard_version_preview: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+                /** @description The user the pinboard belongs to. */
+                user?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The pinboard id */
+                pinboard_id: number;
+                /** @description The version id */
+                version_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdatePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Preview replaced */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PinboardDeleteResponse"];
+                };
+            };
+            /** @description Version not found */
             404: {
                 headers: {
                     [name: string]: unknown;

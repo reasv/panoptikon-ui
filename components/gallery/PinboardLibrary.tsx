@@ -31,7 +31,6 @@ import {
 import { cn, compactDate, dateTitle, getLocale } from "@/lib/utils"
 import {
     PreviewPopover,
-    PREVIEW_POPOVER_WIDTH,
     useDelayedHover,
     verticalPopoverBox,
 } from "./PinboardPreviewPopover"
@@ -39,6 +38,11 @@ import { components } from "@/lib/panoptikon"
 
 type PinboardSummary = components["schemas"]["PinboardSummaryResponse"]
 
+// The default card preview request width — right for the in-modal library
+// grid, where cards are small. Hosts whose cards render much larger (the
+// grid view's Library tab, full width across the whole panel) pass their
+// own via PinboardCard's `previewWidth`, since stretching a 320px JPEG is
+// what made those look soft.
 const CARD_PREVIEW_WIDTH = 320
 // All cards share one aspect ratio so the grid stays aligned regardless of
 // each board's save-time window shape; previews crop/pan inside it.
@@ -267,8 +271,7 @@ export function PinboardLibraryDialog({
                         src={pinboardPreviewURL(
                             dbs,
                             hovered.board.id,
-                            hovered.board.head_version_id,
-                            PREVIEW_POPOVER_WIDTH
+                            hovered.board.head_version_id
                         )}
                         box={verticalPopoverBox(
                             hovered.anchor,
@@ -366,8 +369,7 @@ export function PinboardPreviewDialog({
                         src={pinboardPreviewURL(
                             dbs,
                             board.id,
-                            board.head_version_id,
-                            PREVIEW_POPOVER_WIDTH
+                            board.head_version_id
                         )}
                         alt={board.name || "Pinboard preview"}
                         className="max-h-[80vh] max-w-full w-auto h-auto rounded border"
@@ -450,6 +452,7 @@ export function PinboardCard({
     dbs,
     href,
     matchCount,
+    previewWidth = CARD_PREVIEW_WIDTH,
     onOpen,
     onDelete,
     onRename,
@@ -461,6 +464,12 @@ export function PinboardCard({
     href: string
     /** How many of the board's items a search matched; absent = no badge. */
     matchCount?: number
+    /**
+     * Pixel width to request the preview at (the endpoint's `maxw`). Purely
+     * a resolution knob — the card's rendered size is the grid's business —
+     * so hosts with bigger cards raise it rather than upscaling the default.
+     */
+    previewWidth?: number
     onOpen: () => void
     /** Omitted where the host offers no rename/delete (the Library tab). */
     onDelete?: () => void
@@ -517,7 +526,7 @@ export function PinboardCard({
             >
                 {versionId != null ? (
                     <img
-                        src={pinboardPreviewURL(dbs, board.id, versionId, CARD_PREVIEW_WIDTH)}
+                        src={pinboardPreviewURL(dbs, board.id, versionId, previewWidth)}
                         alt={name}
                         className="absolute left-0 w-full"
                         style={{ top: `${((restTop - pan) / viewportH) * 100}%` }}

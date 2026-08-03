@@ -12,6 +12,7 @@ import {
     Minimize2,
     PenLine,
     Proportions,
+    RefreshCw,
     Save,
     SaveAll,
     Trash2,
@@ -34,7 +35,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import { usePinboardActions } from "@/lib/pinboardSave"
+import { layoutsEqual, usePinboardActions } from "@/lib/pinboardSave"
 import { usePinBoard } from "@/lib/state/pinboard"
 import { useSelectedDBs } from "@/lib/state/database"
 import { $api } from "@/lib/api"
@@ -67,7 +68,7 @@ import { MosaicMenuItems, MosaicSubmenu } from "./PinboardMosaicMenu"
 // state (including unsaved modifications) as a new board and leaves the
 // original untouched.
 function usePinboardDialogs() {
-    const { save, rename, pbid } = usePinboardActions()
+    const { save, rename, refreshPreview, savedLayout, pbid } = usePinboardActions()
     const { updateRecords } = usePinBoard()
     const setPbid = useGalleryPinBoardId()[1]
     const { toast } = useToast()
@@ -161,10 +162,27 @@ function usePinboardDialogs() {
             />
         </>
     )
+    // "Refresh Preview" re-renders the HEAD version's picture from the live
+    // board, so it needs a saved board whose head is exactly what is on
+    // screen: with unsaved edits the new picture would show something that
+    // version does not contain. Same layout-equality predicate the History
+    // panel highlights the current version with.
+    const headInSync =
+        board?.head != null && layoutsEqual(board.head.layout, savedLayout)
+    const refreshTitle = pbid == null
+        ? "Save this pinboard in order to refresh its preview image"
+        : !headInSync
+            ? "Save first — the board has unsaved changes"
+            : "Re-render this board's preview image at the current window"
+                + " size and today's resolution"
+
     return {
         save,
         pbid,
         board,
+        refreshPreview,
+        canRefreshPreview: pbid != null && headInSync,
+        refreshTitle,
         openLibrary: () => setLibraryOpen(true),
         openHistory: () => setHistoryOpen(true),
         openRename,
@@ -186,8 +204,19 @@ function usePinboardDialogs() {
 // loading it. Only the board-global section needs the mounted board's
 // verb registry, and it simply doesn't render while that's empty.
 export function PinboardMenu() {
-    const { save, pbid, board, openLibrary, openHistory, openRename, openClear, dialogs } =
-        usePinboardDialogs()
+    const {
+        save,
+        pbid,
+        board,
+        refreshPreview,
+        canRefreshPreview,
+        refreshTitle,
+        openLibrary,
+        openHistory,
+        openRename,
+        openClear,
+        dialogs,
+    } = usePinboardDialogs()
     const boardApi = usePinboardBoardApi(s => s.api)
 
     return (
@@ -230,6 +259,25 @@ export function PinboardMenu() {
                         not the server) — and like them it captures the
                         live board, unsaved edits included. */}
                     <MosaicSubmenu kit={dropdownMenuKit} boardName={board?.name} />
+                    {/* Re-renders the saved head version's thumbnail from
+                        the board as it is on screen right now. Deliberately
+                        only here and not in the fullscreen bar: it is a
+                        one-time cleanup verb for boards saved at an older
+                        preview resolution, not part of the working set the
+                        bar keeps stable. Looks disabled and ignores selects
+                        (same trade as History/Rename below) so the title
+                        can explain what would enable it. */}
+                    <DropdownMenuItem
+                        title={refreshTitle}
+                        className={cn(!canRefreshPreview && "opacity-50")}
+                        onSelect={(e) => {
+                            if (!canRefreshPreview) { e.preventDefault(); return }
+                            void refreshPreview()
+                        }}
+                    >
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        Refresh Preview
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={openLibrary}>
                         <LibraryBig className="mr-2 h-4 w-4" />
