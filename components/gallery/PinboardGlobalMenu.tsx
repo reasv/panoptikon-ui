@@ -7,6 +7,7 @@ import {
     useGalleryPinAutoLayout,
     useGalleryPinGrid,
     useGalleryPinProportional,
+    useGalleryPinResizeHandles,
     useGalleryPinSelectionCrop,
 } from "@/lib/state/gallery"
 import {
@@ -134,6 +135,7 @@ export function BoardGlobalMenuItems({
     const [autoLayoutCrop, setAutoLayoutCrop] = useGalleryPinAutoCrop()
     const [selectionCrop] = useGalleryPinSelectionCrop()
     const [proportional] = useGalleryPinProportional()
+    const [allHandles, setAllHandles] = useGalleryPinResizeHandles()
     // Gravity rides in the layout token rather than in a board flag, so it
     // comes from the parsed board and is written through the same path.
     // With no records there is no token to carry the switch — setFloat
@@ -162,6 +164,18 @@ export function BoardGlobalMenuItems({
                 onCheckedChange={(checked) => setShowGrid(!!checked)}
             >
                 Show Grid
+            </CheckboxItem>
+            {/* All eight react-resizable handles on every normal item
+                instead of the bottom-right corner alone. A pure view
+                preference (no token, no per-item state), so unlike gravity
+                and Scale With Window it needs no board to exist. */}
+            <CheckboxItem
+                checked={allHandles}
+                title={"Resize from every edge and corner, not just the"
+                    + " bottom-right one"}
+                onCheckedChange={(checked) => setAllHandles(!!checked)}
+            >
+                All Resize Handles
             </CheckboxItem>
             {/* Gravity is the board's own upward compaction, stored in the
                 layout token (not a flag): turning it back on settles the
@@ -249,6 +263,7 @@ export function BoardGlobalMenuItems({
                             psc: selectionCrop,
                             pg: showGrid,
                             pbp: proportional,
+                            prh: allHandles,
                             gravity: !float,
                         })
                         toast({

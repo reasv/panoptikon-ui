@@ -18,7 +18,13 @@
 // board menu ("Save Current Settings as Default"). A user default equal to
 // the codec default simply stamps nothing — blank already means that.
 
-export type PinboardDefaultableKey = "pba" | "pbc" | "psc" | "pg" | "pbp"
+export type PinboardDefaultableKey =
+  | "pba"
+  | "pbc"
+  | "psc"
+  | "pg"
+  | "pbp"
+  | "prh"
 
 export const PINBOARD_DEFAULTABLE_KEYS: PinboardDefaultableKey[] = [
   "pba",
@@ -26,6 +32,7 @@ export const PINBOARD_DEFAULTABLE_KEYS: PinboardDefaultableKey[] = [
   "psc",
   "pg",
   "pbp",
+  "prh",
 ]
 
 interface DefaultableFlag {
@@ -67,6 +74,14 @@ export const PINBOARD_DEFAULTABLE_FLAGS: Record<
     codecDefault: false,
     creationDefault: false,
     label: "Scale With Window",
+  },
+  // all eight resize handles instead of the bottom-right corner alone.
+  // Off out of the box: the one-corner simplification is what every board
+  // has had, and it is the defense against accidental edge grabs.
+  prh: {
+    codecDefault: false,
+    creationDefault: false,
+    label: "All Resize Handles",
   },
 }
 

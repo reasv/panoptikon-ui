@@ -1,7 +1,7 @@
 import Image from 'next/image'
 import { cn, getFileURL } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
-import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid, useGalleryPinProportional, useGalleryPinSelectionCrop } from '@/lib/state/gallery'
+import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid, useGalleryPinProportional, useGalleryPinResizeHandles, useGalleryPinSelectionCrop } from '@/lib/state/gallery'
 import { consumePinboardExplicitPlacement, consumePinboardNavigation, consumePinboardPendingEdit, markPinboardExplicitPlacement } from '@/lib/pinboardNavigation'
 import { usePinBoard } from '@/lib/state/pinboard'
 import { GridParams, effectiveGrid, gridScale, minPinUnits, rowStep, v1ScaleFactors } from '@/lib/pinboardGrid'
@@ -58,7 +58,8 @@ const ALL_RESIZE_HANDLES: LayoutItem["resizeHandles"] =
 // Static grid configs (referentially stable so the grid's internal memos
 // don't churn). The board's own drags start only from .drag-handle layers;
 // resize handles come from react-resizable with the default 'se' unless an
-// item overrides resizeHandles (the crop-mode item gets all eight).
+// item overrides resizeHandles (the crop-mode item always gets all eight,
+// every normal item does while the board's "All Resize Handles" flag is on).
 // threshold: 0 is v1 drag semantics (drag starts on mousedown) and is NOT
 // optional: RGL v2's external-drop placeholder drives its grid item through a
 // synthetic drag whose fake events never move, so a nonzero threshold leaves
@@ -263,6 +264,10 @@ export function PinBoard(
     } = usePinBoard()
     // "Scale With Window" (the pbp board flag): see effGrid below
     const [proportional] = useGalleryPinProportional()
+    // "All Resize Handles" (the prh board flag): all eight handles on every
+    // normal item instead of the bottom-right corner alone (see the layout
+    // memo). A pure view preference — nothing is stored per item.
+    const [allHandles] = useGalleryPinResizeHandles()
     // Key of the item currently in crop mode, if any
     const [cropKey, setCropKey] = useState<string | null>(null)
     // True while the crop-mode item's box is being resized via a grid handle
@@ -518,7 +523,17 @@ export function PinBoard(
                 h,
                 ...(index === cropKey
                     ? { resizeHandles: ALL_RESIZE_HANDLES }
-                    : { minW, minH }),
+                    // "All Resize Handles" (the prh board flag) gives every
+                    // normal item the full eight. Only items that actually
+                    // resize get them: RGL hides the handles of a static or
+                    // isResizable:false item (react-resizable-hide), so
+                    // handing them a handle set would be inert either way —
+                    // but it would still render eight dead spans per locked
+                    // item, so the locked cases keep the plain minW/minH
+                    // shape they had.
+                    : allHandles && lock !== "anchor" && lock !== "size"
+                        ? { minW, minH, resizeHandles: ALL_RESIZE_HANDLES }
+                        : { minW, minH }),
                 // An anchored item is a native RGL static: drags can't
                 // displace it and the compactor treats it as a wall.
                 // Size-locked items just lose their resize handles. The
@@ -544,7 +559,7 @@ export function PinBoard(
             ])
         }
         return [newLayout, pinned, cropsMap, autoCropsMap, trimsMap, locksMap, orientsMap]
-    }, [records, cropKey, dbs, effGrid, gridWidth])
+    }, [records, cropKey, dbs, effGrid, gridWidth, allHandles])
 
     // Rebuilds the packed records from RGL's reported layout, in the EXISTING
     // record order: the item keys embed each record's offset, so persisting in

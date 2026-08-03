@@ -6,6 +6,7 @@ import {
   useGalleryPinBoardLayout,
   useGalleryPinGrid,
   useGalleryPinProportional,
+  useGalleryPinResizeHandles,
   useGalleryPinSelectionCrop,
   useGridPinboardTab,
 } from "./gallery"
@@ -40,6 +41,7 @@ export function usePinboardFlagValues(): Record<
     psc: useGalleryPinSelectionCrop()[0],
     pg: useGalleryPinGrid()[0],
     pbp: useGalleryPinProportional()[0],
+    prh: useGalleryPinResizeHandles()[0],
   }
 }
 
@@ -54,6 +56,7 @@ export function usePinboardFlagSetters(): Record<
     psc: useGalleryPinSelectionCrop()[1],
     pg: useGalleryPinGrid()[1],
     pbp: useGalleryPinProportional()[1],
+    prh: useGalleryPinResizeHandles()[1],
   }
 }
 

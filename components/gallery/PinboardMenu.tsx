@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import {
     ChevronDown,
     Crop,
+    Expand,
     Grid2x2Plus,
     Grid3x3,
     History,
@@ -52,6 +53,7 @@ import {
     useGalleryPinBoardId,
     useGalleryPinGrid,
     useGalleryPinProportional,
+    useGalleryPinResizeHandles,
 } from "@/lib/state/gallery"
 import { usePinboardBoardApi } from "@/lib/state/pinboardBoardApi"
 import { PinboardLibraryDialog } from "./PinboardLibrary"
@@ -483,6 +485,7 @@ function ToolbarDivider() {
 export function PinboardFullscreenBar() {
     const setFs = useGalleryFullscreen()[1]
     const [showGrid, setShowGrid] = useGalleryPinGrid()
+    const [allHandles, setAllHandles] = useGalleryPinResizeHandles()
     const [autoLayout] = useGalleryPinAutoLayout()
     const [autoLayoutCrop, setAutoLayoutCrop] = useGalleryPinAutoCrop()
     // Gravity is token state, not a board flag: read off the parsed board.
@@ -598,6 +601,18 @@ export function PinboardFullscreenBar() {
                         onClick={() => setShowGrid(!showGrid)}
                     >
                         <Grid3x3 className="h-5 w-5" />
+                    </ToolbarButton>
+                    {/* All Resize Handles: all eight handles on every normal
+                        item instead of the bottom-right corner alone. A pure
+                        view preference — no token, no board needed. */}
+                    <ToolbarButton
+                        title={allHandles
+                            ? "All Resize Handles on: resize from every edge and corner. Click to go back to the bottom-right corner only"
+                            : "All Resize Handles off: items resize from the bottom-right corner only. Click to resize from every edge and corner"}
+                        active={allHandles}
+                        onClick={() => setAllHandles(!allHandles)}
+                    >
+                        <Expand className="h-5 w-5" />
                     </ToolbarButton>
                     {/* Gravity: items settle upward automatically. Lives in
                         the layout token, so this is a layout write — Back

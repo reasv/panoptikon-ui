@@ -134,6 +134,19 @@ const useGalleryPinProportional = () =>
       history: "push",
     })
   )
+// All resize handles ("All Resize Handles"): with it on, a normal pin
+// carries all eight react-resizable handles instead of the default
+// bottom-right corner alone. A pure view preference like the grid overlay
+// — nothing about it touches the layout token — so it is a plain board
+// flag with no empty-board gate.
+const useGalleryPinResizeHandles = () =>
+  useQueryState(
+    "prh",
+    parseAsBoolean.withDefault(false).withOptions({
+      clearOnDefault: true,
+      history: "push",
+    })
+  )
 const useGalleryPinBoardLayout = () =>
   useQueryState(
     "pinboard",
@@ -202,5 +215,6 @@ export {
   useGalleryPinAutoCrop,
   useGalleryPinSelectionCrop,
   useGalleryPinProportional,
+  useGalleryPinResizeHandles,
   usePinboardMaximized,
 }
