@@ -4,7 +4,6 @@ import { useEffect, useState } from "react"
 import {
     ChevronDown,
     Crop,
-    Expand,
     Grid2x2Plus,
     Grid3x3,
     History,
@@ -16,6 +15,7 @@ import {
     RefreshCw,
     Save,
     SaveAll,
+    Scaling,
     Trash2,
     WandSparkles,
 } from "lucide-react"
@@ -603,16 +603,19 @@ export function PinboardFullscreenBar() {
                         <Grid3x3 className="h-5 w-5" />
                     </ToolbarButton>
                     {/* All Resize Handles: all eight handles on every normal
-                        item instead of the bottom-right corner alone. A pure
-                        view preference — no token, no board needed. */}
+                        item instead of the bottom-right corner alone (the
+                        top-edge three only with gravity off — compaction
+                        re-glues the top edge, see GRAVITY_RESIZE_HANDLES in
+                        GalleryPinBoard). A pure view preference — no token,
+                        no board needed. */}
                     <ToolbarButton
                         title={allHandles
-                            ? "All Resize Handles on: resize from every edge and corner. Click to go back to the bottom-right corner only"
-                            : "All Resize Handles off: items resize from the bottom-right corner only. Click to resize from every edge and corner"}
+                            ? "All Resize Handles on: resize from every edge and corner (top-edge handles need Gravity off). Click to go back to the bottom-right corner only"
+                            : "All Resize Handles off: items resize from the bottom-right corner only. Click to resize from every edge and corner (top-edge handles need Gravity off)"}
                         active={allHandles}
                         onClick={() => setAllHandles(!allHandles)}
                     >
-                        <Expand className="h-5 w-5" />
+                        <Scaling className="h-5 w-5" />
                     </ToolbarButton>
                     {/* Gravity: items settle upward automatically. Lives in
                         the layout token, so this is a layout write — Back

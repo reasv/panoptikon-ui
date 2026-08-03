@@ -54,12 +54,25 @@ import { PinboardFullscreenBar } from './PinboardMenu'
 
 const ALL_RESIZE_HANDLES: LayoutItem["resizeHandles"] =
     ["s", "w", "e", "n", "sw", "nw", "se", "ne"]
+// The subset a gravity-ON board can actually offer. RGL v2's GridItem
+// re-derives the resize anchor from the item's CURRENT layout position on
+// every event, and vertical compaction snaps that position back to the
+// compacted edge between events — so a north handle (n/nw/ne) reads as
+// "top edge glued, shrink from the bottom" and is functionally INVERTED,
+// the same failure the crop-mode compactor comment documents below. The
+// three are dropped rather than fixed because under gravity the top edge
+// is pinned by the layout physics anyway: "drag the top edge" has no
+// coherent meaning on a board that re-glues it after every event. Turn
+// Gravity off (the layout token's float switch, which also turns the
+// compactor off) to get all eight.
+const GRAVITY_RESIZE_HANDLES: LayoutItem["resizeHandles"] =
+    ["s", "w", "e", "sw", "se"]
 
 // Static grid configs (referentially stable so the grid's internal memos
 // don't churn). The board's own drags start only from .drag-handle layers;
 // resize handles come from react-resizable with the default 'se' unless an
-// item overrides resizeHandles (the crop-mode item always gets all eight,
-// every normal item does while the board's "All Resize Handles" flag is on).
+// item overrides resizeHandles (the crop-mode item always gets all eight;
+// a normal item gets the flag's set while "All Resize Handles" is on).
 // threshold: 0 is v1 drag semantics (drag starts on mousedown) and is NOT
 // optional: RGL v2's external-drop placeholder drives its grid item through a
 // synthetic drag whose fake events never move, so a nonzero threshold leaves
@@ -506,6 +519,9 @@ export function PinBoard(
         const colWidth = (gridWidth - 2 * effGrid.padding
             - (effGrid.columns - 1) * effGrid.margin) / effGrid.columns
         const { minW, minH } = minPinUnits(effGrid, colWidth)
+        // Gravity gates the handle set: only a float board can offer the
+        // north handles (see GRAVITY_RESIZE_HANDLES)
+        const handleSet = float ? ALL_RESIZE_HANDLES : GRAVITY_RESIZE_HANDLES
         for (let i = 0; i < records.length; i += 5) {
             const [sha256, x, y, w, hField] = records.slice(i, i + 5)
             const index = `${i}-${sha256}`
@@ -524,15 +540,20 @@ export function PinBoard(
                 ...(index === cropKey
                     ? { resizeHandles: ALL_RESIZE_HANDLES }
                     // "All Resize Handles" (the prh board flag) gives every
-                    // normal item the full eight. Only items that actually
-                    // resize get them: RGL hides the handles of a static or
-                    // isResizable:false item (react-resizable-hide), so
-                    // handing them a handle set would be inert either way —
-                    // but it would still render eight dead spans per locked
-                    // item, so the locked cases keep the plain minW/minH
-                    // shape they had.
-                    : allHandles && lock !== "anchor" && lock !== "size"
-                        ? { minW, minH, resizeHandles: ALL_RESIZE_HANDLES }
+                    // normal item the full eight — minus the north three
+                    // while gravity is on, where compaction makes them
+                    // inverted (see GRAVITY_RESIZE_HANDLES). Only items
+                    // that actually resize get them: RGL hides the handles
+                    // of a static or isResizable:false item
+                    // (react-resizable-hide), so handing them a handle set
+                    // would be inert either way — but it would still render
+                    // dead spans per locked item, so the locked cases keep
+                    // the plain minW/minH shape they had. The drop
+                    // placeholder is exempt too: it is a transient sentinel
+                    // record, never resized.
+                    : allHandles && sha256 !== "__preview"
+                        && lock !== "anchor" && lock !== "size"
+                        ? { minW, minH, resizeHandles: handleSet }
                         : { minW, minH }),
                 // An anchored item is a native RGL static: drags can't
                 // displace it and the compactor treats it as a wall.
@@ -559,7 +580,7 @@ export function PinBoard(
             ])
         }
         return [newLayout, pinned, cropsMap, autoCropsMap, trimsMap, locksMap, orientsMap]
-    }, [records, cropKey, dbs, effGrid, gridWidth, allHandles])
+    }, [records, cropKey, dbs, effGrid, gridWidth, allHandles, float])
 
     // Rebuilds the packed records from RGL's reported layout, in the EXISTING
     // record order: the item keys embed each record's offset, so persisting in
@@ -1373,6 +1394,10 @@ export function PinBoard(
     const [toolbarManual, setToolbarManual] = useState<{ x: number; y: number } | null>(null)
     const selKey = useMemo(() => [...selected].sort().join("|"), [selected])
     useEffect(() => { setToolbarManual(null) }, [selKey])
+    // Anchored off the layout memo, which only updates when the record write
+    // lands at gesture end: with a non-'se' handle (west/north edges move the
+    // box's own origin) the bar visually detaches from the selection until
+    // release. Cosmetic, and accepted.
     const toolbarPos = useMemo(() => {
         if (selected.length === 0 || !gridWidth) return null
         const colW = (gridWidth - 2 * effGrid.padding - (effGrid.columns - 1) * effGrid.margin) / effGrid.columns

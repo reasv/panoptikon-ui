@@ -166,13 +166,16 @@ export function BoardGlobalMenuItems({
                 Show Grid
             </CheckboxItem>
             {/* All eight react-resizable handles on every normal item
-                instead of the bottom-right corner alone. A pure view
+                instead of the bottom-right corner alone — the top-edge
+                three only with gravity off, where compaction isn't
+                re-gluing the top edge every event (see
+                GRAVITY_RESIZE_HANDLES in GalleryPinBoard). A pure view
                 preference (no token, no per-item state), so unlike gravity
                 and Scale With Window it needs no board to exist. */}
             <CheckboxItem
                 checked={allHandles}
                 title={"Resize from every edge and corner, not just the"
-                    + " bottom-right one"}
+                    + " bottom-right one (top-edge handles need Gravity off)"}
                 onCheckedChange={(checked) => setAllHandles(!!checked)}
             >
                 All Resize Handles

@@ -265,6 +265,22 @@
   --spacing: clamp(0.1rem, min(100cqw / 62, 100cqh / 74), 0.25rem);
 }
 
+/* The pin's overlay controls (pin/unpin, crop, the lock toggles, select,
+   find, the video buttons) sit at its corners and edges — exactly where
+   react-resizable puts its 20x20 handle boxes, and worse on small pins,
+   where the --spacing clamp above shrinks the buttons but not the handles.
+   react-resizable appends the handles AFTER the pin's own children, so with
+   no z-index on either side the handle wins both the hit test (the click
+   starts a resize instead of pressing the button) and the paint (its glyph
+   sits over the button's white pill). The handles carry no z-index, so any
+   positive one hands both back to the buttons. 20 stays deliberately below
+   the crop-mode boost below, where the handles ARE the tool. .pinboard-pin
+   is a stacking context already (container-type: size implies layout
+   containment), so this stays scoped to the pin. */
+.pinboard-pin > button {
+  z-index: 20;
+}
+
 /* Pinboard crop mode: make all 8 resize handles on the active item stand out */
 .pinboard-crop-item > .react-resizable-handle {
   opacity: 1 !important;
