@@ -10,9 +10,11 @@ import { findBoardElement, findBoardViewport } from "@/lib/pinboardPreview"
 import { downloadBlob, sanitizeFilePart, timestampStamp } from "@/lib/download"
 import { exportGuard, useExporting } from "@/lib/pinboardExportGuard"
 import {
+    usePinboardExportLossless,
     usePinboardMosaicExtent,
     usePinboardMosaicSeamless,
 } from "@/lib/state/pinboardMosaicPrefs"
+import { prettyPrintBytes } from "@/lib/utils"
 import type { MenuKit } from "./PinboardGlobalMenu"
 
 // "Save Mosaic Image": the board composited client-side into one JPEG and
@@ -61,6 +63,7 @@ export function useMosaicExport(boardName?: string | null) {
     const [proportional] = useGalleryPinProportional()
     const [seamless] = usePinboardMosaicSeamless()
     const [extent] = usePinboardMosaicExtent()
+    const [lossless] = usePinboardExportLossless()
     const { toast } = useToast()
     // Compositing is async (every thumbnail is a network fetch), so the
     // rows disable themselves for the duration; the guard that actually
@@ -95,6 +98,7 @@ export function useMosaicExport(boardName?: string | null) {
                 seamless,
                 extent,
                 proportional,
+                lossless,
                 background,
             })
             progress.dismiss()
@@ -115,18 +119,21 @@ export function useMosaicExport(boardName?: string | null) {
             }
             const mosaic = result.mosaic
             const stem = sanitizeFilePart(boardName ?? "") || "pinboard"
-            const filename = `${stem}-${timestampStamp()}.jpg`
+            const filename = `${stem}-${timestampStamp()}.${mosaic.extension}`
             downloadBlob(mosaic.blob, filename)
             // The canvas guard may have had to shrink the request: say so,
             // or the file silently isn't the preset that was clicked.
             const clamped = mosaic.clampedWidth !== null
+            // Size is worth stating for a lossless mosaic: a full-width PNG
+            // is tens of megabytes, and nothing else on screen says so.
+            const size = `${mosaic.width}×${mosaic.height}`
+                + (lossless ? `, ${prettyPrintBytes(mosaic.blob.size)}` : "")
             toast({
                 title: clamped ? "Mosaic saved, scaled down" : "Mosaic saved",
                 description: clamped
                     ? `${filename} — that size exceeds what browsers can draw`
-                        + ` on one canvas, so it was saved at ${mosaic.width}×`
-                        + `${mosaic.height}.`
-                    : `${filename} (${mosaic.width}×${mosaic.height})`,
+                        + ` on one canvas, so it was saved at ${size}.`
+                    : `${filename} (${size})`,
                 duration: clamped ? 6000 : 4000,
             })
         } catch (err) {
@@ -145,9 +152,42 @@ export function useMosaicExport(boardName?: string | null) {
 }
 
 /**
+ * The format toggle, shared by every export surface so the wording of what
+ * PNG actually buys can't drift between them. `composite` is true for the
+ * mosaics, where the honest headline is the transparency rather than the
+ * missing re-encode: a mosaic's gutters, letterboxing, rounded corners and
+ * (for a selection) the holes left by unselected items are all background
+ * today, and all alpha here.
+ */
+export function LosslessMenuItem({
+    kit,
+    composite,
+}: {
+    kit: MenuKit
+    composite: boolean
+}) {
+    const [lossless, setLossless] = usePinboardExportLossless()
+    const { CheckboxItem } = kit
+    return (
+        <CheckboxItem
+            checked={lossless}
+            title={composite
+                ? "Save as PNG: gaps, letterboxing and rounded corners come"
+                    + " out transparent instead of filled with the page"
+                    + " background, with no re-encoding loss. Much larger files."
+                : "Save as PNG instead of JPEG: no re-encoding loss,"
+                    + " transparency preserved, much larger files"}
+            onCheckedChange={(checked) => setLossless(!!checked)}
+        >
+            {composite ? "PNG (Lossless, Transparent)" : "PNG (Lossless)"}
+        </CheckboxItem>
+    )
+}
+
+/**
  * The rows themselves: the size presets (each one composes and downloads
- * on click), the extent choice, and the seamless toggle. Both preferences
- * persist in localStorage only (see state/pinboardMosaicPrefs).
+ * on click), the extent choice, and the seamless and PNG toggles. Every
+ * preference persists in localStorage only (see state/pinboardMosaicPrefs).
  */
 export function MosaicMenuItems({
     kit,
@@ -202,6 +242,7 @@ export function MosaicMenuItems({
             >
                 Seamless (No Gaps)
             </CheckboxItem>
+            <LosslessMenuItem kit={kit} composite />
         </>
     )
 }

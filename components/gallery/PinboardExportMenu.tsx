@@ -23,7 +23,8 @@ import {
     useGalleryPinProportional,
 } from "@/lib/state/gallery"
 import { useSelectedDBs } from "@/lib/state/database"
-import { getFileURL } from "@/lib/utils"
+import { getFileURL, prettyPrintBytes } from "@/lib/utils"
+import { LosslessMenuItem } from "./PinboardMosaicMenu"
 import type { MenuKit } from "./PinboardGlobalMenu"
 
 // Saving the SELECTION as an image, from the selection toolbar and from a
@@ -141,6 +142,7 @@ export function useSelectionExport(keys: string[]) {
                     extent: "full",
                     only: new Set(keys),
                     proportional,
+                    lossless,
                     background,
                 })
                 progress.dismiss()
@@ -157,16 +159,20 @@ export function useSelectionExport(keys: string[]) {
                     }
                     throw new Error(`mosaic geometry: ${result.failure}`)
                 }
-                const filename = `selection-${stamp}.jpg`
-                downloadBlob(result.mosaic.blob, filename)
-                const clamped = result.mosaic.clampedWidth !== null
+                const mosaic = result.mosaic
+                const filename = `selection-${stamp}.${mosaic.extension}`
+                downloadBlob(mosaic.blob, filename)
+                const clamped = mosaic.clampedWidth !== null
+                // A lossless mosaic is tens of megabytes and nothing else
+                // on screen says so, so its size goes in the receipt.
+                const saved = `${mosaic.width}×${mosaic.height}`
+                    + (lossless ? `, ${prettyPrintBytes(mosaic.blob.size)}` : "")
                 toast({
                     title: clamped ? "Image saved, scaled down" : "Image saved",
                     description: clamped
                         ? `${filename} — that size exceeds what browsers can`
-                            + ` draw on one canvas, so it was saved at`
-                            + ` ${result.mosaic.width}×${result.mosaic.height}.`
-                        : `${filename} (${result.mosaic.width}×${result.mosaic.height})`,
+                            + ` draw on one canvas, so it was saved at ${saved}.`
+                        : `${filename} (${saved})`,
                     duration: clamped ? 6000 : 4000,
                 })
                 return
@@ -302,7 +308,6 @@ export function SelectionExportMenuItems({
 }) {
     const { save, busy } = useSelectionExport(keys)
     const [seamless, setSeamless] = usePinboardMosaicSeamless()
-    const [lossless, setLossless] = usePinboardExportLossless()
     const { Item, CheckboxItem, Separator } = kit
     const one = keys.length === 1
     return (
@@ -321,21 +326,12 @@ export function SelectionExportMenuItems({
                 </Item>
             ))}
             <Separator />
-            {one ? (
-                // JPEG is the default everywhere the app composites; a
-                // single item is the one export that can be a lossless
-                // source's edit, where a re-encode is the only loss.
-                <CheckboxItem
-                    checked={lossless}
-                    title="Save as PNG instead of JPEG: no re-encoding loss, much larger files, transparency preserved"
-                    onCheckedChange={(checked) => setLossless(!!checked)}
-                >
-                    PNG (Lossless)
-                </CheckboxItem>
-            ) : (
-                // Seamless only closes the GUTTERS: an unselected item
-                // between two selected ones still leaves its hole, since
-                // the lattice is the board's.
+            {/* Seamless is a mosaic's business only — one item has no
+                gutters to close. It only closes the GUTTERS at that: an
+                unselected item between two selected ones still leaves its
+                hole, since the lattice is the board's (PNG is what makes
+                that hole transparent rather than black). */}
+            {!one && (
                 <CheckboxItem
                     checked={seamless}
                     title="Tile the selected items edge to edge, with no gaps or padding"
@@ -344,6 +340,7 @@ export function SelectionExportMenuItems({
                     Seamless (No Gaps)
                 </CheckboxItem>
             )}
+            <LosslessMenuItem kit={kit} composite={!one} />
         </>
     )
 }

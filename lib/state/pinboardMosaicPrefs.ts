@@ -27,10 +27,11 @@ interface PinboardMosaicPrefsState {
   extent: PinboardMosaicExtent
   setExtent: (extent: PinboardMosaicExtent) => void
   /**
-   * Save single-item exports as PNG instead of JPEG. Only the item export
-   * offers it: a lossless mosaic is a hundred-megabyte file for a picture
-   * that is already a composite of JPEG thumbnails, while a single item can
-   * be an edit of a lossless source that a re-encode would degrade.
+   * Save exports as PNG instead of JPEG. For a single item that means no
+   * re-encoding loss on top of a lossless source; for a mosaic it also
+   * means the background is never painted, so gutters, letterboxing,
+   * rounded corners and the holes a selection leaves come out transparent
+   * instead of filled with the page's own black.
    */
   lossless: boolean
   setLossless: (lossless: boolean) => void

@@ -14,7 +14,9 @@
 //      board is meant to show); "full" takes the whole content box.
 //   3. Seamless mode tiles on the step lattice: no padding, no gutters,
 //      no rounded corners, canvas cropped to the content box.
-//   4. JPEG q0.92 (previews stay WebP q0.82).
+//   4. JPEG q0.92, or PNG on the lossless option — which also leaves the
+//      background unpainted, so everything the pins don't cover is alpha
+//      (previews stay WebP q0.82 over the page background, always).
 //
 // The scale question the preset raises: laying the board out at 3840px
 // with the base grid would widen every column while row height stayed put,
@@ -53,7 +55,6 @@ import {
 } from "@/lib/pinboardPreview"
 
 const JPEG_QUALITY = 0.92
-export const MOSAIC_MIME = "image/jpeg"
 
 export interface MosaicOptions {
   /** The raw `pinboard` URL param array — the LIVE board, unsaved edits included. */
@@ -83,7 +84,19 @@ export interface MosaicOptions {
   only?: ReadonlySet<string>
   /** The board's "Scale With Window" flag (pbp). */
   proportional: boolean
-  /** Page background, painted under the pins (JPEG has no alpha). */
+  /**
+   * Encode PNG instead of JPEG, and leave the background UNPAINTED.
+   *
+   * The transparency is the point, more than the missing re-encode: a
+   * mosaic is mostly not pins. The gutters between cells, the letterbox
+   * inside a cell whose picture doesn't fill it, the corners the rounded
+   * clip cuts away, and every hole a selection leaves behind all get the
+   * page background painted into them today, which is a black slab that
+   * has to be keyed back out anywhere the image is used over something
+   * else. PNG makes all of it alpha instead.
+   */
+  lossless?: boolean
+  /** Page background, painted under the pins unless `lossless`. */
   background: string
 }
 
@@ -91,6 +104,9 @@ export interface ComposedMosaic {
   blob: Blob
   width: number
   height: number
+  mime: string
+  /** Filename extension for `mime`, without the dot. */
+  extension: string
   /**
    * The width actually composited when the canvas guard had to shrink the
    * request, or null when the preset was honored — the caller says so.
@@ -171,8 +187,13 @@ export async function composeBoardMosaic(
   canvas.height = geo.height
   const ctx = canvas.getContext("2d")
   if (!ctx) return { ok: false, failure: "no-canvas" }
-  ctx.fillStyle = background
-  ctx.fillRect(0, 0, geo.width, geo.height)
+  // A lossless mosaic keeps the canvas's own transparency: everything the
+  // pins don't cover stays alpha instead of becoming a slab of page
+  // background.
+  if (!opts.lossless) {
+    ctx.fillStyle = background
+    ctx.fillRect(0, 0, geo.width, geo.height)
+  }
 
   // Items starting past the bottom cut are not drawn at all; the ones the
   // cut crosses are clipped by the canvas edge, like the preview's cap.
@@ -207,9 +228,17 @@ export async function composeBoardMosaic(
     )
   }
 
-  const blob = await canvasToBlob(canvas, MOSAIC_MIME, JPEG_QUALITY)
+  const mime = opts.lossless ? "image/png" : "image/jpeg"
+  const blob = await canvasToBlob(canvas, mime, JPEG_QUALITY)
   return {
     ok: true,
-    mosaic: { blob, width: geo.width, height: geo.height, clampedWidth },
+    mosaic: {
+      blob,
+      width: geo.width,
+      height: geo.height,
+      mime,
+      extension: opts.lossless ? "png" : "jpg",
+      clampedWidth,
+    },
   }
 }
