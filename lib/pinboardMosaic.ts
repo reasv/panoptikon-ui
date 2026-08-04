@@ -24,24 +24,33 @@
 // gridScale(refWidth -> targetWidth), and for every other board is the
 // uniform zoom that makes the export look like the screen.
 //
-// Videos draw their thumbnails, as in previews: trims and freeze frames
-// would need the server (see the design doc's deferred section).
+// Videos draw the frame they are showing when one is on screen and their
+// thumbnail otherwise (see pinboardMedia.ts): seeking, trims and unmounted
+// pins would need the server (see the design doc's deferred section).
+//
+// A SELECTION mosaic is the same compositor restricted to a set of layout
+// keys: same arrangement, same cell rects, capture box shrunk to the
+// selection's bounding box. Items the user did not select leave holes —
+// their background shows through — because packing the selection would
+// export a composition that is not the one on screen, and the board
+// already has verbs (Arrange, Compress, Send to Region) for the user to
+// close those gaps first if that is what they wanted.
 
 import {
   MosaicExtent,
   MosaicFailure,
+  fitLayoutWidthToOutput,
   foldRows,
   mosaicGeometry,
   solveWithinCanvasLimits,
 } from "@/lib/pinboardGeometry"
 import { effectiveGrid, gridScale, parseBoard } from "@/lib/pinboardGrid"
+import { loadPinSource } from "@/lib/pinboardMedia"
 import {
   PIN_CORNER_RADIUS_PX,
   canvasToBlob,
   drawPin,
-  loadImage,
 } from "@/lib/pinboardPreview"
-import { getFileURL } from "@/lib/utils"
 
 const JPEG_QUALITY = 0.92
 export const MOSAIC_MIME = "image/jpeg"
@@ -56,8 +65,22 @@ export interface MosaicOptions {
   boardHeight: number
   /** Preset width in px. */
   targetWidth: number
+  /**
+   * What `targetWidth` measures. "layout" lays the BOARD out at it — the
+   * whole-board export's historical meaning, where a board whose content
+   * doesn't span the full width composites narrower than the preset.
+   * "output" makes the saved image itself come out that wide, which is the
+   * only reading that means anything for a selection occupying a corner of
+   * the board.
+   */
+  widthMode?: "layout" | "output"
   seamless: boolean
   extent: MosaicExtent
+  /**
+   * Layout keys to capture; absent means the whole board. A selection
+   * always captures in full — see mosaicGeometry's `only`.
+   */
+  only?: ReadonlySet<string>
   /** The board's "Scale With Window" flag (pbp). */
   proportional: boolean
   /** Page background, painted under the pins (JPEG has no alpha). */
@@ -95,10 +118,13 @@ export async function composeBoardMosaic(
     boardWidth,
     boardHeight,
     seamless,
-    extent,
+    only,
     proportional,
     background,
   } = opts
+  // The chosen items are the extent: a fold cut on top of a selection would
+  // silently drop pins the user pointed at.
+  const extent: MosaicExtent = only ? "full" : opts.extent
   const parsed = parseBoard(layout)
   if (parsed.records.length === 0) return { ok: false, failure: "no-pins" }
   if (boardWidth <= 0) return { ok: false, failure: "degenerate" }
@@ -113,10 +139,7 @@ export async function composeBoardMosaic(
     parsed.highWater
   )
 
-  // Canvas guard: an oversized request is re-solved smaller, and a request
-  // that never fits fails here rather than allocating (see
-  // solveWithinCanvasLimits).
-  const solved = solveWithinCanvasLimits(opts.targetWidth, (width) =>
+  const solveAt = (width: number) =>
     mosaicGeometry({
       records: parsed.records,
       grid: effectiveGrid(parsed.grid, liveScale * (width / boardWidth)),
@@ -124,8 +147,22 @@ export async function composeBoardMosaic(
       seamless,
       extent,
       visibleRows,
+      only,
     })
-  )
+
+  // "output" width first: find the layout width that makes the capture box
+  // itself the requested size, then hand THAT to the canvas guard.
+  let layoutTarget = opts.targetWidth
+  if (opts.widthMode === "output") {
+    const fitted = fitLayoutWidthToOutput(opts.targetWidth, solveAt)
+    if (!fitted.ok) return { ok: false, failure: fitted.failure }
+    layoutTarget = fitted.layoutWidth
+  }
+
+  // Canvas guard: an oversized request is re-solved smaller, and a request
+  // that never fits fails here rather than allocating (see
+  // solveWithinCanvasLimits).
+  const solved = solveWithinCanvasLimits(layoutTarget, solveAt)
   if (!solved.ok) return { ok: false, failure: solved.failure }
   const { geometry: geo, layoutWidth: width, clampedWidth } = solved
 
@@ -141,10 +178,14 @@ export async function composeBoardMosaic(
   // cut crosses are clipped by the canvas edge, like the preview's cap.
   const bottom = geo.cropTop + geo.height
   const visible = geo.placements.filter((p) => p.top < bottom)
-  const images = await Promise.allSettled(
-    visible.map((p) =>
-      loadImage(getFileURL(dbs, "thumbnail", "sha256", p.sha256))
-    )
+  // A playing pin contributes the frame it is showing when the canvas is
+  // drawn, not when the export was clicked: the source is the live <video>
+  // element, so a video left running advances by however long the stills
+  // took to download. Within a beat of the click either way, and the
+  // alternative (snapshotting every video at click time) costs a
+  // full-resolution canvas per playing pin.
+  const images = await Promise.all(
+    visible.map((p) => loadPinSource({ key: p.key, sha256: p.sha256, dbs }))
   )
 
   // Cards are `rounded` (4px) at board scale, so the corner has to grow
@@ -154,11 +195,10 @@ export async function composeBoardMosaic(
     : PIN_CORNER_RADIUS_PX * Math.max(1, width / boardWidth)
   for (let i = 0; i < visible.length; i++) {
     const p = visible[i]
-    const loaded = images[i]
     drawPin(
       ctx,
       p,
-      loaded.status === "fulfilled" ? loaded.value : null,
+      images[i],
       p.left - geo.cropLeft,
       p.top - geo.cropTop,
       p.width,

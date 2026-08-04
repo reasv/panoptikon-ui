@@ -26,6 +26,25 @@ export function downloadBlob(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS)
 }
 
+/**
+ * Triggers a browser download of a same-origin URL under `filename`.
+ *
+ * The `download` attribute is only honored same-origin, which every app URL
+ * is (the gateway serves the API under the same host) — a cross-origin one
+ * would silently navigate instead. Used for the one export that has nothing
+ * to composite: an unedited image at original size, where re-encoding a
+ * canvas would only lose quality and metadata.
+ */
+export function downloadURL(url: string, filename: string): void {
+  const a = document.createElement("a")
+  a.href = url
+  a.download = filename
+  a.rel = "noopener"
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+}
+
 // Path separators, the characters Windows reserves, and the C0 control
 // range plus DEL (a name carrying a newline or a NUL is rejected outright
 // by some filesystems and silently truncated by others).

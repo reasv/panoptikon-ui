@@ -11,6 +11,7 @@ import { RegionIcon } from "./RegionIcon";
 import { useToast } from "@/components/ui/use-toast";
 import { usePinSelection } from "@/lib/state/pinboardSelection";
 import { usePinboardCarry } from "@/lib/state/pinboardCarry";
+import { SelectionExportSubmenu } from "./PinboardExportMenu";
 
 export function PinBoardCtx({
     layoutKey,
@@ -210,6 +211,17 @@ export function PinBoardCtx({
                     </ContextMenuSubContent>
                 </ContextMenuSub>
             )}
+            {/* This pin as a file on disk, cropped and oriented as it is on
+                the board — the one export that needs no selection at all,
+                and the reason the crop/rotate tools are usable as an image
+                editor. Deliberately scoped to THIS pin even when a
+                selection exists: the selection's own export lives in the
+                Selection submenu below, next to the verbs it belongs with. */}
+            <SelectionExportSubmenu
+                kit={contextMenuKit}
+                keys={[layoutKey]}
+                inset
+            />
             <ContextMenuItem onClick={onDuplicate}>Duplicate</ContextMenuItem>
             {/* Removes THIS copy, not the first record matching the sha256 —
                 the layout key carries the record offset. Same weight as the
@@ -281,6 +293,12 @@ export function PinBoardCtx({
                                     ))}
                                 </ContextMenuSubContent>
                             </ContextMenuSub>
+                            {/* The selection as one image file, the twin of
+                                the toolbar's own export row */}
+                            <SelectionExportSubmenu
+                                kit={contextMenuKit}
+                                keys={selected}
+                            />
                             {/* Enters the board's targeting mode (via the
                                 carry store — the board owns that state):
                                 hover highlights holes, click places the

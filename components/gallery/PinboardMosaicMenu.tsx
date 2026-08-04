@@ -8,7 +8,7 @@ import { useSelectedDBs } from "@/lib/state/database"
 import { composeBoardMosaic } from "@/lib/pinboardMosaic"
 import { findBoardElement, findBoardViewport } from "@/lib/pinboardPreview"
 import { downloadBlob, sanitizeFilePart, timestampStamp } from "@/lib/download"
-import { createMenuGuard } from "@/lib/menuGuard"
+import { exportGuard, useExporting } from "@/lib/pinboardExportGuard"
 import {
     usePinboardMosaicExtent,
     usePinboardMosaicSeamless,
@@ -50,14 +50,9 @@ function measured(px: number | undefined, fallback: number): number {
     return px && px > 0 ? px : fallback
 }
 
-// Re-entrancy guard for the export: a second click would start a second
-// full-resolution composite and OOM the tab. Module-scoped because Radix
-// destroys the menu's component state on select — see lib/menuGuard.ts.
-const exportGuard = createMenuGuard()
-
-/** True while any mosaic export is in flight, anywhere in the app. */
+/** True while any image export is in flight, anywhere in the app. */
 export function useMosaicExporting(): boolean {
-    return exportGuard.useBusy()
+    return useExporting()
 }
 
 export function useMosaicExport(boardName?: string | null) {

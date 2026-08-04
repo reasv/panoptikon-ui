@@ -26,6 +26,14 @@ interface PinboardMosaicPrefsState {
   setSeamless: (seamless: boolean) => void
   extent: PinboardMosaicExtent
   setExtent: (extent: PinboardMosaicExtent) => void
+  /**
+   * Save single-item exports as PNG instead of JPEG. Only the item export
+   * offers it: a lossless mosaic is a hundred-megabyte file for a picture
+   * that is already a composite of JPEG thumbnails, while a single item can
+   * be an edit of a lossless source that a re-encode would degrade.
+   */
+  lossless: boolean
+  setLossless: (lossless: boolean) => void
 }
 
 const pinboardMosaicPrefsStorage = {
@@ -42,6 +50,8 @@ export const usePinboardMosaicPrefs = create(
       setSeamless: (seamless: boolean) => set({ seamless }),
       extent: "visible",
       setExtent: (extent: PinboardMosaicExtent) => set({ extent }),
+      lossless: false,
+      setLossless: (lossless: boolean) => set({ lossless }),
     }),
     pinboardMosaicPrefsStorage
   )
@@ -63,6 +73,15 @@ export const usePinboardMosaicSeamless = (): [
   const stored = usePinboardMosaicPrefs((state) => state.seamless)
   const setSeamless = usePinboardMosaicPrefs((state) => state.setSeamless)
   return [useMirroredPreference(stored, false), setSeamless]
+}
+
+export const usePinboardExportLossless = (): [
+  boolean,
+  (next: boolean) => void,
+] => {
+  const stored = usePinboardMosaicPrefs((state) => state.lossless)
+  const setLossless = usePinboardMosaicPrefs((state) => state.setLossless)
+  return [useMirroredPreference(stored, false), setLossless]
 }
 
 export const usePinboardMosaicExtent = (): [

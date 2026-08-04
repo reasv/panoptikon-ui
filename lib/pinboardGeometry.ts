@@ -33,12 +33,14 @@
 // Type-only imports are spelled out: node's --experimental-strip-types
 // (how scripts/mosaic.test.mjs exercises this module) cannot erase a type
 // hiding in a value import list.
-import type { PinOrientation } from "./pinboardCrop"
-import { composeCrops, parseHField } from "./pinboardCrop"
+import type { CropRect, PinOrientation } from "./pinboardCrop"
+import { composeCrops, orientedSize, parseHField } from "./pinboardCrop"
 import type { GridParams } from "./pinboardGrid"
 import { rowStep } from "./pinboardGrid"
 
 export interface PinPlacement {
+  /** The board's layout key (`${recordOffset}-${sha256}`). */
+  key: string
   sha256: string
   // Cell rect in board pixels
   left: number
@@ -91,18 +93,33 @@ export function cellRect(
   }
 }
 
+/**
+ * Cell rects for a board's records.
+ *
+ * `only` restricts the result to those layout keys — the selection export's
+ * one hook into the compositor. It FILTERS rather than taking a pre-sliced
+ * records array on purpose: a key is `${recordOffset}-${sha256}`, so slicing
+ * the records would renumber every offset and hand back keys that name
+ * different items than the board's. Positions are untouched either way, so
+ * a subset keeps the arrangement it has on screen and the caller's capture
+ * box shrinks to its bounding box.
+ */
 export function parsePlacements(
   records: string[],
   grid: GridParams,
   boardWidth: number,
-  seamless = false
+  seamless = false,
+  only?: ReadonlySet<string>
 ): PinPlacement[] {
   const placements: PinPlacement[] = []
   for (let i = 0; i + 4 < records.length; i += 5) {
     const [sha256, x, y, w, hField] = records.slice(i, i + 5)
     if (sha256 === "__preview") continue
+    const key = `${i}-${sha256}`
+    if (only && !only.has(key)) continue
     const { h, crop, autoCrop, orient } = parseHField(hField)
     placements.push({
+      key,
       sha256,
       ...cellRect(
         grid,
@@ -148,6 +165,13 @@ export interface MosaicGeometryInput {
   extent: MosaicExtent
   /** Rows the "visible" extent captures: max(fold, ratchet). */
   visibleRows: number
+  /**
+   * Layout keys to capture, or undefined for the whole board (see
+   * parsePlacements). A selection export passes extent "full" with it: the
+   * chosen items ARE the extent, and cutting them at the fold as well would
+   * silently drop items the user pointed at.
+   */
+  only?: ReadonlySet<string>
 }
 
 export interface MosaicGeometry {
@@ -245,6 +269,77 @@ export function solveWithinCanvasLimits(
 }
 
 /**
+ * The LAYOUT width whose capture box comes out `outputWidth` px wide.
+ *
+ * A preset names the width of the file the user gets. For a whole board
+ * whose content spans the full width those are the same number, which is
+ * why the board export solves at the preset directly — but a SELECTION's
+ * box is some fraction of the board, so laying it out at 3840 would hand
+ * back an image a few hundred pixels wide with "3840" on the menu row.
+ *
+ * The geometry is linear in the layout width (every rect is a multiple of
+ * the column step, which is proportional to it), so one probe solve gives
+ * the ratio exactly, up to per-rect rounding. The caller still runs the
+ * result through solveWithinCanvasLimits: this answers "how wide do I lay
+ * the board out", not "does that fit on a canvas".
+ */
+export function fitLayoutWidthToOutput(
+  outputWidth: number,
+  solveAt: (width: number) => MosaicGeometryResult
+): { ok: true; layoutWidth: number } | { ok: false; failure: MosaicFailure } {
+  const probeWidth = Math.max(1, Math.round(outputWidth))
+  const probe = solveAt(probeWidth)
+  if (!probe.ok) return probe
+  if (probe.geometry.width <= 0) return { ok: false, failure: "degenerate" }
+  return {
+    ok: true,
+    layoutWidth: Math.max(
+      1,
+      Math.round((probeWidth * outputWidth) / probe.geometry.width)
+    ),
+  }
+}
+
+/**
+ * Pixel size of ONE item exported on its own: its crop region at source
+ * resolution, in display (oriented) space, rescaled to `targetWidth` when
+ * one is asked for.
+ *
+ * This is the single-item download, and it is deliberately not a cell: the
+ * cell contain-fits the crop and letterboxes whatever is left over, and
+ * those bars are page background, not picture. The crop region IS what the
+ * board shows, so exporting exactly it — at the source's own resolution
+ * rather than the cell's — is both the honest crop and the highest quality
+ * the file can give.
+ *
+ * Returns null for unusable natural dimensions (metadata not in yet).
+ */
+export function itemOutputSize(
+  crop: CropRect | null,
+  naturalWidth: number,
+  naturalHeight: number,
+  orient: PinOrientation | null,
+  targetWidth: number | null
+): { width: number; height: number; scale: number } | null {
+  if (!(naturalWidth > 0) || !(naturalHeight > 0)) return null
+  const [ow, oh] = orientedSize(naturalWidth, naturalHeight, orient)
+  const c = crop ?? { x: 0, y: 0, w: 1, h: 1 }
+  const nativeW = c.w * ow
+  const nativeH = c.h * oh
+  if (!(nativeW > 0) || !(nativeH > 0)) return null
+  const requested = targetWidth && targetWidth > 0 ? targetWidth / nativeW : 1
+  // Same guard the mosaic uses, applied once: the output is a plain
+  // rectangle, so the factor that makes it drawable is exact — no re-solve.
+  const scale =
+    requested * canvasClampFactor(nativeW * requested, nativeH * requested)
+  return {
+    width: Math.max(1, Math.round(nativeW * scale)),
+    height: Math.max(1, Math.round(nativeH * scale)),
+    scale,
+  }
+}
+
+/**
  * Canvas box and cell rects for a mosaic. Pure math: no DOM, no images.
  *
  * The capture box is the content bounding box (padded by grid.padding in
@@ -260,9 +355,10 @@ export function solveWithinCanvasLimits(
 export function mosaicGeometry(
   input: MosaicGeometryInput
 ): MosaicGeometryResult {
-  const { records, grid, layoutWidth, seamless, extent, visibleRows } = input
+  const { records, grid, layoutWidth, seamless, extent, visibleRows, only } =
+    input
   if (layoutWidth <= 0) return { ok: false, failure: "degenerate" }
-  const placements = parsePlacements(records, grid, layoutWidth, seamless)
+  const placements = parsePlacements(records, grid, layoutWidth, seamless, only)
   if (placements.length === 0) return { ok: false, failure: "no-pins" }
 
   // Seamless cells absorb the padding and the margins, so the "gutter" the

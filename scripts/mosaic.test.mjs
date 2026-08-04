@@ -19,7 +19,9 @@ const {
   canvasClampFactor,
   cellRect,
   colStep,
+  fitLayoutWidthToOutput,
   foldRows,
+  itemOutputSize,
   mosaicGeometry,
   solveWithinCanvasLimits,
 } = await import("../lib/pinboardGeometry.ts")
@@ -371,6 +373,159 @@ check("canvasClampFactor is 1 for an ordinary canvas", canvasClampFactor(3840, 8
       }))
       return r.ok === false && r.failure === "empty-visible"
     })()
+  )
+}
+
+// ---- selection subsets: the same board, fewer keys ---------------------
+
+{
+  // Three pins side by side; the export captures the outer two.
+  const three = [
+    "aaaaaaaaaa", "0", "0", "20", "12",
+    "bbbbbbbbbb", "24", "0", "20", "12",
+    "cccccccccc", "48", "0", "20", "12",
+  ]
+  const only = new Set(["0-aaaaaaaaaa", "10-cccccccccc"])
+  const sel = geometryOf({
+    records: three, grid: G, layoutWidth: W, seamless: false,
+    extent: "full", visibleRows: rows, only,
+  })
+  check(
+    "a selection captures only its own keys",
+    sel.placements.length === 2 &&
+      sel.placements.every((p) => only.has(p.key)),
+    sel.placements.map((p) => p.key).join(" ")
+  )
+  // The key is the RECORD OFFSET plus the sha, so it must survive the
+  // filter: numbering the kept records 0,5 instead of 0,10 would name
+  // different items than the board's own selection does.
+  check(
+    "keys keep their original record offsets",
+    sel.placements[1].key === "10-cccccccccc",
+    sel.placements[1].key
+  )
+  const first = cellRect(G, W, 0, 0, 20, 12)
+  const last = cellRect(G, W, 48, 0, 20, 12)
+  check(
+    "the box spans the selection, gap in the middle included",
+    sel.cropLeft === Math.max(0, first.left - G.padding) &&
+      sel.width === Math.round(last.left + last.width + G.padding - sel.cropLeft),
+    `${sel.cropLeft} + ${sel.width}`
+  )
+  // The unselected middle pin's spot is inside the box and simply empty:
+  // the selection keeps the arrangement it has on screen.
+  const middle = cellRect(G, W, 24, 0, 20, 12)
+  check(
+    "an unselected item between two selected ones leaves its gap",
+    middle.left > sel.cropLeft && middle.left + middle.width < sel.cropLeft + sel.width
+  )
+  const one = geometryOf({
+    records: three, grid: G, layoutWidth: W, seamless: false,
+    extent: "full", visibleRows: rows, only: new Set(["5-bbbbbbbbbb"]),
+  })
+  check(
+    "a one-key selection crops to that item alone",
+    one.placements.length === 1 &&
+      one.width === Math.round(middle.width + 2 * G.padding),
+    `${one.width}`
+  )
+  check(
+    "a selection naming nothing on the board has no pins",
+    mosaicGeometry({
+      records: three, grid: G, layoutWidth: W, seamless: false,
+      extent: "full", visibleRows: rows, only: new Set(["999-zzzzzzzzzz"]),
+    }).failure === "no-pins"
+  )
+}
+
+// ---- output width: the preset names the FILE's width -------------------
+
+{
+  const three = [
+    "aaaaaaaaaa", "0", "0", "20", "12",
+    "bbbbbbbbbb", "24", "0", "20", "12",
+  ]
+  const only = new Set(["0-aaaaaaaaaa"])
+  const solveAt = (width) =>
+    mosaicGeometry({
+      records: three, grid: effectiveGrid(G, width / W), layoutWidth: width,
+      seamless: false, extent: "full", visibleRows: rows, only,
+    })
+  // Laid out at the preset, one pin of 20 columns is nowhere near it.
+  const naive = geometryOf({
+    records: three, grid: effectiveGrid(G, 1920 / W), layoutWidth: 1920,
+    seamless: false, extent: "full", visibleRows: rows, only,
+  })
+  check(
+    "laying the BOARD out at the preset undershoots for a selection",
+    naive.width < 1920 / 3,
+    `${naive.width}`
+  )
+  const fitted = fitLayoutWidthToOutput(1920, solveAt)
+  const out = geometryOf({
+    records: three, grid: effectiveGrid(G, fitted.layoutWidth / W),
+    layoutWidth: fitted.layoutWidth, seamless: false, extent: "full",
+    visibleRows: rows, only,
+  })
+  check(
+    "fitting for output width lands on the preset",
+    fitted.ok && Math.abs(out.width - 1920) <= 2,
+    `layoutWidth=${fitted.layoutWidth} -> ${out.width}`
+  )
+  check(
+    "a failing probe propagates instead of guessing a width",
+    fitLayoutWidthToOutput(1920, () => ({ ok: false, failure: "no-pins" }))
+      .failure === "no-pins"
+  )
+}
+
+// ---- single item: the crop region, not the cell ------------------------
+
+{
+  // A quarter-width crop of a 4000x3000 source is 1000x750, whatever cell
+  // it happens to sit in.
+  const crop = { x: 0.25, y: 0.25, w: 0.25, h: 0.25 }
+  const native = itemOutputSize(crop, 4000, 3000, null, null)
+  check(
+    "native size is the crop at source resolution",
+    native.width === 1000 && native.height === 750,
+    `${native.width}x${native.height}`
+  )
+  check(
+    "no crop means the whole source",
+    (() => {
+      const s = itemOutputSize(null, 4000, 3000, null, null)
+      return s.width === 4000 && s.height === 3000
+    })()
+  )
+  // An odd quarter turn swaps the source's axes before the crop applies:
+  // crops are stored in DISPLAY space.
+  const turned = itemOutputSize(crop, 4000, 3000, { quarterTurns: 1, flipped: false }, null)
+  check(
+    "an odd quarter turn swaps the output's axes",
+    turned.width === 750 && turned.height === 1000,
+    `${turned.width}x${turned.height}`
+  )
+  const scaled = itemOutputSize(crop, 4000, 3000, null, 2000)
+  check(
+    "a target width scales the whole picture, aspect kept",
+    scaled.width === 2000 && scaled.height === 1500,
+    `${scaled.width}x${scaled.height}`
+  )
+  // The canvas guard applies here too: an absurd upscale is shrunk to
+  // something drawable rather than silently producing a blank canvas.
+  const huge = itemOutputSize(null, 4000, 3000, null, 40000)
+  check(
+    "an undrawable request is clamped, not allocated",
+    huge.width <= MAX_CANVAS_SIDE &&
+      huge.height <= MAX_CANVAS_SIDE &&
+      huge.width * huge.height <= MAX_CANVAS_AREA &&
+      huge.width < 40000,
+    `${huge.width}x${huge.height}`
+  )
+  check(
+    "unusable natural dimensions yield no size at all",
+    itemOutputSize(null, 0, 3000, null, null) === null
   )
 }
 

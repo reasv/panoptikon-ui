@@ -28,7 +28,7 @@ import { CropRect, PinLock, PinOrientation, TrimRange, clampCrop, composeCrops, 
 import { useVideoTrim } from '@/lib/videoTrim'
 import { CropGeometry, CropView } from './CropView'
 import { VideoTimeline } from './VideoTimeline'
-import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightFromLine, ArrowRightToLine, Check, ChevronDown, ChevronsLeft, ChevronsRight, ChevronsUp, Columns3, Crop, Dices, Expand, FlipHorizontal, FlipHorizontal2, FlipVertical, FlipVertical2, FoldHorizontal, GripVertical, LayoutDashboard, ListX, LockOpen, Maximize, RotateCcw, RotateCw, Ruler, Scaling, SquareDashed, Trash2, X, type LucideIcon } from 'lucide-react'
+import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightFromLine, ArrowRightToLine, Check, ChevronDown, ChevronsLeft, ChevronsRight, ChevronsUp, Columns3, Crop, Dices, Expand, FlipHorizontal, FlipHorizontal2, FlipVertical, FlipVertical2, FoldHorizontal, GripVertical, ImageDown, LayoutDashboard, ListX, LockOpen, Maximize, RotateCcw, RotateCw, Ruler, Scaling, SquareDashed, Trash2, X, type LucideIcon } from 'lucide-react'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -51,6 +51,8 @@ import { usePinboardCarry } from '@/lib/state/pinboardCarry'
 import { HoleTargetOverlay } from './HoleTargetOverlay'
 import { PinboardBoardApi, usePinboardBoardApi } from '@/lib/state/pinboardBoardApi'
 import { PinboardFullscreenBar } from './PinboardMenu'
+import { SelectionExportMenuItems, selectionExportLabel } from './PinboardExportMenu'
+import { dropdownMenuKit } from './PinboardGlobalMenu'
 
 const ALL_RESIZE_HANDLES: LayoutItem["resizeHandles"] =
     ["s", "w", "e", "n", "sw", "nw", "se", "ne"]
@@ -242,12 +244,21 @@ const DEFAULT_TOOLBAR_VERBS = ["arrange", "swap"]
 // Pinnable non-verb: the Send to Region submenu. On the bar it becomes an
 // icon button opening the preset menu rather than acting directly.
 const REGION_MENU_ID = "region"
+// Pinnable non-verb: the Save Image submenu (the selection as a mosaic, or
+// a single item as a picture — see PinboardExportMenu). Like the region
+// menu it opens rather than acting, and it is the one control here that
+// takes the selection OUT of the app.
+const EXPORT_MENU_ID = "export"
 // Bar display order for pinned controls: the dropdown's own verb order,
-// with the region menu slotted right after Swap. Rendering follows this
-// list rather than pin-toggle order, so the bar is stable no matter when
-// each control was pinned.
-const BAR_ORDER = SELECTION_VERBS.flatMap(v =>
-    v.id === "swap" ? [v.id, REGION_MENU_ID] : [v.id])
+// with the region menu slotted right after Swap and the export menu last —
+// the same places they sit in the dropdown. Rendering follows this list
+// rather than pin-toggle order, so the bar is stable no matter when each
+// control was pinned.
+const BAR_ORDER = [
+    ...SELECTION_VERBS.flatMap(v =>
+        v.id === "swap" ? [v.id, REGION_MENU_ID] : [v.id]),
+    EXPORT_MENU_ID,
+]
 
 export function PinBoard(
     {
@@ -2471,7 +2482,7 @@ export function PinBoard(
                         innerRef={toolbarRef}
                         style={{ left: toolbarPos.x, top: toolbarPos.y }}
                         onGripDown={onToolbarGripDown}
-                        count={selected.length}
+                        keys={selected}
                         cropOn={selectionCrop}
                         gravity={!float}
                         selHasAnchor={selected.some(k => itemLocks[k] === "anchor")}
@@ -2529,7 +2540,7 @@ function SelectionToolbar({
     innerRef,
     style,
     onGripDown,
-    count,
+    keys,
     cropOn,
     gravity,
     selHasAnchor,
@@ -2543,7 +2554,10 @@ function SelectionToolbar({
     innerRef: React.Ref<HTMLDivElement>
     style: React.CSSProperties
     onGripDown: (e: React.PointerEvent) => void
-    count: number
+    // The selected layout keys. The bar shows their count and the verbs
+    // are dispatched by the parent, but the export menu needs the keys
+    // themselves — it composites exactly these items.
+    keys: string[]
     cropOn: boolean
     // The board's gravity, for the verbs whose description depends on it
     gravity: boolean
@@ -2558,6 +2572,7 @@ function SelectionToolbar({
     onCropToggle: () => void
     onClear: () => void
 }) {
+    const count = keys.length
     const [pinned, setPinned] = useState<string[]>(DEFAULT_TOOLBAR_VERBS)
     // localStorage is read after mount (the initializer also runs during
     // SSR, where there is no storage); the bar only exists while a
@@ -2567,7 +2582,8 @@ function SelectionToolbar({
             const ids = JSON.parse(localStorage.getItem(TOOLBAR_VERBS_KEY) ?? "")
             if (Array.isArray(ids)) {
                 setPinned(ids.filter(id =>
-                    id === REGION_MENU_ID || SELECTION_VERBS.some(v => v.id === id)))
+                    id === REGION_MENU_ID || id === EXPORT_MENU_ID
+                    || SELECTION_VERBS.some(v => v.id === id)))
             }
         } catch { /* absent or corrupted preference: keep the default */ }
     }, [])
@@ -2693,6 +2709,34 @@ function SelectionToolbar({
                             ))}
                         </DropdownMenuSubContent>
                     </DropdownMenuSub>
+                    {/* The other menu-not-verb: what the selection looks
+                        like as a FILE. One item saves the picture itself
+                        (cropped, oriented, at source resolution), several
+                        save a mosaic of exactly them. */}
+                    <DropdownMenuSub>
+                        <DropdownMenuSubTrigger
+                            title={count === 1
+                                ? "Save this item as an image file, cropped and oriented as it is on the board"
+                                : "Save the selected items as one image file"}
+                        >
+                            <span className="flex items-center gap-2">
+                                <ImageDown className="w-4 h-4" />
+                                {selectionExportLabel(count)}
+                            </span>
+                            <span className="ml-auto pl-2">
+                                <PinToggle
+                                    isPinned={pinned.includes(EXPORT_MENU_ID)}
+                                    onToggle={() => togglePin(EXPORT_MENU_ID)}
+                                />
+                            </span>
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="w-56">
+                            <SelectionExportMenuItems
+                                kit={dropdownMenuKit}
+                                keys={keys}
+                            />
+                        </DropdownMenuSubContent>
+                    </DropdownMenuSub>
                     {/* The removals close the list, fenced off from the
                         verbs that only rearrange what's there */}
                     <DropdownMenuSeparator />
@@ -2719,6 +2763,26 @@ function SelectionToolbar({
                                     </span>
                                 </DropdownMenuItem>
                             ))}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                )
+                // Same shape for the pinned export menu: a size list can't
+                // live on an icon button either
+                if (id === EXPORT_MENU_ID) return (
+                    <DropdownMenu modal={false} key={id}>
+                        <DropdownMenuTrigger asChild>
+                            <button className={menuBtn}
+                                title={count === 1
+                                    ? "Save this item as an image file"
+                                    : "Save the selected items as one image file"}>
+                                <ImageDown className="w-4 h-4" />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-56">
+                            <SelectionExportMenuItems
+                                kit={dropdownMenuKit}
+                                keys={keys}
+                            />
                         </DropdownMenuContent>
                     </DropdownMenu>
                 )

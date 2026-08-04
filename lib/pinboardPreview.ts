@@ -102,16 +102,31 @@ function orientDraw(
   return o!.quarterTurns % 2 ? [0, 0, H, W] : [0, 0, W, H]
 }
 
+/**
+ * Something drawable plus the intrinsic size to read the crop against.
+ *
+ * A pin's pixels do not always come from an <img>: a video that is on
+ * screen composites its CURRENT FRAME straight off the <video> element
+ * (see pinboardMedia.ts), which has videoWidth/videoHeight rather than
+ * naturalWidth/naturalHeight and no `complete` flag. Carrying the size
+ * alongside the source keeps drawPin from having to know which it got.
+ */
+export interface PinSource {
+  source: CanvasImageSource
+  width: number
+  height: number
+}
+
 // One pin onto the canvas, at a rect already in canvas coordinates: the
 // step both compositors share. `img` null (or a load failure the caller
 // turned into null) draws the placeholder tile instead of leaving a hole;
-// a loaded image with no intrinsic size draws nothing, which is what the
+// a source with no intrinsic size draws nothing, which is what the
 // preview has always done. `cornerRadius` 0 draws square (seamless
 // mosaics, where rounded corners would punch holes in the tiling).
 export function drawPin(
   ctx: CanvasRenderingContext2D,
   p: PinPlacement,
-  img: HTMLImageElement | null,
+  img: PinSource | null,
   cellLeft: number,
   cellTop: number,
   cellW: number,
@@ -126,8 +141,8 @@ export function drawPin(
   }
 
   if (img) {
-    const nw = img.naturalWidth
-    const nh = img.naturalHeight
+    const nw = img.width
+    const nh = img.height
     if (nw > 0 && nh > 0) {
       const c = p.crop ?? { x: 0, y: 0, w: 1, h: 1 }
       // Crops are stored in display space, so the fit runs on the
@@ -145,7 +160,17 @@ export function drawPin(
         geo.visH,
         p.orient
       )
-      ctx.drawImage(img, s.x * nw, s.y * nh, s.w * nw, s.h * nh, dx, dy, dw, dh)
+      ctx.drawImage(
+        img.source,
+        s.x * nw,
+        s.y * nh,
+        s.w * nw,
+        s.h * nh,
+        dx,
+        dy,
+        dw,
+        dh
+      )
       ctx.restore()
     }
   } else {
@@ -155,6 +180,11 @@ export function drawPin(
     ctx.fillRect(cellLeft, cellTop, cellW, cellH)
   }
   ctx.restore()
+}
+
+/** A loaded <img> as a PinSource. */
+export function imageSource(img: HTMLImageElement): PinSource {
+  return { source: img, width: img.naturalWidth, height: img.naturalHeight }
 }
 
 export function loadImage(src: string): Promise<HTMLImageElement> {
@@ -286,7 +316,7 @@ export async function composeBoardPreview(
     drawPin(
       ctx,
       p,
-      loaded.status === "fulfilled" ? loaded.value : null,
+      loaded.status === "fulfilled" ? imageSource(loaded.value) : null,
       (p.left - cropLeft) * scale,
       (p.top - cropTop) * scale,
       p.width * scale,
