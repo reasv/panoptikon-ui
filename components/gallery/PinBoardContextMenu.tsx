@@ -230,15 +230,20 @@ export function PinBoardCtx({
             {/* Layout locks for this pin; the same toggles exist as overlay
                 buttons. Anchored = position+size fixed (RGL static, an
                 obstacle every fill packs around); size-locked = keeps w x h
-                but may be moved. */}
+                but may be moved. These two are the kit's checkbox rows
+                spelled out (the kit is for sections shared between menus),
+                so they repeat its keep-open select — a toggle shows its
+                answer on the row and has no business closing the menu. */}
             <ContextMenuCheckboxItem
                 checked={lock === "anchor"}
+                onSelect={(e) => e.preventDefault()}
                 onCheckedChange={(checked) => onLockChange(checked ? "anchor" : null)}
             >
                 Anchor in Place
             </ContextMenuCheckboxItem>
             <ContextMenuCheckboxItem
                 checked={lock === "size"}
+                onSelect={(e) => e.preventDefault()}
                 onCheckedChange={(checked) => onLockChange(checked ? "size" : null)}
             >
                 Lock Size

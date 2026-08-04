@@ -84,9 +84,27 @@ export const DESTRUCTIVE_MENU_ITEM =
     "cursor-pointer bg-destructive text-destructive-foreground"
     + " focus:bg-destructive/90 focus:text-destructive-foreground"
 
+// Radix closes the menu when a row is SELECTED, which is right for a verb
+// (it did its thing, the menu is done) and wrong for a checkbox: a toggle
+// answers a question in place, the answer is visible on the row itself, and
+// flipping two of them should not mean reopening the menu in between. Both
+// kits wrap their checkbox row the same way, so no surface can disagree
+// about it — Escape or a click outside still closes, as always.
+function KeepOpenContextCheckboxItem(
+    props: React.ComponentProps<typeof ContextMenuCheckboxItem>
+) {
+    return <ContextMenuCheckboxItem {...props} onSelect={(e) => e.preventDefault()} />
+}
+
+function KeepOpenDropdownCheckboxItem(
+    props: React.ComponentProps<typeof DropdownMenuCheckboxItem>
+) {
+    return <DropdownMenuCheckboxItem {...props} onSelect={(e) => e.preventDefault()} />
+}
+
 export const contextMenuKit: MenuKit = {
     Item: ContextMenuItem,
-    CheckboxItem: ContextMenuCheckboxItem,
+    CheckboxItem: KeepOpenContextCheckboxItem,
     Separator: ContextMenuSeparator,
     Sub: ContextMenuSub,
     SubTrigger: ContextMenuSubTrigger,
@@ -96,7 +114,7 @@ export const contextMenuKit: MenuKit = {
 
 export const dropdownMenuKit: MenuKit = {
     Item: DropdownMenuItem,
-    CheckboxItem: DropdownMenuCheckboxItem,
+    CheckboxItem: KeepOpenDropdownCheckboxItem,
     Separator: DropdownMenuSeparator,
     Sub: DropdownMenuSub,
     SubTrigger: DropdownMenuSubTrigger,
