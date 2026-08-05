@@ -80,9 +80,9 @@ export function WizardReview({
 
         <SummaryCard icon={<CalendarClock className="h-5 w-5" />} title="Routine processing">
           <Badge variant={schedule.enabled ? "default" : "outline"}>{schedule.enabled ? "Automatic" : "Manual only"}</Badge>
-          <p>{describeSchedule(schedule)}</p>
-          <p className="font-mono text-xs text-muted-foreground">{effectiveCronSchedule(schedule)}</p>
-          {schedule.enabled && scheduleNextRun && <p className="text-muted-foreground">Next scheduled run: {new Date(scheduleNextRun).toLocaleString()}</p>}
+          {schedule.enabled
+            ? <><p>{describeSchedule(schedule)}</p><p className="font-mono text-xs text-muted-foreground">{effectiveCronSchedule(schedule)}</p>{scheduleNextRun && <p className="text-muted-foreground">Next scheduled run: {new Date(scheduleNextRun).toLocaleString()}</p>}</>
+            : <p className="text-muted-foreground">Routine processing can be started manually from the Scan page.</p>}
         </SummaryCard>
       </div>
 

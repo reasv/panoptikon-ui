@@ -49,7 +49,7 @@ export function WizardScheduleSelection({
   nextRun: string | null
   error: string | null
   onChange(value: WizardSchedule): void
-  onPreviewChange(valid: boolean, nextRun: string | null, error: string | null): void
+  onPreviewChange(cron: string, valid: boolean, nextRun: string | null, error: string | null): void
 }) {
   const effectiveCron = cronFor(value)
 
@@ -65,9 +65,9 @@ export function WizardScheduleSelection({
         })
         if (!response.ok) throw new Error("Panoptikon could not preview this schedule.")
         const result = await response.json() as { valid: boolean; next_run: string | null; error: string | null }
-        onPreviewChange(result.valid, result.next_run, result.error)
+        onPreviewChange(effectiveCron, result.valid, result.next_run, result.error)
       } catch (reason) {
-        if (!controller.signal.aborted) onPreviewChange(false, null, reason instanceof Error ? reason.message : String(reason))
+        if (!controller.signal.aborted) onPreviewChange(effectiveCron, false, null, reason instanceof Error ? reason.message : String(reason))
       }
     }, 250)
     return () => { controller.abort(); window.clearTimeout(timer) }
@@ -76,7 +76,8 @@ export function WizardScheduleSelection({
   function patch(patchValue: Partial<WizardSchedule>) {
     const next = { ...value, ...patchValue }
     if (next.mode !== "custom") next.cron = cronFor(next)
-    onPreviewChange(false, null, null)
+    const nextCron = cronFor(next)
+    if (nextCron !== effectiveCron) onPreviewChange(nextCron, false, null, null)
     onChange(next)
   }
 

@@ -75,7 +75,10 @@ registry models with per-model batch/threshold sliders shown after selection,
 and the database's routine schedule. Models are never preselected. Daily,
 every-N-hours, and weekly controls generate five-field cron strings; advanced
 users can edit a custom expression, which is previewed by the Desktop API with
-its next local run time. A review step summarizes every staged choice before
+its next local run time. Generated schedules do not wait for that asynchronous
+preview before the wizard can continue, and disabling automatic runs removes
+cron validation from the step's navigation gate. An invalid disabled custom
+draft is not persisted. A review step summarizes every staged choice before
 Start Scan commits anything. The final, non-reversible Scan step tracks the
 returned scan/model queue IDs and opens database-scoped Search or Scan pages in
 the system browser. Links to the Scan page elsewhere in the Desktop wizard use
