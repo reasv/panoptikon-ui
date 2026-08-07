@@ -1,7 +1,8 @@
 import Image from 'next/image'
 import { cn, getFileURL } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
-import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid, useGalleryPinProportional, useGalleryPinResizeHandles, useGalleryPinSelectionCrop } from '@/lib/state/gallery'
+import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid, useGalleryPinProportional, useGalleryPinResizeHandles, useGalleryPinSelectionCrop, useGalleryTrim } from '@/lib/state/gallery'
+import { newPinHField } from '@/lib/galleryTrim'
 import { consumePinboardExplicitPlacement, consumePinboardNavigation, consumePinboardPendingEdit, markPinboardExplicitPlacement } from '@/lib/pinboardNavigation'
 import { usePinBoard } from '@/lib/state/pinboard'
 import { GridParams, effectiveGrid, gridScale, minPinUnits, rowStep, v1ScaleFactors } from '@/lib/pinboardGrid'
@@ -1053,6 +1054,9 @@ export function PinBoard(
         setRglSettling(true)
     }, [gridKey])
     const pinItem = usePinItem()
+    // For the carry's free placement below, which appends a record itself
+    // instead of routing through pinItem
+    const galleryTrim = useGalleryTrim()
     // The board's own layout-actions instance shares the machinery the
     // context menu uses (autoLayout itself is declared above
     // onLayoutChange, next to the gesture auto-off that consumes it).
@@ -1289,7 +1293,8 @@ export function PinBoard(
             return [
                 ...next,
                 sha256.slice(0, 10),
-                r.x.toString(), r.y.toString(), r.w.toString(), r.h.toString(),
+                r.x.toString(), r.y.toString(), r.w.toString(),
+                newPinHField(r.h, sha256, galleryTrim),
             ]
         })
     }
@@ -3306,6 +3311,10 @@ function PinBoardPin({
 export function usePinItem() {
     const prefixLength = 10 // The length of the prefix of the sha256 hash
     const { updateRecords } = usePinBoard()
+    // Trim rides along with the act of pinning: a new record takes the
+    // gallery's trim when the `vt` slot belongs to this item (see
+    // newPinHField), and a bare height otherwise
+    const galleryTrim = useGalleryTrim()
     const pinItem = (sha256: string, pos?: { x: number, y: number, w: number, h: number }) => {
         updateRecords((records, grid) => {
             // An explicit position (e.g. from a drop) is already in the
@@ -3322,7 +3331,7 @@ export function usePinItem() {
                 p.x.toString(),
                 p.y.toString(),
                 p.w.toString(),
-                p.h.toString(),
+                newPinHField(p.h, sha256, galleryTrim),
             ]
         })
     }

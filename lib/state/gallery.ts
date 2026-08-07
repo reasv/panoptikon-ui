@@ -6,6 +6,8 @@ import {
   parseAsString,
   useQueryState,
 } from "nuqs"
+import type { TrimRange } from "@/lib/pinboardCrop"
+import { encodeGalleryTrim, parseGalleryTrim } from "@/lib/galleryTrim"
 import { isPinboardMaximized } from "./pinboardView"
 
 const useGalleryIndex = () =>
@@ -179,6 +181,33 @@ const useGalleryPinBoardLoad = () =>
     })
   )
 
+// The gallery's playback trim for the video being watched, keyed by the
+// item's sha256 prefix. THE VALUE'S GRAMMAR IS WIRE FORMAT — it is frozen
+// like the pinboard h field's (see lib/galleryTrim.ts, which owns the
+// codec); this file only decides the slot's URL behavior. No default and
+// no clearOnDefault: the empty trim IS the absent param, which is what the
+// setter writes to clear it.
+//
+// History is "push" because the setter is only ever called on commit
+// gestures — marker release, set/clear button presses — never per
+// pointermove, so back is an undo of one trim edit (the pinboard's
+// convention).
+const useGalleryTrim = () => {
+  const [value, setValue] = useQueryState(
+    "vt",
+    parseAsString.withOptions({
+      history: "push",
+    })
+  )
+  const slot = parseGalleryTrim(value)
+  return {
+    sha10: slot?.sha10 ?? null,
+    trim: slot?.trim ?? null,
+    setTrim: (sha256: string, trim: TrimRange | null) =>
+      setValue(encodeGalleryTrim(sha256, trim)),
+  }
+}
+
 // Whether the board is currently maximized over the whole view — see
 // lib/state/pinboardView.ts for what that means and why it gates searching.
 const usePinboardMaximized = () =>
@@ -216,5 +245,6 @@ export {
   useGalleryPinSelectionCrop,
   useGalleryPinProportional,
   useGalleryPinResizeHandles,
+  useGalleryTrim,
   usePinboardMaximized,
 }

@@ -3,7 +3,8 @@
 import React, { useMemo } from 'react'
 import { cn } from "@/lib/utils"
 import { usePinBoard } from "@/lib/state/pinboard"
-import { useGalleryHidePinBoard, useGalleryIndex } from "@/lib/state/gallery"
+import { useGalleryHidePinBoard, useGalleryIndex, useGalleryTrim } from "@/lib/state/gallery"
+import { newPinHField } from "@/lib/galleryTrim"
 import { v1ScaleFactors } from "@/lib/pinboardGrid"
 import { placeNewPin } from "@/lib/pinboardPlace"
 import { markPinboardPendingEdit } from "@/lib/pinboardNavigation"
@@ -33,6 +34,10 @@ export function PinButton({
     // tab would be a total context switch away from the results
     const galleryOpen = useGalleryIndex()[0] !== null
     const setHidePinBoard = useGalleryHidePinBoard()[1]
+    // Trim rides along with the act of pinning: a new record takes the
+    // gallery's trim when the `vt` slot belongs to this item (see
+    // newPinHField). The unpin paths below never touch an existing record.
+    const galleryTrim = useGalleryTrim()
     const isPinned = useMemo(
         () => records.filter((id, i) => i % 5 === 0 && sha256.slice(0, prefixLength) === id.slice(0, prefixLength)).length > 0,
         [records, sha256]
@@ -101,7 +106,7 @@ export function PinButton({
                 x.toString(),
                 y.toString(),
                 w.toString(),
-                h.toString(),
+                newPinHField(h, sha256, galleryTrim),
             ]
         })
     }

@@ -148,14 +148,17 @@ export interface TrimRange {
   end: number | null
 }
 
-// Trim times are stored as centiseconds in base36, variable length
+// Trim times are stored as centiseconds in base36, variable length.
+// Exported because the gallery's `vt` URL param carries a trim in the exact
+// same encoding (see lib/galleryTrim.ts), so a trim crosses from there into
+// a pin's h field without a conversion that could round differently.
 const TRIM_UNIT = 100
 
-function encodeTime(v: number): string {
+export function encodeTime(v: number): string {
   return Math.max(0, Math.round(v * TRIM_UNIT)).toString(36)
 }
 
-function decodeTime(s: string): number | null {
+export function decodeTime(s: string): number | null {
   if (!s) return null
   return parseInt(s, 36) / TRIM_UNIT
 }
