@@ -28,8 +28,8 @@ import { useVideoPlayerState } from '@/lib/videoPlayerState'
 import { CropRect, PinLock, PinOrientation, TrimRange, clampCrop, composeCrops, isEmptyTrim, isIdentityOrientation, packHField, parseHField } from '@/lib/pinboardCrop'
 import { useVideoTrim } from '@/lib/videoTrim'
 import { CropGeometry, CropView } from './CropView'
-import { VideoTimeline } from './VideoTimeline'
-import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightFromLine, ArrowRightToLine, Check, ChevronDown, ChevronsLeft, ChevronsRight, ChevronsUp, Columns3, Crop, Dices, Expand, FlipHorizontal, FlipHorizontal2, FlipVertical, FlipVertical2, FoldHorizontal, GripVertical, ImageDown, LayoutDashboard, ListX, LockOpen, Maximize, RotateCcw, RotateCw, Ruler, Scaling, SquareDashed, Trash2, X, type LucideIcon } from 'lucide-react'
+import { NativeControlsEscape, VideoPlayerSurface, playerSizeForWidth, useVideoPlayerSurface } from './VideoPlayerSurface'
+import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, Check, ChevronDown, ChevronsLeft, ChevronsRight, ChevronsUp, Columns3, Crop, Dices, Expand, FlipHorizontal, FlipHorizontal2, FlipVertical, FlipVertical2, FoldHorizontal, GripVertical, ImageDown, LayoutDashboard, ListX, LockOpen, Maximize, RotateCcw, RotateCw, Ruler, Scaling, SquareDashed, Trash2, X, type LucideIcon } from 'lucide-react'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -84,6 +84,13 @@ const GRAVITY_RESIZE_HANDLES: LayoutItem["resizeHandles"] =
 // they sit outside the .drag-handle layer.
 const DRAG_CONFIG = { enabled: true, handle: ".drag-handle", threshold: 0 }
 const RESIZE_CONFIG = { enabled: true }
+// A pin's video player can take element fullscreen, which owns the screen
+// and the keyboard while it runs: a board shortcut fired there would act on
+// pins nobody can see, and Escape belongs to the browser's own exit. Read at
+// fire time — nothing re-renders the board on fullscreenchange.
+function inElementFullscreen() {
+    return document.fullscreenElement !== null
+}
 // Shift-held external drags switch to hole mode: rejecting the dragover
 // here removes RGL's placeholder and its live cascade — the board's own
 // dragover tracking and HoleTargetOverlay take over (and its onDropCapture
@@ -1757,7 +1764,7 @@ export function PinBoard(
     useEffect(() => {
         if (!escActive) return
         const onKey = (e: KeyboardEvent) => {
-            if (e.key !== "Escape") return
+            if (e.key !== "Escape" || inElementFullscreen()) return
             // While hole targeting is active Esc belongs to it (its own
             // listener cancels the targeting); the selection survives
             if (holeActiveRef.current) return
@@ -1773,7 +1780,7 @@ export function PinBoard(
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
             if ((e.key !== "a" && e.key !== "A") || !(e.ctrlKey || e.metaKey)
-                || e.altKey || e.shiftKey) return
+                || e.altKey || e.shiftKey || inElementFullscreen()) return
             const t = e.target as HTMLElement | null
             if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return
             const keys = readingOrder.filter(k => !k.endsWith("__preview"))
@@ -1790,7 +1797,7 @@ export function PinBoard(
     useEffect(() => {
         if (selected.length === 0) return
         const onKey = (e: KeyboardEvent) => {
-            if (e.key !== "Delete") return
+            if (e.key !== "Delete" || inElementFullscreen()) return
             // A press aimed at a text field is that field's own edit
             const t = e.target as HTMLElement | null
             if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return
@@ -2987,7 +2994,24 @@ function PinBoardPin({
     })
     const isPlayable = data?.item?.type === "video/mp4" || data?.item?.type === "video/webm"
     const videoRef = React.useRef<HTMLVideoElement>(null)
-    const videoState = useVideoPlayerState({ videoRef })
+    const videoState = useVideoPlayerState({ videoRef, persistVolume: true })
+    // The pin's content layer: the only element containing BOTH the <video>
+    // (which lives inside the .drag-handle layer) and the player surface
+    // (which must not). It is the player's pointer container and its
+    // fullscreen target, and its width drives the player's size ladder —
+    // the surface's tier is a prop, not a container query, and --spacing
+    // (which the pin does scope by container query) says nothing about it.
+    const contentRef = React.useRef<HTMLDivElement>(null)
+    const [contentWidth, setContentWidth] = React.useState(0)
+    React.useEffect(() => {
+        const el = contentRef.current
+        if (!el) return
+        const measure = () => setContentWidth(el.clientWidth)
+        measure()
+        const ro = new ResizeObserver(measure)
+        ro.observe(el)
+        return () => ro.disconnect()
+    }, [])
 
     // Double-click makes this pin the app-level current item — the same
     // thing the corner select button does. Independent of the board's own
@@ -3048,154 +3072,184 @@ function PinBoardPin({
 
     const showVideo = isPlayable && videoState.showVideo
     useVideoTrim({ videoRef, trim, active: showVideo })
+    // Native controls stand the whole player world down (only the escape
+    // kebab remains), so the controller is inactive there too. Crop mode
+    // stands it down as well: the surface would sit on the crop area's
+    // bottom band, over the pan/resize layer that IS the tool while that
+    // mode runs. showOnEnable stays off: a board of autoplaying pins would
+    // flash every surface at once on load — the S0 play button reveals its
+    // own surface instead.
+    const playerActive = showVideo && !videoState.showControls && !cropMode
+    const player = useVideoPlayerSurface({
+        videoRef,
+        active: playerActive,
+        fullscreenTargetRef: contentRef,
+    })
 
     // Rendering shows the composition of both crop slots; the crop editor
     // edits the manual slot only (the auto crop is derived from it and gets
     // cleared when a new manual crop is committed)
     const effectiveCrop = composeCrops(crop, autoCrop)
 
-    // Set one trim bound to the video's current time (centisecond-rounded, the
-    // URL resolution); shift-click clears the bound instead. Placing a bound
-    // on the wrong side of the other one clears the other — the user is
-    // redefining the range. Equal bounds are allowed (freeze frame).
-    const setTrimPoint = (which: "start" | "end", e: React.MouseEvent) => {
-        let start = trim?.start ?? null
-        let end = trim?.end ?? null
-        if (e.shiftKey) {
-            if (which === "start") start = null
-            else end = null
-        } else {
-            const video = videoRef.current
-            if (!video) return
-            const t = Math.round(video.currentTime * 100) / 100
-            if (which === "start") {
-                start = t
-                if (end != null && end < t) end = null
-            } else {
-                end = t
-                if (start != null && start > t) start = null
-            }
-        }
-        onTrimChange(start == null && end == null ? null : { start, end })
-        // Setting the end mid-playback leaves the playhead exactly at the end
-        // point, from which crossing detection would never fire — restart the
-        // loop, which doubles as "here's your loop" feedback
-        if (which === "end" && !e.shiftKey && end != null) {
-            const video = videoRef.current
-            if (video && !video.paused) video.currentTime = start ?? 0
-        }
-    }
     return (
         <>
-            <ContextMenu>
-                <ContextMenuTrigger>
-                    <div
-                        className={cn(
-                            "absolute top-0 left-0 w-full h-full",
-                            !cropMode && "drag-handle cursor-move",
-                        )}
-                        onDoubleClick={cropMode ? undefined : selectAsCurrentItem}
-                    >
-                        {/* Playing videos always render through CropView (even
-                            uncropped: rest mode with a null crop is a plain
-                            contain fit) so toggling crop mode only restyles the
-                            <video> instead of remounting it, which would reset
-                            the playback position. Oriented items route here for
-                            the same reason the crop does — CropView owns the
-                            source-to-display transform, and duplicating it on
-                            the plain contain-fit branch below would be a second
-                            copy of the same eight cases. */}
-                        {(cropMode || effectiveCrop || showVideo || !isIdentityOrientation(orientation)) ?
-                            <CropView
-                                crop={cropMode ? crop : effectiveCrop}
-                                cropMode={cropMode}
-                                boxResizing={boxResizing}
-                                imageExtentRef={imageExtentRef}
-                                naturalWidth={naturalSize?.w}
-                                naturalHeight={naturalSize?.h}
-                                orientation={orientation}
-                                onCropChange={onCropChange}
-                                ghostSrc={showVideo ? undefined : thumbnail}
-                                renderMedia={(style) => showVideo ?
-                                    <video
-                                        ref={videoRef}
-                                        autoPlay
-                                        // With a trim set, looping is handled by
-                                        // useVideoTrim so it restarts from the
-                                        // trim start rather than 0
-                                        loop={isEmptyTrim(trim)}
-                                        muted={videoState.videoIsMuted}
-                                        controls={videoState.showControls}
-                                        className="rounded"
-                                        style={style}
-                                        src={file}
-                                        onLoadedMetadata={(e) => noteMediaDims(
-                                            e.currentTarget.videoWidth,
-                                            e.currentTarget.videoHeight,
-                                        )}
-                                    />
-                                    :
-                                    <img
-                                        src={thumbnail}
-                                        alt={`Sha256 Hash ${sha256}`}
-                                        draggable={false}
-                                        className="rounded select-none"
-                                        style={style}
-                                        // The ref covers cache hits that complete
-                                        // before React attaches the load handler
-                                        ref={(el) => {
-                                            if (el?.complete) noteMediaDims(el.naturalWidth, el.naturalHeight)
-                                        }}
-                                        onLoad={(e) => noteMediaDims(
-                                            e.currentTarget.naturalWidth,
-                                            e.currentTarget.naturalHeight,
-                                        )}
-                                    />
-                                }
-                            />
-                            :
-                            <Image
-                                src={thumbnail}
-                                alt={`Sha256 Hash ${sha256}`}
-                                fill
-                                className="rounded object-contain"
-                                unoptimized={true}
-                            />}
-                    </div>
-                </ContextMenuTrigger>
-                <PinBoardCtx
-                    layoutKey={layoutKey}
-                    sha256={sha256}
-                    file_url={file}
-                    onLayoutChange={onLayoutChange}
-                    layout={layout}
-                    crops={crops}
-                    autoCrops={autoCrops}
-                    locks={locks}
-                    orients={orients}
-                    highWater={highWater}
-                    float={float}
-                    cropKey={cropKey}
-                    cropMode={cropMode}
-                    hasCrop={!!(crop || autoCrop)}
-                    onToggleCrop={onCropModeToggle}
-                    onClearCrop={() => onCropChange(null)}
-                    trim={trim}
-                    onTrimChange={onTrimChange}
-                    onDuplicate={onDuplicate}
-                    onUnpin={onUnpin}
-                    onRemove={onRemove}
-                    onRemoveAllBut={onRemoveAllBut}
-                    lock={lock}
-                    onLockChange={onLockChange}
-                    pinboardRef={scrollAreaRef}
-                    grid={grid}
-                    gridWidth={gridWidth}
-                    isV1={isV1}
-                    onUpgradeGrid={onUpgradeGrid}
-                    dbs={dbs}
-                />
-            </ContextMenu>
+            {/* Content layer. The overlay buttons below stay OUTSIDE it: they
+                are item verbs, they must remain direct children of
+                .pinboard-pin for the `> button` z-index rule in globals.css,
+                and keeping them out means fullscreen shows the picture and
+                the player alone. data-playable reserves the bottom band in
+                the pin's --spacing clamp before any <video> exists (see
+                globals.css). */}
+            <div
+                ref={contentRef}
+                data-playable={isPlayable ? "" : undefined}
+                className={cn(
+                    "pinboard-pin-content absolute inset-0",
+                    player.cursorHidden && "cursor-none",
+                )}
+                // Only while the player world is on: these fire on every
+                // pointer move, and neither an image pin nor a pin handed
+                // over to the native controls has a surface to reveal
+                {...(playerActive ? player.containerProps : null)}
+            >
+                <ContextMenu>
+                    <ContextMenuTrigger>
+                        <div
+                            className={cn(
+                                "absolute top-0 left-0 w-full h-full",
+                                !cropMode && "drag-handle cursor-move",
+                            )}
+                            onDoubleClick={cropMode ? undefined : selectAsCurrentItem}
+                        >
+                            {/* Playing videos always render through CropView (even
+                                uncropped: rest mode with a null crop is a plain
+                                contain fit) so toggling crop mode only restyles the
+                                <video> instead of remounting it, which would reset
+                                the playback position. Oriented items route here for
+                                the same reason the crop does — CropView owns the
+                                source-to-display transform, and duplicating it on
+                                the plain contain-fit branch below would be a second
+                                copy of the same eight cases. */}
+                            {(cropMode || effectiveCrop || showVideo || !isIdentityOrientation(orientation)) ?
+                                <CropView
+                                    crop={cropMode ? crop : effectiveCrop}
+                                    cropMode={cropMode}
+                                    boxResizing={boxResizing}
+                                    imageExtentRef={imageExtentRef}
+                                    naturalWidth={naturalSize?.w}
+                                    naturalHeight={naturalSize?.h}
+                                    orientation={orientation}
+                                    onCropChange={onCropChange}
+                                    ghostSrc={showVideo ? undefined : thumbnail}
+                                    renderMedia={(style) => showVideo ?
+                                        <video
+                                            ref={videoRef}
+                                            autoPlay
+                                            // With a trim set, looping is handled by
+                                            // useVideoTrim so it restarts from the
+                                            // trim start rather than 0
+                                            loop={isEmptyTrim(trim)}
+                                            muted={videoState.videoIsMuted}
+                                            controls={videoState.showControls}
+                                            className="rounded"
+                                            style={style}
+                                            src={file}
+                                            onLoadedMetadata={(e) => noteMediaDims(
+                                                e.currentTarget.videoWidth,
+                                                e.currentTarget.videoHeight,
+                                            )}
+                                        />
+                                        :
+                                        <img
+                                            src={thumbnail}
+                                            alt={`Sha256 Hash ${sha256}`}
+                                            draggable={false}
+                                            className="rounded select-none"
+                                            style={style}
+                                            // The ref covers cache hits that complete
+                                            // before React attaches the load handler
+                                            ref={(el) => {
+                                                if (el?.complete) noteMediaDims(el.naturalWidth, el.naturalHeight)
+                                            }}
+                                            onLoad={(e) => noteMediaDims(
+                                                e.currentTarget.naturalWidth,
+                                                e.currentTarget.naturalHeight,
+                                            )}
+                                        />
+                                    }
+                                />
+                                :
+                                <Image
+                                    src={thumbnail}
+                                    alt={`Sha256 Hash ${sha256}`}
+                                    fill
+                                    className="rounded object-contain"
+                                    unoptimized={true}
+                                />}
+                        </div>
+                    </ContextMenuTrigger>
+                    <PinBoardCtx
+                        layoutKey={layoutKey}
+                        sha256={sha256}
+                        file_url={file}
+                        onLayoutChange={onLayoutChange}
+                        layout={layout}
+                        crops={crops}
+                        autoCrops={autoCrops}
+                        locks={locks}
+                        orients={orients}
+                        highWater={highWater}
+                        float={float}
+                        cropKey={cropKey}
+                        cropMode={cropMode}
+                        hasCrop={!!(crop || autoCrop)}
+                        onToggleCrop={onCropModeToggle}
+                        onClearCrop={() => onCropChange(null)}
+                        trim={trim}
+                        onTrimChange={onTrimChange}
+                        // The set-at-playhead loop verbs read the element
+                        // directly, and only exist while there is a playhead
+                        // to read (they are the trim UI for pins too narrow
+                        // for the player's own row)
+                        videoRef={videoRef}
+                        videoLoaded={showVideo}
+                        onDuplicate={onDuplicate}
+                        onUnpin={onUnpin}
+                        onRemove={onRemove}
+                        onRemoveAllBut={onRemoveAllBut}
+                        lock={lock}
+                        onLockChange={onLockChange}
+                        pinboardRef={scrollAreaRef}
+                        grid={grid}
+                        gridWidth={gridWidth}
+                        isV1={isV1}
+                        onUpgradeGrid={onUpgradeGrid}
+                        dbs={dbs}
+                    />
+                </ContextMenu>
+                {/* S1. A sibling of the .drag-handle layer, never a child of
+                    it, so react-grid-layout (DRAG_CONFIG handle
+                    ".drag-handle") can never start a grid drag from the
+                    player; the surface root additionally stops pointer,
+                    mouse and click events, which covers the board's own
+                    bubble-phase handlers. The board's capture-phase
+                    selection handlers still see the press, exactly as they
+                    did through the old timeline, and skip it for every
+                    control that is a <button>. */}
+                {showVideo && !cropMode && (videoState.showControls
+                    // The video's top-right belongs to Select and Navigate on
+                    // a pin; the escape kebab takes the next seat down the
+                    // same edge
+                    ? <NativeControlsEscape videoState={videoState} className="top-26" />
+                    : <VideoPlayerSurface
+                        videoRef={videoRef}
+                        videoState={videoState}
+                        controller={player}
+                        trim={trim}
+                        onTrimChange={onTrimChange}
+                        size={playerSizeForWidth(contentWidth)}
+                    />)}
+            </div>
             <PinButton sha256={sha256} layoutKey={layoutKey} hidePins={true} />
             <button
                 title={cropMode ? "Finish cropping" : "Crop this image"}
@@ -3254,55 +3308,44 @@ function PinBoardPin({
                 item={data?.item}
                 files={data?.files}
             />
-            {isPlayable && <MediaControls
-                isShown={videoState.showVideo}
-                isPlaying={videoState.showVideo && videoState.videoIsPlaying}
-                setPlaying={videoState.setPlaying}
+            {/* S0 only: the play button is the last overlay verb ("become a
+                player"), and it sits bottom-LEFT so the cursor is already on
+                the player row's play/pause the moment S1 comes up. Once the
+                video is loaded the surface owns mute, close and the native
+                toggle, so MediaControls stands down entirely — isShown would
+                otherwise re-raise the old right-edge column. show() gives the
+                deliberate press its surface without showOnEnable, which
+                would flash every autoplaying pin on the board. */}
+            {isPlayable && !showVideo && <MediaControls
+                isShown={false}
+                isPlaying={false}
+                setPlaying={(playing) => {
+                    videoState.setPlaying(playing)
+                    player.show()
+                }}
                 stopVideo={videoState.stopVideo}
                 isMuted={videoState.videoIsMuted}
                 setMuted={videoState.setMuted}
                 showControls={videoState.showControls}
                 setShowControls={videoState.setControls}
-                volume={videoState.volume}
-                setVolume={videoState.setVolume}
+                playButtonClassName="left-2 bottom-2"
             />}
-            {showVideo && !videoState.showControls &&
-                <VideoTimeline
-                    videoRef={videoRef}
-                    trim={trim}
-                    onTrimChange={onTrimChange}
-                    className="absolute left-14 right-14 bottom-2 h-10 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                />}
-            {showVideo && <>
-                <button
-                    title={trim?.start != null
-                        ? `Loop start: ${trim.start.toFixed(2)}s — click to move here, shift-click to clear`
-                        : "Set loop start to current time"}
-                    className={cn(
-                        "hover:scale-105 absolute bottom-14 left-2 rounded-full p-2 transition-opacity duration-300 opacity-0 group-hover:opacity-100",
-                        trim?.start != null ? "bg-blue-200" : "bg-white",
-                    )}
-                    onClick={(e) => setTrimPoint("start", e)}
-                >
-                    <ArrowRightFromLine className="w-6 h-6 text-gray-800" />
-                </button>
-                <button
-                    title={trim?.end != null
-                        ? `Loop end: ${trim.end.toFixed(2)}s — click to move here, shift-click to clear`
-                        : "Set loop end to current time"}
-                    className={cn(
-                        "hover:scale-105 absolute bottom-26 left-2 rounded-full p-2 transition-opacity duration-300 opacity-0 group-hover:opacity-100",
-                        trim?.end != null ? "bg-blue-200" : "bg-white",
-                    )}
-                    onClick={(e) => setTrimPoint("end", e)}
-                >
-                    <ArrowRightToLine className="w-6 h-6 text-gray-800" />
-                </button>
-            </>}
+            {/* Navigate has one permanent home on pins: the right edge under
+                Select, for image and video pins alike, in every state. It is
+                an item verb, so it never moves out of the player's way and
+                never joins the kebab; bottom-left is the play button's and
+                bottom-right is reserved for the player's own group.
+                z-20 explicitly: once the hover prefetch resolves a link this
+                button renders inside an <a>, which the `.pinboard-pin >
+                button` rule in globals.css no longer matches — without it the
+                button silently drops behind the resize handles the moment it
+                is prefetched. The <a> is static, so both the offsets and the
+                z-index still resolve against the pin. */}
             <FindButton
                 id={data?.files[0]?.id || sha256}
                 id_type={data?.files[0] ? "file_id" : "sha256"}
                 path={data?.files[0]?.path || ""}
+                buttonClassName="bottom-auto left-auto top-14 right-2 z-20"
             />
         </>
     )

@@ -29,10 +29,14 @@ import { MARKER_MIN_WIDTH, RAIL_MIN_WIDTH, VideoRail, formatTime } from "./Video
 // - Popovers are plain absolutely-positioned children, never portalled:
 //   content portalled to document.body renders OUTSIDE the fullscreen
 //   element and would be invisible in fullscreen.
-// - The root swallows pointer AND click events. Hosts wrap the video in
-//   click-to-navigate halves and react-grid-layout drag handles; a
+// - The root is pointer-TRANSPARENT and only the control layers (row, rail,
+//   and the popovers inside them) take events: the root spans a tall scrim
+//   band whose transparent part would otherwise be a dead zone over the
+//   picture, swallowing a host's drag handle and click targets. Those layers
+//   swallow pointer AND click events in turn — hosts wrap the video in
+//   click-to-navigate halves and react-grid-layout drag handles, and a
 //   synthesized click still bubbles after the pointer handlers stopped
-//   propagating, and would navigate away mid-gesture.
+//   propagating, which would navigate away mid-gesture.
 // - Every hide rule lives in the controller's hold set, never in the
 //   component: the surface reports state, useIdleHide decides.
 
@@ -68,6 +72,7 @@ export interface VideoPlayerSurfaceController {
     isFullscreen: boolean
     fullscreenSupported: boolean
     toggleFullscreen: () => void
+    exitFullscreen: () => void
     // Truthful playback state read off the element (native controls and
     // useVideoTrim both drive it behind React's back)
     paused: boolean
@@ -122,7 +127,15 @@ export function useVideoPlayerSurface({
         }
     }, [active, videoRef])
 
-    const { isFullscreen, supported, toggle } = useElementFullscreen(fullscreenTargetRef)
+    const { isFullscreen, supported, toggle, exit } = useElementFullscreen(fullscreenTargetRef)
+
+    // Nothing may leave the user in a fullscreen box with no video in it.
+    // The close verb exits before unloading, and this catches every other
+    // route out of the player world (native controls, a host mode switch,
+    // the item going away).
+    React.useEffect(() => {
+        if (!active && isFullscreen) exit()
+    }, [active, isFullscreen, exit])
 
     // A player under the pointer, mid gesture or with a menu open hides for
     // nothing. A paused one shows its state only while the pointer is on it:
@@ -144,6 +157,7 @@ export function useVideoPlayerSurface({
         isFullscreen,
         fullscreenSupported: supported,
         toggleFullscreen: toggle,
+        exitFullscreen: exit,
         paused,
         show,
         setHold,
@@ -291,6 +305,7 @@ export function VideoPlayerSurface({
         isFullscreen,
         fullscreenSupported,
         toggleFullscreen,
+        exitFullscreen,
         paused,
         setHold,
     } = controller
@@ -305,6 +320,8 @@ export function VideoPlayerSurface({
     // Both popovers are right-aligned above the row (the reserved slot), so
     // only one of them may occupy it
     const trimOpen = (trimHovered || trimPinned) && !menuOpen && size !== "mini"
+    // Anything of the surface that reaches ABOVE the button row
+    const popoverOpen = trimOpen || menuOpen || volumeOpen
 
     const closeMenu = React.useCallback(() => setMenuOpen(false), [])
     useDismissOnOutside(menuOpen, closeMenu, rootRef)
@@ -454,34 +471,47 @@ export function VideoPlayerSurface({
         )
     }
 
+    // Every control layer carries the same contract: it is the only thing on
+    // the surface that takes pointer events (and only while the surface is
+    // up — an invisible surface must not eat a click), it raises the pointer
+    // hold, and it stops the events the host would otherwise act on. Both
+    // layers hold: travel between row and rail crosses a leave/enter pair,
+    // which only restarts the idle timer — `visible` stays true and the
+    // container's own leave (the sole immediate-hide path) never fires.
+    const layer = (className?: string) => ({
+        className: cn(className, visible && "pointer-events-auto"),
+        onPointerEnter: () => setHold("pointer", true),
+        onPointerLeave: () => setHold("pointer", false),
+        onPointerDown: (e: React.PointerEvent) => e.stopPropagation(),
+        onMouseDown: (e: React.MouseEvent) => e.stopPropagation(),
+        onClick: (e: React.MouseEvent) => e.stopPropagation(),
+        onDoubleClick: (e: React.MouseEvent) => e.stopPropagation(),
+    })
+
     return (
         <div
             ref={rootRef}
             className={cn(
-                "absolute inset-x-0 bottom-0 z-20 select-none",
+                "pointer-events-none absolute inset-x-0 bottom-0 select-none",
+                // An open popover outranks the host's own corner verbs for as
+                // long as it is open: it is transient and user-invoked, and it
+                // opens into the band a host may have parked a button in
+                popoverOpen ? "z-30" : "z-20",
                 isFullscreen ? "pt-10" : size === "full" ? "pt-8" : "pt-6",
                 reducedMotion ? "transition-none" : "transition-opacity",
-                visible
-                    ? "opacity-100 duration-[120ms]"
-                    : "pointer-events-none opacity-0 duration-300",
+                visible ? "opacity-100 duration-[120ms]" : "opacity-0 duration-300",
                 className,
             )}
-            onPointerEnter={() => setHold("pointer", true)}
-            onPointerLeave={() => setHold("pointer", false)}
-            onPointerDown={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-            onDoubleClick={(e) => e.stopPropagation()}
         >
             <div
                 aria-hidden
                 className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/60 to-transparent"
             />
             <div
-                className={cn(
+                {...layer(cn(
                     "relative flex items-center gap-0.5",
                     isFullscreen ? "gap-1 px-3" : "px-1.5",
-                )}
+                ))}
             >
                 <SurfaceButton
                     title={paused ? "Play" : "Pause"}
@@ -687,6 +717,10 @@ export function VideoPlayerSurface({
                                 label="Close video"
                                 icon={<X className="size-3.5" />}
                                 onClick={() => {
+                                    // Unloading the video while fullscreen
+                                    // would leave an empty black screen with
+                                    // nothing in it to press
+                                    if (isFullscreen) exitFullscreen()
                                     videoState.stopVideo()
                                     setMenuOpen(false)
                                 }}
@@ -696,19 +730,24 @@ export function VideoPlayerSurface({
                 </div>
             </div>
 
-            <VideoRail
-                videoRef={videoRef}
-                trim={trim}
-                onTrimChange={onTrimChange}
-                active={visible}
-                // The rail measures ITSELF, and it sits inset from the
-                // surface; the spec's cutoffs are surface widths, so they
-                // travel down pre-shrunk by the inset
-                minWidth={Math.max(0, RAIL_MIN_WIDTH - 2 * railInset)}
-                markerMinWidth={Math.max(0, MARKER_MIN_WIDTH - 2 * railInset)}
-                onInteractingChange={setGesture}
-                className={cn("relative h-7", isFullscreen ? "mx-3" : "mx-2")}
-            />
+            {/* The inset lives on the layer, not on the rail, so the
+                interactive box is exactly the rail and the gutters beside it
+                stay pointer-transparent like the rest of the root */}
+            <div {...layer(isFullscreen ? "mx-3" : "mx-2")}>
+                <VideoRail
+                    videoRef={videoRef}
+                    trim={trim}
+                    onTrimChange={onTrimChange}
+                    active={visible}
+                    // The rail measures ITSELF, and it sits inset from the
+                    // surface; the spec's cutoffs are surface widths, so they
+                    // travel down pre-shrunk by the inset
+                    minWidth={Math.max(0, RAIL_MIN_WIDTH - 2 * railInset)}
+                    markerMinWidth={Math.max(0, MARKER_MIN_WIDTH - 2 * railInset)}
+                    onInteractingChange={setGesture}
+                    className="relative h-7"
+                />
+            </div>
         </div>
     )
 }
@@ -731,7 +770,13 @@ export function NativeControlsEscape({
     return (
         <div
             ref={rootRef}
-            className={cn("absolute top-2 right-2 z-20 select-none", className)}
+            className={cn(
+                "absolute top-2 right-2 select-none",
+                // Its menu opens into whatever the host parks below it; while
+                // open it outranks those verbs, like the surface's popovers
+                open ? "z-30" : "z-20",
+                className,
+            )}
             onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}

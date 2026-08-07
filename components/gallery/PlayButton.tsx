@@ -12,6 +12,7 @@ export function MediaControls({
     stopVideo,
     setShowControls,
     hidePlayButton,
+    playButtonClassName,
     volume,
     setVolume,
 }: {
@@ -24,6 +25,12 @@ export function MediaControls({
     stopVideo: () => void
     setShowControls: (showControls: boolean) => void
     hidePlayButton?: boolean
+    // REPLACES the play button's corner classes (pins put it bottom-LEFT,
+    // where the player row's play/pause appears when the video loads). A
+    // replacement, not an addition: `left-2` merged onto a default carrying
+    // `right-2` would set both and stretch the button across the pin —
+    // tailwind-merge treats left and right as independent groups.
+    playButtonClassName?: string
     // When provided, a volume slider slides out of the mute button on hover
     volume?: number
     setVolume?: (volume: number) => void
@@ -40,7 +47,15 @@ export function MediaControls({
             title={
                 isPlaying ? "Pause video" : "Play video"
             }
-            className={`hover:scale-105 absolute right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${showControls && isShown ? "bottom-50" : "bottom-2"}`}
+            // bottom-2 unconditionally: the button used to climb to
+            // bottom-50 to clear the native control bar, but neither caller
+            // can reach that state any more — the gallery hides the button
+            // outright (hidePlayButton) and pins render MediaControls only
+            // while the video is unloaded (isShown false)
+            className={cn(
+                "hover:scale-105 absolute bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300",
+                playButtonClassName ?? "right-2 bottom-2",
+            )}
             onClick={() => setPlaying(!isPlaying)}
         >
             {isPlaying ?

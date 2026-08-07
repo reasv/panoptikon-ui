@@ -32,6 +32,8 @@ export function PinBoardCtx({
     onClearCrop,
     trim,
     onTrimChange,
+    videoRef,
+    videoLoaded,
     onDuplicate,
     onUnpin,
     onRemove,
@@ -82,6 +84,11 @@ export function PinBoardCtx({
     onClearCrop: () => void,
     trim: TrimRange | null,
     onTrimChange: (trim: TrimRange | null) => void,
+    // The pin's <video>, for the set-at-playhead loop verbs; videoLoaded is
+    // whether it exists (a playhead to read), which the menu cannot learn
+    // from a ref during render
+    videoRef: React.RefObject<HTMLVideoElement | null>,
+    videoLoaded: boolean,
     onDuplicate: () => void,
     // Record splices, owned by the board: this pin's own removal (the
     // context-menu twin of the overlay unpin button) and the two
@@ -108,6 +115,30 @@ export function PinBoardCtx({
 }) {
     function openURL() {
         window.open(file_url, "_blank")
+    }
+    // Set one loop bound to the video's current time, centisecond-rounded
+    // (the h-field trim codec's resolution). Same semantics as the player
+    // surface's set-start/set-end buttons: placing a bound on the wrong side
+    // of the other one clears the other — the user is redefining the range —
+    // and equal bounds are a freeze frame.
+    const setLoopBound = (which: "start" | "end") => {
+        const video = videoRef.current
+        if (!video) return
+        const t = Math.round(video.currentTime * 100) / 100
+        let start = trim?.start ?? null
+        let end = trim?.end ?? null
+        if (which === "start") {
+            start = t
+            if (end != null && end < t) end = null
+        } else {
+            end = t
+            if (start != null && start > t) start = null
+        }
+        onTrimChange({ start, end })
+        // Setting the end mid-playback parks the playhead exactly at the end
+        // point, from which crossing detection would never fire — restart the
+        // loop, which doubles as "here's your loop" feedback
+        if (which === "end" && !video.paused) video.currentTime = start ?? 0
     }
     // The pinboard stores the 10-char sha256 prefix; the open/folder endpoints
     // accept a prefix as the sha256 id, same as the pin's own item lookup.
@@ -412,6 +443,15 @@ export function PinBoardCtx({
                 {cropMode ? "Finish Cropping" : "Crop Image"}
             </ContextMenuItem>
             {hasCrop && <ContextMenuItem onClick={onClearCrop}>Clear Crop</ContextMenuItem>}
+            {/* The loop verbs work at every pin size — the player's own row
+                drops its trim button on narrow pins, and its rail vanishes
+                below ~90px, but the context menu is always full size. */}
+            {videoLoaded && <ContextMenuItem onClick={() => setLoopBound("start")}>
+                Set Loop Start at Playhead
+            </ContextMenuItem>}
+            {videoLoaded && <ContextMenuItem onClick={() => setLoopBound("end")}>
+                Set Loop End at Playhead
+            </ContextMenuItem>}
             {trim?.start != null && <ContextMenuItem
                 onClick={() => onTrimChange(trim.end != null ? { start: null, end: trim.end } : null)}
             >

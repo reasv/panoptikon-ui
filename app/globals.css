@@ -234,39 +234,70 @@
   transition: min-height 300ms ease;
 }
 
-/* Pinboard pin overlay fit: the overlay controls (pin/crop/select/find
-   buttons, media controls, trim buttons, timeline) are laid out in fixed
-   Tailwind spacing units and would intersect once a pin shrinks below that
-   fixed footprint. Tailwind v4 resolves every spacing utility through
-   var(--spacing) at the element that uses it, so scoping a shrunken
-   --spacing to the pin scales the whole overlay — sizes, offsets and gaps
-   together — while pins above the threshold stay pixel-identical.
+/* Pinboard pin overlay fit: the overlay controls (pin/crop/select/navigate
+   buttons, the lock toggles, the S0 play button and the video player
+   surface) are laid out in fixed Tailwind spacing units and would intersect
+   once a pin shrinks below that fixed footprint. Tailwind v4 resolves
+   every spacing utility through var(--spacing) at the element that uses
+   it, so scoping a shrunken --spacing to the pin scales the whole overlay
+   — sizes, offsets and gaps together — while pins above the threshold stay
+   pixel-identical. This is true of the circle buttons, whose every
+   dimension is a spacing utility. It is only PARTLY true of the video
+   player surface: its box (pt-8, p-1, the rail's h-7, mx-2) tracks
+   --spacing, but its glyphs and labels are arbitrary values (size-[17px],
+   text-[11px]) and stay fixed. The surface therefore shrinks less than
+   proportionally, and the unit figures below — computed at the 4px ceiling
+   — under-reserve for it as the pin gets smaller.
    container-type: size makes cqw/cqh track the pin's own box (RGL sizes
    items explicitly, so size containment can't collapse them; RGL's
    transform also already makes each item a stacking context, so the
    containment adds no new stacking behavior). --spacing is unregistered,
    so descendants inherit the token stream and the cq units resolve against
    this container at each element that uses a spacing utility.
-   Thresholds are the fixed layout's footprint in spacing units: 62 wide
-   (pin + crop + the two lock toggles at left-26/left-38, then the select
-   button across the top row) and 26 tall (top row over the find/play
-   row). The lock toggles are usually hidden, but they appear exactly on
-   hover — when overlap would show — so they always count. The clamp
-   floor keeps buttons at >= 16px on degenerate tiny pins, where fitting
-   is hopeless anyway and hit-target size wins over overlap. */
+   Thresholds are the fixed layout's footprint in spacing units. Width: 62
+   (pin + crop + the two lock toggles at left-26/left-38 across the top
+   row, then the select button at the right edge). Height: 24, the right
+   edge's two-deep column — select at top-2 over navigate at top-14, each
+   10 units tall (p-2 around a 6-unit glyph). The lock toggles and navigate
+   are usually hidden, but they appear exactly on hover — when overlap
+   would show — so they always count. The clamp floor keeps buttons at
+   >= 16px on degenerate tiny pins, where fitting is hopeless anyway and
+   hit-target size wins over overlap; the player surface's fixed-px glyphs
+   land in the same bucket — on a pin short enough to sit at the floor its
+   button row can reach navigate's band, and that is accepted for the same
+   reason. */
 .pinboard-pin {
   container-type: size;
-  --spacing: clamp(0.1rem, min(100cqw / 62, 100cqh / 26), 0.25rem);
+  --spacing: clamp(0.1rem, min(100cqw / 62, 100cqh / 24), 0.25rem);
 }
-/* An open video adds the right-hand control column — mute (bottom-14),
-   close (bottom-26), native-controls toggle (bottom-38) and the play
-   button's bottom-50 position while native controls show: taller footprint */
-.pinboard-pin:has(video) {
-  --spacing: clamp(0.1rem, min(100cqw / 62, 100cqh / 74), 0.25rem);
+/* A video item owns the pin's bottom band in every state
+   (docs/video-player-ui-design.md), so it needs a taller footprint than
+   the right-edge column alone. Measured at the 4px ceiling: the S0 play
+   button at bottom-2 is 12 units (48px), and the loaded player surface is
+   85px — its root's pt-8 scrim band (32px, transparent but painted over
+   the picture) above a button row of 17px + p-1 on each side (25px) above
+   the rail's h-7 (28px) — that is 21.25 units, so the surface is what
+   sizes this rule. 24 (the column) + 2 (gap) + 21.25, rounded up: 48.
+   Keyed on data-playable (set by the pin's content wrapper), not
+   :has(video), so S0 reserves the band the play button already occupies
+   while no <video> element exists yet — and so plain image pins, which now
+   have an empty bottom edge, keep the shorter clamp. The old right-edge
+   button column needed 74. */
+.pinboard-pin:has([data-playable]) {
+  --spacing: clamp(0.1rem, min(100cqw / 62, 100cqh / 48), 0.25rem);
+}
+/* Fullscreen (the player's own verb) targets the pin's content wrapper,
+   which holds the video and the surface. The top layer escapes the pin's
+   box but NOT its query container, so cqw/cqh — and with them the clamp
+   above — would still resolve against the small pin and paint a
+   postage-stamp player across a whole screen. */
+.pinboard-pin-content:fullscreen {
+  --spacing: 0.25rem;
+  background: #000;
 }
 
 /* The pin's overlay controls (pin/unpin, crop, the lock toggles, select,
-   find, the video buttons) sit at its corners and edges — exactly where
+   navigate, the S0 play button) sit at its corners and edges — exactly where
    react-resizable puts its 20x20 handle boxes, and worse on small pins,
    where the --spacing clamp above shrinks the buttons but not the handles.
    react-resizable appends the handles AFTER the pin's own children, so with
@@ -276,7 +307,24 @@
    positive one hands both back to the buttons. 20 stays deliberately below
    the crop-mode boost below, where the handles ARE the tool. .pinboard-pin
    is a stacking context already (container-type: size implies layout
-   containment), so this stays scoped to the pin. */
+   containment), so this stays scoped to the pin.
+   The video player surface is deliberately NOT one of these buttons: it
+   lives inside the pin's content wrapper, together with the <video>,
+   because that pairing is what the fullscreen target and the player's
+   pointer bookkeeping need. It carries its own z-20 and the wrapper is
+   z-auto, so that 20 lands in this same stacking context: it ties with the
+   buttons below and DOM order decides — the wrapper renders first, so the
+   buttons keep their corners — and it outranks the resize handles, which
+   is the point. Its ROOT takes no pointer events at all (only the button
+   row and the rail do, and only while the surface is up), so the picture
+   under the scrim stays draggable and the handles under the band stay
+   grabbable except where a control actually sits.
+   One deliberate exception to the tie: while a popover is open the surface
+   raises itself to z-30, above these buttons. The trim and kebab popovers
+   open upward and can reach navigate's seat at top-14 on a short pin; they
+   are transient and user-invoked, so they win for as long as they are open
+   and the button is back the moment they close. z-30 still sits under crop
+   mode's handle boost below, and crop mode unmounts the surface anyway. */
 .pinboard-pin > button {
   z-index: 20;
 }

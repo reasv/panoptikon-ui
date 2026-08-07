@@ -3,11 +3,10 @@ import { X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TrimRange } from "@/lib/pinboardCrop"
 
-// The scrub/trim rail shared by the legacy pin overlay (VideoTimeline) and
-// the player surface (VideoPlayerSurface). Single-sourced so gesture fixes
-// land in both; VideoTimeline must keep rendering byte-identical markup, so
-// every behavioural difference here is a prop that defaults to VideoTimeline's
-// original value.
+// The scrub/trim rail of the video player surface (VideoPlayerSurface),
+// kept a separate module because the gesture code — marker drags, coincident
+// direction resolution, scrub-pauses-then-resumes — is the part that must
+// stay identical across every host that mounts a player.
 
 // Below this root width (px) marker drag handles are not rendered — the trim
 // band still shows the range, and the set-point buttons remain the only trim
@@ -74,8 +73,6 @@ export function VideoRail({
     trim,
     onTrimChange,
     className,
-    showReadout = false,
-    hoverGated = false,
     active = false,
     minWidth = MARKER_MIN_WIDTH,
     markerMinWidth = MARKER_MIN_WIDTH,
@@ -85,13 +82,9 @@ export function VideoRail({
     trim: TrimRange | null
     onTrimChange: (trim: TrimRange | null) => void
     className?: string
-    // Floating current/total chip at the track's top-right (the player
-    // surface renders the readout in its button row instead)
-    showReadout?: boolean
-    // Run the playhead rAF only while the closest `.group` ancestor is
-    // hovered — with many autoplaying pins a permanent loop per pin is waste
-    hoverGated?: boolean
-    // Ungated playhead gate: run the rAF whenever this is true
+    // Playhead gate: the rAF runs only while this is true (the surface
+    // passes its own visibility, so a board of autoplaying pins never runs
+    // a permanent loop per pin)
     active?: boolean
     // Root width (px) below which the rail is not rendered
     minWidth?: number
@@ -113,7 +106,6 @@ export function VideoRail({
     const scrubWasPlaying = React.useRef(false)
     const [hoverTime, setHoverTime] = React.useState<number | null>(null)
     const [hoveredMarker, setHoveredMarker] = React.useState<MarkerKind | null>(null)
-    const [pinHovered, setPinHovered] = React.useState(false)
 
     React.useEffect(() => {
         const video = videoRef.current
@@ -138,26 +130,11 @@ export function VideoRail({
         return () => ro.disconnect()
     }, [])
 
-    // The playhead/readout only need to be live while they're visible (the
-    // pin is hovered) or mid-interaction — with many autoplaying pins a
-    // permanent rAF loop per pin would be waste
-    React.useEffect(() => {
-        if (!hoverGated) return
-        const group = rootRef.current?.closest(".group")
-        if (!group) return
-        const enter = () => setPinHovered(true)
-        const leave = () => setPinHovered(false)
-        group.addEventListener("pointerenter", enter)
-        group.addEventListener("pointerleave", leave)
-        return () => {
-            group.removeEventListener("pointerenter", enter)
-            group.removeEventListener("pointerleave", leave)
-        }
-    }, [hoverGated])
+    // The playhead only needs to be live while it is visible or
+    // mid-interaction — a gesture outlives the surface's own visibility
     const interacting = drag != null || scrubbing
-    const live = hoverGated ? pinHovered : active
     React.useEffect(() => {
-        if (!live && !interacting) return
+        if (!active && !interacting) return
         let raf = 0
         const tick = () => {
             const video = videoRef.current
@@ -166,7 +143,7 @@ export function VideoRail({
         }
         raf = requestAnimationFrame(tick)
         return () => cancelAnimationFrame(raf)
-    }, [live, interacting, videoRef])
+    }, [active, interacting, videoRef])
 
     // The callback is a dep, not a ref read during render (forbidden by the
     // React Compiler); callers pass a stable identity, so a re-notify with an
@@ -326,12 +303,7 @@ export function VideoRail({
 
     return (
         <div ref={rootRef} className={cn("select-none", className)}>
-            {ready && <>
-                {showReadout && (
-                    <div className="absolute right-0 top-0 rounded bg-black/50 px-1 text-[10px] leading-4 text-white/90 tabular-nums pointer-events-none">
-                        {formatTime(currentTime)} / {formatTime(duration)}
-                    </div>
-                )}
+            {ready && (
                 <div
                     className="absolute inset-x-0 bottom-0 h-7 flex items-center cursor-pointer touch-none"
                     onPointerDown={onTrackPointerDown}
@@ -374,7 +346,7 @@ export function VideoRail({
                         {markersInteractive && dispEnd != null && marker("end", dispEnd)}
                     </div>
                 </div>
-            </>}
+            )}
         </div>
     )
 }
