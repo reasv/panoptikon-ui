@@ -28,7 +28,7 @@ import { useSearchLoading } from '@/lib/state/zust'
 import { MediaControls } from './PlayButton'
 import React from 'react'
 import { useVideoPlayerState } from '@/lib/videoPlayerState'
-import { NativeControlsEscape, useVideoPlayerSurface, VideoPlayerSurface } from './VideoPlayerSurface'
+import { NativeControlsEscape, PLAYER_SIZE_FULL_WIDTH, playerSizeForWidth, useVideoPlayerSurface, VideoPlayerSurface } from './VideoPlayerSurface'
 import { trimWithBound, useVideoTrim } from '@/lib/videoTrim'
 import { isEmptyTrim, TrimRange } from '@/lib/pinboardCrop'
 import { trimForSha } from '@/lib/galleryTrim'
@@ -326,6 +326,63 @@ const SEEK_STEP = 5
 // ~1/30 s the right step for , / .
 const FRAME_STEP = 1 / 30
 
+// Click-zone geometry for a LOADED gallery video (docs/video-player-ui-design
+// .md, "Fullscreen"). NAV_MIN is the minimum comfortable width, per side, of
+// the click-to-navigate strip: with at least this much horizontal letterbox
+// beside the picture, the whole picture is the play/pause zone and navigation
+// lives entirely outside it. Below it the nav strips encroach onto the video
+// by NAV_MIN - L per side...
+const NAV_MIN = 96
+// ...but never past this fraction of the video's width per side, so a
+// play/pause strip of at least 40% of the video always survives.
+const NAV_ENCROACH_MAX = 0.3
+
+// The picture a contain fit paints inside `box`, as CSS offsets against that
+// box. Null while the aspect or the box is still unknown — callers then fall
+// back to the box itself, which is exactly what the overlays anchored to
+// before anything could be measured.
+//
+// This mirrors what the browser already does: the gallery's <video> is
+// `h-full` with an auto width in a centering flex row, so its element box IS
+// the contain fit (a wide video shrinks to the panel width and letterboxes
+// vertically via object-contain; a tall one hugs the picture). The numbers
+// are recomputed here because the surface's floor is a clamp against a px
+// constant and its tier is read off the resulting width — neither of which a
+// shrink-to-fit box can express.
+function fitBox(box: { w: number; h: number }, ratio: number | null) {
+    if (!box.w || !box.h || !ratio || !isFinite(ratio) || ratio <= 0) return null
+    const width = Math.min(box.w, box.h * ratio)
+    const height = Math.min(box.h, box.w / ratio)
+    return {
+        width,
+        height,
+        left: (box.w - width) / 2,
+        bottom: (box.h - height) / 2,
+    }
+}
+
+// Content box of an element, tracked live. The measurement runs in an effect
+// (a ref read during render is what the React Compiler forbids) and the state
+// only changes when the numbers do, so a ResizeObserver that fires on every
+// layout pass costs one comparison.
+function useBoxSize(ref: React.RefObject<HTMLElement | null>, enabled: boolean) {
+    const [box, setBox] = useState({ w: 0, h: 0 })
+    useEffect(() => {
+        const el = ref.current
+        if (!enabled || !el) return
+        const measure = () => setBox((prev) => (
+            prev.w === el.clientWidth && prev.h === el.clientHeight
+                ? prev
+                : { w: el.clientWidth, h: el.clientHeight }
+        ))
+        measure()
+        const ro = new ResizeObserver(measure)
+        ro.observe(el)
+        return () => ro.disconnect()
+    }, [ref, enabled])
+    return box
+}
+
 export function GalleryImageLarge(
     {
         item,
@@ -345,17 +402,6 @@ export function GalleryImageLarge(
     const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256)
     const fileURL = getFileURL(dbs, "file", "sha256", item.sha256)
 
-    const handleImageClick = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
-        const { clientX, currentTarget } = e
-        e.stopPropagation()
-        const { left, right } = currentTarget.getBoundingClientRect()
-        const middle = (left + right) / 2
-        if (clientX > middle) {
-            nextImage()
-        } else {
-            prevImage()
-        }
-    }
     const searchLoading = useSearchLoading(state => state.loading)
 
     const isPlayable = item.type === "video/mp4" || item.type === "video/webm"
@@ -392,6 +438,9 @@ export function GalleryImageLarge(
     // removing the fullscreen element exits fullscreen, and ← / → must keep
     // browsing inside it.
     const playerHostRef = useRef<HTMLDivElement>(null)
+    // The panel: the letterbox frame both the thumbnail and the video are
+    // painted in, and what the overlays' footprint is computed from below.
+    const panelRef = useRef<HTMLDivElement>(null)
     // Native controls stand the whole player world down; only the escape
     // kebab remains (S2).
     const playerActive = showVideo && !videoState.showControls
@@ -403,6 +452,129 @@ export function GalleryImageLarge(
         // (or a keypress) should land on a visible player
         showOnEnable: true,
     })
+
+    // Aspect of the DISPLAYED picture, from whichever element has confirmed
+    // it: the video's videoWidth/videoHeight (S1) or the thumbnail's natural
+    // size (S0). Both are rotation-corrected, and that is the whole point —
+    // item.width/height are the CODED dimensions, which a phone video with a
+    // 90° display matrix stores swapped, so anchoring to them would drop the
+    // S0 play button into the middle of the picture. They stay as the
+    // pre-load approximation, and nothing else: element-confirmed > item
+    // dimensions > null (overlays span the panel, as before any of this).
+    // Keyed by sha, so the item that just left can never size the incoming
+    // one's overlays — the same rule as the video ref slot.
+    const [mediaAspect, setMediaAspect] = useState<{ sha: string; ratio: number } | null>(null)
+    const ratio = mediaAspect?.sha === item.sha256
+        ? mediaAspect.ratio
+        : item.width && item.height ? item.width / item.height : null
+
+    // The thumbnail's own aspect, taken from the loaded element. First writer
+    // per sha wins, so it never overwrites the video's exact metadata (the
+    // two are never mounted at the same time, and this also makes the ref
+    // callback idempotent — it re-runs on every render that re-creates it).
+    const noteThumbAspect = (el: HTMLImageElement | null) => {
+        if (!el || !el.naturalWidth || !el.naturalHeight) return
+        const thumbRatio = el.naturalWidth / el.naturalHeight
+        setMediaAspect((prev) => (
+            prev?.sha === item.sha256 ? prev : { sha: item.sha256, ratio: thumbRatio }
+        ))
+    }
+
+    // The picture both states paint, as a box. The PANEL is the letterbox
+    // frame for both: the S0 thumbnail fills it, and the player host is
+    // `absolute inset-0` of it. Measuring the panel rather than the host means
+    // that when the item carries dimensions (they are optional server-side)
+    // the box is already known as the video loads, so the surface does not
+    // paint one panel-wide frame before snapping. The host differs only in
+    // fullscreen, where the surface spans it anyway. Image items measure
+    // nothing and render no box at all.
+    const panelBox = useBoxSize(panelRef, isPlayable)
+    const pictureBox = isPlayable ? fitBox(panelBox, ratio) : null
+
+    // S1 footprint. The surface hugs the DISPLAYED video rather than the
+    // panel (docs/video-player-ui-design.md, "Size ladder"): the gallery panel
+    // is far wider than a letterboxed picture and a panel-wide row over empty
+    // letterbox reads as sparse. Floor = PLAYER_SIZE_FULL_WIDTH, the width the
+    // full control row itself needs, so it only engages for videos narrower
+    // than the row; cap = the panel, which is all the surface ever had. The
+    // tier follows from the resulting width, so a panel under 280px degrades
+    // to medium/mini exactly like a pin does. In fullscreen the player owns
+    // the screen and the surface spans it, the way every fullscreen video's
+    // controls do.
+    const surfaceWidth = pictureBox
+        ? Math.min(panelBox.w, Math.max(pictureBox.width, PLAYER_SIZE_FULL_WIDTH))
+        : 0
+    const surfaceBox = pictureBox && !player.isFullscreen
+        ? {
+            width: surfaceWidth,
+            height: pictureBox.height,
+            // Centred on the picture, bottom-aligned with its bottom edge
+            left: (panelBox.w - surfaceWidth) / 2,
+            bottom: pictureBox.bottom,
+        }
+        : null
+
+    // S0 footprint: the play button anchors to the thumbnail's rendered
+    // corner, not the panel's.
+    const thumbBox = showVideo ? null : pictureBox
+
+    // Click-to-navigate halves vs click-to-play/pause. The zones exist only
+    // while the player world is on (S1, playing OR paused) and outside
+    // fullscreen, where the picture already toggles playback on the host
+    // itself; S0 thumbnails, plain images and native-controls mode keep the
+    // pure navigate halves. Geometry source = the SAME measured picture box
+    // the surface hugs, so the zone can never disagree with what is painted;
+    // while it is unknown (no metadata yet) every click navigates, exactly as
+    // before the box existed.
+    const handleImageClick = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
+        const { clientX, clientY, currentTarget } = e
+        e.stopPropagation()
+        const panel = panelRef.current
+        if (playerActive && !player.isFullscreen && pictureBox && panel) {
+            const rect = panel.getBoundingClientRect()
+            // fitBox centres the picture, so `left` and `bottom` are the
+            // letterbox per side on their own axis — `left` IS L.
+            const videoLeft = rect.left + pictureBox.left
+            const videoTop = rect.top + pictureBox.bottom
+            // Zero when the letterbox alone already affords NAV_MIN per side
+            const encroach = Math.max(0, Math.min(
+                NAV_MIN - pictureBox.left,
+                NAV_ENCROACH_MAX * pictureBox.width,
+            ))
+            const inPlayZone =
+                clientX >= videoLeft + encroach
+                && clientX <= videoLeft + pictureBox.width - encroach
+                && clientY >= videoTop
+                && clientY <= videoTop + pictureBox.height
+            if (inPlayZone) {
+                // The surface's own play button verb. Read off the ELEMENT,
+                // like the keyboard path: the controller's `paused` is synced
+                // by play/pause listeners and can be one commit behind the
+                // click that lands on it. (A handler, not render scope — the
+                // React Compiler's ban is on ref reads while rendering.)
+                videoState.setPlaying(videoRef.current?.paused ?? true)
+                player.show()
+                return
+            }
+        }
+        const { left, right } = currentTarget.getBoundingClientRect()
+        const middle = (left + right) / 2
+        if (clientX > middle) {
+            nextImage()
+        } else {
+            prevImage()
+        }
+    }
+
+    // The wrapper's cursor-pointer promises navigation, which over a play/
+    // pause zone is a lie. Only when the whole picture is that zone does the
+    // <video> element box coincide with it (a video wide enough to hit
+    // max-w-full keeps full panel height and letterboxes INSIDE its own box),
+    // so this is the one place the honest cursor costs no extra layer and no
+    // pointer-events juggling. Never in fullscreen, where the controller's
+    // cursor-none on the host must win.
+    const videoIsPlayZone = playerActive && !player.isFullscreen
+        && !!pictureBox && pictureBox.left >= NAV_MIN
 
     // The `vt` slot is sha-keyed and survives navigation: it is INERT while
     // another item is on screen and comes back to life with its own video.
@@ -546,6 +718,7 @@ export function GalleryImageLarge(
     };
     return (
         <div
+            ref={panelRef}
             className={cn("relative grow flex justify-center items-center overflow-hidden group",
                 showPagination ? // Set height to fill the remaining space
                     (thumbnailsOpen ? "h-[calc(100vh-567px)]" : "h-[calc(100vh-213px)]") // Set height based on whether thumbnails are open
@@ -592,8 +765,31 @@ export function GalleryImageLarge(
                             loop={isEmptyTrim(trim)}
                             muted={videoState.videoIsMuted}
                             controls={videoState.showControls}
-                            className="rounded object-contain max-h-full h-full"
+                            // max-w-full is load-bearing, not decoration: a
+                            // flex item with a definite cross size (h-full)
+                            // and an aspect ratio has an automatic minimum
+                            // width equal to its ratio-derived width, and only
+                            // a definite max main size clamps that minimum. It
+                            // is what pins the element box to the panel and
+                            // makes the picture the contain fit fitBox
+                            // computes the surface's footprint from.
+                            className={cn(
+                                "rounded object-contain max-h-full max-w-full h-full",
+                                videoIsPlayZone && "cursor-default",
+                            )}
                             src={fileURL}
+                            // The element's own dimensions are the display
+                            // ones (a rotated video reports them rotated), and
+                            // they outrank both the thumbnail's and the item's
+                            onLoadedMetadata={(e) => {
+                                const { videoWidth, videoHeight } = e.currentTarget
+                                if (videoWidth && videoHeight) {
+                                    setMediaAspect({
+                                        sha: item.sha256,
+                                        ratio: videoWidth / videoHeight,
+                                    })
+                                }
+                            }}
                             onClick={(e) => videoState.showControls && e.stopPropagation()}
                         />
                         {/* S1, or the lone escape kebab while the native
@@ -601,15 +797,48 @@ export function GalleryImageLarge(
                             own clicks, so neither reaches the click-to-
                             navigate wrapper around this host. */}
                         {videoState.showControls
-                            ? <NativeControlsEscape videoState={videoState} />
-                            : <VideoPlayerSurface
-                                videoRef={videoRef}
-                                videoState={videoState}
-                                controller={player}
-                                trim={trim}
-                                onTrimChange={onTrimChange}
-                                size="full"
-                            />}
+                            // S2's lone kebab belongs beside the native
+                            // control bar it escapes from, so it anchors to
+                            // the picture like S0 and S1. The box is
+                            // pointer-transparent (the kebab re-enables
+                            // itself) — the native controls are painted by the
+                            // element UNDER it and must stay clickable.
+                            ? <div
+                                className={cn(
+                                    "pointer-events-none absolute",
+                                    !pictureBox && "inset-0",
+                                )}
+                                style={pictureBox ?? undefined}
+                            >
+                                <NativeControlsEscape
+                                    videoState={videoState}
+                                    className="pointer-events-auto"
+                                />
+                            </div>
+                            // The surface's own box, laid over the displayed
+                            // picture. Pointer-TRANSPARENT: the host still
+                            // spans the whole panel so the click-to-navigate
+                            // halves keep working in the letterbox beside a
+                            // portrait video, and only the surface's control
+                            // layers (pointer-events-auto) take events.
+                            // Unmeasured, it spans the host — the layout the
+                            // surface had before this box existed.
+                            : <div
+                                className={cn(
+                                    "pointer-events-none absolute",
+                                    !surfaceBox && "inset-x-0 bottom-0",
+                                )}
+                                style={surfaceBox ?? undefined}
+                            >
+                                <VideoPlayerSurface
+                                    videoRef={videoRef}
+                                    videoState={videoState}
+                                    controller={player}
+                                    trim={trim}
+                                    onTrimChange={onTrimChange}
+                                    size={surfaceBox ? playerSizeForWidth(surfaceWidth) : "full"}
+                                />
+                            </div>}
                     </div>
                     :
                     <a
@@ -627,6 +856,18 @@ export function GalleryImageLarge(
                             fill
                             className="object-contain"
                             unoptimized={true}
+                            // Playable items only — a plain image renders
+                            // exactly as it always did, with no aspect
+                            // bookkeeping and no overlay box to anchor. The
+                            // ref covers cache hits that complete before React
+                            // attaches onLoad (same pattern as the pin's
+                            // thumbnail); onLoad covers the network path.
+                            ref={isPlayable ? ((el) => {
+                                if (el?.complete) noteThumbAspect(el)
+                            }) : undefined}
+                            onLoad={isPlayable
+                                ? ((e) => noteThumbAspect(e.currentTarget))
+                                : undefined}
                         />
 
                     </a>}
@@ -646,14 +887,27 @@ export function GalleryImageLarge(
                 the player row's play/pause the moment S1 comes up. Once the
                 video is loaded the surface owns mute, close and the native
                 toggle, so MediaControls stands down entirely. */}
-            {isPlayable && !showVideo && <MediaControls
-                isPlaying={false}
-                setPlaying={(playing) => {
-                    videoState.setPlaying(playing)
-                    player.show()
-                }}
-                playButtonClassName="left-2 bottom-2"
-            />}
+            {isPlayable && !showVideo && (
+                // Anchored to the thumbnail's rendered corner, not the
+                // panel's, so the button sits ON the picture. The box is
+                // pointer-transparent (the button re-enables itself): it
+                // covers the thumbnail, and the <a>/<Image> underneath must
+                // keep their click-to-navigate and drag behavior. Unmeasured,
+                // it spans the panel — the button's old anchor.
+                <div
+                    className={cn("pointer-events-none absolute", !thumbBox && "inset-0")}
+                    style={thumbBox ?? undefined}
+                >
+                    <MediaControls
+                        isPlaying={false}
+                        setPlaying={(playing) => {
+                            videoState.setPlaying(playing)
+                            player.show()
+                        }}
+                        playButtonClassName="pointer-events-auto left-2 bottom-2"
+                    />
+                </div>
+            )}
         </div>
     )
 }

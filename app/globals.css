@@ -244,7 +244,7 @@
    pixel-identical. This is true of the circle buttons, whose every
    dimension is a spacing utility. It is only PARTLY true of the video
    player surface: its box (pt-8, p-1, the rail's h-7, mx-2) tracks
-   --spacing, but its glyphs and labels are arbitrary values (size-[17px],
+   --spacing, but its glyphs and labels are arbitrary values (size-[20px],
    text-[11px]) and stay fixed. The surface therefore shrinks less than
    proportionally, and the unit figures below — computed at the 4px ceiling
    — under-reserve for it as the pin gets smaller.
@@ -274,10 +274,10 @@
    (docs/video-player-ui-design.md), so it needs a taller footprint than
    the right-edge column alone. Measured at the 4px ceiling: the S0 play
    button at bottom-2 is 12 units (48px), and the loaded player surface is
-   85px — its root's pt-8 scrim band (32px, transparent but painted over
-   the picture) above a button row of 17px + p-1 on each side (25px) above
-   the rail's h-7 (28px) — that is 21.25 units, so the surface is what
-   sizes this rule. 24 (the column) + 2 (gap) + 21.25, rounded up: 48.
+   88px — its root's pt-8 scrim band (32px, transparent but painted over
+   the picture) above a button row of 20px + p-1 on each side (28px) above
+   the rail's h-7 (28px) — that is 22 units, so the surface is what
+   sizes this rule. 24 (the column) + 2 (gap) + 22: 48.
    Keyed on data-playable (set by the pin's content wrapper), not
    :has(video), so S0 reserves the band the play button already occupies
    while no <video> element exists yet — and so plain image pins, which now

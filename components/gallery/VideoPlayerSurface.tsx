@@ -205,6 +205,9 @@ function SurfaceButton({
     className?: string
     children: React.ReactNode
 }) {
+    // 20px glyph + p-1 per side = a 28px hit box, and 28px IS the button
+    // row's height — the pin footprint clamp in globals.css reserves the
+    // surface's band from it. Changing either number changes that clamp.
     return (
         <button
             type="button"
@@ -407,10 +410,10 @@ export function VideoPlayerSurface({
     const muted = videoState.videoIsMuted
     const volume = videoState.volume
     const volumeIcon = muted || volume === 0
-        ? <VolumeOff className="size-[17px]" />
+        ? <VolumeOff className="size-[20px]" />
         : volume < 0.5
-            ? <Volume1 className="size-[17px]" />
-            : <Volume2 className="size-[17px]" />
+            ? <Volume1 className="size-[20px]" />
+            : <Volume2 className="size-[20px]" />
 
     const trimStart = trim?.start ?? null
     const trimEnd = trim?.end ?? null
@@ -501,8 +504,8 @@ export function VideoPlayerSurface({
                     onClick={() => videoState.setPlaying(paused)}
                 >
                     {paused
-                        ? <Play className="size-[17px] fill-current" />
-                        : <Pause className="size-[17px]" />}
+                        ? <Play className="size-[20px] fill-current" />
+                        : <Pause className="size-[20px]" />}
                 </SurfaceButton>
 
                 {size !== "mini" && (
@@ -582,7 +585,7 @@ export function VideoPlayerSurface({
                                 pressed={trimPinned}
                                 onClick={() => setTrimPinned((v) => !v)}
                             >
-                                <Brackets className="size-[17px]" />
+                                <Brackets className="size-[20px]" />
                             </SurfaceButton>
                             {trimOpen && (
                                 <SurfacePopover placement="above" className="flex items-center gap-1">
@@ -616,8 +619,8 @@ export function VideoPlayerSurface({
                             onClick={toggleFullscreen}
                         >
                             {isFullscreen
-                                ? <Minimize className="size-[17px]" />
-                                : <Maximize className="size-[17px]" />}
+                                ? <Minimize className="size-[20px]" />
+                                : <Maximize className="size-[20px]" />}
                         </SurfaceButton>
                     )}
 
@@ -629,7 +632,7 @@ export function VideoPlayerSurface({
                             setTrimPinned(false)
                         }}
                     >
-                        <EllipsisVertical className="size-[17px]" />
+                        <EllipsisVertical className="size-[20px]" />
                     </SurfaceButton>
                     {menuOpen && (
                         <SurfacePopover placement="above" role="menu" className="min-w-40">
@@ -772,7 +775,7 @@ export function NativeControlsEscape({
                     onClick={() => setOpen((v) => !v)}
                     className="bg-black/50 hover:bg-black/70"
                 >
-                    <EllipsisVertical className="size-[17px]" />
+                    <EllipsisVertical className="size-[20px]" />
                 </SurfaceButton>
                 {open && (
                     <SurfacePopover placement="below" role="menu" className="min-w-40">
