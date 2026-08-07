@@ -45,8 +45,10 @@ export function VirtualGalleryHorizontalScroll({
         )
     }, [])
     const [qIndex] = useGalleryIndex()
-    // Keep the selected thumbnail in view as the gallery index moves
-    // (arrow keys, click-through on the large image, pagination).
+    // Keep the selected thumbnail in view as the gallery index moves — the
+    // ← / → keys of the gallery keyboard scope (GalleryImageLarge), the
+    // click-through halves of the large image, the header arrows and
+    // pagination all land here.
     useEffect(() => {
         if (items.length === 0) return
         virtualizer.scrollToIndex((qIndex || 0) % items.length)
@@ -124,7 +126,6 @@ function VirtualHorizontalScrollElement({
     const searchLoading = useSearchLoading(state => state.loading)
     const handleDragStart = (event: React.DragEvent<HTMLImageElement | HTMLAnchorElement | HTMLDivElement>): void => {
         if (!item) return;
-        console.log('dragging', item.sha256);
         event.dataTransfer.effectAllowed = 'copy';
         event.dataTransfer.setData('text/plain', item.sha256);
         event.dataTransfer.setData('text/uri-list', getFileURL(dbs, "file", "sha256", item.sha256));

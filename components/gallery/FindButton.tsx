@@ -92,7 +92,6 @@ async function findFileIndex(
         })
         const result = resultQuery.data?.results || []
         const indexInFolder = result.findIndex((r: { file_id: number }) => r.file_id === file_id)
-        console.log("Found index", indexInFolder)
         if (indexInFolder === -1) {
             return [0, 0]
         }
@@ -134,7 +133,6 @@ export function FindButton({
     const commit = useInstantSearch((state) => state.commit)
     const dbs = useSelectedDBs()[0]
     const getNavigationData = async () => {
-        console.log("Getting navigation data")
         let file_path = path
         let file_id: number = 0
         if (id_type === "sha256" || file_path === "") {
@@ -229,7 +227,6 @@ export function FindButton({
         page_size,
     }: NavigationData
     ) => {
-        console.log(`Navigating to folder ${folder}, page ${page}, index ${index}`)
         // Awaited as a batch so the URL holds this query before `commit()`
         // declares it one to run: navigating to a folder is a committed
         // query, not a query being edited, so the update lock must not

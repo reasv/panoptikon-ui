@@ -3312,22 +3312,15 @@ function PinBoardPin({
                 player"), and it sits bottom-LEFT so the cursor is already on
                 the player row's play/pause the moment S1 comes up. Once the
                 video is loaded the surface owns mute, close and the native
-                toggle, so MediaControls stands down entirely — isShown would
-                otherwise re-raise the old right-edge column. show() gives the
+                toggle, so MediaControls stands down entirely. show() gives the
                 deliberate press its surface without showOnEnable, which
                 would flash every autoplaying pin on the board. */}
             {isPlayable && !showVideo && <MediaControls
-                isShown={false}
                 isPlaying={false}
                 setPlaying={(playing) => {
                     videoState.setPlaying(playing)
                     player.show()
                 }}
-                stopVideo={videoState.stopVideo}
-                isMuted={videoState.videoIsMuted}
-                setMuted={videoState.setMuted}
-                showControls={videoState.showControls}
-                setShowControls={videoState.setControls}
                 playButtonClassName="left-2 bottom-2"
             />}
             {/* Navigate has one permanent home on pins: the right edge under

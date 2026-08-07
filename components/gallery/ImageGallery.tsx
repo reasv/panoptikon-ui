@@ -14,7 +14,7 @@ import { useShallow } from "zustand/react/shallow"
 import { cn, getFileURL, getLocale } from "@/lib/utils"
 import { itemEquals, OpenDetailsButton } from "@/components/OpenFileDetails"
 import { useItemSelection } from "@/lib/state/itemSelection"
-import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail, useGalleryPinBoardLayout, useGalleryFullscreen, useGalleryHidePinBoard } from "@/lib/state/gallery"
+import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail, useGalleryPinBoardLayout, useGalleryFullscreen, useGalleryHidePinBoard, useGalleryTrim } from "@/lib/state/gallery"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -28,6 +28,10 @@ import { useSearchLoading } from '@/lib/state/zust'
 import { MediaControls } from './PlayButton'
 import React from 'react'
 import { useVideoPlayerState } from '@/lib/videoPlayerState'
+import { NativeControlsEscape, useVideoPlayerSurface, VideoPlayerSurface } from './VideoPlayerSurface'
+import { trimWithBound, useVideoTrim } from '@/lib/videoTrim'
+import { isEmptyTrim, TrimRange } from '@/lib/pinboardCrop'
+import { trimForSha } from '@/lib/galleryTrim'
 
 function getNextIndex(length: number, index?: number | null,) {
     return ((index || 0) + 1) % length
@@ -166,7 +170,6 @@ export function ImageGallery({
             // Check for Ctrl + Shift + M
             if (event.ctrlKey && event.shiftKey && event.code === 'KeyM') {
                 event.preventDefault();
-                console.log('Ctrl + Shift + M detected');
                 setFs((f) => !f)
             }
         }
@@ -317,6 +320,12 @@ export function PinboardTabs({ itemPath }: { itemPath: string }) {
     )
 }
 
+// J / L seek step, in seconds (docs/video-player-ui-design.md)
+const SEEK_STEP = 5
+// There is no frame-exact web API; centisecond storage resolution makes
+// ~1/30 s the right step for , / .
+const FRAME_STEP = 1 / 30
+
 export function GalleryImageLarge(
     {
         item,
@@ -350,11 +359,187 @@ export function GalleryImageLarge(
     const searchLoading = useSearchLoading(state => state.loading)
 
     const isPlayable = item.type === "video/mp4" || item.type === "video/webm"
-    const videoRef = useRef<HTMLVideoElement>(null)
-    const videoState = useVideoPlayerState({ videoRef })
+    // ONE REF OBJECT PER ITEM. The <video> is keyed by sha and remounts on
+    // gallery navigation (a bare src swap fires `emptied`, not `pause`), and
+    // every player hook binds its listeners once per ref IDENTITY — deps are
+    // `[..., videoRef]`. A single stable ref would leave the surface's paused
+    // sync, the rail's duration listener and useVideoTrim's seek-to-start
+    // bound to the element that just went away.
+    //
+    // The identity is STATE, not a useMemo: a memo cache React is free to
+    // drop would hand out a second ref for the same item, re-running those
+    // effects — useVideoTrim would yank the playhead back to the trim start
+    // mid-playback. Adjusted during render like `heldIndex` above (a ref READ
+    // while rendering is what the React Compiler forbids; creating a plain
+    // object is not one, and React attaches the element to it before any
+    // effect runs). The pass that schedules the update is thrown away
+    // uncommitted, so the stale ref it renders with never reaches the DOM.
+    const [videoSlot, setVideoSlot] = useState<{
+        sha: string
+        ref: React.RefObject<HTMLVideoElement | null>
+    }>(() => ({ sha: item.sha256, ref: { current: null } }))
+    if (videoSlot.sha !== item.sha256) {
+        setVideoSlot({ sha: item.sha256, ref: { current: null } })
+    }
+    const videoRef = videoSlot.ref
+    const videoState = useVideoPlayerState({ videoRef, persistVolume: true })
+    const showVideo = isPlayable && videoState.showVideo
+    // The wrapper holding the <video> AND the surface: the player's pointer
+    // container (useIdleHide requires containment, or the controls vanish
+    // under the pointer on the way to them) and its fullscreen target, so
+    // fullscreen shows the picture and the player and nothing else — not the
+    // header, not the thumbnail strip. Deliberately NOT keyed by item:
+    // removing the fullscreen element exits fullscreen, and ← / → must keep
+    // browsing inside it.
+    const playerHostRef = useRef<HTMLDivElement>(null)
+    // Native controls stand the whole player world down; only the escape
+    // kebab remains (S2).
+    const playerActive = showVideo && !videoState.showControls
+    const player = useVideoPlayerSurface({
+        videoRef,
+        active: playerActive,
+        fullscreenTargetRef: playerHostRef,
+        // The gallery is one deliberate video at a time: the S0 play press
+        // (or a keypress) should land on a visible player
+        showOnEnable: true,
+    })
+
+    // The `vt` slot is sha-keyed and survives navigation: it is INERT while
+    // another item is on screen and comes back to life with its own video.
+    const galleryTrim = useGalleryTrim()
+    const setGalleryTrim = galleryTrim.setTrim
+    const trim = trimForSha(galleryTrim, item.sha256)
+    const onTrimChange = (next: TrimRange | null) => {
+        void setGalleryTrim(item.sha256, next)
+    }
+    useVideoTrim({ videoRef, trim, active: showVideo })
+
+    // The gallery's keyboard scope (docs/video-player-ui-design.md). Mounted
+    // with the large image, so it is live exactly while the gallery owns the
+    // screen and never while the pinboard branch replaces it. Arrows always
+    // browse — including inside fullscreen, where only the keyed <video>
+    // swaps and the fullscreen wrapper stays put.
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            // A press aimed at a text field is that field's own edit, and an
+            // open dialog owns the keyboard over the gallery (matched against
+            // the document, like GalleryPinBoard's Delete handler: Radix parks
+            // focus on the dialog content or on <body>)
+            const t = e.target as HTMLElement | null
+            if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return
+            // Any open popup layer owns the keyboard over the gallery: dialogs
+            // (library, rename, confirms) and the Radix menus that render
+            // ALONGSIDE the large image — the pinboard tab strip's dropdown,
+            // context menus, selects — whose own arrow keys must not double as
+            // gallery navigation.
+            if (document.querySelector(
+                '[role="dialog"], [role="menu"], [role="listbox"],'
+                + ' [data-radix-popper-content-wrapper]'
+            )) return
+            // Modified presses belong to the browser and to app shortcuts
+            // (Ctrl+Shift+M above); shift is a documented modifier for the
+            // loop keys alone.
+            if (e.ctrlKey || e.metaKey || e.altKey) return
+            const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
+            if (key === "ArrowLeft" || key === "ArrowRight") {
+                // One press, one item: `gi` is a history:push param, and
+                // autorepeat (~30 Hz) would bury the back button under a
+                // stream of entries and overlap the page-turn promises at a
+                // page boundary. The seek keys below repeat freely — they
+                // write no history.
+                if (e.shiftKey || e.repeat) return
+                e.preventDefault()
+                if (key === "ArrowLeft") prevImage()
+                else nextImage()
+                return
+            }
+            if (!isPlayable) return
+            const video = videoRef.current
+            // Space/K reach S0 too — they are how the video is loaded. A
+            // focused control keeps its own activation: Space is that
+            // control's press, and taking it would make the surface's trim
+            // popover (and every other button on the picture) keyboard-dead.
+            if (key === " " || key === "k") {
+                const focused = document.activeElement
+                if (focused && (
+                    focused.tagName === "BUTTON"
+                    || focused.tagName === "A"
+                    || focused.getAttribute("role") === "menuitem"
+                )) return
+                if (e.shiftKey) return
+                e.preventDefault()
+                videoState.setPlaying(video ? video.paused : true)
+                player.show()
+                return
+            }
+            // Every other verb needs a loaded video, and the playhead ones
+            // need the element itself
+            if (!showVideo) return
+            const seekTo = (time: number) => {
+                if (!video) return
+                const duration = isFinite(video.duration) ? video.duration : Infinity
+                video.currentTime = Math.max(0, Math.min(duration, time))
+            }
+            switch (key) {
+                case "m":
+                    if (e.shiftKey) return
+                    e.preventDefault()
+                    videoState.setMuted(!videoState.videoIsMuted)
+                    break
+                case "f":
+                    // Not while the native controls have the video: the
+                    // player world is stood down there, and the controller's
+                    // exit-on-inactive rule would drop straight back out of
+                    // the fullscreen this just entered
+                    if (e.shiftKey || !playerActive) return
+                    e.preventDefault()
+                    player.toggleFullscreen()
+                    break
+                case "i":
+                case "o": {
+                    if (!video) return
+                    const which = key === "i" ? "start" : "end"
+                    e.preventDefault()
+                    // Shift clears that bound; the placement rule (and the
+                    // centisecond rounding) is the surface's own
+                    const next = trimWithBound(trim, which, e.shiftKey ? null : video.currentTime)
+                    onTrimChange(next)
+                    // Setting the end mid-playback parks the playhead exactly
+                    // at the end point, from which crossing detection would
+                    // never fire — restart the loop
+                    if (which === "end" && !e.shiftKey && !video.paused) {
+                        video.currentTime = next?.start ?? 0
+                    }
+                    break
+                }
+                case ",":
+                case ".": {
+                    if (!video || e.shiftKey) return
+                    e.preventDefault()
+                    videoState.setPlaying(false)
+                    seekTo(video.currentTime + (key === "," ? -FRAME_STEP : FRAME_STEP))
+                    break
+                }
+                case "j":
+                case "l": {
+                    if (!video || e.shiftKey) return
+                    e.preventDefault()
+                    seekTo(video.currentTime + (key === "j" ? -SEEK_STEP : SEEK_STEP))
+                    break
+                }
+                default:
+                    return
+            }
+            // The player reports what a key just did; a paused one then stays
+            // up on its own (useIdleHide's holdIdle)
+            player.show()
+        }
+        window.addEventListener("keydown", onKey)
+        return () => window.removeEventListener("keydown", onKey)
+    }, [isPlayable, showVideo, playerActive, prevImage, nextImage, videoState, player, trim, videoRef, setGalleryTrim, item.sha256])
+
     const handleDragStart = (event: React.DragEvent<HTMLImageElement>): void => {
         if (!fileURL) return;
-        console.log('dragging', fileURL);
         event.dataTransfer.effectAllowed = 'copy';
         event.dataTransfer.setData('text/plain', item.sha256);
         event.dataTransfer.setData('text/uri-list', fileURL);
@@ -371,18 +556,60 @@ export function GalleryImageLarge(
                 onClick={handleImageClick} // Attach click handler to the entire area
                 className='cursor-pointer'
             >
-                {isPlayable && videoState.showVideo ?
-                    <div className="absolute inset-0 flex justify-center items-center">
+                {showVideo ?
+                    <div
+                        ref={playerHostRef}
+                        className={cn(
+                            "absolute inset-0 flex justify-center items-center",
+                            player.cursorHidden && "cursor-none",
+                        )}
+                        // Only while the player world is on: these fire on
+                        // every pointer move, and a video handed over to the
+                        // native controls has no surface to reveal
+                        {...(playerActive ? player.containerProps : null)}
+                        // In fullscreen the picture IS the player: it toggles
+                        // playback instead of paging to the next item (the
+                        // click-to-navigate halves are an out-of-fullscreen
+                        // affordance). On the host, not on the <video>, so the
+                        // letterbox bars behave the same as the picture.
+                        onClick={(e) => {
+                            if (!player.isFullscreen) return
+                            e.stopPropagation()
+                            videoState.setPlaying(player.paused)
+                        }}
+                    >
                         <video
+                            // Keyed by item: navigation must give the player a
+                            // FRESH element. A reused one keeps the previous
+                            // video's playback state (a src swap fires
+                            // `emptied`, not `pause`) — see videoRef above,
+                            // which re-binds the hooks that listen to it.
+                            key={item.sha256}
                             ref={videoRef}
                             autoPlay
-                            loop
+                            // With a trim set, looping is useVideoTrim's job so
+                            // it restarts from the trim start rather than 0
+                            loop={isEmptyTrim(trim)}
                             muted={videoState.videoIsMuted}
                             controls={videoState.showControls}
                             className="rounded object-contain max-h-full h-full"
                             src={fileURL}
                             onClick={(e) => videoState.showControls && e.stopPropagation()}
                         />
+                        {/* S1, or the lone escape kebab while the native
+                            controls have the video (S2). Both swallow their
+                            own clicks, so neither reaches the click-to-
+                            navigate wrapper around this host. */}
+                        {videoState.showControls
+                            ? <NativeControlsEscape videoState={videoState} />
+                            : <VideoPlayerSurface
+                                videoRef={videoRef}
+                                videoState={videoState}
+                                controller={player}
+                                trim={trim}
+                                onTrimChange={onTrimChange}
+                                size="full"
+                            />}
                     </div>
                     :
                     <a
@@ -414,16 +641,18 @@ export function GalleryImageLarge(
                     </div>
                 )}
             </div>
-            {isPlayable && <MediaControls
-                isShown={videoState.showVideo}
-                isPlaying={videoState.showVideo && videoState.videoIsPlaying}
-                setPlaying={videoState.setPlaying}
-                stopVideo={videoState.stopVideo}
-                isMuted={videoState.videoIsMuted}
-                setMuted={videoState.setMuted}
-                showControls={videoState.showControls}
-                setShowControls={videoState.setControls}
-                hidePlayButton={videoState.showVideo && videoState.showControls}
+            {/* S0 only: the play button is the last overlay verb ("become a
+                player"), and it sits bottom-LEFT so the cursor is already on
+                the player row's play/pause the moment S1 comes up. Once the
+                video is loaded the surface owns mute, close and the native
+                toggle, so MediaControls stands down entirely. */}
+            {isPlayable && !showVideo && <MediaControls
+                isPlaying={false}
+                setPlaying={(playing) => {
+                    videoState.setPlaying(playing)
+                    player.show()
+                }}
+                playButtonClassName="left-2 bottom-2"
             />}
         </div>
     )

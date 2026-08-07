@@ -17,6 +17,7 @@ import { TrimRange } from "@/lib/pinboardCrop"
 import { useVideoPlayerState } from "@/lib/videoPlayerState"
 import { useIdleHide, usePrefersReducedMotion } from "@/lib/useIdleHide"
 import { useElementFullscreen } from "@/lib/useElementFullscreen"
+import { trimWithBound } from "@/lib/videoTrim"
 import { MARKER_MIN_WIDTH, RAIL_MIN_WIDTH, VideoRail, formatTime } from "./VideoRail"
 
 // The S1 player surface: scrim + button row + rail + popovers, one unit that
@@ -369,43 +370,25 @@ export function VideoPlayerSurface({
         return () => cancelAnimationFrame(raf)
     }, [size, visible, precise, videoRef])
 
-    // Set one trim bound to the video's current time (centisecond-rounded, the
-    // URL resolution); `clear` (shift-click at the buttons) clears the bound
-    // instead. Placing a bound on the wrong side of the other one clears the
-    // other — the user is redefining the range. Equal bounds are allowed
-    // (freeze frame).
+    // Set one trim bound to the video's current time; `clear` (shift-click at
+    // the buttons) clears the bound instead. The bound-placement rule itself
+    // lives in trimWithBound — the gallery's I/O keys and the pin context menu
+    // are the same verb.
     const setTrimPoint = (which: "start" | "end", clear: boolean) => {
-        let start = trim?.start ?? null
-        let end = trim?.end ?? null
-        if (clear) {
-            if (which === "start") start = null
-            else end = null
-        } else {
-            const video = videoRef.current
-            if (!video) return
-            const t = Math.round(video.currentTime * 100) / 100
-            if (which === "start") {
-                start = t
-                if (end != null && end < t) end = null
-            } else {
-                end = t
-                if (start != null && start > t) start = null
-            }
-        }
-        onTrimChange(start == null && end == null ? null : { start, end })
+        const video = videoRef.current
+        if (!clear && !video) return
+        const next = trimWithBound(trim, which, clear ? null : video!.currentTime)
+        onTrimChange(next)
         // Setting the end mid-playback leaves the playhead exactly at the end
         // point, from which crossing detection would never fire — restart the
         // loop, which doubles as "here's your loop" feedback
-        if (which === "end" && !clear && end != null) {
-            const video = videoRef.current
-            if (video && !video.paused) video.currentTime = start ?? 0
+        if (which === "end" && !clear && video && !video.paused) {
+            video.currentTime = next?.start ?? 0
         }
     }
 
     const clearTrimBound = (which: "start" | "end") => {
-        const start = which === "start" ? null : (trim?.start ?? null)
-        const end = which === "end" ? null : (trim?.end ?? null)
-        onTrimChange(start == null && end == null ? null : { start, end })
+        onTrimChange(trimWithBound(trim, which, null))
     }
 
     // No frame-exact web API exists; centisecond storage resolution makes

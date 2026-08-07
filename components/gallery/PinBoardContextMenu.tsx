@@ -12,6 +12,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { usePinSelection } from "@/lib/state/pinboardSelection";
 import { usePinboardCarry } from "@/lib/state/pinboardCarry";
 import { SelectionExportSubmenu } from "./PinboardExportMenu";
+import { trimWithBound } from "@/lib/videoTrim";
 
 export function PinBoardCtx({
     layoutKey,
@@ -116,29 +117,18 @@ export function PinBoardCtx({
     function openURL() {
         window.open(file_url, "_blank")
     }
-    // Set one loop bound to the video's current time, centisecond-rounded
-    // (the h-field trim codec's resolution). Same semantics as the player
-    // surface's set-start/set-end buttons: placing a bound on the wrong side
-    // of the other one clears the other — the user is redefining the range —
-    // and equal bounds are a freeze frame.
+    // Set one loop bound to the video's current time — the same verb as the
+    // player surface's set-start/set-end buttons and the gallery's I/O keys,
+    // sharing their bound-placement rule (see trimWithBound).
     const setLoopBound = (which: "start" | "end") => {
         const video = videoRef.current
         if (!video) return
-        const t = Math.round(video.currentTime * 100) / 100
-        let start = trim?.start ?? null
-        let end = trim?.end ?? null
-        if (which === "start") {
-            start = t
-            if (end != null && end < t) end = null
-        } else {
-            end = t
-            if (start != null && start > t) start = null
-        }
-        onTrimChange({ start, end })
+        const next = trimWithBound(trim, which, video.currentTime)
+        onTrimChange(next)
         // Setting the end mid-playback parks the playhead exactly at the end
         // point, from which crossing detection would never fire — restart the
         // loop, which doubles as "here's your loop" feedback
-        if (which === "end" && !video.paused) video.currentTime = start ?? 0
+        if (which === "end" && !video.paused) video.currentTime = next?.start ?? 0
     }
     // The pinboard stores the 10-char sha256 prefix; the open/folder endpoints
     // accept a prefix as the sha256 id, same as the pin's own item lookup.

@@ -9,6 +9,38 @@ const FREEZE_EPS = 0.02
 // the loop jump
 const MAX_PLAYBACK_STEP = 0.5
 
+// Places (or clears) ONE trim bound, the shared semantics behind every
+// set-loop-point verb: the player surface's popover buttons, the pin context
+// menu's set-at-playhead items and the gallery's I/O keys. `time` is a
+// playhead position in seconds, or null to clear that bound; it is rounded to
+// centiseconds, the storage resolution of both the h field and the `vt` param
+// (see pinboardCrop.ts). Placing a bound on the wrong side of the other one
+// clears the other — the user is redefining the range, not asking for an
+// impossible one. Equal bounds are allowed (freeze frame), and both bounds
+// unset is the empty trim, spelled null.
+export function trimWithBound(
+  trim: TrimRange | null,
+  which: "start" | "end",
+  time: number | null
+): TrimRange | null {
+  let start = trim?.start ?? null
+  let end = trim?.end ?? null
+  if (time == null) {
+    if (which === "start") start = null
+    else end = null
+  } else {
+    const t = Math.round(time * 100) / 100
+    if (which === "start") {
+      start = t
+      if (end != null && end < t) end = null
+    } else {
+      end = t
+      if (start != null && start > t) start = null
+    }
+  }
+  return start == null && end == null ? null : { start, end }
+}
+
 // Enforces a playback trim range on a <video>: playback (re)starts from
 // `start`, playback *crossing* `end` jumps back to `start`, and
 // start === end shows a still frame instead of playing. Seeking is
