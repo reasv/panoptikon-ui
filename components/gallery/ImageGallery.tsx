@@ -27,7 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { useSearchLoading } from '@/lib/state/zust'
 import { MediaControls } from './PlayButton'
 import React from 'react'
-import { useVideoPlayerState } from '@/lib/videoPlayerState'
+import { PLAYBACK_RATES, useVideoPlayerState } from '@/lib/videoPlayerState'
 import { NativeControlsEscape, PLAYER_SIZE_FULL_WIDTH, playerSizeForWidth, useVideoPlayerSurface, VideoPlayerSurface } from './VideoPlayerSurface'
 import { trimWithBound, useVideoTrim } from '@/lib/videoTrim'
 import { isEmptyTrim, TrimRange } from '@/lib/pinboardCrop'
@@ -609,8 +609,9 @@ export function GalleryImageLarge(
                 + ' [data-radix-popper-content-wrapper]'
             )) return
             // Modified presses belong to the browser and to app shortcuts
-            // (Ctrl+Shift+M above); shift is a documented modifier for the
-            // loop keys alone.
+            // (Ctrl+Shift+M above); shift is documented for the loop keys
+            // (clear that bound) and for the speed keys, which ARE the
+            // shifted glyphs < and >.
             if (e.ctrlKey || e.metaKey || e.altKey) return
             const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
             if (key === "ArrowLeft" || key === "ArrowRight") {
@@ -697,6 +698,28 @@ export function GalleryImageLarge(
                     if (!video || e.shiftKey) return
                     e.preventDefault()
                     seekTo(video.currentTime + (key === "j" ? -SEEK_STEP : SEEK_STEP))
+                    break
+                }
+                case "<":
+                case ">": {
+                    // Shift-comma / shift-period: the shifted twins of the
+                    // frame-step keys, and shifted is all they are — the
+                    // browser reports the glyph, so neither can reach the
+                    // unshifted cases above.
+                    e.preventDefault()
+                    // Step to the next rung strictly past the current rate and
+                    // clamp at the ends. Strict comparison rather than an index
+                    // lookup: the native speed menu can park the element off
+                    // the ladder, and the nearest rung is still the right
+                    // answer from there. Element truth, not React state — the
+                    // state only learns a natively-set rate at the setControls
+                    // resync, and stepping from the stale value can reverse
+                    // the key's direction (1.75 + ">" must give 2, not 1.5).
+                    const rate = video?.playbackRate ?? videoState.playbackRate
+                    const next = key === "<"
+                        ? [...PLAYBACK_RATES].reverse().find((r) => r < rate) ?? PLAYBACK_RATES[0]
+                        : PLAYBACK_RATES.find((r) => r > rate) ?? PLAYBACK_RATES[PLAYBACK_RATES.length - 1]
+                    videoState.setPlaybackRate(next)
                     break
                 }
                 default:

@@ -6,7 +6,9 @@ const FREEZE_EPS = 0.02
 
 // A forward step larger than this (seconds) between two checks is a user
 // seek, not playback advancing — seeks past the end point must not trigger
-// the loop jump
+// the loop jump. Stated at 1x: the budget is MEDIA time, and media time
+// advances at playbackRate per wall second, so the ceiling scales with the
+// rate (see the crossing test).
 const MAX_PLAYBACK_STEP = 0.5
 
 // Places (or clears) ONE trim bound, the shared semantics behind every
@@ -102,12 +104,18 @@ export function useVideoTrim({
     const check = () => {
       if (freeze) return
       const now = video.currentTime
+      // INVARIANT: the seek-vs-playback threshold is media seconds per tick,
+      // so it must scale with the speed the media is running at — at 2x the
+      // timeupdate fallback (~250 ms wall, the only ticker in a hidden tab)
+      // legitimately steps ~0.5 s of media time. Never below the 1x budget:
+      // slow motion must not tighten it into missed crossings.
+      const maxStep = MAX_PLAYBACK_STEP * Math.max(1, video.playbackRate)
       const crossed =
         end != null &&
         !video.paused &&
         prev < end &&
         now >= end &&
-        now - prev < MAX_PLAYBACK_STEP
+        now - prev < maxStep
       if (crossed) jumpToStart()
       else prev = now
     }

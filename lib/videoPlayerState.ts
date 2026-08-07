@@ -24,6 +24,10 @@ function readStoredVolume(): StoredVolume | null {
   }
 }
 
+// The speed ladder, shared by the player surface's inline speed row and the
+// gallery's < / > keys so both step the same rungs
+export const PLAYBACK_RATES: readonly number[] = [0.25, 0.5, 1, 1.5, 2]
+
 function writeStoredVolume(value: StoredVolume) {
   try {
     window.localStorage.setItem(VOLUME_STORAGE_KEY, JSON.stringify(value))
@@ -52,6 +56,16 @@ export function useVideoPlayerState({
       videoRef.current.volume = volume
     }
   }, [volume, showVideo, videoRef])
+  // Speed is situational, so it is never stored — but it must outlive the
+  // ELEMENT: the gallery's <video> is keyed by item and remounts mid-
+  // navigation (a fresh ref identity), and showVideo remounts it too. Both
+  // hand back an element at the default 1x that React state disagrees with.
+  const [playbackRate, setPlaybackRateState] = React.useState(1)
+  React.useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.playbackRate = playbackRate
+    }
+  }, [playbackRate, showVideo, videoRef])
   // Stored preference is applied once per mount (never during render: a
   // localStorage read there would desync server and client markup)
   React.useEffect(() => {
@@ -76,6 +90,12 @@ export function useVideoPlayerState({
       videoRef.current.muted = clamped === 0
     }
     if (persistVolume) writeStoredVolume({ volume: clamped, muted: clamped === 0 })
+  }
+  const setPlaybackRate = (rate: number) => {
+    setPlaybackRateState(rate)
+    if (videoRef.current) {
+      videoRef.current.playbackRate = rate
+    }
   }
   const setPlaying = (state: boolean) => {
     if (!showVideo) {
@@ -116,6 +136,9 @@ export function useVideoPlayerState({
       setVideoIsMuted(videoRef.current.muted)
       setVideoIsPlaying(!videoRef.current.paused)
       setVolumeState(videoRef.current.volume)
+      // The native controls carry their own speed menu, so they are a second
+      // writer of the rate exactly as they are of volume/mute
+      setPlaybackRateState(videoRef.current.playbackRate)
       // The native controls are a second writer of volume/mute; the resync
       // is the only chance to keep the stored preference truthful
       if (persistVolume) writeStoredVolume({
@@ -139,5 +162,7 @@ export function useVideoPlayerState({
     setControls,
     volume,
     setVolume,
+    playbackRate,
+    setPlaybackRate,
   }
 }

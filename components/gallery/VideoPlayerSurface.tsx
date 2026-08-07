@@ -14,7 +14,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TrimRange } from "@/lib/pinboardCrop"
-import { useVideoPlayerState } from "@/lib/videoPlayerState"
+import { PLAYBACK_RATES, useVideoPlayerState } from "@/lib/videoPlayerState"
 import { useIdleHide, usePrefersReducedMotion } from "@/lib/useIdleHide"
 import { useElementFullscreen } from "@/lib/useElementFullscreen"
 import { trimWithBound } from "@/lib/videoTrim"
@@ -42,6 +42,10 @@ import { MARKER_MIN_WIDTH, RAIL_MIN_WIDTH, VideoRail, formatTime } from "./Video
 //   component: the surface reports state, useIdleHide decides.
 
 const FRAME_STEP = 1 / 30
+
+// Rates are also read back off the element (the native controls' own speed
+// menu is a second writer), where a stray float would print as 1.7500000000002
+const formatRate = (rate: number) => String(Math.round(rate * 100) / 100)
 
 export type VideoPlayerSize = "full" | "medium" | "mini"
 
@@ -284,6 +288,51 @@ function MenuItem({
             {icon}
             {label}
         </button>
+    )
+}
+
+// Playback speed as one menu ROW instead of a submenu: comparing speeds is a
+// single errand, so every choice stays one click away and the menu survives
+// the click — the same rule the mini tier's loop verbs follow. A rate off the
+// ladder (the native speed menu can set one) lights no button, so the label
+// suffix is what keeps a non-1x player honest at a glance.
+function SpeedRow({
+    rate,
+    onRate,
+}: {
+    rate: number
+    onRate: (rate: number) => void
+}) {
+    return (
+        <div role="group" aria-label="Playback speed" className="px-2 py-1">
+            <div className="text-[11px] leading-5 whitespace-nowrap text-white/90">
+                Speed
+                {rate !== 1 && (
+                    <span className="tabular-nums">{` — ${formatRate(rate)}×`}</span>
+                )}
+            </div>
+            <div className="mt-0.5 flex items-center gap-0.5">
+                {PLAYBACK_RATES.map((r) => (
+                    <button
+                        key={r}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={r === rate}
+                        title={`Play at ${formatRate(r)}× speed`}
+                        onClick={() => onRate(r)}
+                        className={cn(
+                            "cursor-pointer rounded px-1 py-0.5 text-[11px] leading-4 tabular-nums transition-colors",
+                            "focus-visible:ring-1 focus-visible:ring-white/80 focus-visible:outline-none",
+                            r === rate
+                                ? "bg-blue-500/80 text-white hover:bg-blue-500"
+                                : "text-white/90 hover:bg-white/15 hover:text-white",
+                        )}
+                    >
+                        {formatRate(r)}
+                    </button>
+                ))}
+            </div>
+        </div>
     )
 }
 
@@ -691,6 +740,10 @@ export function VideoPlayerSurface({
                                     }}
                                 />
                             )}
+                            <SpeedRow
+                                rate={videoState.playbackRate}
+                                onRate={videoState.setPlaybackRate}
+                            />
                             <MenuItem
                                 label="Native controls"
                                 icon={<TvMinimalPlay className="size-3.5" />}
