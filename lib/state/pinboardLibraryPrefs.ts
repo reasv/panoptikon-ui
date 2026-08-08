@@ -27,6 +27,15 @@ interface PinboardLibraryPrefsState {
    */
   cleanLinks: boolean
   setCleanLinks: (cleanLinks: boolean) => void
+  /**
+   * Whether board listings show only the boards associated with the selected
+   * index database. One preference, three surfaces (library modal, the grid's
+   * Library tab, the sidebar's board picker): a board list that hides foreign
+   * boards in one place and not another reads as a bug, and the combobox has
+   * no room for a toggle of its own.
+   */
+  associatedOnly: boolean
+  setAssociatedOnly: (associatedOnly: boolean) => void
 }
 
 const pinboardLibraryPrefsStorage = {
@@ -43,6 +52,13 @@ export const usePinboardLibraryPrefs = create(
       setOrder: (order: PinboardLibraryOrder) => set({ order }),
       cleanLinks: true,
       setCleanLinks: (cleanLinks: boolean) => set({ cleanLinks }),
+      // Default on: a board whose items the selected database doesn't have
+      // renders broken images, and boards are the only surface that breaks
+      // rather than emptying on a database switch. Users who want the whole
+      // library turn it off; the preference then travels to all three
+      // surfaces at once.
+      associatedOnly: true,
+      setAssociatedOnly: (associatedOnly: boolean) => set({ associatedOnly }),
     }),
     pinboardLibraryPrefsStorage
   )
@@ -77,4 +93,20 @@ export const usePinboardCleanLinks = (): [boolean, (next: boolean) => void] => {
   const stored = usePinboardLibraryPrefs((state) => state.cleanLinks)
   const setCleanLinks = usePinboardLibraryPrefs((state) => state.setCleanLinks)
   return [useMirroredPreference(stored, true), setCleanLinks]
+}
+
+/**
+ * Whether board listings show only the boards associated with the selected
+ * index database. Read by every listing surface; only the library modal
+ * offers the checkbox that writes it.
+ */
+export const usePinboardAssociatedOnly = (): [
+  boolean,
+  (next: boolean) => void,
+] => {
+  const stored = usePinboardLibraryPrefs((state) => state.associatedOnly)
+  const setAssociatedOnly = usePinboardLibraryPrefs(
+    (state) => state.setAssociatedOnly
+  )
+  return [useMirroredPreference(stored, true), setAssociatedOnly]
 }
