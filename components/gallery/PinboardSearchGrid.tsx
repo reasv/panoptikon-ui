@@ -15,8 +15,15 @@ import {
     SearchRequestParts,
 } from "@/lib/searchRequest"
 import { usePinboardActions } from "@/lib/pinboardSave"
-import { pinboardOpenHref } from "@/lib/pinboardLinks"
-import { usePinboardCleanLinks } from "@/lib/state/pinboardLibraryPrefs"
+import {
+    owningDatabase,
+    pinboardOpenHref,
+    useIndexDatabaseNames,
+} from "@/lib/pinboardLinks"
+import {
+    usePinboardAssociatedOnly,
+    usePinboardCleanLinks,
+} from "@/lib/state/pinboardLibraryPrefs"
 import { pinboardPreviewURL } from "@/lib/pinboardPreview"
 import { useToast } from "@/components/ui/use-toast"
 import { cn } from "@/lib/utils"
@@ -70,6 +77,10 @@ export function PinboardSearchGrid({
     const { loadBoard } = usePinboardActions()
     const { toast } = useToast()
     const [cleanLinks] = usePinboardCleanLinks()
+    // The library modal's checkbox, obeyed here too — the same boards, so a
+    // filter that applied in one place and not the other would read as a bug.
+    const [associatedOnly] = usePinboardAssociatedOnly()
+    const { localNames, currentName } = useIndexDatabaseNames()
     const [previewBoard, setPreviewBoard] = useState<PinboardMatch | null>(null)
     const [hovered, setHovered] = useDelayedHover<{
         board: PinboardSummary
@@ -93,7 +104,7 @@ export function PinboardSearchGrid({
     const { data, isError, isFetching, isPlaceholderData, refetch } = $api.useQuery(
         "post",
         "/api/pinboards/search",
-        { ...buildPinboardSearchRequest(request) },
+        { ...buildPinboardSearchRequest(request, associatedOnly) },
         { enabled: queryEnabled, placeholderData: keepPreviousData }
     )
     const boards = data?.pinboards ?? []
@@ -158,11 +169,14 @@ export function PinboardSearchGrid({
                             showingPrevious && "opacity-60"
                         )}
                     >
-                        {boards.map((board) => (
+                        {boards.map((board) => {
+                            const owner = owningDatabase(board, localNames, currentName)
+                            return (
                             <PinboardCard
                                 key={board.id}
                                 board={board}
                                 dbs={dbs}
+                                owningDb={owner}
                                 matchCount={board.match_count}
                                 previewWidth={SEARCH_CARD_PREVIEW_WIDTH}
                                 href={pinboardOpenHref(
@@ -170,7 +184,8 @@ export function PinboardSearchGrid({
                                     searchParams,
                                     board.id,
                                     "head",
-                                    cleanLinks ? "clean" : "carry"
+                                    cleanLinks ? "clean" : "carry",
+                                    owner
                                 )}
                                 onOpen={() => openBoard(board)}
                                 onPreview={() => {
@@ -181,7 +196,8 @@ export function PinboardSearchGrid({
                                     setHovered(b && anchor ? { board: b, anchor } : null)
                                 }
                             />
-                        ))}
+                            )
+                        })}
                     </div>
                 </ScrollArea>
             ) : (

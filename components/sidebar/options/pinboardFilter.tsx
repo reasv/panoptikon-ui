@@ -7,6 +7,7 @@ import { useSelectedDBs } from "@/lib/state/database";
 import { usePinboardsFilter } from "@/lib/state/searchQuery/clientHooks";
 import { inPinboardsMode } from "@/lib/state/searchQuery/searchQueryKeyMaps";
 import { useClientConfig } from "@/lib/useClientConfig";
+import { usePinboardAssociatedOnly } from "@/lib/state/pinboardLibraryPrefs";
 
 const modeOptions = [
     { value: "any", label: "In any pinboard" },
@@ -19,13 +20,17 @@ export function PinboardsFilter() {
     const clientConfig = useClientConfig()
     const pinboardsEnabled = clientConfig.data?.pinboardSearchEnabled === true
     const [pinboardsFilter, setPinboardsFilter] = usePinboardsFilter()
+    // Inherited from the library modal's checkbox — this picker has no toggle
+    // of its own. Part of the query params, hence of the query key, so
+    // flipping it there re-lists here too.
+    const [associatedOnly] = usePinboardAssociatedOnly()
     // Same tuning as the grid's Library tab: the board list only moves when a
     // save/rename/delete invalidates it, so refocusing the window must not
     // refetch it, and the sidebar's own remounts are served from cache.
     const { data } = $api.useQuery(
         "get",
         "/api/pinboards",
-        { params: { query: { ...dbs } } },
+        { params: { query: { ...dbs, associated_only: associatedOnly } } },
         {
             enabled: pinboardsEnabled,
             staleTime: 5 * 60 * 1000,
@@ -63,12 +68,16 @@ export function PinboardsFilter() {
     }
     const boards = data?.pinboards || []
     const knownIds = new Set(boards.map((board) => board.id))
-    // Ids can outlive their board (deleted elsewhere, or restored from a stale
-    // URL/history entry). Without an option they show up as bare numbers in the
-    // button label and have no row to uncheck, so synthesize one — but only
-    // while the id is actually selected, so the list stays clean otherwise.
+    // Ids can outlive their listing — the board was deleted elsewhere, or was
+    // restored from a stale URL/history entry, or (since the association
+    // filter) simply belongs to another index database. Without an option they
+    // show up as bare numbers in the button label and have no row to uncheck,
+    // so synthesize one — but only while the id is actually selected, so the
+    // list stays clean otherwise. The label claims nothing about which of the
+    // three it is: they are indistinguishable from this response, and calling
+    // a board from the neighbouring database "deleted" is simply a lie.
     // Skipped until the list has actually arrived, so a pending (or failed)
-    // fetch doesn't label every selected board as deleted.
+    // fetch doesn't label every selected board as missing.
     const orphanIds = data
         ? Array.from(
             new Set(pinboardsFilter.pinboard_ids.filter((id) => !knownIds.has(id)))
@@ -81,7 +90,7 @@ export function PinboardsFilter() {
         })),
         ...orphanIds.map((id) => ({
             value: String(id),
-            label: `Deleted board #${id}`,
+            label: `Unavailable board #${id}`,
         })),
     ]
     return (

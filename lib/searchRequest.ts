@@ -96,7 +96,13 @@ export function buildResultsRequest(
 
 /** The argument shape of `POST /api/pinboards/search`. */
 export interface PinboardSearchArgs {
-  params: { query: { index_db: string | null; user_data_db: string | null } }
+  params: {
+    query: {
+      index_db: string | null
+      user_data_db: string | null
+      associated_only: boolean
+    }
+  }
   body: components["schemas"]["PqlQuery"]
 }
 
@@ -109,11 +115,16 @@ export interface PinboardSearchArgs {
  * along: a page turn or a page-size change must not re-key this query for an
  * answer that cannot have changed. Same reasoning as the count request's
  * pinned page constants.
+ *
+ * `associatedOnly` is always written into the params, never left off when
+ * false: react-query keys this query by the whole request object, so an
+ * absent field and `false` are two different keys for one answer — the same
+ * split this builder exists to prevent.
  */
-export function buildPinboardSearchRequest({
-  searchQuery,
-  dbs,
-}: Pick<SearchRequestParts, "searchQuery" | "dbs">): PinboardSearchArgs {
+export function buildPinboardSearchRequest(
+  { searchQuery, dbs }: Pick<SearchRequestParts, "searchQuery" | "dbs">,
+  associatedOnly: boolean
+): PinboardSearchArgs {
   const {
     page,
     page_size,
@@ -125,7 +136,7 @@ export function buildPinboardSearchRequest({
     ...query
   } = searchQuery
   return {
-    params: { query: { ...dbs } },
+    params: { query: { ...dbs, associated_only: associatedOnly } },
     body: query,
   }
 }

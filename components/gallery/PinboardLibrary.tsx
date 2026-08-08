@@ -2,7 +2,16 @@
 
 import React, { useRef, useState } from "react"
 import { usePathname, useSearchParams } from "next/navigation"
-import { Expand, LibraryBig, Pencil, Pin, Trash2, X } from "lucide-react"
+import {
+    Database,
+    Expand,
+    ExternalLink,
+    LibraryBig,
+    Pencil,
+    Pin,
+    Trash2,
+    X,
+} from "lucide-react"
 import {
     Dialog,
     DialogContent,
@@ -12,6 +21,13 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import {
+    ContextMenu,
+    ContextMenuContent,
+    ContextMenuItem,
+    ContextMenuSeparator,
+    ContextMenuTrigger,
+} from "@/components/ui/context-menu"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -22,12 +38,19 @@ import { usePinboardActions } from "@/lib/pinboardSave"
 import { pinboardPreviewURL } from "@/lib/pinboardPreview"
 import { useToast } from "@/components/ui/use-toast"
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query"
-import { pinboardOpenHref } from "@/lib/pinboardLinks"
+import {
+    owningDatabase,
+    pinboardOpenHref,
+    useIndexDatabaseNames,
+} from "@/lib/pinboardLinks"
 import {
     PinboardLibraryOrder,
+    usePinboardAssociatedOnly,
     usePinboardCleanLinks,
     usePinboardLibraryOrder,
 } from "@/lib/state/pinboardLibraryPrefs"
+import { PinboardDatabasesDialog } from "./PinboardDatabasesDialog"
+import { DESTRUCTIVE_MENU_ITEM } from "./PinboardGlobalMenu"
 import { cn, compactDate, dateTitle, getLocale } from "@/lib/utils"
 import {
     PreviewPopover,
@@ -64,6 +87,9 @@ export function PinboardLibraryDialog({
     const [nameQuery, setNameQuery] = useState("")
     const [order, setOrder] = usePinboardLibraryOrder()
     const [cleanLinks, setCleanLinks] = usePinboardCleanLinks()
+    const [associatedOnly, setAssociatedOnly] = usePinboardAssociatedOnly()
+    // Gated on `open` like the board list: this dialog stays mounted.
+    const { localNames, currentName } = useIndexDatabaseNames(open)
     const searchInputRef = useRef<HTMLInputElement>(null)
     // Hovered card + its rect, captured when the pointer enters the card's
     // preview icon (a short delay so grazing it doesn't flash the popover).
@@ -79,6 +105,8 @@ export function PinboardLibraryDialog({
     const [renameValue, setRenameValue] = useState("")
     // Board whose full-size preview is open in the stacked preview modal
     const [previewBoard, setPreviewBoard] = useState<PinboardSummary | null>(null)
+    // Board whose database associations are being edited
+    const [dbBoard, setDbBoard] = useState<PinboardSummary | null>(null)
 
     const { data } = $api.useQuery(
         "get",
@@ -89,6 +117,10 @@ export function PinboardLibraryDialog({
                     ...dbs,
                     q: nameQuery.trim() === "" ? undefined : nameQuery,
                     order,
+                    // Part of the query key, so flipping the checkbox refetches
+                    // rather than re-rendering a list the server already
+                    // filtered under the other setting.
+                    associated_only: associatedOnly,
                 },
             },
         },
@@ -103,6 +135,12 @@ export function PinboardLibraryDialog({
     // onboarding panel at users whose boards are still loading.
     const emptyLibrary =
         data != null && boards.length === 0 && nameQuery.trim() === ""
+    // …except that with the association filter on, "no boards" may equally
+    // mean "boards, but all of them belong to other databases". The two are
+    // indistinguishable from this response, so the empty panel says both and
+    // the controls row stays mounted — otherwise the checkbox that would
+    // reveal them disappears along with the cards.
+    const filteredEmpty = emptyLibrary && associatedOnly
 
     const invalidate = () => {
         queryClient.invalidateQueries({ queryKey: ["get", "/api/pinboards"] })
@@ -200,21 +238,30 @@ export function PinboardLibraryDialog({
                         onScrollCapture={() => setHovered(null)}
                     >
                         <div className="grid grid-cols-2 md:grid-cols-3 items-start gap-3 p-1">
-                            {boards.map((board) => (
+                            {boards.map((board) => {
+                                const owner = owningDatabase(
+                                    board,
+                                    localNames,
+                                    currentName
+                                )
+                                return (
                                 <PinboardCard
                                     key={board.id}
                                     board={board}
                                     dbs={dbs}
+                                    owningDb={owner}
                                     href={pinboardOpenHref(
                                         pathname,
                                         searchParams,
                                         board.id,
                                         "head",
-                                        cleanLinks ? "clean" : "carry"
+                                        cleanLinks ? "clean" : "carry",
+                                        owner
                                     )}
                                     onOpen={() => openBoard(board)}
                                     onDelete={() => setConfirmDelete(board)}
                                     onRename={() => openRename(board)}
+                                    onEditDatabases={() => setDbBoard(board)}
                                     onPreview={() => {
                                         setHovered(null)
                                         setPreviewBoard(board)
@@ -223,12 +270,28 @@ export function PinboardLibraryDialog({
                                         setHovered(b && anchor ? { board: b, anchor } : null)
                                     }
                                 />
-                            ))}
+                                )
+                            })}
                         </div>
                     </ScrollArea>
                 ) : (
                     <div className="flex h-[65vh] items-center justify-center p-8">
-                        {emptyLibrary ? (
+                        {filteredEmpty ? (
+                            <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+                                <Pin className="h-10 w-10 text-muted-foreground/60" />
+                                <p className="font-medium">
+                                    No pinboards from this database
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                    Boards belonging to other databases are hidden —
+                                    uncheck &ldquo;Only boards from this
+                                    database&rdquo; below to see them. If you have no
+                                    boards at all yet, pin items from your search
+                                    results and save the board from the Pinboard
+                                    tab&apos;s menu.
+                                </p>
+                            </div>
+                        ) : emptyLibrary ? (
                             // First run: this dialog is reachable before any
                             // board exists (the grid header's library button),
                             // so it explains the creation path instead of
@@ -250,20 +313,40 @@ export function PinboardLibraryDialog({
                         ) : null}
                     </div>
                 )}
-                {!emptyLibrary && (
-                    <div className="flex items-center gap-2">
-                        <Checkbox
-                            id="pinboard-clean-links"
-                            checked={cleanLinks}
-                            onCheckedChange={(next) => setCleanLinks(next === true)}
-                        />
-                        <label
-                            htmlFor="pinboard-clean-links"
-                            title="Boards opened in a new tab (middle-click, Ctrl-click) start maximized with nothing else open. When off, new tabs inherit your current view settings instead (never the sidebar or search)."
-                            className="cursor-pointer select-none text-xs text-muted-foreground"
-                        >
-                            Open maximized in new tabs
-                        </label>
+                {(!emptyLibrary || filteredEmpty) && (
+                    <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                        <div className="flex items-center gap-2">
+                            <Checkbox
+                                id="pinboard-associated-only"
+                                checked={associatedOnly}
+                                onCheckedChange={(next) =>
+                                    setAssociatedOnly(next === true)
+                                }
+                            />
+                            <label
+                                htmlFor="pinboard-associated-only"
+                                title="Hide boards that belong to a different index database — the ones whose images this database doesn't have, which would otherwise open as a wall of broken pictures. The same setting applies to the grid's Library tab and the sidebar's pinboard picker."
+                                className="cursor-pointer select-none text-xs text-muted-foreground"
+                            >
+                                Only boards from this database
+                            </label>
+                        </div>
+                        {!emptyLibrary && (
+                            <div className="flex items-center gap-2">
+                                <Checkbox
+                                    id="pinboard-clean-links"
+                                    checked={cleanLinks}
+                                    onCheckedChange={(next) => setCleanLinks(next === true)}
+                                />
+                                <label
+                                    htmlFor="pinboard-clean-links"
+                                    title="Boards opened in a new tab (middle-click, Ctrl-click) start maximized with nothing else open. When off, new tabs inherit your current view settings instead (never the sidebar or search)."
+                                    className="cursor-pointer select-none text-xs text-muted-foreground"
+                                >
+                                    Open maximized in new tabs
+                                </label>
+                            </div>
+                        )}
                     </div>
                 )}
                 {hovered && hovered.board.head_version_id != null && (
@@ -299,6 +382,15 @@ export function PinboardLibraryDialog({
                     board={previewBoard}
                     dbs={dbs}
                     onClose={() => setPreviewBoard(null)}
+                />
+                {/* Stacked over the library like the preview and rename
+                    dialogs. Its save can move a board out of (or into) the
+                    filtered list, so it invalidates rather than patches. */}
+                <PinboardDatabasesDialog
+                    board={dbBoard}
+                    dbs={dbs}
+                    onClose={() => setDbBoard(null)}
+                    onSaved={invalidate}
                 />
                 <Dialog
                     open={renameTarget != null}
@@ -451,17 +543,25 @@ export function PinboardCard({
     board,
     dbs,
     href,
+    owningDb,
     matchCount,
     previewWidth = CARD_PREVIEW_WIDTH,
     onOpen,
     onDelete,
     onRename,
+    onEditDatabases,
     onPreview,
     onHover,
 }: {
     board: PinboardSummary
     dbs: { index_db: string | null; user_data_db: string | null }
     href: string
+    /**
+     * The other local index database this board belongs to (see
+     * `owningDatabase`), or null when it belongs here. Only labels the card —
+     * the switch itself is in `href`, so it survives middle-click.
+     */
+    owningDb?: string | null
     /** How many of the board's items a search matched; absent = no badge. */
     matchCount?: number
     /**
@@ -474,6 +574,8 @@ export function PinboardCard({
     /** Omitted where the host offers no rename/delete (the Library tab). */
     onDelete?: () => void
     onRename?: () => void
+    /** Opens the association editor; omitted where the host offers none. */
+    onEditDatabases?: () => void
     onPreview: () => void
     onHover: (board: PinboardSummary | null, anchor?: DOMRect) => void
 }) {
@@ -512,8 +614,12 @@ export function PinboardCard({
     const name = board.name || "Untitled"
     const updated = new Date(board.time_updated)
     const versionId = board.head_version_id
+    // Rot: items this board pins that the selected database doesn't have.
+    // Only worth saying for a board that belongs here — on a foreign board a
+    // low count is the whole point, and the owner badge already says so.
+    const rot = board.associated && board.present_count < board.item_count
 
-    return (
+    const card = (
         <a
             ref={cardRef}
             href={href}
@@ -522,6 +628,13 @@ export function PinboardCard({
             onClick={(e) => {
                 // Modified clicks keep the browser's link behavior (new tab)
                 if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return
+                // A board belonging to another database is opened by FOLLOWING
+                // the link, which carries the index_db switch: loading it in
+                // place would keep the current database selected and render
+                // the board as a wall of broken images — the exact failure
+                // this feature exists to stop. The switch stays explicit in
+                // the URL, so Back undoes it.
+                if (owningDb) return
                 e.preventDefault()
                 onOpen()
             }}
@@ -571,6 +684,19 @@ export function PinboardCard({
                             : `${matchCount} / ${board.item_count}`}
                     </span>
                 )}
+                {/* Owner badge: this board belongs to another database, and
+                    its link switches to it. Bottom-left so it never collides
+                    with the match badge above, and muted — it is a label for
+                    a board you are still allowed to open, not a warning. */}
+                {owningDb && (
+                    <span
+                        title={`This pinboard belongs to the “${owningDb}” database. Opening it switches to that database.`}
+                        className="absolute bottom-1.5 left-2 flex max-w-[calc(100%-1rem)] items-center gap-1 rounded border bg-background/80 px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                    >
+                        <Database className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{owningDb}</span>
+                    </span>
+                )}
                 {versionId != null && (
                     <button
                         type="button"
@@ -608,8 +734,26 @@ export function PinboardCard({
                     {name}
                 </span>
                 <span className="flex items-center gap-1.5 shrink-0 text-muted-foreground">
-                    <span title={dateTitle(updated)}>
-                        {board.item_count} {board.item_count === 1 ? "item" : "items"} ·{" "}
+                    {/* "38/40 here" replaces the plain item count when some
+                        of the board's items are missing from this database —
+                        files move, die or get re-encoded, and a board that
+                        has rotted looks broken without a word for it. */}
+                    <span
+                        title={rot
+                            ? `${board.present_count} of this board's ${board.item_count} items are in this database; the rest are missing. Saved ${dateTitle(updated)}`
+                            : dateTitle(updated)}
+                    >
+                        {rot ? (
+                            <span className="tabular-nums">
+                                {board.present_count}/{board.item_count} here
+                            </span>
+                        ) : (
+                            <>
+                                {board.item_count}{" "}
+                                {board.item_count === 1 ? "item" : "items"}
+                            </>
+                        )}
+                        {" · "}
                         {compactDate(updated)}
                     </span>
                     {(onRename || onDelete) && (
@@ -637,6 +781,48 @@ export function PinboardCard({
                 </span>
             </div>
         </a>
+    )
+
+    // Right-click is the browser's own "open in new tab" menu, and this card
+    // is a real link precisely so that works — so it is only taken over where
+    // there is something to put there, and the item it displaced comes back as
+    // the first entry. Hosts offering no card verbs (the grid's Library tab)
+    // keep the native menu untouched.
+    if (!onRename && !onDelete && !onEditDatabases) return card
+    return (
+        <ContextMenu>
+            <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
+            <ContextMenuContent className="w-52">
+                <ContextMenuItem
+                    onClick={() => window.open(href, "_blank", "noopener")}
+                >
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    Open in New Tab
+                </ContextMenuItem>
+                {onEditDatabases && (
+                    <ContextMenuItem onClick={onEditDatabases}>
+                        <Database className="mr-2 h-4 w-4" />
+                        Databases…
+                    </ContextMenuItem>
+                )}
+                {(onRename || onDelete) && <ContextMenuSeparator />}
+                {onRename && (
+                    <ContextMenuItem onClick={onRename}>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Rename
+                    </ContextMenuItem>
+                )}
+                {onDelete && (
+                    <ContextMenuItem
+                        className={DESTRUCTIVE_MENU_ITEM}
+                        onClick={onDelete}
+                    >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete
+                    </ContextMenuItem>
+                )}
+            </ContextMenuContent>
+        </ContextMenu>
     )
 }
 

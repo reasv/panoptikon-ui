@@ -1086,6 +1086,7 @@ export interface paths {
          * List saved pinboards
          * @description Lists the user's saved pinboards with head-version metadata (preview dimensions, item and version counts) but without layouts or preview blobs.
          *     Ordered by `order`: `activity` (default) ranks by a recency strip followed by a decaying visit score — opening a board counts as activity, not just saving it — while `updated` is plain last-saved-first. The order applies identically under the `q` name search (FTS prefix match).
+         *     Each board carries its association with the selected index database: `associated` (stamped for this database, or fully present in it), the stamped `databases`, and `present_count` — which is reported whether or not `associated_only` filters the list.
          */
         get: operations["list_pinboards"];
         put?: never;
@@ -1143,6 +1144,28 @@ export interface paths {
          *     With `relabel_head`, the head version's name-at-save snapshot is rewritten too; the client passes true when the current layout equals the head's, so the rename labels the version being looked at.
          */
         patch: operations["update_pinboard"];
+        trace?: never;
+    };
+    "/api/pinboards/{pinboard_id}/databases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace the databases a pinboard is associated with
+         * @description Sets the board's database associations to exactly the names given, replacing whatever was there (an empty list clears them). This is the manual fix path every automatic verdict has: associations are hints, so renames, accidental stamps and instance-identity resets all need somewhere to go.
+         *     A name the board is already stamped for is kept exactly as stored — including one whose database no longer exists locally, which the server has no way to mint again. Every other name must resolve to a local index database; one that resolves to nothing is a 400 and nothing is written. Removing a name is expressed by omitting it.
+         *     The board's `time_updated` is deliberately not bumped: an association is not a content change and must not reorder the library.
+         */
+        put: operations["set_pinboard_databases"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/pinboards/{pinboard_id}/versions": {
@@ -2476,6 +2499,39 @@ export interface components {
         OrderByField: "file_id" | "sha256" | "path" | "filename" | "last_modified" | "item_id" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks" | "blurhash" | "data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id" | "random";
         /** @enum {string} */
         OrderDirection: "asc" | "desc";
+        /**
+         * @description One stamped database of a board. Databases are named, never identified by
+         *     UUID, on the wire: the UUIDs are server-side matching keys.
+         */
+        PinboardDatabaseResponse: {
+            /** @description Whether this row is the database currently selected. */
+            associated: boolean;
+            /**
+             * Format: int64
+             * @description Unix seconds of the last stamp for this database.
+             */
+            last_stamped: number;
+            /**
+             * @description The index database's name as of the stamp. It may no longer resolve
+             *     to a local database, in which case it is a residual label only.
+             */
+            name: string;
+        };
+        /**
+         * @description A board's associations after the manual editor changed them — the same
+         *     two fields the list and detail responses carry, so the client can update
+         *     the card in place without re-listing.
+         */
+        PinboardDatabasesResponse: {
+            /**
+             * @description Whether the board now belongs to the selected index database, by the
+             *     full rule (so it can still be true through 100% item overlap with no
+             *     stamp at all).
+             */
+            associated: boolean;
+            /** @description The databases the board is stamped for, newest stamp first. */
+            databases: components["schemas"]["PinboardDatabaseResponse"][];
+        };
         PinboardDeleteResponse: {
             /**
              * @description True when the operation removed the board itself (deleting its last
@@ -2490,6 +2546,10 @@ export interface components {
             new_head_version_id?: number | null;
         };
         PinboardDetailResponse: {
+            /** @description Whether the board belongs to the selected index database. */
+            associated: boolean;
+            /** @description The databases this board is stamped for, newest stamp first. */
+            databases: components["schemas"]["PinboardDatabaseResponse"][];
             /**
              * @description The board's stored editing-behavior flags, verbatim as last saved.
              *     Null for boards saved before flags existed; the UI treats that as
@@ -2500,6 +2560,12 @@ export interface components {
             /** Format: int64 */
             id: number;
             name?: string | null;
+            /**
+             * Format: int64
+             * @description The head version's items that exist in the selected index database
+             *     (`head.item_count` is the total). Same field as on the list summary.
+             */
+            present_count: number;
             time_added: string;
             time_updated: string;
             /** Format: int64 */
@@ -2519,6 +2585,13 @@ export interface components {
          *     renders, plus how much of the board the search matched.
          */
         PinboardSearchMatch: {
+            /**
+             * @description Whether the board belongs to the selected index database, by the same
+             *     rule the library list applies.
+             */
+            associated: boolean;
+            /** @description The databases this board is stamped for, newest stamp first. */
+            databases: components["schemas"]["PinboardDatabaseResponse"][];
             /** Format: int64 */
             head_version_id?: number | null;
             /** Format: int64 */
@@ -2537,6 +2610,13 @@ export interface components {
              */
             match_count: number;
             name?: string | null;
+            /**
+             * Format: int64
+             * @description How many of the board's items exist in the selected index database
+             *     (`match_count` is how many the *search* matched). Same field as on the
+             *     library list summary.
+             */
+            present_count: number;
             /** Format: int64 */
             preview_h?: number | null;
             /** Format: int64 */
@@ -2557,6 +2637,14 @@ export interface components {
             pinboards: components["schemas"]["PinboardSearchMatch"][];
         };
         PinboardSummaryResponse: {
+            /**
+             * @description Whether the board belongs to the selected index database, by the full
+             *     rule: a stamp for this database (by identity, or by name for a
+             *     database this instance rebuilt), or 100% of its items present here.
+             */
+            associated: boolean;
+            /** @description The databases this board is stamped for, newest stamp first. */
+            databases: components["schemas"]["PinboardDatabaseResponse"][];
             /** Format: int64 */
             head_version_id?: number | null;
             /** Format: int64 */
@@ -2570,6 +2658,14 @@ export interface components {
              */
             last_seen?: number | null;
             name?: string | null;
+            /**
+             * Format: int64
+             * @description How many of the board's items exist in the selected index database.
+             *     Below `item_count` this is rot ("38/40 here"), and is reported
+             *     whatever `associated_only` says — it is what tells rot apart from a
+             *     board that belongs somewhere else.
+             */
+            present_count: number;
             /** Format: int64 */
             preview_h?: number | null;
             /** Format: int64 */
@@ -3240,6 +3336,20 @@ export interface components {
              *     Search for text using semantic search on text embeddings.
              */
             text_embeddings: components["schemas"]["SemanticTextArgs"];
+        };
+        /**
+         * @description The manual editor's payload: exactly the databases the board should be
+         *     associated with afterwards. An empty list clears every association.
+         */
+        SetPinboardDatabasesRequest: {
+            /**
+             * @description Index database names. Each keeps every stamp already stored under it
+             *     (including one whose database no longer exists, which the server could
+             *     not mint again) *and* associates the board with the live database that
+             *     name refers to here. A name that is neither stamped nor local is a
+             *     400. Omitting a name removes it.
+             */
+            databases: string[];
         };
         SetterDataStats: {
             total_counts: [
@@ -5579,6 +5689,12 @@ export interface operations {
                  *     default) or `updated` (last saved first).
                  */
                 order?: components["schemas"]["PinboardOrder"];
+                /**
+                 * @description Return only the boards associated with the selected index database.
+                 *     The verdict is server-computed (see `associated`); the client sends
+                 *     its stored preference.
+                 */
+                associated_only?: boolean;
             };
             header?: never;
             path?: never;
@@ -5637,6 +5753,12 @@ export interface operations {
                 user_data_db?: string | null;
                 /** @description The user whose pinboards to search. */
                 user?: string;
+                /**
+                 * @description Return only the boards associated with the selected index database —
+                 *     the same server-computed rule and the same client preference as the
+                 *     library list.
+                 */
+                associated_only?: boolean;
             };
             header?: never;
             path?: never;
@@ -5765,6 +5887,54 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["PinboardDeleteResponse"];
                 };
+            };
+            /** @description Pinboard not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_pinboard_databases: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+                /** @description The user the pinboard belongs to. */
+                user?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The pinboard id */
+                pinboard_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPinboardDatabasesRequest"];
+            };
+        };
+        responses: {
+            /** @description The board's associations after the change */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PinboardDatabasesResponse"];
+                };
+            };
+            /** @description A name that is neither already stamped nor a local index database */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Pinboard not found */
             404: {

@@ -10,7 +10,8 @@
 // doesn't fire) and clears the marker.
 
 import { useEffect } from "react"
-import { fetchClient } from "@/lib/api"
+import { $api, fetchClient } from "@/lib/api"
+import type { components } from "@/lib/panoptikon"
 import { useSelectedDBs } from "@/lib/state/database"
 import {
   useGalleryPinBoardId,
@@ -52,7 +53,15 @@ export function pinboardOpenHref(
   search: { toString(): string },
   pinboardId: number,
   target: "head" | number,
-  mode: PinboardLinkMode
+  mode: PinboardLinkMode,
+  /**
+   * Index database the link should open the board in, overriding the copied
+   * `index_db`. Set for a board that belongs to some OTHER local database
+   * (see `owningDatabase`): the switch is explicit in the URL rather than a
+   * click-time side effect, so middle-click and new-tab behave identically
+   * and the Back button undoes it.
+   */
+  indexDbOverride?: string | null
 ): string {
   const current = new URLSearchParams(search.toString())
   const params = new URLSearchParams()
@@ -64,6 +73,7 @@ export function pinboardOpenHref(
   }
 
   copy(DB_KEYS)
+  if (indexDbOverride) params.set("index_db", indexDbOverride)
   params.set("pbid", String(pinboardId))
   params.set("pbl", String(target))
   // A fresh tab has no gallery index, so without the board tab fronted in
@@ -77,6 +87,82 @@ export function pinboardOpenHref(
     copy(CARRIED_VIEW_KEYS)
   }
   return `${pathname}?${params.toString()}`
+}
+
+/** The stamped-database rows every board summary carries. */
+export type PinboardDatabaseRow =
+  components["schemas"]["PinboardDatabaseResponse"]
+
+/**
+ * The local index database a board belongs to when it does NOT belong to the
+ * selected one — the name for the card's badge, and the `index_db` its link
+ * switches to. Null whenever the card should stay as it is.
+ *
+ * Rows arrive newest-stamp-first, so the first one that still resolves to a
+ * local database is the board's most recent home. A row is skipped when it
+ * names the selected database: the board is not associated with it (the
+ * server said so — a stamp another instance wrote, or one whose database was
+ * rebuilt), so pointing the link back at the database the user is already in
+ * would badge the card with its own name and switch nothing.
+ *
+ * `board.associated` false is the gate: a board the current database owns is
+ * never re-pointed elsewhere, however many other databases also stamped it.
+ */
+export function owningDatabase(
+  board: { associated: boolean; databases: PinboardDatabaseRow[] },
+  /** Index database names that exist locally (`/api/db` → `index.all`). */
+  localNames: string[],
+  /** The selected index database's name, resolved through the default. */
+  currentName: string | null
+): string | null {
+  if (board.associated) return null
+  const current = currentName?.toLowerCase() ?? null
+  for (const row of board.databases) {
+    const folded = row.name.toLowerCase()
+    if (folded === current) continue
+    // Return the folder's own spelling, not the stamp's: the stamp is a
+    // residual hint and the URL param has to address a real folder.
+    const local = localNames.find((name) => name.toLowerCase() === folded)
+    if (local) return local
+  }
+  return null
+}
+
+/**
+ * The index databases that exist locally, plus which one is selected —
+ * everything the foreign-board badge, its link override and the association
+ * editor need in order to turn a stamped NAME into a real database.
+ *
+ * `index_db` is absent from the URL whenever the server's default is in use,
+ * so the current name has to come from `/api/db` in that case; the same
+ * fallback the sidebar's database switcher makes.
+ *
+ * The init argument is `undefined` rather than `{}` on purpose: openapi-react-
+ * query keys a query by `[method, path, init]` and drops the third element
+ * only when init is undefined, so `{}` would be a second key for the answer
+ * the sidebar's database switcher already holds.
+ *
+ * `enabled` exists because the library dialog is mounted permanently and open
+ * rarely — an ungated query there would cost every page load a request for a
+ * list nobody is looking at.
+ */
+export function useIndexDatabaseNames(enabled: boolean = true): {
+  localNames: string[]
+  currentName: string | null
+  /** False until the list has arrived — "not yet" is not "none". */
+  ready: boolean
+} {
+  const { index_db } = useSelectedDBs()[0]
+  const { data } = $api.useQuery("get", "/api/db", undefined, {
+    enabled,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  })
+  return {
+    localNames: data?.index.all ?? [],
+    currentName: index_db ?? data?.index.current ?? null,
+    ready: data != null,
+  }
 }
 
 /** Resolves and consumes a `pbl` deferred-load reference from the URL. */
