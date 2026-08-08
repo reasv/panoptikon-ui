@@ -2,7 +2,6 @@ import React from "react"
 import { X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TrimRange } from "@/lib/pinboardCrop"
-import { trimWithBound } from "@/lib/videoTrim"
 
 // The scrub/trim rail of the video player surface (VideoPlayerSurface),
 // kept a separate module because the gesture code — marker drags, coincident
@@ -198,10 +197,19 @@ export function VideoRail({
 
     const startBound = trim?.start ?? null
     const endBound = trim?.end ?? null
+    // Seed-on-grab, resolved at RELEASE (docs/video-outro-skip-design.md §4).
+    // A gesture that has resolved as an end edit owns the end from that
+    // instant — marker blue, band spanning it, skipped-tail dimming stood
+    // down — but the seeded bound only reaches `onTrimChange` on pointerup,
+    // so one gesture is exactly ONE call and one history entry (the trim
+    // contract in lib/state/gallery.ts). Seeding at pointerdown AND
+    // committing at pointerup pushed two.
+    const endDragActive = drag?.which === "end"
     // The end marker is the outro default's, not the user's, exactly while
-    // no user end bound exists. It is the only difference between the two:
-    // everything below (geometry, drag, commit) runs one code path.
-    const outroMarker = endBound == null ? outroEnd : null
+    // no user end bound exists and no end edit is in flight. It is the only
+    // difference between the two: everything below (geometry, drag, commit)
+    // runs one code path.
+    const outroMarker = endBound == null && !endDragActive ? outroEnd : null
     const outroOwned = outroMarker != null
     const shownEnd = endBound ?? outroMarker
 
@@ -211,14 +219,18 @@ export function VideoRail({
         e.preventDefault()
         e.stopPropagation()
         e.currentTarget.setPointerCapture(e.pointerId)
-        // Seed on grab: touching the outro marker turns the default into a
-        // real user end bound at its current position, and from this instant
-        // it is an ordinary end-marker drag (the marker goes blue, commit
-        // populates `vt` / the h field). A click without movement therefore
-        // sets the end at the cut point, which is the intended verb.
-        if (which === "end" && outroMarker != null) {
-            onTrimChange(trimWithBound(trim, "end", outroMarker))
-        }
+        // Grabbing the outro marker seeds a user end bound at its current
+        // position — but the seed lives in the DRAG STATE (`value` below is
+        // already the cut point), not in the caller's trim: writing it here
+        // as well as at release would push two history entries for one
+        // gesture. A click without movement releases with `value` still at
+        // the cut point, so it commits exactly the intended bound.
+        // A coincident stack cannot contain the OUTRO marker: the default is
+        // only composed while the cut clears the start by more than
+        // FREEZE_EPS (0.02 s), which is wider than COINCIDENT_EPS. Should
+        // that ever change, "pending" still does the right thing — the seed
+        // materialises only if the gesture resolves as an end edit, and a
+        // leftward one commits the start bound alone.
         const coincident =
             startBound != null &&
             shownEnd != null &&
@@ -255,6 +267,10 @@ export function VideoRail({
     const onMarkerPointerUp = () => {
         if (!drag) return
         const video = videoRef.current
+        // The ONE write of the gesture, seeded outro grabs included: a click
+        // without movement releases with the grab value untouched, a drag
+        // with the value it ended on, and a still-"pending" release wrote
+        // nothing to begin with so there is nothing to undo.
         if (drag.which !== "pending") {
             const v = Math.round(drag.value * 100) / 100
             const next: TrimRange = drag.which === "start"
@@ -351,17 +367,27 @@ export function VideoRail({
                         ref={trackRef}
                         className={cn(
                             "relative w-full h-1.5 rounded-full",
-                            // Dimming the SKIPPED tail means dimming the track
-                            // and repainting the head at the normal weight:
-                            // alpha over alpha can only darken, never lighten
-                            outroOwned ? "bg-white/20" : "bg-white/40",
+                            // Nothing may STACK here: alpha over alpha only
+                            // darkens, so a white/40 head painted over a
+                            // white/20 track composites to ~white/52 and the
+                            // head stops matching every other rail. With the
+                            // outro tail dimmed the track carries no fill of
+                            // its own and the two segments below are siblings,
+                            // each at exactly its own weight.
+                            outroOwned ? "bg-transparent" : "bg-white/40",
                         )}
                     >
                         {outroMarker != null && (
-                            <div
-                                className="absolute inset-y-0 left-0 rounded-full bg-white/40"
-                                style={{ right: `calc(100% - ${pct(outroMarker)})` }}
-                            />
+                            <>
+                                <div
+                                    className="absolute inset-y-0 left-0 rounded-full bg-white/40"
+                                    style={{ right: `calc(100% - ${pct(outroMarker)})` }}
+                                />
+                                <div
+                                    className="absolute inset-y-0 right-0 rounded-full bg-white/20"
+                                    style={{ left: pct(outroMarker) }}
+                                />
+                            </>
                         )}
                         {showBand && (
                             <div

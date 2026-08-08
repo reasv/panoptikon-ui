@@ -42,6 +42,11 @@ export function SimilarityTarget() {
         file_id: file?.id || 0,
         width: item?.width || 0,
         height: item?.height || 0,
+        // The row's "open details" button makes this object the app-level
+        // current item, which is what the gallery's player renders — keep it
+        // the same shape the other two builders produce (SelectButton,
+        // GalleryPinBoard's selectAsCurrentItem) so outro skip survives
+        content_end_ms: item?.content_end_ms,
     }
     function switchTarget() {
         if (!selected) return

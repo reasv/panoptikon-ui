@@ -13,9 +13,8 @@
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
-const { effectiveVideoTrim, outroCutPoint, outroSkipGoverns } = await import(
-  "../lib/videoTrim.ts"
-)
+const { FREEZE_EPS, effectiveVideoTrim, outroCutPoint, outroSkipGoverns } =
+  await import("../lib/videoTrim.ts")
 const { isEmptyTrim } = await import("../lib/pinboardCrop.ts")
 
 let all = true
@@ -52,7 +51,31 @@ check("no content_end_ms is ineligible", outroCutPoint(null) === null)
 check("undefined content_end_ms is ineligible", outroCutPoint(undefined) === null)
 check("cut point at zero is ineligible", outroCutPoint(150) === null)
 check("negative cut point is ineligible", outroCutPoint(100) === null)
-check("a cut point just past zero is eligible", outroCutPoint(250) === 0.1)
+
+// The eligibility floor is the FREEZE band, not zero: {start: null, end:
+// 0.02} is useVideoTrim's freeze branch, so an item whose content_end_ms
+// lands there would show frame 1 and pause with no user trim in sight.
+check("FREEZE_EPS is the exported contract", FREEZE_EPS === 0.02)
+check(
+  "a cut point inside the freeze band is ineligible",
+  outroCutPoint(170) === null,
+  String(outroCutPoint(170))
+)
+check(
+  "a cut point exactly one centisecond past the band is eligible",
+  outroCutPoint(180) === 0.03,
+  String(outroCutPoint(180))
+)
+check(
+  "an eligible cut point never composes a freeze range on its own",
+  effectiveVideoTrim(null, outroCutPoint(180), true).end - 0 > FREEZE_EPS
+)
+check(
+  "a raw sub-band cut point is refused by the composition too",
+  effectiveVideoTrim(null, 0.02, true) === null,
+  shape(effectiveVideoTrim(null, 0.02, true))
+)
+check("a cut point well past the band is eligible", outroCutPoint(250) === 0.1)
 
 const CUT = outroCutPoint(30150) // 30 s
 check("fixture cut point", CUT === 30)
@@ -127,11 +150,15 @@ check(
   startOnly.end === null
 )
 
-// Degenerate-range guard: a start at or past the cut suppresses the default
-// (a composed start >= end would hit useVideoTrim's freeze branch)
+// Degenerate-range guard: a start that does not clear the cut by more than
+// FREEZE_EPS suppresses the default. The threshold is the freeze band, NOT
+// `start >= end`: useVideoTrim freezes (and pauses) at `end - start <=
+// FREEZE_EPS`, so a start one centisecond before the cut is degenerate too.
 for (const [label, start] of [
   ["exactly at the cut", 30],
   ["past the cut", 40],
+  ["one centisecond before the cut", 29.99],
+  ["exactly FREEZE_EPS before the cut", 29.98],
 ]) {
   const user = { start, end: null }
   check(
@@ -144,22 +171,32 @@ for (const [label, start] of [
     !outroSkipGoverns(user, CUT, true)
   )
 }
+// Just outside the band the default is back — the guard suppresses the
+// freeze cases and nothing more
 check(
-  "a start one centisecond before the cut still gets the default",
-  shape(effectiveVideoTrim({ start: 29.99, end: null }, CUT, true)) ===
-    shape({ start: 29.99, end: 30 })
+  "a start three centiseconds before the cut still gets the default",
+  shape(effectiveVideoTrim({ start: 29.97, end: null }, CUT, true)) ===
+    shape({ start: 29.97, end: 30 }),
+  shape(effectiveVideoTrim({ start: 29.97, end: null }, CUT, true))
+)
+check(
+  "a start three centiseconds before the cut governs (cyan marker shows)",
+  outroSkipGoverns({ start: 29.97, end: null }, CUT, true)
 )
 
-// The invariant behind the guard, swept: composition alone never produces
-// start >= end (§10)
-for (const start of [null, 0, 0.01, 5, 29.99, 30, 30.01, 60]) {
-  const composed = effectiveVideoTrim({ start, end: null }, CUT, true)
-  const s = composed?.start ?? null
+// The invariant behind the guard, swept: whenever composition applies the
+// default, the composed range clears useVideoTrim's freeze band — a range
+// that only satisfies `start < end` would still freeze and pause (§10)
+for (const start of [null, 0, 0.01, 5, 29.9, 29.97, 29.98, 29.99, 30, 30.01, 60]) {
+  const user = { start, end: null }
+  const composed = effectiveVideoTrim(user, CUT, true)
+  const applied = composed !== user
+  const s = composed?.start ?? 0
   const e = composed?.end ?? null
   check(
-    `composed range is never degenerate (start=${start})`,
-    e == null || s == null || s < e,
-    shape(composed)
+    `composed range never lands in the freeze band (start=${start})`,
+    applied ? e != null && e - s > FREEZE_EPS : e == null,
+    `${shape(composed)} applied=${applied}`
   )
 }
 

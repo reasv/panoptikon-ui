@@ -30,6 +30,13 @@ export function SelectButton({
                 type: item.type,
                 width: item.width,
                 height: item.height,
+                // Same payload the pin's double-click builds
+                // (GalleryPinBoard's selectAsCurrentItem) — the gallery's
+                // player reads this snapshot for outro skip whenever the
+                // item is not in the current result page, so a field missing
+                // here would make corner-select and double-click behave
+                // differently on the very same pin
+                content_end_ms: item.content_end_ms,
             })
         }
     }

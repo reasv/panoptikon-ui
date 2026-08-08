@@ -547,17 +547,22 @@ export function VideoPlayerSurface({
     // the playback it describes can never disagree.
     const outroSkip = useOutroSkipEnabled()
     const outroGoverns = outroSkipGoverns(trim, outroCutPoint, outroSkip)
-    // A user END bound outranks the default; a start alone does not
-    const outroOverridden = trimEnd != null
-    const outroBubble = outroOverridden
-        ? "Manual trim end overrides outro skip."
-        : outroGoverns
-            ? "TikTok end card detected — skipped during playback. Click to disable."
-            : outroSkip
-                // Skip is on, so the only thing suppressing it is the
-                // degenerate-range guard (§1): a loop start at/past the cut
-                ? "Loop start is past the detected end card, so outro skip does not apply here."
-                : "TikTok end card detected. Click to skip it during playback."
+    // PRECEDENCE: the preference outranks the override. With skip off there
+    // is nothing for a trim end to override — the button is off, full stop,
+    // and calling it "overridden" (let alone dimming it as inert) would name
+    // the wrong reason for the wrong state. Only with skip ON does a user
+    // END bound outrank the default; a start alone never does.
+    const outroOverridden = outroSkip && trimEnd != null
+    const outroBubble = !outroSkip
+        ? "TikTok end card detected. Click to skip it during playback."
+        : outroOverridden
+            ? "Manual trim end overrides outro skip."
+            : outroGoverns
+                ? "TikTok end card detected — skipped during playback. Click to disable."
+                // Skip is on and no user end outranks it, so the only thing
+                // suppressing it is the degenerate-range guard (§1): a loop
+                // start at, past, or within a freeze frame of the cut
+                : "Loop start sits at the detected end card, so outro skip does not apply here."
 
     // Per side, in px — must mirror the rail's mx-3/mx-2 below
     const railInset = isFullscreen ? 12 : 8
@@ -720,7 +725,7 @@ export function VideoPlayerSurface({
                         still flips the browser-wide preference. */}
                     {size !== "mini" && outroCutPoint != null && (
                         <div
-                            className="relative flex items-center"
+                            className="flex items-center"
                             onPointerEnter={() => setOutroHovered(true)}
                             onPointerLeave={() => setOutroHovered(false)}
                         >
@@ -728,28 +733,49 @@ export function VideoPlayerSurface({
                                 // Short, because the hover bubble carries the
                                 // explanation — a sentence here would open a
                                 // second, native tooltip on top of it
-                                title={outroOverridden
-                                    ? "Outro skip (overridden by the trim end)"
-                                    : outroSkip ? "Outro skip on" : "Outro skip off"}
+                                title={!outroSkip
+                                    ? "Outro skip off"
+                                    : outroOverridden
+                                        ? "Outro skip (overridden by the trim end)"
+                                        : "Outro skip on"}
                                 pressed={outroSkip}
                                 onClick={() => setOutroSkipEnabled(!outroSkip)}
                                 className={cn(
+                                    // ONE drop-shadow utility carrying both
+                                    // filters: twMerge keeps a single
+                                    // drop-shadow-* per element, so a second
+                                    // class would REPLACE the base's dark
+                                    // legibility shadow instead of adding the
+                                    // glow to it
                                     outroGoverns
-                                        && "text-cyan-400 drop-shadow-[0_0_5px_rgba(34,211,238,0.85)] hover:text-cyan-300",
-                                    outroOverridden && "text-white/40",
+                                        && "text-cyan-400 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7),0_0_5px_rgba(34,211,238,0.85)] hover:text-cyan-300",
+                                    // The hover colour has to be restated:
+                                    // the base sets hover:text-white, and an
+                                    // inert button that lights up under the
+                                    // pointer reads as live
+                                    outroOverridden && "text-white/40 hover:text-white/40",
                                 )}
                             >
                                 <SkipForward className="size-[20px]" />
                             </SurfaceButton>
-                            {outroBubbleOpen && (
-                                // The rail's own bubble language (black/80),
-                                // but wrapping: this one is a sentence
-                                <div className="pointer-events-none absolute right-0 bottom-full z-10 pb-1.5">
-                                    <div className="w-44 rounded bg-black/80 px-1.5 py-1 text-[10px] leading-4 text-white">
-                                        {outroBubble}
-                                    </div>
-                                </div>
-                            )}
+                        </div>
+                    )}
+                    {outroBubbleOpen && outroCutPoint != null && (
+                        // The rail's own bubble language (black/80), but
+                        // wrapping: this one is a sentence. Anchored to the
+                        // right GROUP rather than to the button, so it grows
+                        // leftward from the row's own right edge instead of
+                        // from ~3 buttons in, and capped to fit the narrowest
+                        // surface that renders it (medium tier: 160 px, less
+                        // the row's 12 px of padding) — it may never reach
+                        // past the player's left edge.
+                        <div className="pointer-events-none absolute right-0 bottom-full z-10 pb-1.5">
+                            <div className={cn(
+                                "rounded bg-black/80 px-1.5 py-1 text-[10px] leading-4 text-white",
+                                size === "full" ? "w-44" : "w-36",
+                            )}>
+                                {outroBubble}
+                            </div>
                         </div>
                     )}
 

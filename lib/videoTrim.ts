@@ -4,8 +4,12 @@ import React from "react"
 // leaves a plain one to fail at runtime against a type-only export.
 import type { TrimRange } from "./pinboardCrop"
 
-// Two trim points closer than this (seconds) behave as a freeze frame
-const FREEZE_EPS = 0.02
+// Two trim points closer than this (seconds) behave as a freeze frame.
+// EXPORTED because it is a contract, not an internal detail: anything that
+// COMPOSES a range (the outro default below) has to keep clear of the band
+// useVideoTrim treats as a still frame, and a second copy of the literal
+// would drift away from this one.
+export const FREEZE_EPS = 0.02
 
 // A forward step larger than this (seconds) between two checks is a user
 // seek, not playback advancing — seeks past the end point must not trigger
@@ -60,12 +64,18 @@ const OUTRO_GUARD_MS = 150
 // The item's outro cut point in seconds, or null when the item is not
 // eligible: no `content_end_ms` (never examined, no outro, or the index DB
 // has detection off — the API nulls the field then), or a degenerate cut
-// point at/before zero. Rounded to centiseconds, the storage resolution of
-// the trim codec, so a seeded user bound lands on the same lattice.
+// point inside the freeze band. Rounded to centiseconds, the storage
+// resolution of the trim codec, so a seeded user bound lands on the same
+// lattice.
+//
+// The eligibility floor is FREEZE_EPS, not zero: a cut at 0.01 s composes
+// {start: null, end: 0.01}, which is useVideoTrim's freeze branch — the
+// video would show frame 1 and pause, with no user trim anywhere in sight.
+// It is the same predicate the composition guard below applies at start 0.
 export function outroCutPoint(contentEndMs: number | null | undefined): number | null {
   if (contentEndMs == null || !isFinite(contentEndMs)) return null
   const cut = Math.round((contentEndMs - OUTRO_GUARD_MS) / 10) / 100
-  return cut > 0 ? cut : null
+  return cut > FREEZE_EPS ? cut : null
 }
 
 // The trim the PLAYER enforces: the user's trim with the outro cut point
@@ -73,10 +83,12 @@ export function outroCutPoint(contentEndMs: number | null | undefined): number |
 // (someone who deliberately trims into the outro is respected — there is no
 // min() composition), and a user start alone still skips the outro.
 //
-// Degenerate-range guard: the default applies only while `cutPoint` is
-// strictly past the effective start. A start placed at or past the cut would
-// otherwise compose a start >= end range, which is useVideoTrim's freeze
-// branch — a paused video is never what a start-only trim means.
+// Degenerate-range guard: the default applies only while `cutPoint` clears
+// the effective start by more than FREEZE_EPS. The predicate is the exact
+// complement of useVideoTrim's `end - start <= FREEZE_EPS` freeze test, not
+// a `start >= end` test: a start one centisecond before the cut composes a
+// 0.01 s range, which that hook already shows as a still frame and pauses —
+// a paused video is never what a start-only trim means.
 //
 // Returns the user trim itself (same identity) whenever no default applies,
 // so hosts can feed the result straight to useVideoTrim and to
@@ -90,7 +102,7 @@ export function effectiveVideoTrim(
   const start = trim?.start ?? null
   const end = trim?.end ?? null
   if (end != null) return trim
-  if (cutPoint <= (start ?? 0)) return trim
+  if (cutPoint - (start ?? 0) <= FREEZE_EPS) return trim
   return { start, end: cutPoint }
 }
 

@@ -50,7 +50,30 @@ function readStoredOutroSkip(): boolean {
   }
 }
 
+// "Browser-level" has to include the OTHER tabs: localStorage fires
+// `storage` in every document but the one that wrote, so this is the whole
+// cross-tab path. Bound once per document (never removed — its lifetime is
+// the module's, not any component's) and lazily, from subscribe, so the
+// module stays importable on the server.
+let outroSkipStorageBound = false
+function bindOutroSkipStorage() {
+  if (outroSkipStorageBound || typeof window === "undefined") return
+  outroSkipStorageBound = true
+  window.addEventListener("storage", (e) => {
+    if (e.storageArea != null && e.storageArea !== window.localStorage) return
+    // A null key is localStorage.clear() — that drops this key too
+    if (e.key !== null && e.key !== OUTRO_SKIP_STORAGE_KEY) return
+    const next = readStoredOutroSkip()
+    // getSnapshot must stay stable across a no-op event, or every
+    // subscribed player re-renders for another tab's unrelated write
+    if (next === outroSkipCache) return
+    outroSkipCache = next
+    for (const listener of outroSkipListeners) listener()
+  })
+}
+
 function subscribeOutroSkip(onChange: () => void): () => void {
+  bindOutroSkipStorage()
   outroSkipListeners.add(onChange)
   return () => {
     outroSkipListeners.delete(onChange)
