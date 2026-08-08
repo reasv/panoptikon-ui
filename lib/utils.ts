@@ -17,6 +17,29 @@ export function getFileURL(
   return `/api/items/item/${file_type}?id=${id}&id_type=${id_type}${index_db_param}`
 }
 
+// Basename of an indexed path. Either separator: the index stores paths as
+// the OS produced them.
+export function fileNameFromPath(path: string): string {
+  const lastSep = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"))
+  return path.slice(lastSep + 1)
+}
+
+// Name for a "save the original file" link. The indexed basename is the
+// truth; an item with no path on record still gets a findable name from its
+// hash plus the mime subtype, since a download with no extension is one the
+// OS can't open.
+export function downloadFileName(
+  path: string | null | undefined,
+  sha256: string,
+  mime?: string | null,
+): string {
+  const name = fileNameFromPath(path ?? "")
+  if (name) return name
+  const stem = sha256.slice(0, 10)
+  const subtype = mime?.split(";")[0].split("/")[1]
+  return subtype ? `${stem}.${subtype}` : stem
+}
+
 export function prettyPrintBytes(bytes: number): string {
   const units = ["B", "KB", "MB", "GB", "TB", "PB"]
   let unitIndex = 0

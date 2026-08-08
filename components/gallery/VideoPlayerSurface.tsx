@@ -1,6 +1,7 @@
 import React from "react"
 import {
     Brackets,
+    Download,
     EllipsisVertical,
     Maximize,
     Minimize,
@@ -268,6 +269,13 @@ function SurfacePopover({
     )
 }
 
+// One class for every menu row, whatever element carries it: the download
+// row must be an <a> (the `download` attribute is an anchor's, and only an
+// anchor gives the browser's own "save link as" too), and a row that reads
+// as a different control would break the menu's one visual family.
+const MENU_ITEM_CLASS =
+    "flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1 text-left text-[11px] leading-5 whitespace-nowrap text-white/90 transition-colors hover:bg-white/15 hover:text-white focus-visible:ring-1 focus-visible:ring-white/80 focus-visible:outline-none"
+
 function MenuItem({
     label,
     icon,
@@ -283,11 +291,54 @@ function MenuItem({
             role="menuitem"
             title={label}
             onClick={onClick}
-            className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1 text-left text-[11px] leading-5 whitespace-nowrap text-white/90 transition-colors hover:bg-white/15 hover:text-white focus-visible:ring-1 focus-visible:ring-white/80 focus-visible:outline-none"
+            className={MENU_ITEM_CLASS}
         >
             {icon}
             {label}
         </button>
+    )
+}
+
+// The link-shaped menu row. Same-origin only, which the file URL is by
+// construction (getFileURL returns a root-relative path): a cross-origin
+// href silently loses the `download` attribute and navigates instead.
+function MenuItemLink({
+    label,
+    icon,
+    href,
+    download,
+    onClick,
+}: {
+    label: string
+    icon: React.ReactNode
+    href: string
+    download: string
+    onClick: () => void
+}) {
+    return (
+        <a
+            role="menuitem"
+            title={label}
+            href={href}
+            download={download}
+            onClick={onClick}
+            // Links are draggable by default, and the pinboard's drop path
+            // treats any text/plain payload as a sha256 — dragging this row
+            // onto the board would mint an unresolvable pin
+            draggable={false}
+            // A button menuitem activates on Space; an anchor only on Enter.
+            // Level the two so the row behaves like its siblings.
+            onKeyDown={(e) => {
+                if (e.key === " ") {
+                    e.preventDefault()
+                    e.currentTarget.click()
+                }
+            }}
+            className={MENU_ITEM_CLASS}
+        >
+            {icon}
+            {label}
+        </a>
     )
 }
 
@@ -342,6 +393,7 @@ export function VideoPlayerSurface({
     controller,
     trim,
     onTrimChange,
+    download,
     size = "full",
     className,
 }: {
@@ -350,6 +402,10 @@ export function VideoPlayerSurface({
     controller: VideoPlayerSurfaceController
     trim: TrimRange | null
     onTrimChange: (trim: TrimRange | null) => void
+    // The original file behind this video, as a same-origin URL and the name
+    // to save it under. Omitted while a host still has no item data, which
+    // simply drops the row.
+    download?: { url: string; filename: string }
     size?: VideoPlayerSize
     className?: string
 }) {
@@ -744,6 +800,19 @@ export function VideoPlayerSurface({
                                 rate={videoState.playbackRate}
                                 onRate={videoState.setPlaybackRate}
                             />
+                            {/* Item verbs before mode verbs: this one acts on
+                                the file, the two below act on the player.
+                                One-shot, so it closes the menu — unlike the
+                                speed strip above it. */}
+                            {download && (
+                                <MenuItemLink
+                                    label="Download original"
+                                    icon={<Download className="size-3.5" />}
+                                    href={download.url}
+                                    download={download.filename}
+                                    onClick={() => setMenuOpen(false)}
+                                />
+                            )}
                             <MenuItem
                                 label="Native controls"
                                 icon={<TvMinimalPlay className="size-3.5" />}

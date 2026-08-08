@@ -1,5 +1,5 @@
 import Image from 'next/image'
-import { cn, getFileURL } from "@/lib/utils"
+import { cn, downloadFileName, getFileURL } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid, useGalleryPinProportional, useGalleryPinResizeHandles, useGalleryPinSelectionCrop, useGalleryTrim } from '@/lib/state/gallery'
 import { newPinHField } from '@/lib/galleryTrim'
@@ -3247,6 +3247,17 @@ function PinBoardPin({
                         controller={player}
                         trim={trim}
                         onTrimChange={onTrimChange}
+                        // Same URL the element plays. The name needs the
+                        // item query (the board's records carry a sha256
+                        // prefix and nothing else), so the row appears with
+                        // the data rather than waiting on it.
+                        download={data ? {
+                            url: file,
+                            filename: downloadFileName(
+                                data.files?.[0]?.path,
+                                data.item?.sha256 ?? sha256,
+                                data.item?.type),
+                        } : undefined}
                         size={playerSizeForWidth(contentWidth)}
                     />)}
             </div>

@@ -11,7 +11,7 @@ import { X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useShallow } from "zustand/react/shallow"
-import { cn, getFileURL, getLocale } from "@/lib/utils"
+import { cn, downloadFileName, fileNameFromPath, getFileURL, getLocale } from "@/lib/utils"
 import { itemEquals, OpenDetailsButton } from "@/components/OpenFileDetails"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail, useGalleryPinBoardLayout, useGalleryFullscreen, useGalleryHidePinBoard, useGalleryTrim } from "@/lib/state/gallery"
@@ -280,9 +280,7 @@ export function PinboardTabChip({ active }: { active: boolean }) {
 export function PinboardTabs({ itemPath }: { itemPath: string }) {
     const [hidePinBoard, setHidePinBoard] = useGalleryHidePinBoard()
     const copyPath = useCopyPath()
-    // Either separator: the index stores paths as the OS produced them
-    const lastSep = Math.max(itemPath.lastIndexOf("/"), itemPath.lastIndexOf("\\"))
-    const fileName = itemPath.slice(lastSep + 1)
+    const fileName = fileNameFromPath(itemPath)
     return (
         <Tabs
             value={hidePinBoard ? "gallery" : "pins"}
@@ -859,6 +857,19 @@ export function GalleryImageLarge(
                                     controller={player}
                                     trim={trim}
                                     onTrimChange={onTrimChange}
+                                    // The very URL the element plays, so the
+                                    // download is the original file and not a
+                                    // re-encode. The server's own
+                                    // Content-Disposition also carries the
+                                    // indexed name, but stripped to Latin-1 —
+                                    // the attribute supplies the full UTF-8
+                                    // name and a deterministic one for
+                                    // pathless items.
+                                    download={{
+                                        url: fileURL,
+                                        filename: downloadFileName(
+                                            item.path, item.sha256, item.type),
+                                    }}
                                     size={surfaceBox ? playerSizeForWidth(surfaceWidth) : "full"}
                                 />
                             </div>}
