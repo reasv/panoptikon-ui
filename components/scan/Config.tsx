@@ -14,6 +14,7 @@ import { DataTable } from "../table/dataTable"
 import { RowSelectionState } from "@tanstack/react-table"
 import { scheduleColumns } from "../table/columns/scheduled"
 import { useSystemConfig } from "@/lib/useSystemConfig"
+import { useClientConfig } from "@/lib/useClientConfig"
 
 function formatRunTime(time: string | null | undefined) {
     if (!time) {
@@ -26,6 +27,7 @@ function formatRunTime(time: string | null | undefined) {
 export function Config() {
     const [dbs] = useSelectedDBs()
     const { config: data, changeConfig } = useSystemConfig()
+    const clientConfig = useClientConfig()
     const queryClient = useQueryClient()
     const { toast } = useToast()
     const { data: schedule } = $api.useQuery(
@@ -178,7 +180,13 @@ export function Config() {
                     />
                     <SwitchFilter
                         label="HTML Files"
-                        description="Include HTML Files in the scan"
+                        description={<>
+                            <p>Include HTML Files in the scan</p>
+                            {clientConfig.data?.desktopManaged === true && data.scan_html &&
+                                <p className="mt-2 text-amber-700 dark:text-amber-300" role="note">
+                                    HTML indexing requires an installed Chromium-based browser such as Chrome, Chromium, Brave, or Edge. Files are skipped until a compatible browser is available.
+                                </p>}
+                        </>}
                         value={data.scan_html}
                         onChange={(value) => changeConfig((currentConfig) => ({
                             ...currentConfig,

@@ -35,6 +35,11 @@ export function WizardFileTypeSelection({ value, onChange }: { value: WizardFile
               <Label htmlFor={`scan-${choice.key}`} className="text-base font-medium">{choice.label}</Label>
               <p className="text-sm text-muted-foreground">{choice.description}</p>
               <p className="text-xs text-muted-foreground">{choice.extensions}</p>
+              {choice.key === "html" && value.html && (
+                <p className="mt-2 text-sm text-amber-700 dark:text-amber-300" role="note">
+                  HTML indexing requires an installed Chromium-based browser such as Chrome, Chromium, Brave, or Edge. Files are skipped until a compatible browser is available.
+                </p>
+              )}
             </div>
             <Switch
               id={`scan-${choice.key}`}
