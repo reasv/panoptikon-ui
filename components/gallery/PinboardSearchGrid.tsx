@@ -80,7 +80,11 @@ export function PinboardSearchGrid({
     // The library modal's checkbox, obeyed here too — the same boards, so a
     // filter that applied in one place and not the other would read as a bug.
     const [associatedOnly] = usePinboardAssociatedOnly()
-    const { localNames, currentName } = useIndexDatabaseNames()
+    const {
+        localNames,
+        currentName,
+        ready: dbNamesReady,
+    } = useIndexDatabaseNames()
     const [previewBoard, setPreviewBoard] = useState<PinboardMatch | null>(null)
     const [hovered, setHovered] = useDelayedHover<{
         board: PinboardSummary
@@ -177,6 +181,7 @@ export function PinboardSearchGrid({
                                 board={board}
                                 dbs={dbs}
                                 owningDb={owner}
+                                dbNamesReady={dbNamesReady}
                                 matchCount={board.match_count}
                                 previewWidth={SEARCH_CARD_PREVIEW_WIDTH}
                                 href={pinboardOpenHref(

@@ -27,6 +27,7 @@ import { PinboardLibraryButton } from '@/components/gallery/PinboardLibrary'
 import { PinboardSearchGrid } from '@/components/gallery/PinboardSearchGrid'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { usePinboardURLLoader } from '@/lib/pinboardLinks'
+import { usePinboardAssociatedOnly } from '@/lib/state/pinboardLibraryPrefs'
 import { ImageSimilarityHeader } from '@/components/ImageSimilarityHeader'
 import { mintSeed, useOrderBy, usePageSize, useQueryOptions, useRandomSeed, useStampRandomSeed } from "@/lib/state/searchQuery/clientHooks"
 import Link from "next/link"
@@ -351,10 +352,20 @@ export function GridPanel({
     // fires it. This panel remounts whenever the gallery opens and closes, so
     // the answer is held rather than re-fetched per mount (staleTime) and not
     // re-fetched on refocus either — invalidation is what moves it.
+    //
+    // `associated_only` is sent here for two reasons, and the second is the
+    // load-bearing one. It decides whether the tab may appear at all, so the
+    // probe has to count the boards the tab will actually show. And the init
+    // object IS the query key: this probe and the sidebar's board picker must
+    // stay byte-identical or they become two cache entries answering the same
+    // question — which is what would let the tab exist while its own contents
+    // (and the self-heal effect below, which clears `gpl` on a settled empty
+    // answer) disagree about whether there are any boards.
+    const [associatedOnly] = usePinboardAssociatedOnly()
     const library = $api.useQuery(
         "get",
         "/api/pinboards",
-        { params: { query: { ...dbs } } },
+        { params: { query: { ...dbs, associated_only: associatedOnly } } },
         {
             enabled: clientConfig.data?.pinboardSearchEnabled === true,
             staleTime: 5 * 60 * 1000,

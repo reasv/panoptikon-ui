@@ -70,6 +70,13 @@ const CARD_PREVIEW_WIDTH = 320
 // All cards share one aspect ratio so the grid stays aligned regardless of
 // each board's save-time window shape; previews crop/pan inside it.
 const CARD_ASPECT = 4 / 3
+// The "this board isn't from here" chip, bottom-left of the preview so it
+// never collides with the match badge at the top. Muted rather than warning-
+// coloured: it labels a board you are still free to open.
+const FOREIGN_BADGE =
+    "absolute bottom-1.5 left-2 flex max-w-[calc(100%-1rem)] items-center gap-1"
+    + " rounded border bg-background/80 px-1.5 py-0.5 text-[11px]"
+    + " text-muted-foreground"
 
 export function PinboardLibraryDialog({
     open,
@@ -89,7 +96,11 @@ export function PinboardLibraryDialog({
     const [cleanLinks, setCleanLinks] = usePinboardCleanLinks()
     const [associatedOnly, setAssociatedOnly] = usePinboardAssociatedOnly()
     // Gated on `open` like the board list: this dialog stays mounted.
-    const { localNames, currentName } = useIndexDatabaseNames(open)
+    const {
+        localNames,
+        currentName,
+        ready: dbNamesReady,
+    } = useIndexDatabaseNames(open)
     const searchInputRef = useRef<HTMLInputElement>(null)
     // Hovered card + its rect, captured when the pointer enters the card's
     // preview icon (a short delay so grazing it doesn't flash the popover).
@@ -108,7 +119,7 @@ export function PinboardLibraryDialog({
     // Board whose database associations are being edited
     const [dbBoard, setDbBoard] = useState<PinboardSummary | null>(null)
 
-    const { data } = $api.useQuery(
+    const { data, isPlaceholderData } = $api.useQuery(
         "get",
         "/api/pinboards",
         {
@@ -137,17 +148,34 @@ export function PinboardLibraryDialog({
         data != null && boards.length === 0 && nameQuery.trim() === ""
     // …except that with the association filter on, "no boards" may equally
     // mean "boards, but all of them belong to other databases". The two are
-    // indistinguishable from this response, so the empty panel says both and
-    // the controls row stays mounted — otherwise the checkbox that would
-    // reveal them disappears along with the cards.
+    // indistinguishable from this response, so the panel names both without
+    // asserting either.
     const filteredEmpty = emptyLibrary && associatedOnly
+    // Under keepPreviousData, unchecking the filter leaves the PREVIOUS
+    // (empty, filtered) answer on screen while the unfiltered one is in
+    // flight: `filteredEmpty` has already gone false, `emptyLibrary` has not,
+    // and the first-run panel would announce "No saved pinboards yet" to a
+    // user who is about to be shown a full library. Placeholder data is not
+    // an answer about the query now being asked, so that panel waits.
+    const showOnboarding = emptyLibrary && !filteredEmpty && !isPlaceholderData
 
+    // The three keys a board write moves, kept together because they are one
+    // fact split across three caches (the save path in lib/pinboardSave.ts and
+    // the history panel's delete invalidate the same family, plus /versions
+    // where a version count changed).
     const invalidate = () => {
         queryClient.invalidateQueries({ queryKey: ["get", "/api/pinboards"] })
         // The grid's Library tab searches the same boards; a rename or delete
         // here must reach it too.
         queryClient.invalidateQueries({
             queryKey: ["post", "/api/pinboards/search"],
+        })
+        // The detail response carries the board's name AND, since the
+        // association work, its `associated`/`databases`/`present_count` —
+        // and PinboardMenu holds it for the open board. Without this a rename
+        // or an association edit leaves that menu showing the old answer.
+        queryClient.invalidateQueries({
+            queryKey: ["get", "/api/pinboards/{pinboard_id}"],
         })
     }
 
@@ -250,6 +278,7 @@ export function PinboardLibraryDialog({
                                     board={board}
                                     dbs={dbs}
                                     owningDb={owner}
+                                    dbNamesReady={dbNamesReady}
                                     href={pinboardOpenHref(
                                         pathname,
                                         searchParams,
@@ -282,16 +311,24 @@ export function PinboardLibraryDialog({
                                 <p className="font-medium">
                                     No pinboards from this database
                                 </p>
+                                {/* Deliberately claims neither cause: this
+                                    response cannot tell "no boards at all"
+                                    from "boards, all of them elsewhere", and
+                                    announcing first run at someone with a
+                                    hundred boards is the worse error. */}
                                 <p className="text-sm text-muted-foreground">
-                                    Boards belonging to other databases are hidden —
-                                    uncheck &ldquo;Only boards from this
-                                    database&rdquo; below to see them. If you have no
-                                    boards at all yet, pin items from your search
-                                    results and save the board from the Pinboard
-                                    tab&apos;s menu.
+                                    Either this database has no boards yet, or the
+                                    boards you have belong to other databases.
+                                    Uncheck &ldquo;Only boards from this
+                                    database&rdquo; below to see all of them.
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                    To start a board, pin items from your search
+                                    results and save it from the Pinboard tab&apos;s
+                                    menu.
                                 </p>
                             </div>
-                        ) : emptyLibrary ? (
+                        ) : showOnboarding ? (
                             // First run: this dialog is reachable before any
                             // board exists (the grid header's library button),
                             // so it explains the creation path instead of
@@ -306,49 +343,54 @@ export function PinboardLibraryDialog({
                                     and it will show up here.
                                 </p>
                             </div>
-                        ) : data != null ? (
+                        ) : data != null && !emptyLibrary ? (
                             <p className="text-sm text-muted-foreground">
                                 No pinboards match
                             </p>
                         ) : null}
                     </div>
                 )}
-                {(!emptyLibrary || filteredEmpty) && (
-                    <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                {/* The association checkbox is mounted unconditionally. It is
+                    the only way back from a filtered-empty library, so it must
+                    not depend on a list state that a mid-flight refetch (or a
+                    failed one) can move underneath it — an earlier version
+                    gated it and stranded the user with no way to unfilter.
+                    Clean-links has no such duty and stays hidden when there
+                    are no cards for it to describe. */}
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                    <div className="flex items-center gap-2">
+                        <Checkbox
+                            id="pinboard-associated-only"
+                            checked={associatedOnly}
+                            onCheckedChange={(next) =>
+                                setAssociatedOnly(next === true)
+                            }
+                        />
+                        <label
+                            htmlFor="pinboard-associated-only"
+                            title="Hide boards that belong to a different index database — the ones whose images this database doesn't have, which would otherwise open as a wall of broken pictures. The same setting applies to the grid's Library tab and the sidebar's pinboard picker."
+                            className="cursor-pointer select-none text-xs text-muted-foreground"
+                        >
+                            Only boards from this database
+                        </label>
+                    </div>
+                    {!emptyLibrary && (
                         <div className="flex items-center gap-2">
                             <Checkbox
-                                id="pinboard-associated-only"
-                                checked={associatedOnly}
-                                onCheckedChange={(next) =>
-                                    setAssociatedOnly(next === true)
-                                }
+                                id="pinboard-clean-links"
+                                checked={cleanLinks}
+                                onCheckedChange={(next) => setCleanLinks(next === true)}
                             />
                             <label
-                                htmlFor="pinboard-associated-only"
-                                title="Hide boards that belong to a different index database — the ones whose images this database doesn't have, which would otherwise open as a wall of broken pictures. The same setting applies to the grid's Library tab and the sidebar's pinboard picker."
+                                htmlFor="pinboard-clean-links"
+                                title="Boards opened in a new tab (middle-click, Ctrl-click) start maximized with nothing else open. When off, new tabs inherit your current view settings instead (never the sidebar or search)."
                                 className="cursor-pointer select-none text-xs text-muted-foreground"
                             >
-                                Only boards from this database
+                                Open maximized in new tabs
                             </label>
                         </div>
-                        {!emptyLibrary && (
-                            <div className="flex items-center gap-2">
-                                <Checkbox
-                                    id="pinboard-clean-links"
-                                    checked={cleanLinks}
-                                    onCheckedChange={(next) => setCleanLinks(next === true)}
-                                />
-                                <label
-                                    htmlFor="pinboard-clean-links"
-                                    title="Boards opened in a new tab (middle-click, Ctrl-click) start maximized with nothing else open. When off, new tabs inherit your current view settings instead (never the sidebar or search)."
-                                    className="cursor-pointer select-none text-xs text-muted-foreground"
-                                >
-                                    Open maximized in new tabs
-                                </label>
-                            </div>
-                        )}
-                    </div>
-                )}
+                    )}
+                </div>
                 {hovered && hovered.board.head_version_id != null && (
                     <PreviewPopover
                         src={pinboardPreviewURL(
@@ -544,6 +586,7 @@ export function PinboardCard({
     dbs,
     href,
     owningDb,
+    dbNamesReady = false,
     matchCount,
     previewWidth = CARD_PREVIEW_WIDTH,
     onOpen,
@@ -562,6 +605,13 @@ export function PinboardCard({
      * the switch itself is in `href`, so it survives middle-click.
      */
     owningDb?: string | null
+    /**
+     * Whether the local database list has arrived. Until it has, `owningDb`
+     * is null for every board — not because none is foreign, but because
+     * nothing can be resolved yet — so the click path must not treat a
+     * non-associated board as local, and the badges wait.
+     */
+    dbNamesReady?: boolean
     /** How many of the board's items a search matched; absent = no badge. */
     matchCount?: number
     /**
@@ -618,6 +668,19 @@ export function PinboardCard({
     // Only worth saying for a board that belongs here — on a foreign board a
     // low count is the whole point, and the owner badge already says so.
     const rot = board.associated && board.present_count < board.item_count
+    // Opened by following the link rather than loading in place. Two cases:
+    // a known other home (the href carries the switch to it), and the window
+    // before the local database list has landed — there `owningDb` is null
+    // for every board, so a non-associated one might be foreign and nobody
+    // can yet say. Loading in place is the one irreversible-feeling outcome
+    // (it replaces whatever board is live), so the doubt resolves towards the
+    // navigation, which Back undoes.
+    const followLink = owningDb != null || (!dbNamesReady && !board.associated)
+    // Nothing here claims this board and no stamp of its own resolves either
+    // — the pre-backfill state. Worth one muted word, or it is indis-
+    // tinguishable from a board that does belong here. There is no link to
+    // offer: the board has no known home to switch to.
+    const homeless = dbNamesReady && !board.associated && owningDb == null
 
     const card = (
         <a
@@ -628,13 +691,13 @@ export function PinboardCard({
             onClick={(e) => {
                 // Modified clicks keep the browser's link behavior (new tab)
                 if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return
-                // A board belonging to another database is opened by FOLLOWING
-                // the link, which carries the index_db switch: loading it in
-                // place would keep the current database selected and render
-                // the board as a wall of broken images — the exact failure
-                // this feature exists to stop. The switch stays explicit in
-                // the URL, so Back undoes it.
-                if (owningDb) return
+                // A board that may not belong here is opened by FOLLOWING the
+                // link (see `followLink`), which for a known owner carries the
+                // index_db switch: loading it in place would keep the current
+                // database selected and render the board as a wall of broken
+                // images — the exact failure this feature exists to stop. The
+                // switch stays explicit in the URL, so Back undoes it.
+                if (followLink) return
                 e.preventDefault()
                 onOpen()
             }}
@@ -688,15 +751,30 @@ export function PinboardCard({
                     its link switches to it. Bottom-left so it never collides
                     with the match badge above, and muted — it is a label for
                     a board you are still allowed to open, not a warning. */}
-                {owningDb && (
+                {owningDb ? (
                     <span
                         title={`This pinboard belongs to the “${owningDb}” database. Opening it switches to that database.`}
-                        className="absolute bottom-1.5 left-2 flex max-w-[calc(100%-1rem)] items-center gap-1 rounded border bg-background/80 px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                        className={FOREIGN_BADGE}
                     >
                         <Database className="h-3 w-3 shrink-0" />
                         <span className="truncate">{owningDb}</span>
                     </span>
-                )}
+                ) : homeless ? (
+                    // Same chrome as the owner badge, and deliberately no link
+                    // behavior behind it: this board names no database that
+                    // exists here, so there is nowhere to send the user. It
+                    // will open in whatever is selected, missing whatever this
+                    // database doesn't have.
+                    <span
+                        title="This pinboard isn't recorded as belonging to any database available here, and its items aren't all in the selected one. Use Databases… in its right-click menu to say where it belongs."
+                        className={FOREIGN_BADGE}
+                    >
+                        <Database className="h-3 w-3 shrink-0" />
+                        <span className="truncate italic">
+                            no database recorded
+                        </span>
+                    </span>
+                ) : null}
                 {versionId != null && (
                     <button
                         type="button"
@@ -793,11 +871,19 @@ export function PinboardCard({
         <ContextMenu>
             <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
             <ContextMenuContent className="w-52">
-                <ContextMenuItem
-                    onClick={() => window.open(href, "_blank", "noopener")}
-                >
-                    <ExternalLink className="mr-2 h-4 w-4" />
-                    Open in New Tab
+                {/* A real anchor, not window.open: a features string (even
+                    just "noopener") makes several browsers open a popup
+                    WINDOW rather than a tab, and an anchor also restores
+                    middle-click and the browser's own link menu on the row. */}
+                {/* cursor-pointer sits on the item, not the anchor: the
+                    item's own class list has cursor-default and goes through
+                    twMerge, while Slot joins the child's classes verbatim —
+                    only the item's side reliably resolves the conflict. */}
+                <ContextMenuItem asChild className="cursor-pointer">
+                    <a href={href} target="_blank" rel="noopener">
+                        <ExternalLink className="mr-2 h-4 w-4" />
+                        Open in New Tab
+                    </a>
                 </ContextMenuItem>
                 {onEditDatabases && (
                     <ContextMenuItem onClick={onEditDatabases}>

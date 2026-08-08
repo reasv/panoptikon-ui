@@ -41,17 +41,30 @@ const foldedHas = (names: readonly string[], name: string) =>
  * Builds the checklist: every local index database, then every stamped name
  * that no longer resolves to one. Local databases come first and keep the
  * server's own order, so the list doesn't reshuffle as stamps change.
+ *
+ * The leftovers are deduped by EXACT name because a board can carry several
+ * stamps under ONE name — a database rebuilt from its TOML mints a fresh UUID
+ * and stamps a second row beside the old one, byte-identical db_name — and
+ * once that folder is gone, both rows land here. They are one checklist entry
+ * (the request is by name, and a listed name carries every stamp stored under
+ * it), and rendering them twice would also duplicate the React key. Exact,
+ * not case-folded: the server carries stamps by exact string, so collapsing
+ * case-variant leftovers into one row would make saving that row silently
+ * drop the other spelling's stamps — unresolvable stamps can't be re-minted.
  */
 function buildRows(
     localNames: string[],
     databases: PinboardDatabaseRow[]
 ): DatabaseRow[] {
+    const leftovers: string[] = []
+    for (const { name } of databases) {
+        if (foldedHas(localNames, name)) continue
+        if (leftovers.includes(name)) continue
+        leftovers.push(name)
+    }
     return [
         ...localNames.map((name) => ({ name, local: true })),
-        ...databases
-            .map((database) => database.name)
-            .filter((name) => !foldedHas(localNames, name))
-            .map((name) => ({ name, local: false })),
+        ...leftovers.map((name) => ({ name, local: false })),
     ]
 }
 
@@ -116,7 +129,13 @@ export function PinboardDatabasesDialog({
         {
             onSuccess: (data) => {
                 setSaved(data)
-                setChecked(data.databases.map((database) => database.name))
+                // Back to "nothing touched", so the ticks re-derive from the
+                // response through the same case-folded row matching the rest
+                // of this dialog uses. Seeding them from the raw stamp names
+                // would leave a carried row whose stamp spelling differs in
+                // case from its folder's unticked — and the next save would
+                // then send the stamp spelling instead of the folder's.
+                setChecked(null)
                 onSaved()
                 toast({ title: "Saved database associations", duration: 2000 })
             },
