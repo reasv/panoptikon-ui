@@ -443,6 +443,9 @@ export function queryFromState(
       "width",
       "height",
       "blurhash",
+      // The player's outro-skip default (docs/video-outro-skip-design.md);
+      // the API serves null when the index DB has detection off
+      "content_end_ms",
     ],
     entity: "file",
 
@@ -581,6 +584,9 @@ export function sbSimilarityQueryFromState(
       "width",
       "height",
       "blurhash",
+      // The player's outro-skip default (docs/video-outro-skip-design.md);
+      // the API serves null when the index DB has detection off
+      "content_end_ms",
     ],
     entity: "file",
     // Never random-ordered, so never seeded — but the key must be *present*

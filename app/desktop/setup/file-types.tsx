@@ -65,8 +65,8 @@ export function WizardFileTypeSelection({
       <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
         <div className="space-y-1">
           <Label htmlFor="scan-detect-outros" className="text-base font-medium">TikTok Detection</Label>
-          <p className="text-sm text-muted-foreground">Detect TikTok end cards so thumbnails and AI skip them.</p>
-          <p className="text-xs text-muted-foreground">This does not change which files are indexed.</p>
+          <p className="text-sm text-muted-foreground">Detect TikTok end cards so thumbnails, AI and video playback skip them.</p>
+          <p className="text-xs text-muted-foreground">This does not change which files are indexed. Turning it off later also stops serving already-detected end cards, which disables outro skip in the player.</p>
         </div>
         <Switch
           id="scan-detect-outros"

@@ -205,7 +205,7 @@ export function Config() {
                     />
                     <SwitchFilter
                         label="TikTok Detection"
-                        description="Detect TikTok end cards so thumbnails and AI skip them"
+                        description="Detect TikTok end cards so thumbnails, AI and video playback skip them. Turning this off also stops serving already-detected end cards, which disables outro skip in the player"
                         value={data.detect_outros}
                         onChange={(value) => changeConfig((currentConfig) => ({
                             ...currentConfig,

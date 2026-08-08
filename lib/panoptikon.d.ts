@@ -2066,6 +2066,12 @@ export interface components {
             /**
              * Format: int64
              * @description Where the item's real content ends, when an outro was found.
+             *
+             *     Served as `null` for every item when the index database has
+             *     `detect_outros` off, on the same terms (and with the same PQL
+             *     asymmetry) as `outro_kind` — an `order_by` on this column still
+             *     orders the rows by the stored boundaries even though every served
+             *     value is null.
              */
             content_end_ms: number | null;
             /** Format: double */
@@ -2082,6 +2088,16 @@ export interface components {
              *     compare the whole value — see
              *     `docs/video-outro-detection-design.md` §6.2. "Has an outro" is
              *     `content_end_ms` being non-null.
+             *
+             *     Served as `null` for every item when the index database has
+             *     `detect_outros` off, including items whose outro was detected while it
+             *     was on: the toggle turns the whole feature off for its database.
+             *     Note the deliberate asymmetry — PQL predicates (`match` filters,
+             *     `order_by`) on this column keep working with the toggle off, because
+             *     querying your own data is a query capability, not playback
+             *     (`docs/video-outro-skip-design.md` §6). The visible edge of that
+             *     asymmetry: an `order_by` on `content_end_ms` still orders the rows by
+             *     the stored boundaries even though every served value is null.
              */
             outro_kind: string | null;
             sha256: string;
@@ -3195,6 +3211,11 @@ export interface components {
              *
              *     Where the item's real content ends, when an outro was found. Absent
              *     when no outro is recorded or the column was not selected.
+             *
+             *     Also absent on every row when the index database has `detect_outros`
+             *     off, on the same terms (and with the same PQL asymmetry) as
+             *     `outro_kind` — an `order_by` on this column still orders the rows by
+             *     the stored boundaries even though every served value is absent.
              */
             content_end_ms?: number | null;
             /** Format: int64 */
@@ -3234,6 +3255,16 @@ export interface components {
              *     queries must prefix-match, not compare the whole value — see
              *     `docs/video-outro-detection-design.md` §6.2. "Has an outro" is
              *     `content_end_ms` being present.
+             *
+             *     Absent on every row when the index database has `detect_outros` off,
+             *     even for items whose outro was detected while it was on: the toggle
+             *     turns the whole feature off for its database. Note the deliberate
+             *     asymmetry — PQL predicates (`match` filters, `order_by`) on this
+             *     column keep working with the toggle off, because querying your own
+             *     data is a query capability, not playback
+             *     (`docs/video-outro-skip-design.md` §6). The visible edge of that
+             *     asymmetry: an `order_by` on `content_end_ms` still orders the rows by
+             *     the stored boundaries even though every served value is absent.
              */
             outro_kind?: string | null;
             path?: string | null;

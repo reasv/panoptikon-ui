@@ -7,6 +7,7 @@ import {
     Minimize,
     Pause,
     Play,
+    SkipForward,
     TvMinimalPlay,
     Volume1,
     Volume2,
@@ -15,10 +16,15 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TrimRange } from "@/lib/pinboardCrop"
-import { PLAYBACK_RATES, useVideoPlayerState } from "@/lib/videoPlayerState"
+import {
+    PLAYBACK_RATES,
+    setOutroSkipEnabled,
+    useOutroSkipEnabled,
+    useVideoPlayerState,
+} from "@/lib/videoPlayerState"
 import { useIdleHide, usePrefersReducedMotion } from "@/lib/useIdleHide"
 import { useElementFullscreen } from "@/lib/useElementFullscreen"
-import { trimWithBound } from "@/lib/videoTrim"
+import { outroSkipGoverns, trimWithBound } from "@/lib/videoTrim"
 import { MARKER_MIN_WIDTH, RAIL_MIN_WIDTH, VideoRail, formatTime } from "./VideoRail"
 
 // The S1 player surface: scrim + button row + rail + popovers, one unit that
@@ -393,6 +399,7 @@ export function VideoPlayerSurface({
     controller,
     trim,
     onTrimChange,
+    outroCutPoint = null,
     download,
     size = "full",
     className,
@@ -400,8 +407,15 @@ export function VideoPlayerSurface({
     videoRef: React.RefObject<HTMLVideoElement | null>
     videoState: ReturnType<typeof useVideoPlayerState>
     controller: VideoPlayerSurfaceController
+    // The USER's trim, always — the outro default never enters this prop and
+    // never reaches the popover, `vt` or the h field except through a real
+    // edit (docs/video-outro-skip-design.md §4)
     trim: TrimRange | null
     onTrimChange: (trim: TrimRange | null) => void
+    // This item's outro cut point in seconds (lib/videoTrim's
+    // `outroCutPoint`), or null when the item is not eligible — in which case
+    // the toggle button does not exist at all, no disabled ghost.
+    outroCutPoint?: number | null
     // The original file behind this video, as a same-origin URL and the name
     // to save it under. Omitted while a host still has no item data, which
     // simply drops the row.
@@ -425,12 +439,16 @@ export function VideoPlayerSurface({
     const [trimHovered, setTrimHovered] = React.useState(false)
     const [trimPinned, setTrimPinned] = React.useState(false)
     const [menuOpen, setMenuOpen] = React.useState(false)
+    const [outroHovered, setOutroHovered] = React.useState(false)
     const [gesture, setGesture] = React.useState(false)
     // Both popovers are right-aligned above the row (the reserved slot), so
     // only one of them may occupy it
     const trimOpen = (trimHovered || trimPinned) && !menuOpen && size !== "mini"
+    // The outro button's explanatory bubble stands down for either popover:
+    // all three open into the same band above the row
+    const outroBubbleOpen = outroHovered && !menuOpen && !trimOpen && size !== "mini"
     // Anything of the surface that reaches ABOVE the button row
-    const popoverOpen = trimOpen || menuOpen || volumeOpen
+    const popoverOpen = trimOpen || menuOpen || volumeOpen || outroBubbleOpen
 
     const closeMenu = React.useCallback(() => setMenuOpen(false), [])
     useDismissOnOutside(menuOpen, closeMenu, rootRef)
@@ -523,6 +541,23 @@ export function VideoPlayerSurface({
     const trimStart = trim?.start ?? null
     const trimEnd = trim?.end ?? null
     const trimSet = trimStart != null || trimEnd != null
+
+    // Outro skip (docs/video-outro-skip-design.md §3). The preference is
+    // browser-global and read here as well as at the host, so the button and
+    // the playback it describes can never disagree.
+    const outroSkip = useOutroSkipEnabled()
+    const outroGoverns = outroSkipGoverns(trim, outroCutPoint, outroSkip)
+    // A user END bound outranks the default; a start alone does not
+    const outroOverridden = trimEnd != null
+    const outroBubble = outroOverridden
+        ? "Manual trim end overrides outro skip."
+        : outroGoverns
+            ? "TikTok end card detected — skipped during playback. Click to disable."
+            : outroSkip
+                // Skip is on, so the only thing suppressing it is the
+                // degenerate-range guard (§1): a loop start at/past the cut
+                ? "Loop start is past the detected end card, so outro skip does not apply here."
+                : "TikTok end card detected. Click to skip it during playback."
 
     // Per side, in px — must mirror the rail's mx-3/mx-2 below
     const railInset = isFullscreen ? 12 : 8
@@ -678,6 +713,46 @@ export function VideoPlayerSurface({
                 <div className="grow" />
 
                 <div className="relative flex shrink-0 items-center gap-0.5">
+                    {/* Trim-adjacent in meaning, so it sits immediately left
+                        of the trim button and follows the same size ladder.
+                        Exists ONLY on an eligible item; dimmed-but-clickable
+                        while a user end bound outranks it, because the click
+                        still flips the browser-wide preference. */}
+                    {size !== "mini" && outroCutPoint != null && (
+                        <div
+                            className="relative flex items-center"
+                            onPointerEnter={() => setOutroHovered(true)}
+                            onPointerLeave={() => setOutroHovered(false)}
+                        >
+                            <SurfaceButton
+                                // Short, because the hover bubble carries the
+                                // explanation — a sentence here would open a
+                                // second, native tooltip on top of it
+                                title={outroOverridden
+                                    ? "Outro skip (overridden by the trim end)"
+                                    : outroSkip ? "Outro skip on" : "Outro skip off"}
+                                pressed={outroSkip}
+                                onClick={() => setOutroSkipEnabled(!outroSkip)}
+                                className={cn(
+                                    outroGoverns
+                                        && "text-cyan-400 drop-shadow-[0_0_5px_rgba(34,211,238,0.85)] hover:text-cyan-300",
+                                    outroOverridden && "text-white/40",
+                                )}
+                            >
+                                <SkipForward className="size-[20px]" />
+                            </SurfaceButton>
+                            {outroBubbleOpen && (
+                                // The rail's own bubble language (black/80),
+                                // but wrapping: this one is a sentence
+                                <div className="pointer-events-none absolute right-0 bottom-full z-10 pb-1.5">
+                                    <div className="w-44 rounded bg-black/80 px-1.5 py-1 text-[10px] leading-4 text-white">
+                                        {outroBubble}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {size !== "mini" && (
                         <div
                             className="flex items-center"
@@ -846,6 +921,9 @@ export function VideoPlayerSurface({
                     videoRef={videoRef}
                     trim={trim}
                     onTrimChange={onTrimChange}
+                    // Only while the default actually governs: the rail draws
+                    // the cyan marker unconditionally from this value
+                    outroEnd={outroGoverns ? outroCutPoint : null}
                     active={visible}
                     // The rail measures ITSELF, and it sits inset from the
                     // surface; the spec's cutoffs are surface widths, so they

@@ -1,5 +1,8 @@
 import React from "react"
-import { TrimRange } from "./pinboardCrop"
+// `import type`, not a value import: scripts/outroskip.test.mjs loads this
+// module under node's type stripping, which erases type-only imports but
+// leaves a plain one to fail at runtime against a type-only export.
+import type { TrimRange } from "./pinboardCrop"
 
 // Two trim points closer than this (seconds) behave as a freeze frame
 const FREEZE_EPS = 0.02
@@ -41,6 +44,67 @@ export function trimWithBound(
     }
   }
   return start == null && end == null ? null : { start, end }
+}
+
+// ---- Outro skip (docs/video-outro-skip-design.md) ---------------------
+//
+// A detected TikTok end card becomes a DEFAULT for the trim end bound,
+// applied at playback time only. It never becomes a user trim by itself and
+// is never written to `vt` or the pinboard h field — which is why there is
+// no "modified outro trim" state to reason about.
+
+// The detected content end leads the first card frame by up to 60 ms of
+// audio bang (detection design §2.3/§10); the guard covers it.
+const OUTRO_GUARD_MS = 150
+
+// The item's outro cut point in seconds, or null when the item is not
+// eligible: no `content_end_ms` (never examined, no outro, or the index DB
+// has detection off — the API nulls the field then), or a degenerate cut
+// point at/before zero. Rounded to centiseconds, the storage resolution of
+// the trim codec, so a seeded user bound lands on the same lattice.
+export function outroCutPoint(contentEndMs: number | null | undefined): number | null {
+  if (contentEndMs == null || !isFinite(contentEndMs)) return null
+  const cut = Math.round((contentEndMs - OUTRO_GUARD_MS) / 10) / 100
+  return cut > 0 ? cut : null
+}
+
+// The trim the PLAYER enforces: the user's trim with the outro cut point
+// standing in for an absent end bound. A user end wins even past the cut
+// (someone who deliberately trims into the outro is respected — there is no
+// min() composition), and a user start alone still skips the outro.
+//
+// Degenerate-range guard: the default applies only while `cutPoint` is
+// strictly past the effective start. A start placed at or past the cut would
+// otherwise compose a start >= end range, which is useVideoTrim's freeze
+// branch — a paused video is never what a start-only trim means.
+//
+// Returns the user trim itself (same identity) whenever no default applies,
+// so hosts can feed the result straight to useVideoTrim and to
+// `isEmptyTrim` for the native `loop` attribute.
+export function effectiveVideoTrim(
+  trim: TrimRange | null,
+  cutPoint: number | null,
+  skipEnabled: boolean
+): TrimRange | null {
+  if (!skipEnabled || cutPoint == null) return trim
+  const start = trim?.start ?? null
+  const end = trim?.end ?? null
+  if (end != null) return trim
+  if (cutPoint <= (start ?? 0)) return trim
+  return { start, end: cutPoint }
+}
+
+// Whether the outro default is what currently ends playback — the state the
+// toggle button lights up for and the rail draws a cyan end marker for.
+export function outroSkipGoverns(
+  trim: TrimRange | null,
+  cutPoint: number | null,
+  skipEnabled: boolean
+): boolean {
+  return (
+    (trim?.end ?? null) == null &&
+    effectiveVideoTrim(trim, cutPoint, skipEnabled)?.end != null
+  )
 }
 
 // Enforces a playback trim range on a <video>: playback (re)starts from

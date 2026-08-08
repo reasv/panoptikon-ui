@@ -27,9 +27,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { useSearchLoading } from '@/lib/state/zust'
 import { MediaControls } from './PlayButton'
 import React from 'react'
-import { PLAYBACK_RATES, useVideoPlayerState } from '@/lib/videoPlayerState'
+import { PLAYBACK_RATES, useOutroSkipEnabled, useVideoPlayerState } from '@/lib/videoPlayerState'
 import { NativeControlsEscape, PLAYER_SIZE_FULL_WIDTH, playerSizeForWidth, useVideoPlayerSurface, VideoPlayerSurface } from './VideoPlayerSurface'
-import { trimWithBound, useVideoTrim } from '@/lib/videoTrim'
+import { effectiveVideoTrim, outroCutPoint, trimWithBound, useVideoTrim } from '@/lib/videoTrim'
 import { isEmptyTrim, TrimRange } from '@/lib/pinboardCrop'
 import { trimForSha } from '@/lib/galleryTrim'
 
@@ -582,7 +582,15 @@ export function GalleryImageLarge(
     const onTrimChange = (next: TrimRange | null) => {
         void setGalleryTrim(item.sha256, next)
     }
-    useVideoTrim({ videoRef, trim, active: showVideo })
+    // A detected TikTok end card supplies a DEFAULT end bound at playback
+    // time (docs/video-outro-skip-design.md). `trim` stays the user's own
+    // everywhere it is edited or stored; only the player sees the composed
+    // range — including the native `loop` attribute, which must follow the
+    // EFFECTIVE emptiness or a skipped outro would loop back to the card.
+    const outroCut = outroCutPoint(item.content_end_ms)
+    const outroSkip = useOutroSkipEnabled()
+    const effectiveTrim = effectiveVideoTrim(trim, outroCut, outroSkip)
+    useVideoTrim({ videoRef, trim: effectiveTrim, active: showVideo })
 
     // The gallery's keyboard scope (docs/video-player-ui-design.md). Mounted
     // with the large image, so it is live exactly while the gallery owns the
@@ -782,8 +790,10 @@ export function GalleryImageLarge(
                             ref={videoRef}
                             autoPlay
                             // With a trim set, looping is useVideoTrim's job so
-                            // it restarts from the trim start rather than 0
-                            loop={isEmptyTrim(trim)}
+                            // it restarts from the trim start rather than 0.
+                            // The EFFECTIVE trim: an outro-skipping video has
+                            // a loop point even with no user trim.
+                            loop={isEmptyTrim(effectiveTrim)}
                             muted={videoState.videoIsMuted}
                             controls={videoState.showControls}
                             // max-w-full is load-bearing, not decoration: a
@@ -857,6 +867,7 @@ export function GalleryImageLarge(
                                     controller={player}
                                     trim={trim}
                                     onTrimChange={onTrimChange}
+                                    outroCutPoint={outroCut}
                                     // The very URL the element plays, so the
                                     // download is the original file and not a
                                     // re-encode. The server's own

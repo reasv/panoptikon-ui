@@ -28,6 +28,67 @@ function readStoredVolume(): StoredVolume | null {
 // gallery's < / > keys so both step the same rungs
 export const PLAYBACK_RATES: readonly number[] = [0.25, 0.5, 1, 1.5, 2]
 
+// Outro skip is a viewer preference like volume: one browser-level setting,
+// default ON, shared by every player on the page (docs/video-outro-skip-
+// design.md §3). Volume can afford per-hook state because one element is one
+// player; this one must be SHARED — a board shows many pins at once and
+// toggling it on one has to move all of them. Hence a module-level store
+// read through useSyncExternalStore rather than the persistVolume pattern's
+// per-mount effect.
+const OUTRO_SKIP_STORAGE_KEY = "videoPlayerOutroSkip"
+
+let outroSkipCache: boolean | null = null
+const outroSkipListeners = new Set<() => void>()
+
+function readStoredOutroSkip(): boolean {
+  try {
+    const raw = window.localStorage.getItem(OUTRO_SKIP_STORAGE_KEY)
+    // Absent means "never set" — the default is on
+    return raw === null ? true : raw !== "0"
+  } catch {
+    return true
+  }
+}
+
+function subscribeOutroSkip(onChange: () => void): () => void {
+  outroSkipListeners.add(onChange)
+  return () => {
+    outroSkipListeners.delete(onChange)
+  }
+}
+
+// Cached, because getSnapshot runs on every render of every player and must
+// return a stable value; the cache is the store.
+function getOutroSkipSnapshot(): boolean {
+  if (outroSkipCache === null) outroSkipCache = readStoredOutroSkip()
+  return outroSkipCache
+}
+
+// SSR (and the hydration pass) renders the default; React re-checks the
+// client snapshot right after hydrating, so a stored `off` still applies.
+function getOutroSkipServerSnapshot(): boolean {
+  return true
+}
+
+export function setOutroSkipEnabled(value: boolean) {
+  outroSkipCache = value
+  try {
+    window.localStorage.setItem(OUTRO_SKIP_STORAGE_KEY, value ? "1" : "0")
+  } catch {
+    // Private mode / quota — the preference is a convenience, never a
+    // precondition
+  }
+  for (const listener of outroSkipListeners) listener()
+}
+
+export function useOutroSkipEnabled(): boolean {
+  return React.useSyncExternalStore(
+    subscribeOutroSkip,
+    getOutroSkipSnapshot,
+    getOutroSkipServerSnapshot,
+  )
+}
+
 function writeStoredVolume(value: StoredVolume) {
   try {
     window.localStorage.setItem(VOLUME_STORAGE_KEY, JSON.stringify(value))

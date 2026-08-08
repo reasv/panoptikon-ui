@@ -2,6 +2,7 @@ import React from "react"
 import { X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TrimRange } from "@/lib/pinboardCrop"
+import { trimWithBound } from "@/lib/videoTrim"
 
 // The scrub/trim rail of the video player surface (VideoPlayerSurface),
 // kept a separate module because the gesture code — marker drags, coincident
@@ -72,6 +73,7 @@ export function VideoRail({
     videoRef,
     trim,
     onTrimChange,
+    outroEnd = null,
     className,
     active = false,
     minWidth = MARKER_MIN_WIDTH,
@@ -81,6 +83,12 @@ export function VideoRail({
     videoRef: React.RefObject<HTMLVideoElement | null>
     trim: TrimRange | null
     onTrimChange: (trim: TrimRange | null) => void
+    // The outro cut point (seconds) while the outro default is what ends
+    // playback — the caller has already resolved the user-end override and
+    // the degenerate-start guard, so a non-null value here always renders.
+    // Drawn as a cyan marker whose grab SEEDS a real user end bound
+    // (docs/video-outro-skip-design.md §4).
+    outroEnd?: number | null
     className?: string
     // Playhead gate: the rAF runs only while this is true (the surface
     // passes its own visibility, so a board of autoplaying pins never runs
@@ -190,6 +198,12 @@ export function VideoRail({
 
     const startBound = trim?.start ?? null
     const endBound = trim?.end ?? null
+    // The end marker is the outro default's, not the user's, exactly while
+    // no user end bound exists. It is the only difference between the two:
+    // everything below (geometry, drag, commit) runs one code path.
+    const outroMarker = endBound == null ? outroEnd : null
+    const outroOwned = outroMarker != null
+    const shownEnd = endBound ?? outroMarker
 
     const onMarkerPointerDown = (which: MarkerKind) => (e: React.PointerEvent) => {
         const video = videoRef.current
@@ -197,16 +211,24 @@ export function VideoRail({
         e.preventDefault()
         e.stopPropagation()
         e.currentTarget.setPointerCapture(e.pointerId)
+        // Seed on grab: touching the outro marker turns the default into a
+        // real user end bound at its current position, and from this instant
+        // it is an ordinary end-marker drag (the marker goes blue, commit
+        // populates `vt` / the h field). A click without movement therefore
+        // sets the end at the cut point, which is the intended verb.
+        if (which === "end" && outroMarker != null) {
+            onTrimChange(trimWithBound(trim, "end", outroMarker))
+        }
         const coincident =
             startBound != null &&
-            endBound != null &&
-            Math.abs(endBound - startBound) <= COINCIDENT_EPS
+            shownEnd != null &&
+            Math.abs(shownEnd - startBound) <= COINCIDENT_EPS
         const wasPlaying = !video.paused
         video.pause()
         setDrag({
             which: coincident ? "pending" : which,
             grabX: e.clientX,
-            value: which === "end" ? endBound! : startBound!,
+            value: which === "end" ? shownEnd! : startBound!,
             wasPlaying,
         })
     }
@@ -263,10 +285,16 @@ export function VideoRail({
     const markersInteractive = width >= markerMinWidth
     // While dragging, the dragged marker renders at the uncommitted value
     const dispStart = drag?.which === "start" ? drag.value : startBound
-    const dispEnd = drag?.which === "end" ? drag.value : endBound
+    const dispEnd = drag?.which === "end" ? drag.value : shownEnd
+    // The band is the USER's range and appears only with a user bound in it —
+    // an outro default is not a trim, and painting every TikTok's rail blue
+    // would say it is. Its extent is the EFFECTIVE range, so a user start
+    // runs to the cyan marker.
+    const userEnd = drag?.which === "end" ? drag.value : endBound
+    const showBand = dispStart != null || userEnd != null
     const pct = (t: number) => `${(Math.min(t, duration) / duration) * 100}%`
 
-    const marker = (which: MarkerKind, value: number) => {
+    const marker = (which: MarkerKind, value: number, outro = false) => {
         // While a coincident drag is direction-undecided, only the topmost
         // marker (end renders last, so it got the pointer) shows a bubble —
         // both would otherwise stack identical bubbles at the same spot
@@ -283,18 +311,26 @@ export function VideoRail({
                 onPointerMove={onMarkerPointerMove}
                 onPointerUp={onMarkerPointerUp}
             >
-                <div className="w-1.5 h-4 rounded-sm bg-blue-400 border border-white/90 shadow-sm" />
+                <div className={cn(
+                    "w-1.5 h-4 rounded-sm border border-white/90 shadow-sm",
+                    outro ? "bg-cyan-400" : "bg-blue-400",
+                )} />
                 {showBubble && (
                     <TimeBubble>
                         {formatTime(value, true)}
-                        <button
-                            title={`Clear loop ${which}`}
-                            className="hover:text-red-400"
-                            onPointerDown={(e) => e.stopPropagation()}
-                            onClick={() => clearBound(which)}
-                        >
-                            <X className="w-3 h-3" />
-                        </button>
+                        {/* The outro marker owns no bound, so there is
+                            nothing to clear — the toggle button is how that
+                            end goes away */}
+                        {!outro && (
+                            <button
+                                title={`Clear loop ${which}`}
+                                className="hover:text-red-400"
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={() => clearBound(which)}
+                            >
+                                <X className="w-3 h-3" />
+                            </button>
+                        )}
                     </TimeBubble>
                 )}
             </div>
@@ -311,8 +347,23 @@ export function VideoRail({
                     onPointerUp={onTrackPointerUp}
                     onPointerLeave={() => setHoverTime(null)}
                 >
-                    <div ref={trackRef} className="relative w-full h-1.5 rounded-full bg-white/40">
-                        {(dispStart != null || dispEnd != null) && (
+                    <div
+                        ref={trackRef}
+                        className={cn(
+                            "relative w-full h-1.5 rounded-full",
+                            // Dimming the SKIPPED tail means dimming the track
+                            // and repainting the head at the normal weight:
+                            // alpha over alpha can only darken, never lighten
+                            outroOwned ? "bg-white/20" : "bg-white/40",
+                        )}
+                    >
+                        {outroMarker != null && (
+                            <div
+                                className="absolute inset-y-0 left-0 rounded-full bg-white/40"
+                                style={{ right: `calc(100% - ${pct(outroMarker)})` }}
+                            />
+                        )}
+                        {showBand && (
                             <div
                                 className="absolute inset-y-0 bg-blue-400/70 rounded-full"
                                 style={{
@@ -343,7 +394,7 @@ export function VideoRail({
                             </div>
                         )}
                         {markersInteractive && dispStart != null && marker("start", dispStart)}
-                        {markersInteractive && dispEnd != null && marker("end", dispEnd)}
+                        {markersInteractive && dispEnd != null && marker("end", dispEnd, outroOwned)}
                     </div>
                 </div>
             )}

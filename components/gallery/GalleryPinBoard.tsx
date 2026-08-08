@@ -24,9 +24,9 @@ import { PinBoardCtx } from './PinBoardContextMenu'
 import { $api } from '@/lib/api'
 import { MediaControls } from './PlayButton'
 import React from 'react'
-import { useVideoPlayerState } from '@/lib/videoPlayerState'
+import { useOutroSkipEnabled, useVideoPlayerState } from '@/lib/videoPlayerState'
 import { CropRect, PinLock, PinOrientation, TrimRange, clampCrop, composeCrops, isEmptyTrim, isIdentityOrientation, packHField, parseHField } from '@/lib/pinboardCrop'
-import { useVideoTrim } from '@/lib/videoTrim'
+import { effectiveVideoTrim, outroCutPoint, useVideoTrim } from '@/lib/videoTrim'
 import { CropGeometry, CropView } from './CropView'
 import { NativeControlsEscape, VideoPlayerSurface, playerSizeForWidth, useVideoPlayerSurface } from './VideoPlayerSurface'
 import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, Check, ChevronDown, ChevronsLeft, ChevronsRight, ChevronsUp, Columns3, Crop, Dices, Expand, FlipHorizontal, FlipHorizontal2, FlipVertical, FlipVertical2, FoldHorizontal, GripVertical, ImageDown, LayoutDashboard, ListX, LockOpen, Maximize, RotateCcw, RotateCw, Ruler, Scaling, SquareDashed, Trash2, X, type LucideIcon } from 'lucide-react'
@@ -3030,6 +3030,10 @@ function PinBoardPin({
             type: data.item.type,
             width: data.item.width,
             height: data.item.height,
+            // The gallery's own player needs it for outro skip, and this
+            // snapshot is what it renders when the item is not in the
+            // current result page (see currentItem in ImageGallery)
+            content_end_ms: data.item.content_end_ms,
         })
     }
 
@@ -3071,7 +3075,15 @@ function PinBoardPin({
     }, [cropMode, onCropModeToggle])
 
     const showVideo = isPlayable && videoState.showVideo
-    useVideoTrim({ videoRef, trim, active: showVideo })
+    // A detected TikTok end card is a playback-time DEFAULT for the end
+    // bound, never a stored one: the pin's h field keeps carrying the user's
+    // trim alone (docs/video-outro-skip-design.md §1). The item query already
+    // returns content_end_ms, and the API nulls it when the index DB has
+    // detection off, so no config plumbing reaches the player.
+    const outroCut = outroCutPoint(data?.item?.content_end_ms)
+    const outroSkip = useOutroSkipEnabled()
+    const effectiveTrim = effectiveVideoTrim(trim, outroCut, outroSkip)
+    useVideoTrim({ videoRef, trim: effectiveTrim, active: showVideo })
     // Native controls stand the whole player world down (only the escape
     // kebab remains), so the controller is inactive there too. Crop mode
     // stands it down as well: the surface would sit on the crop area's
@@ -3147,8 +3159,10 @@ function PinBoardPin({
                                             autoPlay
                                             // With a trim set, looping is handled by
                                             // useVideoTrim so it restarts from the
-                                            // trim start rather than 0
-                                            loop={isEmptyTrim(trim)}
+                                            // trim start rather than 0. The
+                                            // EFFECTIVE trim: an outro-skipping pin
+                                            // has a loop point with no user trim.
+                                            loop={isEmptyTrim(effectiveTrim)}
                                             muted={videoState.videoIsMuted}
                                             controls={videoState.showControls}
                                             className="rounded"
@@ -3247,6 +3261,7 @@ function PinBoardPin({
                         controller={player}
                         trim={trim}
                         onTrimChange={onTrimChange}
+                        outroCutPoint={outroCut}
                         // Same URL the element plays. The name needs the
                         // item query (the board's records carry a sha256
                         // prefix and nothing else), so the row appears with
