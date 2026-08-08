@@ -218,6 +218,13 @@ export function VideoRail({
         if (!video || !isFinite(duration) || duration <= 0) return
         e.preventDefault()
         e.stopPropagation()
+        // A chorded second pointerdown mid-gesture (extra mouse button;
+        // pointer capture routes it back here) must not restart the drag:
+        // with an end edit in flight the outro marker has stood down, so
+        // `shownEnd` can be null and a reseed would commit end = 0 — a
+        // persisted freeze frame. It would also re-sample wasPlaying after
+        // the first grab already paused, losing the resume on release.
+        if (drag) return
         e.currentTarget.setPointerCapture(e.pointerId)
         // Grabbing the outro marker seeds a user end bound at its current
         // position — but the seed lives in the DRAG STATE (`value` below is
@@ -285,6 +292,18 @@ export function VideoRail({
         if (drag.wasPlaying) video?.play().catch(() => { })
         setDrag(null)
     }
+    // A cancelled gesture (pointercancel, capture lost to the browser)
+    // commits nothing but must not strand the drag state: a stuck drag keeps
+    // the outro marker stood down (blue at a phantom position, tail dimming
+    // off) and arms the chorded-pointerdown guard above forever. Also runs
+    // after a normal release via lostpointercapture, where it is a no-op
+    // (the resume is condition-identical to pointerup's and play() twice is
+    // harmless).
+    const onMarkerPointerAbort = () => {
+        if (!drag) return
+        if (drag.wasPlaying) videoRef.current?.play().catch(() => { })
+        setDrag(null)
+    }
 
     const clearBound = (which: MarkerKind) => {
         const next: TrimRange = which === "start"
@@ -326,6 +345,8 @@ export function VideoRail({
                 onPointerDown={onMarkerPointerDown(which)}
                 onPointerMove={onMarkerPointerMove}
                 onPointerUp={onMarkerPointerUp}
+                onPointerCancel={onMarkerPointerAbort}
+                onLostPointerCapture={onMarkerPointerAbort}
             >
                 <div className={cn(
                     "w-1.5 h-4 rounded-sm border border-white/90 shadow-sm",
