@@ -1503,7 +1503,7 @@ export interface components {
             policy: string;
         };
         /** @enum {string} */
-        Column: "file_id" | "sha256" | "path" | "filename" | "last_modified" | "item_id" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks" | "blurhash" | "data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id";
+        Column: "file_id" | "sha256" | "path" | "filename" | "last_modified" | "item_id" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks" | "blurhash" | "outro_kind" | "content_end_ms" | "data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id";
         CompiledQuery: {
             params: unknown[];
             sql: string;
@@ -1643,6 +1643,7 @@ export interface components {
             continuous_filescan_poll_interval_secs?: number | null;
             cron_jobs?: components["schemas"]["CronJob"][];
             cron_schedule?: string;
+            detect_outros?: boolean;
             enable_cron_job?: boolean;
             excluded_folders?: string[];
             included_folders: string[];
@@ -2039,6 +2040,11 @@ export interface components {
             /** Format: int64 */
             audio_tracks: number | null;
             blurhash: string | null;
+            /**
+             * Format: int64
+             * @description Where the item's real content ends, when an outro was found.
+             */
+            content_end_ms: number | null;
             /** Format: double */
             duration: number | null;
             /** Format: int64 */
@@ -2046,6 +2052,15 @@ export interface components {
             /** Format: int64 */
             id: number;
             md5: string;
+            /**
+             * @description The raw stored outro verdict, detector version included
+             *     (`tiktok_card/1`, `none/1`); `null` when the item was never examined.
+             *     Kind-specific checks must prefix-match (`tiktok_card/`) rather than
+             *     compare the whole value — see
+             *     `docs/video-outro-detection-design.md` §6.2. "Has an outro" is
+             *     `content_end_ms` being non-null.
+             */
+            outro_kind: string | null;
             sha256: string;
             /** Format: int64 */
             size: number | null;
@@ -2331,6 +2346,8 @@ export interface components {
             /** Format: double */
             confidence?: number | null;
             /** Format: int64 */
+            content_end_ms?: number | null;
+            /** Format: int64 */
             data_id?: number | null;
             /** Format: int64 */
             data_index?: number | null;
@@ -2350,6 +2367,8 @@ export interface components {
             language_confidence?: number | null;
             last_modified?: string | null;
             md5?: string | null;
+            /** @description See [`MatchValues::outro_kind`]. */
+            outro_kind?: string | null;
             path?: string | null;
             /** Format: int64 */
             setter_id?: number | null;
@@ -2375,6 +2394,7 @@ export interface components {
             audio_tracks?: null | components["schemas"]["OneOrMany_i64"];
             blurhash?: null | components["schemas"]["OneOrMany_String"];
             confidence?: null | components["schemas"]["OneOrMany_f64"];
+            content_end_ms?: null | components["schemas"]["OneOrMany_i64"];
             data_id?: null | components["schemas"]["OneOrMany_i64"];
             data_index?: null | components["schemas"]["OneOrMany_i64"];
             duration?: null | components["schemas"]["OneOrMany_f64"];
@@ -2387,6 +2407,7 @@ export interface components {
             language_confidence?: null | components["schemas"]["OneOrMany_f64"];
             last_modified?: null | components["schemas"]["OneOrMany_String"];
             md5?: null | components["schemas"]["OneOrMany_String"];
+            outro_kind?: null | components["schemas"]["OneOrMany_String"];
             path?: null | components["schemas"]["OneOrMany_String"];
             setter_id?: null | components["schemas"]["OneOrMany_i64"];
             setter_name?: null | components["schemas"]["OneOrMany_String"];
@@ -2473,7 +2494,7 @@ export interface components {
             priority?: number;
         };
         /** @enum {string} */
-        OrderByField: "file_id" | "sha256" | "path" | "filename" | "last_modified" | "item_id" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks" | "blurhash" | "data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id" | "random";
+        OrderByField: "file_id" | "sha256" | "path" | "filename" | "last_modified" | "item_id" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks" | "blurhash" | "outro_kind" | "content_end_ms" | "data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id" | "random";
         /** @enum {string} */
         OrderDirection: "asc" | "desc";
         PinboardDeleteResponse: {
@@ -3072,6 +3093,14 @@ export interface components {
             bookmarked?: boolean | null;
             /** Format: double */
             confidence?: number | null;
+            /**
+             * Format: int64
+             * @description Content End (ms)
+             *
+             *     Where the item's real content ends, when an outro was found. Absent
+             *     when no outro is recorded or the column was not selected.
+             */
+            content_end_ms?: number | null;
             /** Format: int64 */
             data_id?: number | null;
             /** Format: int64 */
@@ -3100,6 +3129,17 @@ export interface components {
             language_confidence?: number | null;
             last_modified?: string | null;
             md5?: string | null;
+            /**
+             * @description Outro Kind
+             *
+             *     The raw stored outro verdict, detector version included (`tiktok_card/1`,
+             *     `none/1`); absent when the item was never examined or the column was
+             *     not selected. Kind-specific
+             *     queries must prefix-match, not compare the whole value — see
+             *     `docs/video-outro-detection-design.md` §6.2. "Has an outro" is
+             *     `content_end_ms` being present.
+             */
+            outro_kind?: string | null;
             path?: string | null;
             /** Format: int64 */
             setter_id?: number | null;
@@ -3483,6 +3523,14 @@ export interface components {
             continuous_filescan?: components["schemas"]["ContinuousFilescanConfig"];
             cron_jobs?: components["schemas"]["CronJob"][];
             cron_schedule?: string;
+            /**
+             * @description Probe videos for an appended platform outro (TikTok end cards) at scan
+             *     time, so thumbnails and frames stop sampling the card
+             *     (docs/video-outro-detection-design.md §8). Subordinate to `scan_video`:
+             *     off when video scanning is off, regardless of this. Turning it off does
+             *     not revert visuals already regenerated against a trimmed range (§8.1).
+             */
+            detect_outros?: boolean;
             enable_cron_job?: boolean;
             excluded_folders?: string[];
             filescan_filter?: null | components["schemas"]["Match"];

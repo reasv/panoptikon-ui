@@ -19,7 +19,17 @@ const choices: { key: keyof WizardFileTypes; label: string; extensions: string; 
   { key: "html", label: "HTML documents", extensions: "HTML, HTM", description: "Index saved web pages and render previews when a compatible browser is available." },
 ]
 
-export function WizardFileTypeSelection({ value, onChange }: { value: WizardFileTypes; onChange(value: WizardFileTypes): void }) {
+export function WizardFileTypeSelection({
+  value,
+  onChange,
+  detectOutros,
+  onDetectOutrosChange,
+}: {
+  value: WizardFileTypes
+  onChange(value: WizardFileTypes): void
+  detectOutros: boolean
+  onDetectOutrosChange(value: boolean): void
+}) {
   return (
     <section className="max-w-3xl space-y-5">
       <div className="space-y-2">
@@ -51,6 +61,19 @@ export function WizardFileTypeSelection({ value, onChange }: { value: WizardFile
       </div>
 
       {!Object.values(value).some(Boolean) && <p className="text-sm text-destructive" role="alert">Select at least one file type to continue.</p>}
+
+      <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
+        <div className="space-y-1">
+          <Label htmlFor="scan-detect-outros" className="text-base font-medium">TikTok Detection</Label>
+          <p className="text-sm text-muted-foreground">Detect TikTok end cards so thumbnails and AI skip them.</p>
+          <p className="text-xs text-muted-foreground">This does not change which files are indexed.</p>
+        </div>
+        <Switch
+          id="scan-detect-outros"
+          checked={detectOutros}
+          onCheckedChange={onDetectOutrosChange}
+        />
+      </div>
     </section>
   )
 }

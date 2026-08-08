@@ -51,6 +51,7 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
   const [excludedFolders, setExcludedFolders] = useState("")
   const [folderErrors, setFolderErrors] = useState<FolderValidationIssue[]>([])
   const [fileTypes, setFileTypes] = useState<WizardFileTypes>({ images: true, video: true, audio: false, pdf: false, html: false })
+  const [detectOutros, setDetectOutros] = useState(true)
   const [continuousScanEnabled, setContinuousScanEnabled] = useState(false)
   const [continuousScanMode, setContinuousScanMode] = useState<ContinuousScanMode>("watcher")
   const [pollInterval, setPollInterval] = useState("60")
@@ -130,6 +131,7 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
         scan_audio: fileTypes.audio,
         scan_pdf: fileTypes.pdf,
         scan_html: fileTypes.html,
+        detect_outros: detectOutros,
         cron_jobs: selectedModels.map((inferenceId) => {
           const settings = modelSettings[inferenceId]
           return {
@@ -343,7 +345,7 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
             onExcludedChange={(value) => { setExcludedFolders(value); setFolderErrors([]) }}
           />
         )}
-        {currentStep === "file-types" && <WizardFileTypeSelection value={fileTypes} onChange={setFileTypes} />}
+        {currentStep === "file-types" && <WizardFileTypeSelection value={fileTypes} onChange={setFileTypes} detectOutros={detectOutros} onDetectOutrosChange={setDetectOutros} />}
         {currentStep === "continuous" && (
           <WizardContinuousScan
             enabled={continuousScanEnabled}
@@ -371,7 +373,7 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
           </section>
         )}
         {currentStep === "schedule" && <WizardScheduleSelection value={schedule} selectedModelCount={selectedModels.length} valid={scheduleValid} nextRun={scheduleNextRun} error={scheduleError} onChange={setSchedule} onPreviewChange={handleSchedulePreview} />}
-        {currentStep === "review" && <WizardReview database={mode === "new-database" ? trimmedDatabaseName : defaultDatabaseName} includedFolders={lines(includedFolders)} excludedFolders={lines(excludedFolders)} fileTypes={fileTypes} continuousEnabled={continuousScanEnabled} continuousMode={continuousScanMode} pollInterval={pollInterval} continuousFolders={lines(continuousFolders)} selectedModels={selectedModels} modelSettings={modelSettings} schedule={schedule} scheduleNextRun={scheduleNextRun} />}
+        {currentStep === "review" && <WizardReview database={mode === "new-database" ? trimmedDatabaseName : defaultDatabaseName} includedFolders={lines(includedFolders)} excludedFolders={lines(excludedFolders)} fileTypes={fileTypes} detectOutros={detectOutros} continuousEnabled={continuousScanEnabled} continuousMode={continuousScanMode} pollInterval={pollInterval} continuousFolders={lines(continuousFolders)} selectedModels={selectedModels} modelSettings={modelSettings} schedule={schedule} scheduleNextRun={scheduleNextRun} />}
         {currentStep === "progress" && completion && <WizardProgress completion={completion} />}
         </div>
       </ScrollArea>

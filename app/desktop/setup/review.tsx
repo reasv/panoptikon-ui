@@ -25,6 +25,7 @@ export function WizardReview({
   includedFolders,
   excludedFolders,
   fileTypes,
+  detectOutros,
   continuousEnabled,
   continuousMode,
   pollInterval,
@@ -38,6 +39,7 @@ export function WizardReview({
   includedFolders: string[]
   excludedFolders: string[]
   fileTypes: WizardFileTypes
+  detectOutros: boolean
   continuousEnabled: boolean
   continuousMode: "watcher" | "poller"
   pollInterval: string
@@ -69,6 +71,7 @@ export function WizardReview({
         <SummaryCard icon={<FileType2 className="h-5 w-5" />} title="File types">
           <div className="flex flex-wrap gap-1.5">{enabledTypes.map((type) => <Badge key={type} variant="secondary" className="capitalize">{type}</Badge>)}</div>
           {fileTypes.html && <p className="text-amber-700 dark:text-amber-300">HTML files require Chrome, Chromium, Brave, Edge, or another configured compatible browser; otherwise they are skipped.</p>}
+          {fileTypes.video && <p className="text-muted-foreground">TikTok Detection: {detectOutros ? "on" : "off"}</p>}
         </SummaryCard>
 
         <SummaryCard icon={<Radio className="h-5 w-5" />} title="Continuous scanning">

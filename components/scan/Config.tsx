@@ -119,6 +119,7 @@ export function Config() {
     }
     const guiKnownKeys = new Set([
         "remove_unavailable_files", "scan_images", "scan_video", "scan_audio", "scan_html", "scan_pdf",
+        "detect_outros",
         "enable_cron_job", "cron_schedule", "cron_jobs", "job_settings", "included_folders", "excluded_folders",
         "preload_embedding_models", "prewarm_embedding_models", "continuous_filescan", "job_filters", "filescan_filter",
         "vector_quants",
@@ -200,6 +201,15 @@ export function Config() {
                         onChange={(value) => changeConfig((currentConfig) => ({
                             ...currentConfig,
                             remove_unavailable_files: value,
+                        }))}
+                    />
+                    <SwitchFilter
+                        label="TikTok Detection"
+                        description="Detect TikTok end cards so thumbnails and AI skip them"
+                        value={data.detect_outros}
+                        onChange={(value) => changeConfig((currentConfig) => ({
+                            ...currentConfig,
+                            detect_outros: value,
                         }))}
                     />
                     <SwitchFilter
