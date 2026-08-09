@@ -73,14 +73,23 @@ const OUTRO_GUARD_MS = 60
 // resolution of the trim codec, so a seeded user bound lands on the same
 // lattice.
 //
-// END-ANCHORED, because the card is appended at the END and the browser's
-// timeline routinely disagrees with ffprobe's about where zero is (mp4 edit
-// lists, audio priming: 0.05-0.15 s). Anchoring the cut to the START turns
-// that disagreement into cut error — measured 260 ms early in the field.
-// The card's LENGTH is exact in either origin, so:
+// The browser's timeline disagrees with ffprobe's in BOTH directions, and
+// field validation measured both on one file (browser duration 0.25 s longer
+// than ffprobe's): an origin shift at the front (edit lists / audio priming
+// delay the video track — the pure start-anchored cut measured 0.11-0.14 s
+// EARLY) and tail padding at the back (the audio track outlives the video —
+// the pure end-anchored cut measured 0.11-0.14 s LATE, card flash included).
+// The two pure anchors bracket the real boundary: the card's last frame
+// cannot outlive the browser timeline, and origin shifts are non-negative.
+// With nothing in the metadata to apportion the discrepancy, split it:
 //
-//   card = serverDuration − contentEnd        (both ffprobe seconds)
-//   cut  = browserDuration − card − guard     (both browser seconds)
+//   delta = browserDuration − serverDuration   (browser minus ffprobe)
+//   cut   = contentEnd + delta/2 − guard       (browser seconds)
+//
+// — the midpoint of the two anchors, exact on the validated file, error
+// bounded by |delta|/2 instead of |delta|. When the timelines agree it IS
+// the start-anchored cut. A |delta| of a second or more means the two
+// durations do not describe the same file: ineligible, not a guess.
 //
 // Falls back to the start-anchored `contentEnd − guard` whenever either
 // duration is missing — the browser's arrives only with `loadedmetadata`, so
@@ -113,14 +122,15 @@ export function outroCutPoint(
   let cut: number
   if (serverDur != null && browserDur != null) {
     const card = serverDur - contentEndMs / 1000
-    // A content end at or past the file end leaves no card to skip — that is
-    // nonsense to anchor against, ineligible rather than a fallback (a
-    // fallback would cut on numbers already known to be inconsistent). The
-    // other degenerate direction, a card as long as the whole browser
-    // timeline, needs no guard of its own: it yields cut ≤ −guard, which the
-    // eligibility floor below rejects.
-    if (!(card > 0)) return null
-    cut = Math.round((browserDur - card - OUTRO_GUARD_MS / 1000) * 100) / 100
+    const delta = browserDur - serverDur
+    // A content end at or past the file end leaves no card to skip, and a
+    // duration disagreement of a second or more is not padding to split but
+    // two files' worth of metadata — both are nonsense to anchor against,
+    // ineligible rather than a fallback (a fallback would cut on numbers
+    // already known to be inconsistent).
+    if (!(card > 0) || Math.abs(delta) >= 1) return null
+    cut =
+      Math.round((contentEndMs / 1000 + delta / 2 - OUTRO_GUARD_MS / 1000) * 100) / 100
   } else {
     cut = Math.round((contentEndMs - OUTRO_GUARD_MS) / 10) / 100
   }

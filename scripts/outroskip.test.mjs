@@ -113,28 +113,31 @@ for (const [label, server, browser] of [
   )
 }
 
-// ---- cut point: END-anchored path ------------------------------------
+// ---- cut point: anchored (midpoint) path ------------------------------
 
-// The card is appended at the END, and the browser's timeline disagrees
-// with ffprobe's about where zero is (edit lists, audio priming). The
-// card's LENGTH is origin-free, so the cut is measured back from the
-// browser's own end:
-//   card = serverDuration − contentEnd ; cut = browserDuration − card − guard
+// The browser's timeline disagrees with ffprobe's in BOTH directions, and
+// two field rounds on one file bracketed the real boundary: the pure
+// start-anchored cut measured 0.11-0.14 s EARLY (origin shift: edit lists /
+// audio priming), the pure end-anchored cut 0.11-0.14 s LATE (tail padding:
+// the audio track outlives the video). Nothing in the metadata apportions
+// the discrepancy, so the cut splits it:
+//   delta = browserDuration − serverDuration ; cut = contentEnd + delta/2 − guard
 //
-// The field case that motivated this (validated on a real TikTok): the cut
-// landed at 11.14 s while the card actually began at 11.40 s — 260 ms early,
-// of which 150 ms was the old guard and 110 ms the timeline shift.
-const FIELD = outroCutPoint(11290, 12.29, 12.4) // card 1.0 s, +110 ms shift
-check("field case cuts 60 ms before the real boundary", FIELD === 11.34, String(FIELD))
+// Field file: contentEnd 11.29, delta +0.25, real transition ~11.40-11.43.
+// The midpoint puts the boundary estimate at 11.415, the cut at 11.355 —
+// inside the guard's margin, no card flash.
+const FIELD = outroCutPoint(11290, 13.29, 13.54) // card 2.0 s, delta +0.25
 check(
-  "the end anchor is what moved it — the fallback is 110 ms further off",
-  FIELD !== outroCutPoint(11290) &&
-    Math.abs(FIELD - outroCutPoint(11290) - 0.11) < 1e-9,
-  `${FIELD} vs ${outroCutPoint(11290)}`
+  // The ideal value 11.355 sits exactly between two centisecond lattice
+  // points, so rounding may land on either neighbour
+  "field case lands 45-75 ms before the observed 11.40-11.43 transition",
+  FIELD === 11.35 || FIELD === 11.36,
+  String(FIELD)
 )
 check(
-  "the card length comes from the SERVER duration, not the browser one",
-  outroCutPoint(11290, 12.29, 12.4) !== outroCutPoint(11290, 12.4, 12.4)
+  "the midpoint sits strictly between the two pure anchors",
+  FIELD > outroCutPoint(11290) && FIELD < 11.29 + 0.25 - 0.06,
+  `${outroCutPoint(11290)} < ${FIELD} < ${11.29 + 0.25 - 0.06}`
 )
 check(
   "with the two timelines agreeing, the anchor degenerates to the fallback",
@@ -142,19 +145,19 @@ check(
   `${outroCutPoint(11400, 12.4, 12.4)} vs ${outroCutPoint(11400)}`
 )
 check(
-  "a longer browser timeline pushes the cut out by the same amount",
-  outroCutPoint(11400, 12.4, 12.55) === 11.49,
-  String(outroCutPoint(11400, 12.4, 12.55))
+  "a longer browser timeline pushes the cut out by HALF the discrepancy",
+  outroCutPoint(11400, 12.4, 12.6) === 11.44,
+  String(outroCutPoint(11400, 12.4, 12.6))
 )
 check(
-  "a shorter browser timeline pulls it in by the same amount",
-  outroCutPoint(11400, 12.4, 12.3) === 11.24,
-  String(outroCutPoint(11400, 12.4, 12.3))
+  "a shorter browser timeline pulls it in by half too",
+  outroCutPoint(11400, 12.4, 12.2) === 11.24,
+  String(outroCutPoint(11400, 12.4, 12.2))
 )
-const ANCH = outroCutPoint(11005, 12, 12.4) // card 0.995 -> 11.345
+const ANCH = outroCutPoint(11003, 12, 12.3) // delta 0.3 -> 11.003+0.15-0.06
 check(
   "the anchored cut is on the centisecond lattice too",
-  Math.abs(ANCH * 100 - Math.round(ANCH * 100)) < 1e-9 && ANCH === 11.35,
+  Math.abs(ANCH * 100 - Math.round(ANCH * 100)) < 1e-9 && ANCH === 11.09,
   String(ANCH)
 )
 
@@ -171,18 +174,27 @@ check(
   outroCutPoint(13000, 12.4, 12.55) === null,
   String(outroCutPoint(13000, 12.4, 12.55))
 )
-// The over-long-card direction needs no guard of its own — the cut lands at
-// or below −guard and the freeze-band floor rejects it. These pin the
-// OUTCOME (ineligible), whichever predicate delivers it.
+// A duration disagreement of a second or more is not padding to split but
+// two files' worth of metadata: ineligible, not a guess.
 check(
-  "a card as long as the whole browser timeline is ineligible",
+  "a full second of duration disagreement is ineligible",
   outroCutPoint(1000, 30, 29) === null,
   String(outroCutPoint(1000, 30, 29))
 )
 check(
-  "a card longer than the whole browser timeline is ineligible",
+  "wildly disagreeing durations are ineligible",
   outroCutPoint(1000, 30, 5) === null,
   String(outroCutPoint(1000, 30, 5))
+)
+check(
+  "a disagreement just inside the bound still anchors",
+  outroCutPoint(11400, 12.4, 13.38) === 11.83,
+  String(outroCutPoint(11400, 12.4, 13.38))
+)
+check(
+  "…and exactly at the bound does not",
+  outroCutPoint(11400, 12.4, 13.4) === null,
+  String(outroCutPoint(11400, 12.4, 13.4))
 )
 
 // The freeze-band floor governs the anchored path identically — including
@@ -190,13 +202,13 @@ check(
 // server 1.0 s, so the anchored cut sits 100 ms below the fallback's)
 check(
   "an anchored cut inside the freeze band is ineligible",
-  outroCutPoint(180, 1, 0.9) === null,
-  String(outroCutPoint(180, 1, 0.9))
+  outroCutPoint(180, 1, 0.78) === null,
+  String(outroCutPoint(180, 1, 0.78))
 )
 check(
   "an anchored cut one centisecond past the band is eligible",
-  outroCutPoint(190, 1, 0.9) === 0.03,
-  String(outroCutPoint(190, 1, 0.9))
+  outroCutPoint(200, 1, 0.78) === 0.03,
+  String(outroCutPoint(200, 1, 0.78))
 )
 check(
   "…and the fallback would have cleared the band there, so the floor is the anchor's",
