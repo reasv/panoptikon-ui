@@ -224,6 +224,15 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     setPage: setPagePrefetch,
     getPageURL: getSearchPageURL,
     searchEnabled,
+    // Whether the LIVE query is actually being served — false while the
+    // update lock withholds uncommitted edits, while input is invalid, or
+    // while a maximized board suspends searching. Distinct from
+    // `resultsAreStale` (rows lagging the URL): here the rows on screen are
+    // deliberately NOT the live query's, so anything that acts on the search
+    // unattended (the gallery's auto-advance page turn, its ahead-of-turn
+    // prefetch — docs/video-end-action-design.md §3) must stand down, or it
+    // would fetch and land on a search the user explicitly withheld.
+    queryEnabled,
   }
 }
 
@@ -281,14 +290,88 @@ export function usePrefetchPageState() {
   const queryClient = useQueryClient()
   const buildRequest = useSearchRequestFor()
   const setLoading = useSearchLoading((state) => state.setLoading)
-  return async (target: PageState) => {
+  // `gcTime`: an unobserved prefetched entry is garbage-collected after
+  // react-query's default 5 minutes. The manual page turn consumes its entry
+  // immediately, so it never cares; the gallery's ahead-of-turn prefetch
+  // (docs/video-end-action-design.md §3) fires when a video STARTS and is
+  // consumed when it ENDS, so a video longer than the default would evict
+  // the very entry it warmed — that caller passes a horizon that outlives
+  // any plausible video.
+  return async (target: PageState, opts?: { gcTime?: number }) => {
     const searchRequest = buildRequest(target)
     const timer = setTimeout(() => setLoading(true), 400)
     try {
       await queryClient.prefetchQuery({
         queryKey: ["post", "/api/search/pql", searchRequest],
         queryFn: () => fetchSearch(searchRequest),
+        gcTime: opts?.gcTime,
       })
+    } finally {
+      clearTimeout(timer)
+      setLoading(false)
+    }
+  }
+}
+
+/**
+ * Read a page state's rows, cache first — the same warmed entry
+ * `usePrefetchPageState` writes, under the same key the live query will use
+ * once the URL catches up.
+ *
+ * For the gallery's auto-advance page turn (docs/video-end-action-design.md
+ * §3): when a video ends on the last playable item of a page, the chain has
+ * to pick the landing index *before* the URL moves, because flipping first
+ * would resolve the old (or held) index against rows that only arrive later
+ * and show a wrong item for the whole fetch. So the turn fetches, scans the
+ * rows for the first playable one, and only then writes `page` and `gi` in
+ * one tick. That is the difference from `usePrefetchPageState`: `fetchQuery`
+ * instead of `prefetchQuery`, so the rows come back to the caller.
+ *
+ * Cache first even when the entry is stale, with no revalidation: serving
+ * possibly-stale cached rows is exactly as safe as every cached page-turn
+ * already is — the live query background-refetches once the URL lands, and
+ * the selection→index remap repositions if a row moved. Going through
+ * `fetchQuery` for a stale-but-present entry would instead put a network
+ * round trip (and its spinner) between the last frame and the next video,
+ * which is the hiccup the ahead-of-turn prefetch exists to avoid.
+ *
+ * **Throws on failure.** An empty array is the legitimate "that page exists
+ * and has no rows" answer, so failure cannot be signalled by one; the caller
+ * must let a rejection end the advance chain with nothing written.
+ *
+ * The delayed-spinner flag is the same last-writer-wins boolean every search
+ * path shares (`useSearchLoading`); a miss-path settle here can clear a
+ * spinner another in-flight search armed. Pre-existing wart, inherited
+ * knowingly — this is just the first writer that can fire with no user
+ * gesture in sight.
+ */
+export function useFetchPageRows() {
+  const queryClient = useQueryClient()
+  const buildRequest = useSearchRequestFor()
+  const setLoading = useSearchLoading((state) => state.setLoading)
+  return async (
+    target: PageState,
+    opts?: { gcTime?: number }
+  ): Promise<SearchResult[]> => {
+    const searchRequest = buildRequest(target)
+    const queryKey = ["post", "/api/search/pql", searchRequest]
+    const cached = queryClient.getQueryData<{
+      results?: SearchResult[] | null
+    }>(queryKey)
+    if (cached) return cached.results ?? []
+    // Same delayed spinner as the prefetch path: a fast fetch (the common
+    // case once the page is warm) must not flash the loading state.
+    const timer = setTimeout(() => setLoading(true), 400)
+    try {
+      const data = await queryClient.fetchQuery({
+        queryKey,
+        queryFn: () => fetchSearch(searchRequest),
+        // Same eviction horizon as the prefetch that should have made this a
+        // cache hit (see usePrefetchPageState) — the entry becomes the live
+        // one a tick later, but that tick must not be a GC race.
+        gcTime: opts?.gcTime,
+      })
+      return (data?.results as SearchResult[]) || []
     } finally {
       clearTimeout(timer)
       setLoading(false)
