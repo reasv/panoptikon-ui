@@ -58,8 +58,13 @@ export function trimWithBound(
 // no "modified outro trim" state to reason about.
 
 // The detected content end leads the first card frame by up to 60 ms of
-// audio bang (detection design §2.3/§10); the guard covers it.
-const OUTRO_GUARD_MS = 150
+// audio bang (detection design §2.3/§10); the guard covers the worst
+// measured case. It was 150 ms until field validation: 150 ms costs 4-5
+// visible frames on EVERY video to cover a lead whose median is 10 ms, and
+// with the cut end-anchored (below) and drag-adjustable per video there is
+// no systematic error left for it to absorb. Worst case at 60 ms is ~one
+// rAF tick of bang transient on a max-lead file.
+const OUTRO_GUARD_MS = 60
 
 // The item's outro cut point in seconds, or null when the item is not
 // eligible: no `content_end_ms` (never examined, no outro, or the index DB
@@ -68,14 +73,86 @@ const OUTRO_GUARD_MS = 150
 // resolution of the trim codec, so a seeded user bound lands on the same
 // lattice.
 //
+// END-ANCHORED, because the card is appended at the END and the browser's
+// timeline routinely disagrees with ffprobe's about where zero is (mp4 edit
+// lists, audio priming: 0.05-0.15 s). Anchoring the cut to the START turns
+// that disagreement into cut error — measured 260 ms early in the field.
+// The card's LENGTH is exact in either origin, so:
+//
+//   card = serverDuration − contentEnd        (both ffprobe seconds)
+//   cut  = browserDuration − card − guard     (both browser seconds)
+//
+// Falls back to the start-anchored `contentEnd − guard` whenever either
+// duration is missing — the browser's arrives only with `loadedmetadata`, so
+// the fallback is what the first frames of every playback use, and the cut
+// REFINES when the metadata lands (useVideoTrim re-runs its loop effect on
+// an end change without yanking the playhead).
+//
 // The eligibility floor is FREEZE_EPS, not zero: a cut at 0.01 s composes
 // {start: null, end: 0.01}, which is useVideoTrim's freeze branch — the
 // video would show frame 1 and pause, with no user trim anywhere in sight.
 // It is the same predicate the composition guard below applies at start 0.
-export function outroCutPoint(contentEndMs: number | null | undefined): number | null {
+export function outroCutPoint(
+  contentEndMs: number | null | undefined,
+  // The item's indexed `duration` (ffprobe seconds), and the <video>
+  // element's own `duration` once metadata has loaded. Either absent (null,
+  // undefined, NaN) selects the start-anchored fallback.
+  serverDurationSec?: number | null,
+  browserDurationSec?: number | null
+): number | null {
   if (contentEndMs == null || !isFinite(contentEndMs)) return null
-  const cut = Math.round((contentEndMs - OUTRO_GUARD_MS) / 10) / 100
+  const serverDur =
+    serverDurationSec != null && isFinite(serverDurationSec) ? serverDurationSec : null
+  const browserDur =
+    browserDurationSec != null && isFinite(browserDurationSec) && browserDurationSec > 0
+      ? browserDurationSec
+      : null
+  let cut: number
+  if (serverDur != null && browserDur != null) {
+    const card = serverDur - contentEndMs / 1000
+    // Nonsense inputs, not something to anchor against: a content end at or
+    // past the file end leaves no card to skip, and a "card" as long as the
+    // whole browser timeline means the two durations describe different
+    // files. Ineligible rather than silently falling back, because a
+    // fallback would cut on numbers already known to be inconsistent.
+    if (!(card > 0) || card >= browserDur) return null
+    cut = Math.round((browserDur - card - OUTRO_GUARD_MS / 1000) * 100) / 100
+  } else {
+    cut = Math.round((contentEndMs - OUTRO_GUARD_MS) / 10) / 100
+  }
   return cut > FREEZE_EPS ? cut : null
+}
+
+// The <video> element's own duration in seconds, NaN until its metadata
+// loads. ONE listener per player, owned by the host: the cut point above
+// needs it (end-anchoring) and the rail draws its geometry from it, so a
+// second listener would be a second answer to the same question.
+// `active` is the host's showVideo — the element is created and destroyed
+// under an unchanged ref identity, so the ref alone is not enough to rebind
+// on.
+export function useVideoDuration(
+  videoRef: React.RefObject<HTMLVideoElement | null>,
+  active: boolean
+): number {
+  const [duration, setDuration] = React.useState(NaN)
+  React.useEffect(() => {
+    const video = videoRef.current
+    if (!active || !video) {
+      // The item that just left must never lend its duration to the one
+      // arriving (React bails out when it is already NaN)
+      setDuration(NaN)
+      return
+    }
+    const update = () => setDuration(video.duration)
+    update()
+    video.addEventListener("loadedmetadata", update)
+    video.addEventListener("durationchange", update)
+    return () => {
+      video.removeEventListener("loadedmetadata", update)
+      video.removeEventListener("durationchange", update)
+    }
+  }, [active, videoRef])
+  return duration
 }
 
 // The trim the PLAYER enforces: the user's trim with the outro cut point

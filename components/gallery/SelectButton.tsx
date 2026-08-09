@@ -35,7 +35,10 @@ export function SelectButton({
                 // player reads this snapshot for outro skip whenever the
                 // item is not in the current result page, so a field missing
                 // here would make corner-select and double-click behave
-                // differently on the very same pin
+                // differently on the very same pin. `duration` travels with
+                // it: without it the cut point falls back to its
+                // start-anchored approximation for this selection path.
+                duration: item.duration,
                 content_end_ms: item.content_end_ms,
             })
         }

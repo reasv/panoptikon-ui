@@ -41,6 +41,11 @@ interface MarkerDrag {
     grabX: number
     value: number
     wasPlaying: boolean
+    // Whether the gesture ever moved a value. It is the whole click-vs-drag
+    // distinction (docs/video-outro-skip-design.md §4): a release with this
+    // false is an INSPECTION click — park the playhead on the marker, commit
+    // nothing — and only a real drag seeds/commits a bound.
+    moved: boolean
 }
 
 export function TimeBubble({
@@ -70,6 +75,7 @@ export function TimeBubble({
 // starts a grid drag from it.
 export function VideoRail({
     videoRef,
+    duration,
     trim,
     onTrimChange,
     outroEnd = null,
@@ -80,12 +86,19 @@ export function VideoRail({
     onInteractingChange,
 }: {
     videoRef: React.RefObject<HTMLVideoElement | null>
+    // The element's duration in seconds, NaN until metadata loads. A PROP,
+    // not a listener of its own: the host already tracks it for the outro
+    // cut point (lib/videoTrim's `useVideoDuration`), and two listeners would
+    // be two answers to one question — the rail's geometry and the cut point
+    // drawn on it have to come from the same number.
+    duration: number
     trim: TrimRange | null
     onTrimChange: (trim: TrimRange | null) => void
     // The outro cut point (seconds) while the outro default is what ends
     // playback — the caller has already resolved the user-end override and
     // the degenerate-start guard, so a non-null value here always renders.
-    // Drawn as a cyan marker whose grab SEEDS a real user end bound
+    // Drawn as a cyan marker whose DRAG seeds a real user end bound; a
+    // click on it only parks the playhead there, for stepwise refinement
     // (docs/video-outro-skip-design.md §4).
     outroEnd?: number | null
     className?: string
@@ -105,27 +118,19 @@ export function VideoRail({
 }) {
     const rootRef = React.useRef<HTMLDivElement>(null)
     const trackRef = React.useRef<HTMLDivElement>(null)
-    const [duration, setDuration] = React.useState(NaN)
     const [currentTime, setCurrentTime] = React.useState(0)
     const [width, setWidth] = React.useState(0)
     const [drag, setDrag] = React.useState<MarkerDrag | null>(null)
+    // Raised synchronously by a normal release, because lostpointercapture
+    // fires right after pointerup and would otherwise run the abort path on
+    // a state update React has not committed yet — resuming a video the
+    // deliberate CLICK above just parked. Lowered at the next pointerdown, so
+    // a gesture whose capture is genuinely lost mid-drag still aborts.
+    const releasedRef = React.useRef(false)
     const [scrubbing, setScrubbing] = React.useState(false)
     const scrubWasPlaying = React.useRef(false)
     const [hoverTime, setHoverTime] = React.useState<number | null>(null)
     const [hoveredMarker, setHoveredMarker] = React.useState<MarkerKind | null>(null)
-
-    React.useEffect(() => {
-        const video = videoRef.current
-        if (!video) return
-        const update = () => setDuration(video.duration)
-        update()
-        video.addEventListener("loadedmetadata", update)
-        video.addEventListener("durationchange", update)
-        return () => {
-            video.removeEventListener("loadedmetadata", update)
-            video.removeEventListener("durationchange", update)
-        }
-    }, [videoRef])
 
     React.useEffect(() => {
         const el = rootRef.current
@@ -197,14 +202,19 @@ export function VideoRail({
 
     const startBound = trim?.start ?? null
     const endBound = trim?.end ?? null
-    // Seed-on-grab, resolved at RELEASE (docs/video-outro-skip-design.md §4).
+    // Seed-on-DRAG, resolved at RELEASE (docs/video-outro-skip-design.md §4).
     // A gesture that has resolved as an end edit owns the end from that
     // instant — marker blue, band spanning it, skipped-tail dimming stood
     // down — but the seeded bound only reaches `onTrimChange` on pointerup,
     // so one gesture is exactly ONE call and one history entry (the trim
     // contract in lib/state/gallery.ts). Seeding at pointerdown AND
-    // committing at pointerup pushed two.
-    const endDragActive = drag?.which === "end"
+    // committing at pointerup pushed two. A gesture that never MOVED commits
+    // nothing at all: it is an inspection click, and it parks the playhead.
+    // `moved` is part of it, so the seed shows exactly when it EXISTS: a
+    // press that has not moved yet may still turn out to be an inspection
+    // click, and standing the cyan marker down on pointerdown would flash a
+    // blue trim band for the length of every click on it.
+    const endDragActive = drag?.which === "end" && drag.moved
     // The end marker is the outro default's, not the user's, exactly while
     // no user end bound exists and no end edit is in flight. It is the only
     // difference between the two: everything below (geometry, drag, commit)
@@ -220,24 +230,27 @@ export function VideoRail({
         e.stopPropagation()
         // A chorded second pointerdown mid-gesture (extra mouse button;
         // pointer capture routes it back here) must not restart the drag:
-        // with an end edit in flight the outro marker has stood down, so
-        // `shownEnd` can be null and a reseed would commit end = 0 — a
+        // with a moved end edit in flight the outro marker has stood down,
+        // so `shownEnd` can be null and a reseed would commit end = 0 — a
         // persisted freeze frame. It would also re-sample wasPlaying after
         // the first grab already paused, losing the resume on release.
         if (drag) return
         e.currentTarget.setPointerCapture(e.pointerId)
-        // Grabbing the outro marker seeds a user end bound at its current
+        // A fresh gesture: the release guard below belongs to the previous
+        // one, and leaving it standing would swallow this drag's abort.
+        releasedRef.current = false
+        // DRAGGING the outro marker seeds a user end bound at its current
         // position — but the seed lives in the DRAG STATE (`value` below is
         // already the cut point), not in the caller's trim: writing it here
         // as well as at release would push two history entries for one
-        // gesture. A click without movement releases with `value` still at
-        // the cut point, so it commits exactly the intended bound.
+        // gesture. A release without movement is not a seed at all — see
+        // onMarkerPointerUp.
         // A coincident stack cannot contain the OUTRO marker: the default is
         // only composed while the cut clears the start by more than
         // FREEZE_EPS (0.02 s), which is wider than COINCIDENT_EPS. Should
         // that ever change, "pending" still does the right thing — the seed
-        // materialises only if the gesture resolves as an end edit, and a
-        // leftward one commits the start bound alone.
+        // materialises only if the gesture MOVES and resolves as an end edit,
+        // and a leftward one commits the start bound alone.
         const coincident =
             startBound != null &&
             shownEnd != null &&
@@ -249,6 +262,7 @@ export function VideoRail({
             grabX: e.clientX,
             value: which === "end" ? shownEnd! : startBound!,
             wasPlaying,
+            moved: false,
         })
     }
     const onMarkerPointerMove = (e: React.PointerEvent) => {
@@ -260,12 +274,18 @@ export function VideoRail({
             which = dx < 0 ? "start" : "end"
         } else {
             which = drag.which
+            // A pointermove that did not move the pointer HORIZONTALLY moves
+            // no marker: browsers fire zero-delta moves, and vertical travel
+            // off a marker is not an edit either. Both must leave the gesture
+            // a click, and once it IS a drag the marker follows the pointer
+            // back through the grab position like any other x.
+            if (!drag.moved && e.clientX === drag.grabX) return
         }
         const t = posToTime(e.clientX)
         const value = which === "start"
             ? Math.min(t, endBound ?? duration)
             : Math.max(t, startBound ?? 0)
-        setDrag({ ...drag, which, value })
+        setDrag({ ...drag, which, value, moved: true })
         // Live preview: the playhead follows the marker so the loop point is
         // placed against the actual frame
         const video = videoRef.current
@@ -274,33 +294,42 @@ export function VideoRail({
     const onMarkerPointerUp = () => {
         if (!drag) return
         const video = videoRef.current
-        // The ONE write of the gesture, seeded outro grabs included: a click
-        // without movement releases with the grab value untouched, a drag
-        // with the value it ended on, and a still-"pending" release wrote
-        // nothing to begin with so there is nothing to undo.
-        if (drag.which !== "pending") {
-            const v = Math.round(drag.value * 100) / 100
-            const next: TrimRange = drag.which === "start"
-                ? { start: v, end: endBound }
-                : { start: startBound, end: v }
-            onTrimChange(next)
-            // Releasing the end marker leaves the playhead exactly at the end
-            // point, from which crossing detection would never fire — restart
-            // the loop, which doubles as "here's your loop" feedback
-            if (drag.which === "end" && video) video.currentTime = next.start ?? 0
+        // This release ends the gesture; the lostpointercapture that follows
+        // it must not re-run the abort path below (see releasedRef).
+        releasedRef.current = true
+        // CLICK — released without ever moving a value, on ANY marker (user
+        // start, user end, the cyan outro default, or a still-"pending"
+        // coincident stack). It commits NOTHING and instead PARKS the
+        // playhead on the marker, paused: an inspection click is how the user
+        // gets to a bound in order to refine it with the popover's frame-step
+        // (or the gallery's , / . keys) and then commit with Set end / `O`.
+        // Deliberately does not resume even when `wasPlaying` — pointerdown
+        // paused, and a playhead that immediately runs away is not parked.
+        if (!drag.moved || drag.which === "pending") {
+            if (video) video.currentTime = drag.value
+            setDrag(null)
+            return
         }
+        // DRAG — the ONE write of the gesture, seeded outro grabs included,
+        // carrying the value it ended on.
+        const v = Math.round(drag.value * 100) / 100
+        const next: TrimRange = drag.which === "start"
+            ? { start: v, end: endBound }
+            : { start: startBound, end: v }
+        onTrimChange(next)
+        // Releasing the end marker leaves the playhead exactly at the end
+        // point, from which crossing detection would never fire — restart
+        // the loop, which doubles as "here's your loop" feedback
+        if (drag.which === "end" && video) video.currentTime = next.start ?? 0
         if (drag.wasPlaying) video?.play().catch(() => { })
         setDrag(null)
     }
     // A cancelled gesture (pointercancel, capture lost to the browser)
     // commits nothing but must not strand the drag state: a stuck drag keeps
     // the outro marker stood down (blue at a phantom position, tail dimming
-    // off) and arms the chorded-pointerdown guard above forever. Also runs
-    // after a normal release via lostpointercapture, where it is a no-op
-    // (the resume is condition-identical to pointerup's and play() twice is
-    // harmless).
+    // off) and arms the chorded-pointerdown guard above forever.
     const onMarkerPointerAbort = () => {
-        if (!drag) return
+        if (!drag || releasedRef.current) return
         if (drag.wasPlaying) videoRef.current?.play().catch(() => { })
         setDrag(null)
     }
@@ -320,12 +349,13 @@ export function VideoRail({
     const markersInteractive = width >= markerMinWidth
     // While dragging, the dragged marker renders at the uncommitted value
     const dispStart = drag?.which === "start" ? drag.value : startBound
-    const dispEnd = drag?.which === "end" ? drag.value : shownEnd
+    const dispEnd = endDragActive ? drag.value : shownEnd
     // The band is the USER's range and appears only with a user bound in it —
     // an outro default is not a trim, and painting every TikTok's rail blue
     // would say it is. Its extent is the EFFECTIVE range, so a user start
-    // runs to the cyan marker.
-    const userEnd = drag?.which === "end" ? drag.value : endBound
+    // runs to the cyan marker. `endDragActive` (not the bare grab) is what
+    // puts a seeded end in it: an un-moved press is still a click.
+    const userEnd = endDragActive ? drag.value : endBound
     const showBand = dispStart != null || userEnd != null
     const pct = (t: number) => `${(Math.min(t, duration) / duration) * 100}%`
 

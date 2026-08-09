@@ -13,6 +13,12 @@ interface SearchResult {
   height?: number | null
   blurhash?: string
   /**
+   * The item's indexed duration in seconds (ffprobe's), requested by the
+   * gallery's search select alongside content_end_ms: the two together give
+   * the outro card's length, which is what end-anchors the cut point.
+   */
+  duration?: number | null
+  /**
    * Where the item's real content ends (ms), when an outro was detected.
    * Requested by the gallery's search select; absent/null when the item has
    * no outro or the index DB has TikTok detection off (the API nulls it).

@@ -45,7 +45,9 @@ export function SimilarityTarget() {
         // The row's "open details" button makes this object the app-level
         // current item, which is what the gallery's player renders — keep it
         // the same shape the other two builders produce (SelectButton,
-        // GalleryPinBoard's selectAsCurrentItem) so outro skip survives
+        // GalleryPinBoard's selectAsCurrentItem) so outro skip survives —
+        // `duration` included, or the cut point loses its end anchor here
+        duration: item?.duration,
         content_end_ms: item?.content_end_ms,
     }
     function switchTarget() {

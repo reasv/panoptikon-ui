@@ -26,7 +26,7 @@ import { MediaControls } from './PlayButton'
 import React from 'react'
 import { useOutroSkipEnabled, useVideoPlayerState } from '@/lib/videoPlayerState'
 import { CropRect, PinLock, PinOrientation, TrimRange, clampCrop, composeCrops, isEmptyTrim, isIdentityOrientation, packHField, parseHField } from '@/lib/pinboardCrop'
-import { effectiveVideoTrim, outroCutPoint, useVideoTrim } from '@/lib/videoTrim'
+import { effectiveVideoTrim, outroCutPoint, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
 import { CropGeometry, CropView } from './CropView'
 import { NativeControlsEscape, VideoPlayerSurface, playerSizeForWidth, useVideoPlayerSurface } from './VideoPlayerSurface'
 import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, Check, ChevronDown, ChevronsLeft, ChevronsRight, ChevronsUp, Columns3, Crop, Dices, Expand, FlipHorizontal, FlipHorizontal2, FlipVertical, FlipVertical2, FoldHorizontal, GripVertical, ImageDown, LayoutDashboard, ListX, LockOpen, Maximize, RotateCcw, RotateCw, Ruler, Scaling, SquareDashed, Trash2, X, type LucideIcon } from 'lucide-react'
@@ -3030,9 +3030,11 @@ function PinBoardPin({
             type: data.item.type,
             width: data.item.width,
             height: data.item.height,
-            // The gallery's own player needs it for outro skip, and this
+            // The gallery's own player needs these for outro skip, and this
             // snapshot is what it renders when the item is not in the
-            // current result page (see currentItem in ImageGallery)
+            // current result page (see currentItem in ImageGallery).
+            // `duration` is what end-anchors the cut point.
+            duration: data.item.duration,
             content_end_ms: data.item.content_end_ms,
         })
     }
@@ -3080,7 +3082,16 @@ function PinBoardPin({
     // trim alone (docs/video-outro-skip-design.md §1). The item query already
     // returns content_end_ms, and the API nulls it when the index DB has
     // detection off, so no config plumbing reaches the player.
-    const outroCut = outroCutPoint(data?.item?.content_end_ms)
+    // The element's own duration: the cut point is anchored to the END of
+    // the browser's timeline (the card is appended there, and edit lists /
+    // audio priming shift the origin away from ffprobe's), and the rail
+    // draws its geometry from the same one number.
+    const browserDuration = useVideoDuration(videoRef, showVideo)
+    const outroCut = outroCutPoint(
+        data?.item?.content_end_ms,
+        data?.item?.duration,
+        browserDuration,
+    )
     const outroSkip = useOutroSkipEnabled()
     const effectiveTrim = effectiveVideoTrim(trim, outroCut, outroSkip)
     useVideoTrim({ videoRef, trim: effectiveTrim, active: showVideo })
@@ -3262,6 +3273,7 @@ function PinBoardPin({
                         trim={trim}
                         onTrimChange={onTrimChange}
                         outroCutPoint={outroCut}
+                        duration={browserDuration}
                         // Same URL the element plays. The name needs the
                         // item query (the board's records carry a sha256
                         // prefix and nothing else), so the row appears with

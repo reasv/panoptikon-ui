@@ -444,7 +444,13 @@ export function queryFromState(
       "height",
       "blurhash",
       // The player's outro-skip default (docs/video-outro-skip-design.md);
-      // the API serves null when the index DB has detection off
+      // the API serves content_end_ms as null when the index DB has
+      // detection off. `duration` is the second half of the cut point: the
+      // two give the outro card's length, which end-anchors the cut against
+      // the browser's own timeline. BOTH select lists must stay identical,
+      // element for element — the two request bodies have to hash the same
+      // for the sidebar-to-main swap to hit the result cache.
+      "duration",
       "content_end_ms",
     ],
     entity: "file",
@@ -585,7 +591,13 @@ export function sbSimilarityQueryFromState(
       "height",
       "blurhash",
       // The player's outro-skip default (docs/video-outro-skip-design.md);
-      // the API serves null when the index DB has detection off
+      // the API serves content_end_ms as null when the index DB has
+      // detection off. `duration` is the second half of the cut point: the
+      // two give the outro card's length, which end-anchors the cut against
+      // the browser's own timeline. BOTH select lists must stay identical,
+      // element for element — the two request bodies have to hash the same
+      // for the sidebar-to-main swap to hit the result cache.
+      "duration",
       "content_end_ms",
     ],
     entity: "file",

@@ -7,7 +7,6 @@ import {
     Minimize,
     Pause,
     Play,
-    SkipForward,
     TvMinimalPlay,
     Volume1,
     Volume2,
@@ -53,6 +52,40 @@ const FRAME_STEP = 1 / 30
 // Rates are also read back off the element (the native controls' own speed
 // menu is a second writer), where a stray float would print as 1.7500000000002
 const formatRate = (rate: number) => String(Math.round(rate * 100) / 100)
+
+// The outro-skip toggle's glyph, drawn here rather than taken from lucide:
+// no stock icon says "this timeline ends early", and the SkipForward arrow
+// this replaced read as an ordinary next-track button. The picture IS the
+// feature — a solid rail, the cut, and the removed tail behind it:
+//
+//   ————————|  ·  ·
+//
+// Lucide's own drawing contract (24-unit box, 2px round-capped strokes, no
+// fill) so it sits in the row as one of them, and exactly four strokes so it
+// survives the 20px it renders at. The tail's dashes are faded, not just
+// broken, because "removed" is the whole message.
+function OutroSkipIcon({ className }: { className?: string }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+            className={className}
+        >
+            <path d="M3 12h8" />
+            <path d="M12 6v12" />
+            <g opacity="0.55">
+                <path d="M15.5 12h1" />
+                <path d="M20 12h1" />
+            </g>
+        </svg>
+    )
+}
 
 export type VideoPlayerSize = "full" | "medium" | "mini"
 
@@ -400,6 +433,7 @@ export function VideoPlayerSurface({
     trim,
     onTrimChange,
     outroCutPoint = null,
+    duration,
     download,
     size = "full",
     className,
@@ -416,6 +450,12 @@ export function VideoPlayerSurface({
     // `outroCutPoint`), or null when the item is not eligible — in which case
     // the toggle button does not exist at all, no disabled ghost.
     outroCutPoint?: number | null
+    // The <video> element's own duration in seconds, NaN until its metadata
+    // loads (lib/videoTrim's `useVideoDuration`). The HOST owns the listener
+    // because the cut point above is computed from the same number — one
+    // listener, one duration, so the rail's geometry and the cut it draws
+    // can never come from different answers.
+    duration: number
     // The original file behind this video, as a same-origin URL and the name
     // to save it under. Omitted while a host still has no item data, which
     // simply drops the row.
@@ -756,7 +796,7 @@ export function VideoPlayerSurface({
                                     outroOverridden && "text-white/40 hover:text-white/40",
                                 )}
                             >
-                                <SkipForward className="size-[20px]" />
+                                <OutroSkipIcon className="size-[20px]" />
                             </SurfaceButton>
                         </div>
                     )}
@@ -945,6 +985,7 @@ export function VideoPlayerSurface({
             <div {...layer(isFullscreen ? "mx-3" : "mx-2")}>
                 <VideoRail
                     videoRef={videoRef}
+                    duration={duration}
                     trim={trim}
                     onTrimChange={onTrimChange}
                     // Only while the default actually governs: the rail draws

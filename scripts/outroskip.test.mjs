@@ -25,32 +25,39 @@ function check(name, ok, detail = "") {
 }
 const shape = (trim) => JSON.stringify(trim && { start: trim.start, end: trim.end })
 
-// ---- cut point: guard, rounding, eligibility -------------------------
+// ---- cut point: fallback path (no durations known) --------------------
 
-// content_end_ms − 150 ms, in seconds, rounded to centiseconds (the trim
-// codec's storage resolution, so a seeded user bound lands on the lattice)
-check("cut point applies the 150 ms guard", outroCutPoint(10150) === 10)
+// With either duration missing the cut is START-anchored, the original
+// formula: content_end_ms − 60 ms guard, in seconds, rounded to
+// centiseconds (the trim codec's storage resolution, so a seeded user bound
+// lands on the lattice). This is what plays before `loadedmetadata`.
+check("cut point applies the 60 ms guard", outroCutPoint(10060) === 10)
+check(
+  "the guard is 60 ms, not the old 150",
+  outroCutPoint(10150) === 10.09,
+  String(outroCutPoint(10150))
+)
 check(
   "cut point rounds to centiseconds (up)",
-  outroCutPoint(12345) === 12.2,
+  outroCutPoint(12345) === 12.29,
   String(outroCutPoint(12345))
 )
 check(
   "cut point rounds to centiseconds (down)",
-  outroCutPoint(12344) === 12.19,
+  outroCutPoint(12344) === 12.28,
   String(outroCutPoint(12344))
 )
 check(
   "cut point is exactly on the centisecond lattice",
   Number.isInteger(Math.round(outroCutPoint(9007) * 100)) &&
-    outroCutPoint(9007) === 8.86,
+    outroCutPoint(9007) === 8.95,
   String(outroCutPoint(9007))
 )
 
 check("no content_end_ms is ineligible", outroCutPoint(null) === null)
 check("undefined content_end_ms is ineligible", outroCutPoint(undefined) === null)
-check("cut point at zero is ineligible", outroCutPoint(150) === null)
-check("negative cut point is ineligible", outroCutPoint(100) === null)
+check("cut point at zero is ineligible", outroCutPoint(60) === null)
+check("negative cut point is ineligible", outroCutPoint(10) === null)
 
 // The eligibility floor is the FREEZE band, not zero: {start: null, end:
 // 0.02} is useVideoTrim's freeze branch, so an item whose content_end_ms
@@ -58,26 +65,137 @@ check("negative cut point is ineligible", outroCutPoint(100) === null)
 check("FREEZE_EPS is the exported contract", FREEZE_EPS === 0.02)
 check(
   "a cut point inside the freeze band is ineligible",
-  outroCutPoint(170) === null,
-  String(outroCutPoint(170))
+  outroCutPoint(80) === null,
+  String(outroCutPoint(80))
 )
 check(
   "a cut point exactly one centisecond past the band is eligible",
-  outroCutPoint(180) === 0.03,
-  String(outroCutPoint(180))
+  outroCutPoint(90) === 0.03,
+  String(outroCutPoint(90))
 )
 check(
   "an eligible cut point never composes a freeze range on its own",
-  effectiveVideoTrim(null, outroCutPoint(180), true).end - 0 > FREEZE_EPS
+  effectiveVideoTrim(null, outroCutPoint(90), true).end - 0 > FREEZE_EPS
 )
 check(
   "a raw sub-band cut point is refused by the composition too",
   effectiveVideoTrim(null, 0.02, true) === null,
   shape(effectiveVideoTrim(null, 0.02, true))
 )
-check("a cut point well past the band is eligible", outroCutPoint(250) === 0.1)
+check("a cut point well past the band is eligible", outroCutPoint(160) === 0.1)
 
-const CUT = outroCutPoint(30150) // 30 s
+// Every way of not knowing both durations must still produce the fallback,
+// never null: the button and the skip exist from the first frame, and only
+// REFINE when metadata lands.
+const FB = outroCutPoint(11290) // 11.29 s content end -> 11.23
+check("bare call falls back", FB === 11.23, String(FB))
+for (const [label, server, browser] of [
+  ["browser duration NaN (no metadata yet)", 12.29, NaN],
+  ["browser duration null", 12.29, null],
+  ["browser duration undefined", 12.29, undefined],
+  ["browser duration zero", 12.29, 0],
+  ["browser duration Infinite (stream)", 12.29, Infinity],
+  ["server duration null (item has none)", null, 12.4],
+  ["server duration undefined", undefined, 12.4],
+  ["server duration NaN", NaN, 12.4],
+  ["neither duration", null, NaN],
+]) {
+  check(
+    `falls back with ${label}`,
+    outroCutPoint(11290, server, browser) === FB,
+    String(outroCutPoint(11290, server, browser))
+  )
+}
+
+// ---- cut point: END-anchored path ------------------------------------
+
+// The card is appended at the END, and the browser's timeline disagrees
+// with ffprobe's about where zero is (edit lists, audio priming). The
+// card's LENGTH is origin-free, so the cut is measured back from the
+// browser's own end:
+//   card = serverDuration − contentEnd ; cut = browserDuration − card − guard
+//
+// The field case that motivated this (validated on a real TikTok): the cut
+// landed at 11.14 s while the card actually began at 11.40 s — 260 ms early,
+// of which 150 ms was the old guard and 110 ms the timeline shift.
+const FIELD = outroCutPoint(11290, 12.29, 12.4) // card 1.0 s, +110 ms shift
+check("field case cuts 60 ms before the real boundary", FIELD === 11.34, String(FIELD))
+check(
+  "the end anchor is what moved it — the fallback is 110 ms further off",
+  FIELD !== outroCutPoint(11290) &&
+    Math.abs(FIELD - outroCutPoint(11290) - 0.11) < 1e-9,
+  `${FIELD} vs ${outroCutPoint(11290)}`
+)
+check(
+  "the card length comes from the SERVER duration, not the browser one",
+  outroCutPoint(11290, 12.29, 12.4) !== outroCutPoint(11290, 12.4, 12.4)
+)
+check(
+  "with the two timelines agreeing, the anchor degenerates to the fallback",
+  outroCutPoint(11400, 12.4, 12.4) === outroCutPoint(11400),
+  `${outroCutPoint(11400, 12.4, 12.4)} vs ${outroCutPoint(11400)}`
+)
+check(
+  "a longer browser timeline pushes the cut out by the same amount",
+  outroCutPoint(11400, 12.4, 12.55) === 11.49,
+  String(outroCutPoint(11400, 12.4, 12.55))
+)
+check(
+  "a shorter browser timeline pulls it in by the same amount",
+  outroCutPoint(11400, 12.4, 12.3) === 11.24,
+  String(outroCutPoint(11400, 12.4, 12.3))
+)
+const ANCH = outroCutPoint(11005, 12, 12.4) // card 0.995 -> 11.345
+check(
+  "the anchored cut is on the centisecond lattice too",
+  Math.abs(ANCH * 100 - Math.round(ANCH * 100)) < 1e-9 && ANCH === 11.35,
+  String(ANCH)
+)
+
+// Sanity guards on the card length. These are not "fall back" cases: the
+// two numbers are already known to disagree, and cutting on them would be
+// cutting on nonsense.
+check(
+  "a content end at the file end leaves no card (ineligible)",
+  outroCutPoint(12400, 12.4, 12.55) === null,
+  String(outroCutPoint(12400, 12.4, 12.55))
+)
+check(
+  "a content end past the file end is ineligible",
+  outroCutPoint(13000, 12.4, 12.55) === null,
+  String(outroCutPoint(13000, 12.4, 12.55))
+)
+check(
+  "a card as long as the whole browser timeline is ineligible",
+  outroCutPoint(1000, 30, 29) === null,
+  String(outroCutPoint(1000, 30, 29))
+)
+check(
+  "a card longer than the whole browser timeline is ineligible",
+  outroCutPoint(1000, 30, 5) === null,
+  String(outroCutPoint(1000, 30, 5))
+)
+
+// The freeze-band floor governs the anchored path identically — including
+// where only the anchoring puts the cut in the band (browser 0.9 s against a
+// server 1.0 s, so the anchored cut sits 100 ms below the fallback's)
+check(
+  "an anchored cut inside the freeze band is ineligible",
+  outroCutPoint(180, 1, 0.9) === null,
+  String(outroCutPoint(180, 1, 0.9))
+)
+check(
+  "an anchored cut one centisecond past the band is eligible",
+  outroCutPoint(190, 1, 0.9) === 0.03,
+  String(outroCutPoint(190, 1, 0.9))
+)
+check(
+  "…and the fallback would have cleared the band there, so the floor is the anchor's",
+  outroCutPoint(180) === 0.12,
+  String(outroCutPoint(180))
+)
+
+const CUT = outroCutPoint(30060) // 30 s
 check("fixture cut point", CUT === 30)
 
 // ---- composition: the §1 table ---------------------------------------

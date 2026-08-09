@@ -29,7 +29,7 @@ import { MediaControls } from './PlayButton'
 import React from 'react'
 import { PLAYBACK_RATES, useOutroSkipEnabled, useVideoPlayerState } from '@/lib/videoPlayerState'
 import { NativeControlsEscape, PLAYER_SIZE_FULL_WIDTH, playerSizeForWidth, useVideoPlayerSurface, VideoPlayerSurface } from './VideoPlayerSurface'
-import { effectiveVideoTrim, outroCutPoint, trimWithBound, useVideoTrim } from '@/lib/videoTrim'
+import { effectiveVideoTrim, outroCutPoint, trimWithBound, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
 import { isEmptyTrim, TrimRange } from '@/lib/pinboardCrop'
 import { trimForSha } from '@/lib/galleryTrim'
 
@@ -587,7 +587,12 @@ export function GalleryImageLarge(
     // everywhere it is edited or stored; only the player sees the composed
     // range — including the native `loop` attribute, which must follow the
     // EFFECTIVE emptiness or a skipped outro would loop back to the card.
-    const outroCut = outroCutPoint(item.content_end_ms)
+    // The element's own duration, which the cut point is anchored to (the
+    // card is appended at the END, and browser timelines disagree with
+    // ffprobe about the origin) and which the rail draws its geometry from —
+    // one listener, read here and handed down.
+    const browserDuration = useVideoDuration(videoRef, showVideo)
+    const outroCut = outroCutPoint(item.content_end_ms, item.duration, browserDuration)
     const outroSkip = useOutroSkipEnabled()
     const effectiveTrim = effectiveVideoTrim(trim, outroCut, outroSkip)
     useVideoTrim({ videoRef, trim: effectiveTrim, active: showVideo })
@@ -868,6 +873,7 @@ export function GalleryImageLarge(
                                     trim={trim}
                                     onTrimChange={onTrimChange}
                                     outroCutPoint={outroCut}
+                                    duration={browserDuration}
                                     // The very URL the element plays, so the
                                     // download is the original file and not a
                                     // re-encode. The server's own
