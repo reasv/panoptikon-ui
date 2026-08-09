@@ -1,5 +1,5 @@
 import Image from 'next/image'
-import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder, useCopyPath } from "@/components/imageButtons"
+import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder, ShareButton, useCopyPath } from "@/components/imageButtons"
 import {
     ContextMenu,
     ContextMenuContent,
@@ -7,12 +7,13 @@ import {
     ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { Toggle } from "@/components/ui/toggle"
-import { X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal } from "lucide-react"
+import { X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal, Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useShallow } from "zustand/react/shallow"
 import { cn, downloadFileName, fileNameFromPath, getFileURL, getLocale } from "@/lib/utils"
 import { itemEquals, OpenDetailsButton } from "@/components/OpenFileDetails"
+import { useFileShare } from "@/hooks/fileShare"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail, useGalleryPinBoardLayout, useGalleryFullscreen, useGalleryHidePinBoard, useGalleryTrim } from "@/lib/state/gallery"
 import { useSelectedDBs } from "@/lib/state/database"
@@ -291,6 +292,14 @@ export function ImageGallery({
     const dateString = getLocale(new Date(currentItem.last_modified))
     const pinboard = useGalleryPinBoardLayout()[0]
 
+    // The gallery's own share verb, for the header Download button and the
+    // Ctrl+C accelerator. The button surface renders its own ShareButton.
+    const galleryShare = useFileShare({ sha256: currentItem.sha256, path: currentItem.path })
+    // Read the latest execute from an effect without re-subscribing the
+    // listener every render (useFileShare returns fresh closures each time).
+    const galleryShareRef = useRef(galleryShare)
+    galleryShareRef.current = galleryShare
+
     const [fs, setFs] = useGalleryFullscreen()
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -304,6 +313,33 @@ export function ImageGallery({
         return () => {
             window.removeEventListener('keydown', handleKeyDown);
         };
+    }, []);
+
+    // Ctrl/Cmd+C fires the current gallery item's adaptive share verb (§0.12).
+    // Its own listener: the main gallery key handler bails on ctrlKey by design.
+    // Guards mirror that handler (no inputs, no open Radix layer) plus one it
+    // lacks — never hijack an active text selection, so normal copy still works.
+    useEffect(() => {
+        const onCopyKey = (event: KeyboardEvent) => {
+            if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
+            if (event.key !== "c" && event.key !== "C") return
+            // A held Ctrl/Cmd+C must fire once, not one relay action (and one
+            // full-file Blob) per key-repeat tick.
+            if (event.repeat) return
+            const t = event.target as HTMLElement | null
+            if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return
+            if (document.querySelector(
+                '[role="dialog"], [role="menu"], [role="listbox"],'
+                + ' [data-radix-popper-content-wrapper]'
+            )) return
+            // A live text selection is the user's own copy — don't take it.
+            const selection = window.getSelection()
+            if (selection && selection.isCollapsed === false) return
+            event.preventDefault()
+            galleryShareRef.current.execute()
+        }
+        window.addEventListener("keydown", onCopyKey)
+        return () => window.removeEventListener("keydown", onCopyKey)
     }, []);
     const hidePinBoard = useGalleryHidePinBoard()[0]
     // Which branch this gallery is: the large image (the player world, and the
@@ -514,9 +550,12 @@ export function ImageGallery({
         <div data-pinboard-frame className="flex flex-col border rounded p-2">
             {!fs && <div className="flex justify-between items-center mb-2">
                 <div className="flex items-center">
+                    {/* Left file-verb cluster; the Download twin sits after the
+                        Next arrow on the right to keep the header balanced 5v5. */}
                     <BookmarkBtn sha256={currentItem.sha256} bookmarked={currentItem.bookmarked} buttonVariant />
                     <OpenFile sha256={currentItem.sha256} path={currentItem.path} buttonVariant />
                     <OpenFolder sha256={currentItem.sha256} path={currentItem.path} buttonVariant />
+                    <ShareButton sha256={currentItem.sha256} path={currentItem.path} buttonVariant />
                     <Link
                         href={prevImageLink}
                         onClick={onClickPrevImage}
@@ -543,6 +582,25 @@ export function ImageGallery({
                             <ArrowBigRight className="h-4 w-4" />
                         </Button>
                     </Link>
+                    {/* Header symmetry: Copy on the left (ShareButton),
+                        Download on the right — but only when Copy is the primary
+                        verb. When Download is already primary (plain web, no
+                        relay / server copy) the left ShareButton IS a Download
+                        control, so this twin would duplicate it and is omitted
+                        (minor asymmetry in the download-only case, accepted). On
+                        a narrow header it may also be dropped without loss —
+                        Download still lives in ShareButton's right-click
+                        alternates. */}
+                    {galleryShare.primaryVerb === "copy" && <Button
+                        onClick={() => galleryShare.download()}
+                        variant="ghost"
+                        size="icon"
+                        title="Download file"
+                        aria-label="Download file"
+                        className="hidden sm:inline-flex"
+                    >
+                        <Download className="h-4 w-4" />
+                    </Button>}
                     <OpenDetailsButton item={currentItem} />
                     <Toggle
                         pressed={thumbnailsOpen}

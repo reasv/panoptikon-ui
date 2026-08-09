@@ -4,7 +4,7 @@ import { $api } from "@/lib/api"
 import { useBookmarkNs, } from "@/lib/state/zust"
 import { useQueryClient } from "@tanstack/react-query"
 import { useToast } from "@/components/ui/use-toast"
-import { File, FolderOpen, BookmarkPlus, BookmarkX, Cable } from "lucide-react"
+import { File, FolderOpen, BookmarkPlus, BookmarkX, Cable, ClipboardCopy, Download } from "lucide-react"
 import { Button } from "./ui/button"
 import { Toggle } from "./ui/toggle"
 import { cn } from "@/lib/utils"
@@ -13,8 +13,9 @@ import { updateBookmarkStatusInSearchCache } from "@/lib/bookmarkSearchCache"
 import { useAlwaysShowBookmarkBtn } from "@/lib/state/alwaysShowBookmarks"
 import { FindButton } from "./gallery/FindButton"
 import { FileBookmarksSetter } from "./sidebar/details/FileBookmarks"
-import { ContextMenu, ContextMenuContent, ContextMenuLabel, ContextMenuRadioGroup, ContextMenuRadioItem, ContextMenuTrigger } from "./ui/context-menu"
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuRadioGroup, ContextMenuRadioItem, ContextMenuTrigger } from "./ui/context-menu"
 import { useFileOpenActions } from "@/hooks/fileOpen"
+import { useFileShare } from "@/hooks/fileShare"
 
 export function RelayTargetSelector({
     actions,
@@ -369,6 +370,61 @@ export const OpenFolder = (
         <RelayTargetSelector actions={actions} />
     </span>}
     </FileActionTargetMenu>
+}
+
+// The adaptive share button (docs/file-sharing-design.md). Primary click is
+// Copy where a native path exists, Download otherwise — the icon and tooltip
+// track the active verb. Right-click reveals the non-primary verb and, when a
+// Relay is detected but unpaired, a doorway into pairing.
+export const ShareButton = (
+    { sha256, path, buttonVariant }: {
+        sha256: string
+        path?: string
+        buttonVariant?: boolean
+    }
+) => {
+    const share = useFileShare({ sha256, path })
+    const [menuOpen, setMenuOpen] = useState(false)
+    const isCopy = share.primaryVerb === "copy"
+    const title = isCopy ? "Copy file to clipboard" : "Download file"
+    const Icon = isCopy ? ClipboardCopy : Download
+
+    const trigger = buttonVariant
+        ? <Button
+            title={title}
+            aria-label={title}
+            onClick={() => share.execute()}
+            variant="ghost"
+            size="icon"
+        >
+            <Icon className="w-4 h-4" />
+        </Button>
+        : <button
+            onClick={() => share.execute()}
+            title={title}
+            aria-label={title}
+            // The free slot in the bottom-left overlay row (left-1 / left-12
+            // taken by Open File / Open Folder). Same hover/hold-open opacity
+            // dance as its siblings.
+            className={cn(
+                "absolute bottom-3 left-[5.5rem] rounded-full bg-white p-2 hover:scale-105 opacity-0 transition-opacity duration-300 group-hover:opacity-100",
+                menuOpen && "opacity-100",
+            )}
+        >
+            <Icon className="w-6 h-6 text-gray-800" />
+        </button>
+
+    // Copy primary => Download is the alternate. Download primary => there is no
+    // native copy to offer; the only alternate is pairing, when a Relay is there.
+    const showDownloadAlt = isCopy
+    if (!showDownloadAlt && !share.canPair) return trigger
+    return <ContextMenu onOpenChange={setMenuOpen}>
+        <ContextMenuTrigger asChild>{trigger}</ContextMenuTrigger>
+        <ContextMenuContent className="min-w-52">
+            {showDownloadAlt && <ContextMenuItem onClick={() => share.download()}>Download</ContextMenuItem>}
+            {share.canPair && <ContextMenuItem onClick={() => void share.pairRelay()}>Pair with desktop…</ContextMenuItem>}
+        </ContextMenuContent>
+    </ContextMenu>
 }
 
 // Copy a path (or any text) to the clipboard with a confirmation toast.
