@@ -18,7 +18,10 @@ export const RAIL_MIN_WIDTH = 90
 // drag grabs is decided by its first horizontal direction (only the start can
 // move left, only the end can move right)
 const COINCIDENT_EPS = 0.011
-// Pixels of movement before a coincident-marker drag commits to a direction
+// Pixels of movement before a marker gesture counts as a drag at all — the
+// click-vs-drag boundary for every marker (a click parks the playhead, a drag
+// commits a bound; the two must not be one pixel apart) — and, on a
+// coincident stack, before the drag commits to a direction
 const DIRECTION_DEADZONE = 3
 
 export function formatTime(t: number, withCentis = false): string {
@@ -274,12 +277,15 @@ export function VideoRail({
             which = dx < 0 ? "start" : "end"
         } else {
             which = drag.which
-            // A pointermove that did not move the pointer HORIZONTALLY moves
-            // no marker: browsers fire zero-delta moves, and vertical travel
-            // off a marker is not an edit either. Both must leave the gesture
-            // a click, and once it IS a drag the marker follows the pointer
-            // back through the grab position like any other x.
-            if (!drag.moved && e.clientX === drag.grabX) return
+            // The click/drag boundary needs the same deadzone the pending
+            // path has: a 1 px slip between press and release is routine on
+            // a trackpad, and without the deadzone it flips an inspection
+            // click (park the playhead, commit nothing) into its qualitative
+            // opposite — a committed bound, a rewind, a history entry and a
+            // resume. Zero-delta and purely vertical pointermoves fall out of
+            // the same test. Once the gesture IS a drag, the marker follows
+            // the pointer freely, back through the grab position included.
+            if (!drag.moved && Math.abs(e.clientX - drag.grabX) < DIRECTION_DEADZONE) return
         }
         const t = posToTime(e.clientX)
         const value = which === "start"

@@ -95,14 +95,17 @@ const OUTRO_GUARD_MS = 60
 export function outroCutPoint(
   contentEndMs: number | null | undefined,
   // The item's indexed `duration` (ffprobe seconds), and the <video>
-  // element's own `duration` once metadata has loaded. Either absent (null,
-  // undefined, NaN) selects the start-anchored fallback.
+  // element's own `duration` once metadata has loaded. Either UNUSABLE
+  // (null, undefined, NaN, zero or negative — a duration of 0 is as unknown
+  // as no duration at all) selects the start-anchored fallback.
   serverDurationSec?: number | null,
   browserDurationSec?: number | null
 ): number | null {
   if (contentEndMs == null || !isFinite(contentEndMs)) return null
   const serverDur =
-    serverDurationSec != null && isFinite(serverDurationSec) ? serverDurationSec : null
+    serverDurationSec != null && isFinite(serverDurationSec) && serverDurationSec > 0
+      ? serverDurationSec
+      : null
   const browserDur =
     browserDurationSec != null && isFinite(browserDurationSec) && browserDurationSec > 0
       ? browserDurationSec
@@ -110,12 +113,13 @@ export function outroCutPoint(
   let cut: number
   if (serverDur != null && browserDur != null) {
     const card = serverDur - contentEndMs / 1000
-    // Nonsense inputs, not something to anchor against: a content end at or
-    // past the file end leaves no card to skip, and a "card" as long as the
-    // whole browser timeline means the two durations describe different
-    // files. Ineligible rather than silently falling back, because a
-    // fallback would cut on numbers already known to be inconsistent.
-    if (!(card > 0) || card >= browserDur) return null
+    // A content end at or past the file end leaves no card to skip — that is
+    // nonsense to anchor against, ineligible rather than a fallback (a
+    // fallback would cut on numbers already known to be inconsistent). The
+    // other degenerate direction, a card as long as the whole browser
+    // timeline, needs no guard of its own: it yields cut ≤ −guard, which the
+    // eligibility floor below rejects.
+    if (!(card > 0)) return null
     cut = Math.round((browserDur - card - OUTRO_GUARD_MS / 1000) * 100) / 100
   } else {
     cut = Math.round((contentEndMs - OUTRO_GUARD_MS) / 10) / 100
@@ -129,10 +133,17 @@ export function outroCutPoint(
 // second listener would be a second answer to the same question.
 // `active` is the host's showVideo — the element is created and destroyed
 // under an unchanged ref identity, so the ref alone is not enough to rebind
-// on.
+// on. `resetKey` must change with the ITEM (its sha): a pinboard pin swaps
+// `src` in place under an unchanged ref AND unchanged `active` when the
+// board reflows, and without the key the departed item's duration would
+// survive until the new metadata lands — mis-anchoring the cut against the
+// wrong total in the meantime. (The load algorithm does not fire
+// `durationchange` when it empties the element, so no event bridges that
+// gap.)
 export function useVideoDuration(
   videoRef: React.RefObject<HTMLVideoElement | null>,
-  active: boolean
+  active: boolean,
+  resetKey?: string
 ): number {
   const [duration, setDuration] = React.useState(NaN)
   React.useEffect(() => {
@@ -143,15 +154,21 @@ export function useVideoDuration(
       setDuration(NaN)
       return
     }
+    // Re-running for a new item: the old duration is stale the moment the
+    // key changes, not merely once the new metadata arrives. `video.duration`
+    // still holds the OLD value until the load algorithm resets it, so seed
+    // NaN and let the events (or the update below on a same-item re-run)
+    // provide the real number.
+    setDuration(NaN)
     const update = () => setDuration(video.duration)
-    update()
+    if (video.readyState >= HTMLMediaElement.HAVE_METADATA) update()
     video.addEventListener("loadedmetadata", update)
     video.addEventListener("durationchange", update)
     return () => {
       video.removeEventListener("loadedmetadata", update)
       video.removeEventListener("durationchange", update)
     }
-  }, [active, videoRef])
+  }, [active, videoRef, resetKey])
   return duration
 }
 

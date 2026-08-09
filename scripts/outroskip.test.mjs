@@ -98,11 +98,17 @@ for (const [label, server, browser] of [
   ["server duration null (item has none)", null, 12.4],
   ["server duration undefined", undefined, 12.4],
   ["server duration NaN", NaN, 12.4],
+  // Zero and negative are as unknown as absent: a stored duration of 0
+  // must select the fallback, not compute a negative card and vanish
+  ["server duration zero", 0, 12.4],
+  ["server duration negative", -3, 12.4],
   ["neither duration", null, NaN],
 ]) {
+  // The literal, not FB: comparing against another call through the same
+  // branch would pass even if that branch returned null for everything
   check(
     `falls back with ${label}`,
-    outroCutPoint(11290, server, browser) === FB,
+    outroCutPoint(11290, server, browser) === 11.23,
     String(outroCutPoint(11290, server, browser))
   )
 }
@@ -165,6 +171,9 @@ check(
   outroCutPoint(13000, 12.4, 12.55) === null,
   String(outroCutPoint(13000, 12.4, 12.55))
 )
+// The over-long-card direction needs no guard of its own — the cut lands at
+// or below −guard and the freeze-band floor rejects it. These pin the
+// OUTCOME (ineligible), whichever predicate delivers it.
 check(
   "a card as long as the whole browser timeline is ineligible",
   outroCutPoint(1000, 30, 29) === null,

@@ -407,8 +407,8 @@ export function GalleryImageLarge(
     // gallery navigation (a bare src swap fires `emptied`, not `pause`), and
     // every player hook binds its listeners once per ref IDENTITY — deps are
     // `[..., videoRef]`. A single stable ref would leave the surface's paused
-    // sync, the rail's duration listener and useVideoTrim's seek-to-start
-    // bound to the element that just went away.
+    // sync, the host's useVideoDuration listener and useVideoTrim's
+    // seek-to-start bound to the element that just went away.
     //
     // The identity is STATE, not a useMemo: a memo cache React is free to
     // drop would hand out a second ref for the same item, re-running those
@@ -591,7 +591,7 @@ export function GalleryImageLarge(
     // card is appended at the END, and browser timelines disagree with
     // ffprobe about the origin) and which the rail draws its geometry from —
     // one listener, read here and handed down.
-    const browserDuration = useVideoDuration(videoRef, showVideo)
+    const browserDuration = useVideoDuration(videoRef, showVideo, item.sha256)
     const outroCut = outroCutPoint(item.content_end_ms, item.duration, browserDuration)
     const outroSkip = useOutroSkipEnabled()
     const effectiveTrim = effectiveVideoTrim(trim, outroCut, outroSkip)

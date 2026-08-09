@@ -3086,7 +3086,10 @@ function PinBoardPin({
     // the browser's timeline (the card is appended there, and edit lists /
     // audio priming shift the origin away from ffprobe's), and the rail
     // draws its geometry from the same one number.
-    const browserDuration = useVideoDuration(videoRef, showVideo)
+    // sha as reset key: a pin swaps `src` in place under an unchanged ref
+    // and unchanged showVideo when the board reflows, and the departed
+    // item's duration must not anchor the new item's cut
+    const browserDuration = useVideoDuration(videoRef, showVideo, sha256)
     const outroCut = outroCutPoint(
         data?.item?.content_end_ms,
         data?.item?.duration,
