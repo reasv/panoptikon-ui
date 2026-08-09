@@ -18,7 +18,9 @@ import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail, useG
 import { useSelectedDBs } from "@/lib/state/database"
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { usePageSize, useSearchPage } from '@/lib/state/searchQuery/clientHooks'
+import { usePageSize, useSearchPage, useSearchPageRaw } from '@/lib/state/searchQuery/clientHooks'
+import { useGridScrollAnchor } from '@/lib/state/gridScroll'
+import { useFetchPageRows, usePrefetchPageState } from '@/lib/searchHooks'
 import { serializers } from '@/lib/state/searchQuery/serializers'
 import { VirtualGalleryHorizontalScroll } from './VirtualizedHorizontalScroll'
 import { PinBoard } from './GalleryPinBoard'
@@ -27,12 +29,36 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { useSearchLoading } from '@/lib/state/zust'
 import { MediaControls } from './PlayButton'
 import React from 'react'
-import { PLAYBACK_RATES, useOutroSkipEnabled, useVideoPlayerState } from '@/lib/videoPlayerState'
+import { PLAYBACK_RATES, useGalleryEndAction, useOutroSkipEnabled, useVideoPlayerState } from '@/lib/videoPlayerState'
 import { NativeControlsEscape, PLAYER_SIZE_FULL_WIDTH, playerSizeForWidth, useVideoPlayerSurface, VideoPlayerSurface } from './VideoPlayerSurface'
 import { effectiveVideoTrim, outroCutPoint, outroProbeEligible, trimWithBound, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
 import { useVideoEndProbe } from '@/lib/videoEndProbe'
 import { isEmptyTrim, TrimRange } from '@/lib/pinboardCrop'
 import { trimForSha } from '@/lib/galleryTrim'
+
+// What the gallery counts as a video: exactly what its <video> element is
+// allowed to load, and therefore exactly what the auto-advance chain may move
+// to (docs/video-end-action-design.md §3). Everything else — images,
+// animations, containers the browser will not play — is "not a video" here,
+// which is precisely what makes an unattended chain safe. ONE predicate for
+// the player gate and the advance scan: two copies of this list would let the
+// gallery advance onto something it then refuses to play.
+function isPlayableVideo(type: string | null | undefined): boolean {
+    return type === "video/mp4" || type === "video/webm"
+}
+
+// Eviction horizon for the next page's rows, far above react-query's 5-minute
+// default (docs/video-end-action-design.md §3). The ahead-of-turn prefetch
+// fires when a video BECOMES current and its entry is consumed when that video
+// ENDS, with zero observers in between — at the default a video longer than
+// five minutes would watch the entry it warmed get garbage-collected before
+// the turn arrived. The horizon applies to the entries THIS path creates: the
+// turn's own fetch passes it too, but only reaches fetchQuery on a cache MISS
+// — a hit returns before it, so that entry keeps whatever horizon its creator
+// gave it (a manual page turn's prefetch, say, keeps the 5-minute default).
+// Which is fine: the flip puts a live observer on the entry immediately, and
+// GC only ever collects unobserved ones.
+const PREFETCH_GC_TIME = 30 * 60 * 1000
 
 function getNextIndex(length: number, index?: number | null,) {
     return ((index || 0) + 1) % length
@@ -47,15 +73,31 @@ export function ImageGallery({
     totalPages,
     setPage,
     resultsAreStale = false,
+    queryEnabled,
 }: {
     items: SearchResult[]
     totalPages: number
     setPage: (page: number) => Promise<void>
     /** These results belong to a different page than the URL names — see useSearch */
     resultsAreStale?: boolean
+    /**
+     * Is the LIVE search actually being served? False while the update lock
+     * withholds uncommitted sidebar edits, while input is invalid, or while a
+     * maximized board suspends searching — see useSearch. Everything on the
+     * auto-advance path stands down on it (docs/video-end-action-design.md
+     * §3): `resultsAreStale` is deliberately false in the update-lock state,
+     * so it cannot carry this, and without its own gate a video ending
+     * mid-edit would fetch and land on a search the user withheld.
+     */
+    queryEnabled: boolean
 }) {
     const [qIndex, setIndex] = useGalleryIndex()
     const [page] = useSearchPage()
+    // The raw `page` setter, and the grid's scroll anchor: the auto page turn
+    // writes both itself instead of going through the useSearchPage wrapper —
+    // see turnPageToNextVideo below for why it must.
+    const setPageRaw = useSearchPageRaw()[1]
+    const [scrollAnchor, setScrollAnchor] = useGridScrollAnchor()
     const pageSize = usePageSize()
     // Clamp rather than wrap: an index past the end of the page addresses
     // nothing, and wrapping round lands on a semantically unrelated item.
@@ -79,7 +121,87 @@ export function ImageGallery({
     const index = resultsAreStale
         ? Math.max(0, Math.min(heldIndex, items.length - 1))
         : urlIndex
+
+    // ---- Auto-advance (docs/video-end-action-design.md §3) ---------------
+    //
+    // Owned here because this is the component that has `items`, `page` and
+    // `totalPages`; the player host only reports that a video reached its end
+    // (or failed to load) and is handed the two verbs below. Every URL write
+    // on this path is `history: "replace"` (§4) — an unattended session must
+    // not bury the back button under one entry per video.
+    const mode = useGalleryEndAction()
+    // The mode as of the last commit, for the page turn's continuation to
+    // re-check after its await: the render scope's `mode` there is whatever it
+    // was when the video ended, and switching off `advance` mid-fetch must
+    // write nothing. Synced in an effect rather than during render because
+    // this ref is only ever read after an await — "the mode at write time" IS
+    // the last committed one — and a ref touched while rendering is what the
+    // React Compiler (on, see next.config.mjs) objects to.
+    const modeRef = useRef(mode)
+    useEffect(() => {
+        modeRef.current = mode
+    }, [mode])
+    // Everything else the page turn's continuation has to re-check after its
+    // await, as of the last commit — same pattern and same reason as modeRef
+    // (written after every commit, read only past an await, never during
+    // render). The supersession token covers the verbs the GALLERY owns; this
+    // covers every writer it does not: a PageSelect click, browser Back or
+    // Forward, a query edit with instant search on, a page-size commit. And
+    // `items` is compared by IDENTITY, because the page number cannot catch
+    // all of them — a query edit can leave `page` and `gi` numerically
+    // unchanged while swapping the entire row set, and a bookmark patch
+    // rewrites the results object under a page that never moved. Any new
+    // results object means something moved under the turn. Cancelling a turn
+    // that was in fact still legitimate just ends the chain, which is the
+    // honest outcome: nothing rearms it but a real playback reaching a real
+    // end, and the user is right there having just navigated.
+    const turnGatesRef = useRef({ page, qIndex, items, resultsAreStale, queryEnabled })
+    useEffect(() => {
+        turnGatesRef.current = { page, qIndex, items, resultsAreStale, queryEnabled }
+    })
+    // Did a video actually finish playing on THIS page? An auto page turn
+    // requires it (§"Broken videos"): error skips chain freely within a page,
+    // but a page of nothing but broken videos has to stop at that page's edge
+    // rather than crawl the whole result set. Set by end-of-playback advances
+    // only, never by error ones, and cleared on every page change — auto or
+    // manual, which is what the effect (rather than the turn alone) covers.
+    //
+    // Keyed on the results identity as well as the page number, because a
+    // query change can leave the number alone (page 1 → new query → still
+    // page 1) while replacing every row, and a flag left standing there would
+    // authorize one page turn on a result set nothing ever played on. A new
+    // results object IS a new page in every sense that matters here. The same
+    // effect re-arms the ahead-of-turn prefetch below, for the same reason
+    // plus one of its own: that once-guard is keyed `${page}:${sha}`, which
+    // collides across different searches that put the same file at the same
+    // position, and otherwise never resets once its entry has been collected.
+    const playedThisPageRef = useRef(false)
+    const prefetchedForRef = useRef<string | null>(null)
+    useEffect(() => {
+        playedThisPageRef.current = false
+        prefetchedForRef.current = null
+    }, [page, items])
+    // The in-flight page turn, as the useCommitPageSize supersession pattern:
+    // a unique object captured before the fetch and re-checked after it. The
+    // await is a window the user can act in — arrows, closing the gallery, a
+    // mode change, a play on the parked video — and a turn whose token is no
+    // longer the current one writes NOTHING. A stale intent must never move
+    // the gallery after the user has taken over.
+    const turnTokenRef = useRef<object | null>(null)
+    const cancelPendingAdvance = () => {
+        turnTokenRef.current = null
+    }
+    // Every other way the gallery can go away is a close too — the results
+    // emptying, the grid taking over, a navigation — and a turn resolving
+    // after one of those would write a page and an index for a gallery nobody
+    // is looking at. The net under closeGallery's own cancel, not a
+    // replacement for it.
+    useEffect(() => () => {
+        turnTokenRef.current = null
+    }, [])
+
     const nextImage = () => {
+        cancelPendingAdvance()
         if (index === (items.length - 1)) {
             if (page < totalPages) {
                 setPage(page + 1).then(() => {
@@ -91,6 +213,7 @@ export function ImageGallery({
         setIndex((currentIndex) => getNextIndex(items.length, currentIndex))
     }
     const prevImage = () => {
+        cancelPendingAdvance()
         if (index === 0) {
             if (page > 1) {
                 setPage(page - 1).then(() => {
@@ -102,7 +225,10 @@ export function ImageGallery({
         setIndex((currentIndex) => getPrevIndex(items.length, currentIndex))
     }
 
-    const closeGallery = () => setIndex(null)
+    const closeGallery = () => {
+        cancelPendingAdvance()
+        setIndex(null)
+    }
 
     const [thumbnailsOpen, setThumbnailsOpen] = useGalleryThumbnail()
 
@@ -180,6 +306,206 @@ export function ImageGallery({
         };
     }, []);
     const hidePinBoard = useGalleryHidePinBoard()[0]
+    // Which branch this gallery is: the large image (the player world, and the
+    // only place this feature exists) or the pinboard. Named because the
+    // prefetch effect below has to stand down on exactly the condition the
+    // JSX renders the board on — pins are an arrangement, not a sequence, and
+    // nothing about the end action may reach them.
+    const showsLargeImage = pinboard.length === 0 || hidePinBoard
+
+    const fetchPageRows = useFetchPageRows()
+    const prefetchPageState = usePrefetchPageState()
+    // The functions those two hooks return are re-created every render, so
+    // neither can appear in an effect's dep array without re-running that
+    // effect on every render. `fetchPageRows` is called from a callback, which
+    // closes over the current render's copy for free; the prefetch runs from
+    // an effect, so it reads the latest one through this ref. Written after
+    // every commit and read only from an effect body — never while rendering.
+    const prefetchRef = useRef(prefetchPageState)
+    useEffect(() => {
+        prefetchRef.current = prefetchPageState
+    })
+
+    // Fetch, THEN flip. The URL must not move to a page whose rows are not yet
+    // in hand: flipping first would resolve the old (or held) index against
+    // rows that only arrive later and show a wrong item for the whole fetch —
+    // and in fullscreen a commit whose current item is transiently not a
+    // playable video is exactly what closes the fullscreen box (§"Fullscreen
+    // continuity"). So the landing index is chosen from the fetched rows, and
+    // written together with the page in one tick. During the await the gallery
+    // simply keeps showing the ended video, parked and paused.
+    const turnPageToNextVideo = async (isFullscreen: () => boolean) => {
+        const token = {}
+        turnTokenRef.current = token
+        // The state this turn was decided against, to compare the post-await
+        // one with. Captured from the render scope, which is the last commit's
+        // — the same commit turnGatesRef holds at this point.
+        const from = { page, qIndex, items }
+        let rows: SearchResult[]
+        try {
+            // Cache first — the ahead-of-turn prefetch below should already
+            // have made this a hit. A failure ends the chain: the video stays
+            // parked and nothing is written (an empty array is the legitimate
+            // "that page has no rows", which is why the hook throws instead).
+            rows = await fetchPageRows({ page: page + 1 }, { gcTime: PREFETCH_GC_TIME })
+        } catch {
+            if (turnTokenRef.current === token) turnTokenRef.current = null
+            return
+        }
+        // Superseded while the fetch was in the air: that intent owns the
+        // gallery now, and this one writes nothing. Checked before the mode,
+        // so a newer turn's token is never cleared by an older turn's exit.
+        if (turnTokenRef.current !== token) return
+        if (modeRef.current !== "advance") {
+            turnTokenRef.current = null
+            return
+        }
+        // The token only covers the gallery's OWN verbs — arrows, close, a
+        // play on the parked video — because those are the only ones that call
+        // cancelPendingAdvance. Everything else that can move the search during
+        // a cold fetch (a PageSelect click, Back/Forward, a query edit under
+        // instant search, a page-size commit) leaves it untouched, and a turn
+        // that then wrote its batch would silently overwrite the user's
+        // navigation. So: nothing may have moved. `items` is compared by
+        // identity, which is what catches the case no page number can — a query
+        // whose new rows land under the same page and the same index.
+        const gates = turnGatesRef.current
+        if (
+            gates.page !== from.page
+            || gates.qIndex !== from.qIndex
+            || gates.items !== from.items
+            || gates.resultsAreStale
+            || !gates.queryEnabled
+        ) {
+            if (turnTokenRef.current === token) turnTokenRef.current = null
+            return
+        }
+        // A page the gallery cannot even render is not a landing, it is the
+        // end of the chain: SearchPage only mounts the gallery while there are
+        // results, so writing page + 1 onto an empty page would unmount it and
+        // dump the user into the grid — in fullscreen, out of fullscreen too.
+        // Reachable whenever the result set shrank after the count query
+        // answered, since totalPages is only ever as fresh as nResults.
+        if (rows.length === 0) {
+            turnTokenRef.current = null
+            return
+        }
+        const k = rows.findIndex((row) => isPlayableVideo(row.type))
+        // Read at DECISION time, not at fire time: the user can enter or leave
+        // fullscreen during the fetch, and a boolean captured before it gets
+        // both directions wrong — an exit would end a chain the windowed rules
+        // say should turn, and an entry would write gi = 0 onto an image and
+        // force-exit the fullscreen just entered.
+        if (k < 0 && isFullscreen()) {
+            // A videoless landing page in fullscreen: writing gi = 0 onto an
+            // image unmounts the player host and force-exits fullscreen
+            // mid-binge. Nothing may leave the user in a fullscreen box with
+            // no video in it, so the chain ends here instead — parked on the
+            // last video's end frame, fullscreen intact. The
+            // land-where-it-ended convenience this gives up only has value
+            // outside fullscreen, where it positions the grid.
+            turnTokenRef.current = null
+            return
+        }
+        // Windowed, with no video on the next page: the page still turns and
+        // the user lands at the top of the page that ended the session, never
+        // two pages out. Either way the chain is over after this.
+        const targetGi = k < 0 ? 0 : k
+        // Raw setters, ONE tick, an explicit `history: "replace"` on every
+        // member — the useCommitPageSize write pattern, for its reasons. nuqs
+        // coalesces same-tick writes into a single URL update but escalates
+        // the whole batch to `push` if any member asks for it, so this must
+        // not go through useSearchPage's wrapper, whose internal default-push
+        // setGi(0) would both escalate the batch and clobber the target index.
+        // Unchanged values are skipped: a setter called with what it already
+        // holds can still produce a history entry for an identical URL. (The
+        // page is the one member that cannot be unchanged — page + 1 is never
+        // page — so it has no skip test to write.)
+        const replace = { history: "replace" as const }
+        const writes: Promise<unknown>[] = [setPageRaw(page + 1, replace)]
+        if (targetGi !== qIndex) writes.push(setIndex(targetGi, replace))
+        // The wrapper we bypassed is also what drops the previous page's grid
+        // anchor, so this has to do it: same rule as useCommitPageSize's, the
+        // anchor follows the position, and it is absent while that position is
+        // the top of the page — which the auto turn's landing usually is.
+        const nextAnchor = targetGi > 0 ? targetGi : null
+        if (nextAnchor !== scrollAnchor) writes.push(setScrollAnchor(nextAnchor, replace))
+        // Cleared by the page-change effect too; set here so the window
+        // between this write and that effect cannot turn a second page.
+        playedThisPageRef.current = false
+        turnTokenRef.current = null
+        await Promise.all(writes)
+    }
+
+    // What a video reaching its end — or failing to load — does in `advance`
+    // mode. The three gates are checked at entry, and a failed one ends the
+    // chain outright: nothing is written, and nothing rearms it except a real
+    // playback reaching a real end.
+    const advanceToNextVideo = ({ playback, isFullscreen }: {
+        /** A real end of playback, as opposed to an error skip. */
+        playback: boolean
+        /**
+         * Is the player in fullscreen RIGHT NOW (§"Fullscreen continuity")? A
+         * live getter rather than a flag, because the page turn reads it after
+         * an await the user can enter or leave fullscreen during.
+         */
+        isFullscreen: () => boolean
+    }) => {
+        // Stale results: an index chosen against rows the URL no longer names
+        // is the exact mistake the heldIndex machinery exists to prevent.
+        // Withheld query: see the `queryEnabled` prop.
+        if (mode !== "advance" || resultsAreStale || !queryEnabled) return
+        // Reaching an end IS playback on this page, even when the scan below
+        // then finds nothing to advance to — the flag records that this page
+        // played, not that it advanced. Error skips never set it.
+        if (playback) playedThisPageRef.current = true
+        for (let i = index + 1; i < items.length; i++) {
+            if (isPlayableVideo(items[i].type)) {
+                // The arrow-key path minus the history entry: the element is
+                // keyed by sha, showVideo survives navigation, and autoPlay
+                // starts the next video.
+                setIndex(i, { history: "replace" })
+                return
+            }
+        }
+        // Nothing playable left on this page. The last page parks (reaching
+        // the last video on the last page ends playback), and a page no video
+        // ever finished on never turns — that is the whole point of the flag.
+        if (page >= totalPages) return
+        if (!playedThisPageRef.current) return
+        void turnPageToNextVideo(isFullscreen)
+    }
+
+    // Warm the next page while the last playable item of a non-final page is
+    // current, so the end-of-video fetch is a cache hit and not a NAS-speed
+    // round trip between the last frame and the next video. Fires once per
+    // (page, sha), the guard re-armed on every new row set by the effect
+    // above; the deps churn with every new results object and the guard makes
+    // those re-runs free. Failures are ignored — the turn's own fetch is the
+    // retry, which is also the design's accepted fallback for the cold cases
+    // this guard cannot rule out. Deliberately NOT gated on showVideo (advance
+    // mode plus standing on the last playable item is already the signal, and
+    // one page of rows is cheap), but gated on the same flags as the scan, and
+    // on the large-image branch: the pinboard must not acquire a background
+    // fetch it has no use for. `silent`: no user gesture is behind this fetch,
+    // so it must not arm the global search spinner (see usePrefetchPageState).
+    useEffect(() => {
+        if (!showsLargeImage) return
+        if (mode !== "advance" || resultsAreStale || !queryEnabled) return
+        if (page >= totalPages) return
+        const current = items[index]
+        if (!current || !isPlayableVideo(current.type)) return
+        for (let i = index + 1; i < items.length; i++) {
+            if (isPlayableVideo(items[i].type)) return
+        }
+        const key = `${page}:${current.sha256}`
+        if (prefetchedForRef.current === key) return
+        prefetchedForRef.current = key
+        void prefetchRef.current(
+            { page: page + 1 },
+            { gcTime: PREFETCH_GC_TIME, silent: true },
+        ).catch(() => { })
+    }, [showsLargeImage, mode, items, index, page, totalPages, resultsAreStale, queryEnabled])
 
     return (
         // data-pinboard-frame: presses landing on this panel's own padding
@@ -231,12 +557,14 @@ export function ImageGallery({
                     </Button>
                 </div>
             </div>}
-            {(pinboard.length === 0 || hidePinBoard) ? <GalleryImageLarge
+            {showsLargeImage ? <GalleryImageLarge
                 item={currentItem}
                 prevImage={prevImage}
                 nextImage={nextImage}
                 thumbnailsOpen={thumbnailsOpen}
                 showPagination={totalPages > 1}
+                advanceToNextVideo={advanceToNextVideo}
+                cancelPendingAdvance={cancelPendingAdvance}
             /> : <PinBoard
                 thumbnailsOpen={thumbnailsOpen}
                 showPagination={totalPages > 1}
@@ -388,13 +716,28 @@ export function GalleryImageLarge(
         thumbnailsOpen,
         prevImage,
         nextImage,
-        showPagination
+        showPagination,
+        advanceToNextVideo,
+        cancelPendingAdvance,
     }: {
         item: SearchResult,
         prevImage: () => void,
         nextImage: () => void,
         thumbnailsOpen: boolean
         showPagination: boolean
+        /**
+         * The host's auto-advance step (docs/video-end-action-design.md §3),
+         * wired only in `advance` mode. `playback` distinguishes a real end of
+         * playback from an error skip (only the former may turn a page);
+         * `isFullscreen` is the fullscreen fork — the chain must never fall out
+         * of fullscreen, so a videoless landing page suppresses the turn
+         * instead of unmounting the player. A GETTER, not a flag: the page turn
+         * consults it after its fetch, and fullscreen can be entered or left
+         * while that fetch is in the air.
+         */
+        advanceToNextVideo: (opts: { playback: boolean; isFullscreen: () => boolean }) => void
+        /** Invalidate a page turn that is still fetching — see §3, "Supersession". */
+        cancelPendingAdvance: () => void
     }
 ) {
     const [dbs, ___] = useSelectedDBs()
@@ -403,7 +746,7 @@ export function GalleryImageLarge(
 
     const searchLoading = useSearchLoading(state => state.loading)
 
-    const isPlayable = item.type === "video/mp4" || item.type === "video/webm"
+    const isPlayable = isPlayableVideo(item.type)
     // ONE REF OBJECT PER ITEM. The <video> is keyed by sha and remounts on
     // gallery navigation (a bare src swap fires `emptied`, not `pause`), and
     // every player hook binds its listeners once per ref IDENTITY — deps are
@@ -614,7 +957,91 @@ export function GalleryImageLarge(
         probedVideoEnd,
     )
     const effectiveTrim = effectiveVideoTrim(trim, outroCut, outroSkip)
-    useVideoTrim({ videoRef, trim: effectiveTrim, active: showVideo })
+    // What playback does when it reaches that effective end (docs/video-end-
+    // action-design.md §2). Read straight from the store rather than passed
+    // down: every reader in this tree must see the same value in the same
+    // commit, or a video keeps its native `loop` while the gallery already
+    // believes it is advancing — a silently stalled chain.
+    const mode = useGalleryEndAction()
+
+    // The host's advance verbs and the fullscreen flag they need, read at FIRE
+    // time by the element listeners below. Both callbacks close over the
+    // gallery's items/index/page and are re-created every render, and
+    // `isFullscreen` moves under the player: naming any of them in those
+    // effects' deps would rebind the listeners on every render of a playing
+    // video. Written in an effect and read only from an event handler or from
+    // inside the advance step — never during render.
+    const endActionRef = useRef({
+        advance: advanceToNextVideo,
+        cancel: cancelPendingAdvance,
+        isFullscreen: player.isFullscreen,
+    })
+    useEffect(() => {
+        endActionRef.current = {
+            advance: advanceToNextVideo,
+            cancel: cancelPendingAdvance,
+            isFullscreen: player.isFullscreen,
+        }
+    })
+    // The fullscreen state as a LIVE reading, shared by every caller of the
+    // advance step: the page turn consults it after its fetch, and a boolean
+    // captured when the video ended would be wrong in both directions if the
+    // user toggled fullscreen during that fetch. The ref is already synced per
+    // commit, so this is just the flag with the reading deferred.
+    const isFullscreenNow = () => endActionRef.current.isFullscreen
+
+    useVideoTrim({
+        videoRef,
+        trim: effectiveTrim,
+        active: showVideo,
+        // `stop` parks at the end and does nothing more; `advance` parks and
+        // reports it. The callback is read through a latest-ref inside the
+        // hook, so re-creating it on every render rebinds no listeners — which
+        // is what lets it close over the host's live items/index/page.
+        loopAtEnd: mode === "loop",
+        onEndReached: mode === "advance"
+            ? (() => advanceToNextVideo({
+                playback: true,
+                isFullscreen: isFullscreenNow,
+            }))
+            : undefined,
+    })
+
+    // A playable-TYPED file can still fail — a decode error (HEVC in an mp4,
+    // a truncated file) or an unsupported source — and one broken file would
+    // otherwise silently kill an unattended chain. So it is skipped like any
+    // advance, flagged as a NON-playback one so it can never turn a page by
+    // itself (§"Broken videos"). Bound per item like the other element
+    // effects: the ref identity is per-item state (see the videoSlot comment
+    // above) and the element under it is created and destroyed with showVideo.
+    useEffect(() => {
+        if (mode !== "advance" || !showVideo) return
+        const video = videoRef.current
+        if (!video) return
+        const onError = () => {
+            endActionRef.current.advance({
+                playback: false,
+                isFullscreen: isFullscreenNow,
+            })
+        }
+        video.addEventListener("error", onError)
+        return () => video.removeEventListener("error", onError)
+    }, [mode, showVideo, videoRef])
+
+    // A play on this element cancels a page turn that is still fetching: the
+    // user has taken over, and a stale intent must never move the gallery
+    // after that (§3, "Supersession"). Every `play` here is the user's by
+    // construction — while a turn is pending the only element alive is the
+    // parked one, and a new item's autoplay exists only after the turn has
+    // written, which cleared the token itself.
+    useEffect(() => {
+        if (mode !== "advance" || !showVideo) return
+        const video = videoRef.current
+        if (!video) return
+        const onPlay = () => endActionRef.current.cancel()
+        video.addEventListener("play", onPlay)
+        return () => video.removeEventListener("play", onPlay)
+    }, [mode, showVideo, videoRef])
 
     // The gallery's keyboard scope (docs/video-player-ui-design.md). Mounted
     // with the large image, so it is live exactly while the gallery owns the
@@ -817,7 +1244,11 @@ export function GalleryImageLarge(
                             // it restarts from the trim start rather than 0.
                             // The EFFECTIVE trim: an outro-skipping video has
                             // a loop point even with no user trim.
-                            loop={isEmptyTrim(effectiveTrim)}
+                            // And only in `loop` mode at all: `stop` and
+                            // `advance` need the element to fire `ended`,
+                            // which a natively looping one never does
+                            // (docs/video-end-action-design.md §2).
+                            loop={mode === "loop" && isEmptyTrim(effectiveTrim)}
                             muted={videoState.videoIsMuted}
                             controls={videoState.showControls}
                             // max-w-full is load-bearing, not decoration: a

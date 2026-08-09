@@ -68,7 +68,7 @@ export function SearchPageContent({ initialQuery, isRestrictedMode }:
 
 export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVisible = false }:
     { initialQuery: SearchQueryArgs, isRestrictedMode: boolean, updateRibbonVisible?: boolean }) {
-    const { data, error, isError, refetch, isFetching, resultsAreStale, nResults, page, pageSize, setPage, searchEnabled, getPageURL, committedQuery } = useSearch({ initialQuery })
+    const { data, error, isError, refetch, isFetching, resultsAreStale, nResults, page, pageSize, setPage, searchEnabled, getPageURL, committedQuery, queryEnabled } = useSearch({ initialQuery })
     const { toast } = useToast()
     // Random ordering is now a stable shuffle pinned by a seed, so refetching
     // deliberately returns the *same* results — that stability is the point.
@@ -232,6 +232,11 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                         totalPages={totalPages}
                         setPage={setPage}
                         resultsAreStale={resultsAreStale}
+                        // The gallery's auto-advance chain acts on the search
+                        // with no user gesture in sight, so it needs to know
+                        // when the live query is being withheld — see the prop
+                        // (docs/video-end-action-design.md §3).
+                        queryEnabled={queryEnabled}
                     />
                     :
                     <GridPanel

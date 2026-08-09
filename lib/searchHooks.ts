@@ -297,15 +297,33 @@ export function usePrefetchPageState() {
   // consumed when it ENDS, so a video longer than the default would evict
   // the very entry it warmed — that caller passes a horizon that outlives
   // any plausible video.
-  return async (target: PageState, opts?: { gcTime?: number }) => {
+  return async (
+    target: PageState,
+    opts?: { gcTime?: number; silent?: boolean }
+  ) => {
     const searchRequest = buildRequest(target)
-    const timer = setTimeout(() => setLoading(true), 400)
-    try {
-      await queryClient.prefetchQuery({
+    const warm = () =>
+      queryClient.prefetchQuery({
         queryKey: ["post", "/api/search/pql", searchRequest],
         queryFn: () => fetchSearch(searchRequest),
         gcTime: opts?.gcTime,
       })
+    // `silent`: no spinner at all, neither armed nor cleared. A background
+    // warm with no gesture behind it must be invisible — the gallery's
+    // ahead-of-turn prefetch fires while a video is playing, and the spinner
+    // it would arm is the full-panel overlay painted OVER that video (and
+    // over the clicks aimed at it) until the fetch resolves. The unattended
+    // `finally` is just as wrong in the other direction: it would clear a
+    // spinner the live search armed. The spinner path stays for the manual
+    // page turn and the page-size commit, where the user just clicked and a
+    // slow fetch has to say so.
+    if (opts?.silent) {
+      await warm()
+      return
+    }
+    const timer = setTimeout(() => setLoading(true), 400)
+    try {
+      await warm()
     } finally {
       clearTimeout(timer)
       setLoading(false)
