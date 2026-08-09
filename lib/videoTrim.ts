@@ -304,6 +304,38 @@ export function outroSkipGoverns(
   )
 }
 
+// The spec's own rewind on `play()` after `ended` lands at 0 (seconds); a
+// seek landing inside this band while that rewind is armed is read as the
+// rewind rather than as the user placing the playhead. A BAND and not
+// `=== 0` because the rewind targets exactly 0 but the readback is not
+// guaranteed to be exactly 0 in every engine (a seek can snap to a frame
+// boundary), and from inside the hook the two are indistinguishable —
+// nothing in a `seeking` event says who asked for it.
+//
+// The honest cost, stated plainly: in non-loop mode this band takes away
+// the ability to PLAY FROM the first 50 ms of a video after a natural end.
+// A deliberate rail seek into [0, 0.05] followed by play lands at the trim
+// start instead of at the position the user chose (only with a trim start
+// set — without one there is nothing to jump to, so nothing is lost).
+// Accepted: the alternative is an exact-zero test that any engine with an
+// inexact readback turns into "replay discards the trim start", which is
+// the gesture people actually make, against a 50 ms window at the head of a
+// video they have just watched to its end.
+const ENDED_REWIND_EPS = 0.05
+
+// How far a seek must land from a park before it counts as the user moving
+// away from it (seconds). The park's OWN readback is the reason for a
+// tolerance rather than an equality test: `currentTime = end` can come back
+// as `end − δ` on an engine that snaps the seek to a frame boundary
+// (Firefox is the documented risk), and the `seeking` event that carries
+// that readback is queued — it arrives after the park handler has already
+// run. The repo elsewhere assumes an exact readback (VideoRail's release
+// comment); this is the one site where the consequence of being wrong
+// escalates from a pixel to a spurious auto-advance, so it is hardened here.
+// A frame at 24 fps is 0.042 s, so 0.1 clears any plausible snap while
+// staying far below a deliberate scrub.
+const PARK_READBACK_EPS = 0.1
+
 // Enforces a playback trim range on a <video>: playback (re)starts from
 // `start`, playback *crossing* `end` jumps back to `start`, and
 // start === end shows a still frame instead of playing. Seeking is
@@ -314,14 +346,28 @@ export function outroSkipGoverns(
 // The video element must render without the native `loop` attribute while
 // a trim is set (see isEmptyTrim), since loops have to restart from
 // `start` rather than 0.
+//
+// `loopAtEnd: false` (docs/video-end-action-design.md §2) replaces both
+// wraps with a stop: crossing `end` parks the playhead ON the bound and
+// pauses, a natural `ended` leaves the element where the browser parked it,
+// and either path calls `onEndReached` — at most once per playback. In that
+// mode the hook binds even with no trim at all, since `ended` IS the whole
+// mechanism there; the host must correspondingly render the element WITHOUT
+// the native `loop` attribute, or `ended` never fires.
 export function useVideoTrim({
   videoRef,
   trim,
   active,
+  loopAtEnd = true,
+  onEndReached,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>
   trim: TrimRange | null
   active: boolean
+  // Defaulted so every caller that passes neither (the pinboard) keeps
+  // today's wrap semantics exactly.
+  loopAtEnd?: boolean
+  onEndReached?: () => void
 }) {
   const start = trim?.start ?? null
   const end = trim?.end ?? null
@@ -348,8 +394,17 @@ export function useVideoTrim({
     return () => video.removeEventListener("loadedmetadata", seekToStart)
   }, [active, videoRef])
 
+  // Read through a latest-ref so a caller's inline arrow never rebinds the
+  // listeners below — the deps take `loopAtEnd` and nothing else new.
+  const onEndReachedRef = React.useRef(onEndReached)
+  onEndReachedRef.current = onEndReached
+
   React.useEffect(() => {
-    if (!active || (start == null && end == null)) return
+    // An empty trim has nothing to enforce ONLY in loop mode, where the
+    // native `loop` attribute owns the wrap. Without it the `ended` binding
+    // is the mechanism itself and must exist with no bounds at all
+    // (docs/video-end-action-design.md §2).
+    if (!active || (loopAtEnd && start == null && end == null)) return
     const video = videoRef.current
     if (!video) return
     const s = start ?? 0
@@ -361,6 +416,40 @@ export function useVideoTrim({
       video.currentTime = s
       prev = s
     }
+    // Once per playback. An end bound sitting at the file's own end makes
+    // the crossing check and `ended` land in the same tick, and one playback
+    // must not advance the host twice. A closure local rather than a React
+    // ref BY DESIGN: a rebind clears it, which is the specified behavior and
+    // also stops one item's state from reaching the next element.
+    let fired = false
+    const endReached = () => {
+      if (fired) return
+      fired = true
+      onEndReachedRef.current?.()
+    }
+    // `play()` on an ENDED element seeks to 0 per spec, which would discard
+    // the trim start. The spec runs that seek SYNCHRONOUSLY inside play(),
+    // before the `play` event is even queued, so by the time the handler
+    // below runs `video.ended` is already false: reading the element there
+    // is a belt-and-braces check for engines that deviate, never the arm.
+    // The arm has to be a local — and therefore has to be RE-DERIVED from
+    // the element at bind time, because an effect rebind while the element
+    // sits at its natural end (an outro cut refining, a trim bound moving, a
+    // mode change) would otherwise silently disarm the correction and the
+    // next replay would start at 0. Deliberately NOT armed by a park AT the
+    // end bound: playing on from a park runs the tail out, which is the
+    // outro-inspection gesture (design §2).
+    let rewound = !loopAtEnd && !!video.ended
+    // Where the crossing check last parked the playhead (non-loop mode
+    // only), or null. It is what makes "play on from a park runs the tail
+    // out" hold even when the park's seek reads back a frame short of the
+    // bound: without it the readback sits BELOW `end` again, the next check
+    // tick sees a fresh crossing, and the video re-parks — in advance mode
+    // auto-advancing off the user's deliberate inspection play, which
+    // inverts the design's supersession rule. Cleared by any seek that moves
+    // meaningfully away (PARK_READBACK_EPS), and re-set by the next real
+    // crossing, so a genuine re-approach still parks.
+    let parkedAt: number | null = null
     let raf = 0
     const check = () => {
       if (freeze) return
@@ -371,38 +460,101 @@ export function useVideoTrim({
       // legitimately steps ~0.5 s of media time. Never below the 1x budget:
       // slow motion must not tighten it into missed crossings.
       const maxStep = MAX_PLAYBACK_STEP * Math.max(1, video.playbackRate)
+      // A standing park floors the "where we were" side of the crossing
+      // test: after parking at `end`, every position up to `end` has already
+      // been played through and crossed once. Without the floor a park whose
+      // readback landed at `end − δ` would cross again a frame later —
+      // `prev` follows the readback down through the else branch below — and
+      // the tail-inspection play would re-park instead of running out.
+      const from = parkedAt != null ? Math.max(prev, parkedAt) : prev
       const crossed =
         end != null &&
         !video.paused &&
-        prev < end &&
+        from < end &&
         now >= end &&
         now - prev < maxStep
-      if (crossed) jumpToStart()
-      else prev = now
+      if (crossed) {
+        if (loopAtEnd) jumpToStart()
+        else {
+          // Park exactly ON the marker — the same visual language as the
+          // click-park inspection gesture — and stop there (design §2).
+          // Disarmed BEFORE the seek, which is what tells the seek handler
+          // this landing is not the post-`ended` rewind; `parkedAt` is set
+          // before it for the same reason, so the seek it causes (whether
+          // that event arrives synchronously or queued) is recognized as the
+          // park's own and does not clear it.
+          rewound = false
+          parkedAt = end!
+          video.currentTime = end!
+          prev = end!
+          video.pause()
+          endReached()
+        }
+      } else prev = now
     }
     const tick = () => {
       check()
       raf = requestAnimationFrame(tick)
     }
     const onPlay = () => {
+      // A new playback: the end is reachable again
+      fired = false
       if (freeze) {
-        // "Playing" a zero-length range shows its frame
+        // "Playing" a zero-length range shows its frame. It never plays, so
+        // it never ends, and `onEndReached` never fires for it (design §2).
         jumpToStart()
         video.pause()
         return
       }
-      prev = video.currentTime
+      if (!loopAtEnd && start != null && (rewound || video.ended)) {
+        // Replay after a natural end: the spec's seek to 0 has discarded the
+        // trim start. Both signals because their timing is browser-dependent
+        // — by now the rewind may have happened (clearing `ended`) or not.
+        video.currentTime = start
+      }
+      rewound = false
+      // A play that starts AT a standing park resumes from the bound, not
+      // from a readback a frame short of it — the queued `seeking` the park
+      // itself caused may have written that readback into `prev` after the
+      // park handler had already set it. `parkedAt` is null in loop mode and
+      // whenever no park stands, where this is exactly `video.currentTime`.
+      prev = Math.max(video.currentTime, parkedAt ?? -Infinity)
       cancelAnimationFrame(raf)
       raf = requestAnimationFrame(tick)
     }
     const onSeeking = () => {
-      prev = video.currentTime
+      const now = video.currentTime
+      // Any seek away from the origin is the user choosing a position, so it
+      // outranks the pending spec rewind; a seek TO the origin while armed is
+      // that rewind itself.
+      if (rewound && now > ENDED_REWIND_EPS) rewound = false
+      // The same question for the park: a seek that lands away from it is
+      // the user leaving, and re-arms the crossing check at that bound; one
+      // that lands within PARK_READBACK_EPS is the park's own readback — or a
+      // scrub so close to the bound (a couple of frame-steps back from a
+      // park) that it reads as the tail-inspection gesture. The honest cost
+      // of that conflation: a playback started inside the band runs past the
+      // bound to the NATURAL end, so in advance mode the outro card plays in
+      // full and the advance fires there instead of at the cut. Accepted —
+      // the band is two frame-steps wide, and the alternative (an exact
+      // test) turns a snapped readback into a spurious auto-advance off the
+      // user's own inspection play, which is strictly worse.
+      if (parkedAt != null && Math.abs(now - parkedAt) > PARK_READBACK_EPS)
+        parkedAt = null
+      prev = now
     }
     const onPause = () => cancelAnimationFrame(raf)
     const onEnded = () => {
+      if (freeze) return
+      if (!loopAtEnd) {
+        // Leave the playhead where the browser parked it; the mode's owner
+        // decides what comes next (design §2)
+        rewound = true
+        endReached()
+        return
+      }
       // Manual wrap-around (native `loop` would restart at 0): reached when
       // no end is set, or the end lies at/past the actual file duration
-      if (freeze) return
       jumpToStart()
       video.play().catch(() => {})
     }
@@ -422,5 +574,5 @@ export function useVideoTrim({
       video.removeEventListener("seeking", onSeeking)
       video.removeEventListener("timeupdate", check)
     }
-  }, [active, start, end, videoRef])
+  }, [active, start, end, videoRef, loopAtEnd])
 }
