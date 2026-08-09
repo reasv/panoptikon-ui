@@ -26,7 +26,8 @@ import { MediaControls } from './PlayButton'
 import React from 'react'
 import { useOutroSkipEnabled, useVideoPlayerState } from '@/lib/videoPlayerState'
 import { CropRect, PinLock, PinOrientation, TrimRange, clampCrop, composeCrops, isEmptyTrim, isIdentityOrientation, packHField, parseHField } from '@/lib/pinboardCrop'
-import { effectiveVideoTrim, outroCutPoint, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
+import { effectiveVideoTrim, outroCutPoint, outroProbeEligible, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
+import { useVideoEndProbe } from '@/lib/videoEndProbe'
 import { CropGeometry, CropView } from './CropView'
 import { NativeControlsEscape, VideoPlayerSurface, playerSizeForWidth, useVideoPlayerSurface } from './VideoPlayerSurface'
 import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, Check, ChevronDown, ChevronsLeft, ChevronsRight, ChevronsUp, Columns3, Crop, Dices, Expand, FlipHorizontal, FlipHorizontal2, FlipVertical, FlipVertical2, FoldHorizontal, GripVertical, ImageDown, LayoutDashboard, ListX, LockOpen, Maximize, RotateCcw, RotateCw, Ruler, Scaling, SquareDashed, Trash2, X, type LucideIcon } from 'lucide-react'
@@ -3090,12 +3091,25 @@ function PinBoardPin({
     // and unchanged showVideo when the board reflows, and the departed
     // item's duration must not anchor the new item's cut
     const browserDuration = useVideoDuration(videoRef, showVideo, sha256)
+    const outroSkip = useOutroSkipEnabled()
+    // The measured end of the video track in the browser's timeline, which
+    // replaces the split-the-difference estimate above with arithmetic
+    // (lib/videoEndProbe.ts). It runs on its OWN offscreen element — the
+    // pin's <video> is never seeked by it — and is deduplicated per sha with
+    // a concurrency cap, which is what makes it safe on a board that mounts
+    // dozens of eligible pins in one pass. `file` is the same URL this pin's
+    // <video> loads.
+    const probedVideoEnd = useVideoEndProbe(
+        file,
+        sha256,
+        outroSkip && outroProbeEligible(data?.item?.content_end_ms, data?.item?.duration),
+    )
     const outroCut = outroCutPoint(
         data?.item?.content_end_ms,
         data?.item?.duration,
         browserDuration,
+        probedVideoEnd,
     )
-    const outroSkip = useOutroSkipEnabled()
     const effectiveTrim = effectiveVideoTrim(trim, outroCut, outroSkip)
     useVideoTrim({ videoRef, trim: effectiveTrim, active: showVideo })
     // Native controls stand the whole player world down (only the escape

@@ -29,7 +29,8 @@ import { MediaControls } from './PlayButton'
 import React from 'react'
 import { PLAYBACK_RATES, useOutroSkipEnabled, useVideoPlayerState } from '@/lib/videoPlayerState'
 import { NativeControlsEscape, PLAYER_SIZE_FULL_WIDTH, playerSizeForWidth, useVideoPlayerSurface, VideoPlayerSurface } from './VideoPlayerSurface'
-import { effectiveVideoTrim, outroCutPoint, trimWithBound, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
+import { effectiveVideoTrim, outroCutPoint, outroProbeEligible, trimWithBound, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
+import { useVideoEndProbe } from '@/lib/videoEndProbe'
 import { isEmptyTrim, TrimRange } from '@/lib/pinboardCrop'
 import { trimForSha } from '@/lib/galleryTrim'
 
@@ -592,8 +593,26 @@ export function GalleryImageLarge(
     // ffprobe about the origin) and which the rail draws its geometry from —
     // one listener, read here and handed down.
     const browserDuration = useVideoDuration(videoRef, showVideo, item.sha256)
-    const outroCut = outroCutPoint(item.content_end_ms, item.duration, browserDuration)
     const outroSkip = useOutroSkipEnabled()
+    // The measured end of the video track in the browser's own timeline,
+    // which turns the cut from a split-the-difference guess into arithmetic
+    // (lib/videoEndProbe.ts). Its own offscreen element — never this one, no
+    // visible video is seeked by it — so it is gated on the item's
+    // eligibility and the preference, NOT on showVideo: the answer should be
+    // there before the first frame plays. `fileURL` is the same URL the
+    // <video> below loads, so the probe hits the browser cache the player
+    // will use.
+    const probedVideoEnd = useVideoEndProbe(
+        fileURL,
+        item.sha256,
+        outroSkip && outroProbeEligible(item.content_end_ms, item.duration),
+    )
+    const outroCut = outroCutPoint(
+        item.content_end_ms,
+        item.duration,
+        browserDuration,
+        probedVideoEnd,
+    )
     const effectiveTrim = effectiveVideoTrim(trim, outroCut, outroSkip)
     useVideoTrim({ videoRef, trim: effectiveTrim, active: showVideo })
 

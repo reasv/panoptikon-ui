@@ -73,6 +73,23 @@ const OUTRO_GUARD_MS = 60
 // resolution of the trim codec, so a seeded user bound lands on the same
 // lattice.
 //
+// PROBE PATH (best, and the only one that measures rather than guesses).
+// `probedVideoEndSec` is the video track's true end in BROWSER seconds,
+// measured once per video by lib/videoEndProbe.ts. With it the discrepancy
+// between the two timelines stops mattering:
+//
+//   K   = serverDuration − contentEnd    (both ffprobe seconds: the card
+//                                         length, a difference INSIDE one
+//                                         timeline, so exact)
+//   cut = probedVideoEnd − K − guard     (browser seconds)
+//
+// It needs no browser duration at all, and no |delta| sanity test — it is not
+// composing two timelines, it is subtracting a known length from a measured
+// position. The measurement runs ≤1 frame EARLY (a frame's presentation time
+// is its start), which is the safe direction and well inside what the guard
+// already absorbs.
+//
+// MIDPOINT PATH (fallback while the probe is unavailable or still running).
 // The browser's timeline disagrees with ffprobe's in BOTH directions, and
 // field validation measured both on one file (browser duration 0.25 s longer
 // than ffprobe's): an origin shift at the front (edit lists / audio priming
@@ -94,8 +111,19 @@ const OUTRO_GUARD_MS = 60
 // Falls back to the start-anchored `contentEnd − guard` whenever either
 // duration is missing — the browser's arrives only with `loadedmetadata`, so
 // the fallback is what the first frames of every playback use, and the cut
-// REFINES when the metadata lands (useVideoTrim re-runs its loop effect on
-// an end change without yanking the playhead).
+// REFINES when the metadata lands, then again when the probe resolves
+// (useVideoTrim re-runs its loop effect on an end change without yanking the
+// playhead).
+//
+// PRECEDENCE: probe > midpoint > start-anchored fallback, with an asymmetry
+// in how the two anchored paths treat their own nonsense. Inconsistent
+// DURATIONS make the item ineligible outright (cutting on numbers already
+// known to disagree is worse than not cutting), but a nonsense PROBE result
+// only falls THROUGH to the midpoint: the probe is an independent,
+// best-effort measurement of a third thing, and a browser that returns
+// garbage for it has said nothing about the two durations, which still agree
+// with each other. A failed measurement must not be able to kill a feature
+// that worked without it.
 //
 // The eligibility floor is FREEZE_EPS, not zero: a cut at 0.01 s composes
 // {start: null, end: 0.01}, which is useVideoTrim's freeze branch — the
@@ -108,7 +136,10 @@ export function outroCutPoint(
   // (null, undefined, NaN, zero or negative — a duration of 0 is as unknown
   // as no duration at all) selects the start-anchored fallback.
   serverDurationSec?: number | null,
-  browserDurationSec?: number | null
+  browserDurationSec?: number | null,
+  // The video track's measured end in browser seconds (lib/videoEndProbe.ts),
+  // null until it resolves and on every browser that cannot measure it.
+  probedVideoEndSec?: number | null
 ): number | null {
   if (contentEndMs == null || !isFinite(contentEndMs)) return null
   const serverDur =
@@ -120,6 +151,21 @@ export function outroCutPoint(
       ? browserDurationSec
       : null
   let cut: number
+  if (serverDur != null) {
+    // The measured path. `card > 0` is the same eligibility fact the midpoint
+    // path checks (a content end at or past the file end leaves nothing to
+    // skip); when it fails, this path is simply not taken and the logic below
+    // reaches its own verdict on it. `probedEnd > card` is the probe's own
+    // sanity: a measured end shorter than the card it must contain is a
+    // measurement of something else.
+    const card = serverDur - contentEndMs / 1000
+    const probedEnd =
+      probedVideoEndSec != null && isFinite(probedVideoEndSec) ? probedVideoEndSec : null
+    if (card > 0 && probedEnd != null && probedEnd > card) {
+      cut = Math.round((probedEnd - card - OUTRO_GUARD_MS / 1000) * 100) / 100
+      return cut > FREEZE_EPS ? cut : null
+    }
+  }
   if (serverDur != null && browserDur != null) {
     const card = serverDur - contentEndMs / 1000
     const delta = browserDur - serverDur
@@ -135,6 +181,30 @@ export function outroCutPoint(
     cut = Math.round((contentEndMs - OUTRO_GUARD_MS) / 10) / 100
   }
   return cut > FREEZE_EPS ? cut : null
+}
+
+// Whether measuring this item's true video end could change its cut point —
+// the gate both hosts put on `useVideoEndProbe`. It is exactly the probe
+// path's own precondition minus the measurement: an item with no detected
+// outro has no cut to refine, and one whose `duration` is unusable has no
+// exact card length K to subtract, so the measurement would be spent on a
+// path that cannot consume it. (The user preference is the hosts' other
+// gate, kept there: a feature that is switched off must not fetch anything.)
+// Deliberately NOT gated on the card being positive or on the element being
+// shown — that is one arithmetic step past a cheap eligibility test, and the
+// probe is wanted BEFORE first play so the first frames already use the
+// measured cut.
+export function outroProbeEligible(
+  contentEndMs: number | null | undefined,
+  serverDurationSec?: number | null
+): boolean {
+  return (
+    contentEndMs != null &&
+    isFinite(contentEndMs) &&
+    serverDurationSec != null &&
+    isFinite(serverDurationSec) &&
+    serverDurationSec > 0
+  )
 }
 
 // The <video> element's own duration in seconds, NaN until its metadata

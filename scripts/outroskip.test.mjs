@@ -13,8 +13,13 @@
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
-const { FREEZE_EPS, effectiveVideoTrim, outroCutPoint, outroSkipGoverns } =
-  await import("../lib/videoTrim.ts")
+const {
+  FREEZE_EPS,
+  effectiveVideoTrim,
+  outroCutPoint,
+  outroProbeEligible,
+  outroSkipGoverns,
+} = await import("../lib/videoTrim.ts")
 const { isEmptyTrim } = await import("../lib/pinboardCrop.ts")
 
 let all = true
@@ -215,6 +220,116 @@ check(
   outroCutPoint(180) === 0.12,
   String(outroCutPoint(180))
 )
+
+// ---- cut point: probe (measured) path ---------------------------------
+
+// The probe measures the video track's TRUE end in the browser's timeline
+// (lib/videoEndProbe.ts), which removes the guess entirely:
+//   K = serverDuration − contentEnd   (the card length, exact, one timeline)
+//   cut = probedVideoEnd − K − guard  (browser seconds)
+// Fixture: contentEnd 11.29 s, serverDuration 13.29 s => K = 2.0 s exactly.
+// A measured video end of 13.40 puts the card's first frame at 11.40 and the
+// cut at 11.34 — no browser duration involved anywhere.
+const PROBE = outroCutPoint(11290, 13.29, 13.54, 13.4)
+check("probe path: cut = probedEnd − K − guard", PROBE === 11.34, String(PROBE))
+check(
+  "the probe outranks the midpoint on the same numbers",
+  PROBE !== FIELD && (FIELD === 11.35 || FIELD === 11.36),
+  `probe ${PROBE} vs midpoint ${FIELD}`
+)
+check(
+  "the probe needs no browser duration at all (pre-metadata)",
+  outroCutPoint(11290, 13.29, NaN, 13.4) === 11.34,
+  String(outroCutPoint(11290, 13.29, NaN, 13.4))
+)
+check(
+  "the probe ignores an absurd browser duration (no |delta| test on it)",
+  outroCutPoint(11290, 13.29, 99, 13.4) === 11.34,
+  String(outroCutPoint(11290, 13.29, 99, 13.4))
+)
+check(
+  "the probed cut is on the centisecond lattice (rounds up)",
+  outroCutPoint(11290, 13.29, null, 13.4567) === 11.4,
+  String(outroCutPoint(11290, 13.29, null, 13.4567))
+)
+check(
+  "…and rounds down",
+  outroCutPoint(11290, 13.29, null, 13.4512) === 11.39,
+  String(outroCutPoint(11290, 13.29, null, 13.4512))
+)
+
+// A nonsense measurement falls THROUGH to the midpoint/fallback — the
+// asymmetry against inconsistent durations (which make the item ineligible).
+// A browser that measured badly has said nothing about the two durations, so
+// a failed measurement must not kill a feature that worked without it.
+for (const [label, probed] of [
+  ["a measured end shorter than the card", 1.9],
+  ["a measured end exactly at the card length", 2],
+  ["a zero measurement", 0],
+  ["a negative measurement", -1],
+  ["NaN", NaN],
+  ["Infinity", Infinity],
+  ["null (still running / unsupported browser)", null],
+  ["undefined (caller passed nothing)", undefined],
+]) {
+  check(
+    `${label} falls through to the midpoint`,
+    outroCutPoint(11290, 13.29, 13.54, probed) === FIELD,
+    String(outroCutPoint(11290, 13.29, 13.54, probed))
+  )
+  check(
+    `${label} falls through to the fallback with no browser duration`,
+    outroCutPoint(11290, 13.29, NaN, probed) === 11.23,
+    String(outroCutPoint(11290, 13.29, NaN, probed))
+  )
+}
+
+// K comes from the server duration, so without a usable one there is no
+// probe path at all — a measured end alone cannot say where the card starts.
+for (const [label, server] of [
+  ["null", null],
+  ["undefined", undefined],
+  ["NaN", NaN],
+  ["zero", 0],
+  ["negative", -3],
+]) {
+  check(
+    `a probe with server duration ${label} falls back`,
+    outroCutPoint(11290, server, NaN, 13.4) === 11.23,
+    String(outroCutPoint(11290, server, NaN, 13.4))
+  )
+}
+
+// The card sanity guard is the midpoint path's, unchanged: a probe cannot
+// rescue an item whose content ends at or past the file end.
+check(
+  "a probe does not rescue a content end at the file end",
+  outroCutPoint(12400, 12.4, 12.55, 13) === null,
+  String(outroCutPoint(12400, 12.4, 12.55, 13))
+)
+
+// The freeze-band floor governs the probed path identically. K = 0.8 here,
+// so a measured end of 0.86 puts the cut at exactly 0.00.
+check(
+  "a probed cut inside the freeze band is ineligible",
+  outroCutPoint(200, 1, null, 0.86) === null,
+  String(outroCutPoint(200, 1, null, 0.86))
+)
+check(
+  "a probed cut one centisecond past the band is eligible",
+  outroCutPoint(200, 1, null, 0.89) === 0.03,
+  String(outroCutPoint(200, 1, null, 0.89))
+)
+
+// The hosts' gate on running the probe at all: an outro to refine, and a
+// server duration to build K from.
+check("probe eligibility: both present", outroProbeEligible(11290, 13.29))
+check("probe eligibility: no outro", !outroProbeEligible(null, 13.29))
+check("probe eligibility: undefined outro", !outroProbeEligible(undefined, 13.29))
+check("probe eligibility: no duration", !outroProbeEligible(11290, null))
+check("probe eligibility: undefined duration", !outroProbeEligible(11290, undefined))
+check("probe eligibility: zero duration", !outroProbeEligible(11290, 0))
+check("probe eligibility: NaN duration", !outroProbeEligible(11290, NaN))
 
 const CUT = outroCutPoint(30060) // 30 s
 check("fixture cut point", CUT === 30)
