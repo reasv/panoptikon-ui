@@ -9,7 +9,7 @@ import {
     Minimize,
     Pause,
     Play,
-    Repeat,
+    Repeat1,
     TvMinimalPlay,
     Volume1,
     Volume2,
@@ -95,8 +95,9 @@ function OutroSkipIcon({ className }: { className?: string }) {
 
 // The end-action cycle button's three faces (docs/video-end-action-design.md
 // §5). One record per mode so the glyph and the label can never drift apart,
-// and stock lucide glyphs because the row's language is stock: `Repeat` (plain,
-// not `Repeat1` — there is no "repeat all" here to contrast against),
+// and stock lucide glyphs because the row's language is stock: `Repeat1`
+// (field-corrected from plain `Repeat` — players universally badge loop-ONE
+// with the 1, and here the contrast that badge draws is with auto-advance),
 // `ArrowRightToLine` (runs to the wall and stops) and `ListVideo` (play through
 // the list; `SkipForward` reads as a next-track ACTION, not a mode).
 //
@@ -105,7 +106,7 @@ function OutroSkipIcon({ className }: { className?: string }) {
 // "click:" half is GALLERY_END_ACTIONS' own successor — keep the two in step if
 // that array ever grows.
 const END_ACTION_FACES: Record<GalleryEndAction, { Icon: LucideIcon; title: string }> = {
-    loop: { Icon: Repeat, title: "Loop this video — click: play once" },
+    loop: { Icon: Repeat1, title: "Loop this video — click: play once" },
     stop: { Icon: ArrowRightToLine, title: "Play once, stop at the end — click: auto-advance" },
     advance: { Icon: ListVideo, title: "Auto-advance to the next video — click: loop" },
 }
