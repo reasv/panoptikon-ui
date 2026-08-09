@@ -79,7 +79,12 @@ function acquireSlot(): Promise<void> {
 
 function releaseSlot() {
   inFlight -= 1
-  const next = waiting.shift()
+  // LIFO, not FIFO: the newest waiter is the most recently MOUNTED item —
+  // the one most likely on screen right now. Holding → through a gallery of
+  // TikToks enqueues a probe per item flown past; first-come ordering would
+  // spend every slot on items the user already left while the visible one
+  // waits at the back of the line.
+  const next = waiting.pop()
   if (next) next()
 }
 
@@ -199,8 +204,14 @@ function runProbe(src: string): Promise<number | null> {
       // timeline, so it never reaches below the midpoint.
       threshold = dur - Math.min(1, dur / 2)
       arm()
-      // Clamps to the seekable end, and promotes the load past `metadata`
-      el.currentTime = dur
+      try {
+        // Clamps to the seekable end, and promotes the load past `metadata`
+        el.currentTime = dur
+      } catch {
+        // Same hardening as the nudge's seek: a throwing implementation must
+        // resolve now, not idle out the whole timeout with rVFC armed
+        finish(null)
+      }
     }
 
     const onSeeked = () => {
@@ -231,7 +242,13 @@ function runProbe(src: string): Promise<number | null> {
       }, NUDGE_DELAY_MS)
     }
 
-    const onEnded = () => finish(best >= 0 ? best : null)
+    // `ended` is only meaningful on the playout path — a UA that fires it
+    // for the paused seek-to-end (the spec does not require one, but does
+    // not stop a buggy implementation) must not resolve null an instant
+    // before the frame it just presented would have succeeded
+    const onEnded = () => {
+      if (playingOut) finish(best >= 0 ? best : null)
+    }
     const onError = () => finish(best >= 0 ? best : null)
 
     el.addEventListener("loadedmetadata", onMetadata)
@@ -245,10 +262,15 @@ function runProbe(src: string): Promise<number | null> {
   })
 }
 
-// The cached, deduplicated, rate-limited entry point. A failure is cached
-// too: a file whose tail cannot be probed will not be probed again this
-// session — the midpoint heuristic is a complete answer, not a degraded one,
-// so retrying would spend range requests to re-learn the same null.
+// The cached, deduplicated, rate-limited entry point. Only a NUMBER is a
+// session verdict: a null covers everything from "this browser cannot
+// measure" to "the NAS tail read was slow once" to "the file 404s under the
+// currently selected database", and caching it would permanently demote
+// those videos to the midpoint heuristic on the strength of one bad moment.
+// So a null-resolving probe is evicted on settle — concurrent mounts still
+// share the one in-flight promise, and the next MOUNT retries (never a
+// same-mount loop: the hook's effect runs once per item). The retry cost is
+// bounded by the concurrency cap.
 export function probeVideoEnd(src: string, sha: string): Promise<number | null> {
   const cached = probes.get(sha)
   if (cached) return cached
@@ -261,6 +283,11 @@ export function probeVideoEnd(src: string, sha: string): Promise<number | null> 
     .then(() => runProbe(src).finally(releaseSlot))
     .catch(() => null)
   probes.set(sha, started)
+  void started.then((value) => {
+    // Identity-guarded: only evict our own entry, never a re-probe that
+    // replaced it while this one was settling
+    if (value == null && probes.get(sha) === started) probes.delete(sha)
+  })
   return started
 }
 

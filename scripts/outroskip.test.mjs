@@ -271,6 +271,12 @@ for (const [label, probed] of [
   ["Infinity", Infinity],
   ["null (still running / unsupported browser)", null],
   ["undefined (caller passed nothing)", undefined],
+  // The upper sanity bound: the measured end IS serverDuration plus the
+  // track's browser delay, so a measurement a second or more away is of
+  // something else (a spec-violating mediaTime, e.g. milliseconds)
+  ["a measured end a second past the server duration", 14.29],
+  ["a measured end a second before the server duration", 12.29],
+  ["a garbage-large measurement (milliseconds?)", 1340],
 ]) {
   check(
     `${label} falls through to the midpoint`,
@@ -308,12 +314,27 @@ check(
   String(outroCutPoint(12400, 12.4, 12.55, 13))
 )
 
-// The freeze-band floor governs the probed path identically. K = 0.8 here,
-// so a measured end of 0.86 puts the cut at exactly 0.00.
+// A measured end just inside the second-wide delay bound is accepted
 check(
-  "a probed cut inside the freeze band is ineligible",
-  outroCutPoint(200, 1, null, 0.86) === null,
+  "a measured end just inside the bound still measures",
+  outroCutPoint(11290, 13.29, NaN, 14.28) === 12.22,
+  String(outroCutPoint(11290, 13.29, NaN, 14.28))
+)
+
+// A probe whose CUT lands inside the freeze band falls through like every
+// other probe rejection — it must not kill an item the unmeasured tiers
+// would serve (§1's asymmetry; the first probe implementation returned null
+// here and the review caught it). K = 0.8, measured end 0.86 ⇒ probe cut
+// exactly 0.00.
+check(
+  "a sub-floor probed cut falls through to the fallback",
+  outroCutPoint(200, 1, null, 0.86) === 0.14,
   String(outroCutPoint(200, 1, null, 0.86))
+)
+check(
+  "a sub-floor probed cut falls through to the midpoint",
+  outroCutPoint(200, 1, 1.1, 0.86) === 0.19,
+  String(outroCutPoint(200, 1, 1.1, 0.86))
 )
 check(
   "a probed cut one centisecond past the band is eligible",

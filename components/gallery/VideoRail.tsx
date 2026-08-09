@@ -222,7 +222,20 @@ export function VideoRail({
     // no user end bound exists and no end edit is in flight. It is the only
     // difference between the two: everything below (geometry, drag, commit)
     // runs one code path.
-    const outroMarker = endBound == null && !endDragActive ? outroEnd : null
+    //
+    // While an UN-moved press holds the end marker, the marker renders at the
+    // GRAB value, not the live outroEnd: the probe (lib/videoEndProbe) can
+    // refine the cut mid-press, and letting the marker slide out from under
+    // the finger — while a release would park the playhead at the value that
+    // was grabbed — would start the park-then-frame-step workflow from a
+    // frame the marker no longer points at. The refinement lands visually on
+    // release instead.
+    const outroMarker =
+        endBound == null && !endDragActive
+            ? drag != null && drag.which === "end"
+                ? drag.value
+                : outroEnd
+            : null
     const outroOwned = outroMarker != null
     const shownEnd = endBound ?? outroMarker
 

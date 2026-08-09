@@ -155,15 +155,26 @@ export function outroCutPoint(
     // The measured path. `card > 0` is the same eligibility fact the midpoint
     // path checks (a content end at or past the file end leaves nothing to
     // skip); when it fails, this path is simply not taken and the logic below
-    // reaches its own verdict on it. `probedEnd > card` is the probe's own
-    // sanity: a measured end shorter than the card it must contain is a
-    // measurement of something else.
+    // reaches its own verdict on it. The probe's own sanity is two-sided:
+    // a measured end shorter than the card it must contain, or more than a
+    // second away from the video stream's own duration (the measured end IS
+    // serverDuration plus the track's browser-timeline delay, and a delay of
+    // a second is the same two-different-files threshold the midpoint's
+    // |delta| bound draws), is a measurement of something else. EVERY
+    // rejection here — including a probe cut landing inside the freeze
+    // band — falls THROUGH to the unmeasured tiers rather than returning
+    // null: a failed measurement must never kill a feature that worked
+    // without it (the asymmetry documented in the design's §1).
     const card = serverDur - contentEndMs / 1000
     const probedEnd =
-      probedVideoEndSec != null && isFinite(probedVideoEndSec) ? probedVideoEndSec : null
+      probedVideoEndSec != null &&
+      isFinite(probedVideoEndSec) &&
+      Math.abs(probedVideoEndSec - serverDur) < 1
+        ? probedVideoEndSec
+        : null
     if (card > 0 && probedEnd != null && probedEnd > card) {
       cut = Math.round((probedEnd - card - OUTRO_GUARD_MS / 1000) * 100) / 100
-      return cut > FREEZE_EPS ? cut : null
+      if (cut > FREEZE_EPS) return cut
     }
   }
   if (serverDur != null && browserDur != null) {
