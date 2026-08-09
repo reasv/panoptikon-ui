@@ -29,8 +29,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { useSearchLoading } from '@/lib/state/zust'
 import { MediaControls } from './PlayButton'
 import React from 'react'
-import { PLAYBACK_RATES, useGalleryEndAction, useOutroSkipEnabled, useVideoPlayerState } from '@/lib/videoPlayerState'
-import { NativeControlsEscape, PLAYER_SIZE_FULL_WIDTH, playerSizeForWidth, useVideoPlayerSurface, VideoPlayerSurface } from './VideoPlayerSurface'
+import { PLAYBACK_RATES, setGalleryEndAction, useGalleryEndAction, useOutroSkipEnabled, useVideoPlayerState } from '@/lib/videoPlayerState'
+import { GALLERY_SURFACE_FLOOR, NativeControlsEscape, playerSizeForWidth, useVideoPlayerSurface, VideoPlayerSurface } from './VideoPlayerSurface'
 import { effectiveVideoTrim, outroCutPoint, outroProbeEligible, trimWithBound, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
 import { useVideoEndProbe } from '@/lib/videoEndProbe'
 import { isEmptyTrim, TrimRange } from '@/lib/pinboardCrop'
@@ -836,15 +836,16 @@ export function GalleryImageLarge(
     // S1 footprint. The surface hugs the DISPLAYED video rather than the
     // panel (docs/video-player-ui-design.md, "Size ladder"): the gallery panel
     // is far wider than a letterboxed picture and a panel-wide row over empty
-    // letterbox reads as sparse. Floor = PLAYER_SIZE_FULL_WIDTH, the width the
-    // full control row itself needs, so it only engages for videos narrower
-    // than the row; cap = the panel, which is all the surface ever had. The
-    // tier follows from the resulting width, so a panel under 280px degrades
-    // to medium/mini exactly like a pin does. In fullscreen the player owns
-    // the screen and the surface spans it, the way every fullscreen video's
+    // letterbox reads as sparse. Floor = GALLERY_SURFACE_FLOOR, the width THIS
+    // host's full control row needs — one end-action button more than a pin's
+    // (see the constant) — so it only engages for videos narrower than the
+    // row; cap = the panel, which is all the surface ever had. The tier
+    // follows from the resulting width, so a panel under 280px degrades to
+    // medium/mini exactly like a pin does. In fullscreen the player owns the
+    // screen and the surface spans it, the way every fullscreen video's
     // controls do.
     const surfaceWidth = pictureBox
-        ? Math.min(panelBox.w, Math.max(pictureBox.width, PLAYER_SIZE_FULL_WIDTH))
+        ? Math.min(panelBox.w, Math.max(pictureBox.width, GALLERY_SURFACE_FLOOR))
         : 0
     const surfaceBox = pictureBox && !player.isFullscreen
         ? {
@@ -1323,6 +1324,13 @@ export function GalleryImageLarge(
                                     trim={trim}
                                     onTrimChange={onTrimChange}
                                     outroCutPoint={outroCut}
+                                    // The end-action cycle button, which exists
+                                    // only where both props are passed — the
+                                    // gallery is the only such host. Writing
+                                    // straight to the store, which is where
+                                    // `mode` above was read from.
+                                    endAction={mode}
+                                    onEndActionChange={setGalleryEndAction}
                                     duration={browserDuration}
                                     // The very URL the element plays, so the
                                     // download is the original file and not a

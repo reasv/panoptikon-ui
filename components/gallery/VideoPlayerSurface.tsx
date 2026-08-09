@@ -1,21 +1,27 @@
 import React from "react"
 import {
+    ArrowRightToLine,
     Brackets,
     Download,
     EllipsisVertical,
+    ListVideo,
     Maximize,
     Minimize,
     Pause,
     Play,
+    Repeat,
     TvMinimalPlay,
     Volume1,
     Volume2,
     VolumeOff,
     X,
+    type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TrimRange } from "@/lib/pinboardCrop"
 import {
+    GALLERY_END_ACTIONS,
+    GalleryEndAction,
     PLAYBACK_RATES,
     setOutroSkipEnabled,
     useOutroSkipEnabled,
@@ -87,6 +93,23 @@ function OutroSkipIcon({ className }: { className?: string }) {
     )
 }
 
+// The end-action cycle button's three faces (docs/video-end-action-design.md
+// §5). One record per mode so the glyph and the label can never drift apart,
+// and stock lucide glyphs because the row's language is stock: `Repeat` (plain,
+// not `Repeat1` — there is no "repeat all" here to contrast against),
+// `ArrowRightToLine` (runs to the wall and stops) and `ListVideo` (play through
+// the list; `SkipForward` reads as a next-track ACTION, not a mode).
+//
+// Each title names the current state AND what a click does, because a
+// three-state cycle cannot announce itself through pressed/unpressed. The
+// "click:" half is GALLERY_END_ACTIONS' own successor — keep the two in step if
+// that array ever grows.
+const END_ACTION_FACES: Record<GalleryEndAction, { Icon: LucideIcon; title: string }> = {
+    loop: { Icon: Repeat, title: "Loop this video — click: play once" },
+    stop: { Icon: ArrowRightToLine, title: "Play once, stop at the end — click: auto-advance" },
+    advance: { Icon: ListVideo, title: "Auto-advance to the next video — click: loop" },
+}
+
 export type VideoPlayerSize = "full" | "medium" | "mini"
 
 // Container widths (px) at which the ladder steps; hosts that measure a pin
@@ -94,6 +117,16 @@ export type VideoPlayerSize = "full" | "medium" | "mini"
 // tier from container queries — the prop is the contract, not the mechanism.
 export const PLAYER_SIZE_MEDIUM_WIDTH = 160
 export const PLAYER_SIZE_FULL_WIDTH = 280
+
+// What the GALLERY floors its surface width to. PLAYER_SIZE_FULL_WIDTH is
+// "the width the full control row needs" — for the row a PIN renders. The
+// gallery's row carries one button pins never do (the end-action cycle), so
+// at exactly 280 its readout is the only shrinkable item and ellipsizes on
+// every portrait video in a short panel. One button (28) + one gap (2) more
+// keeps the clock whole; the shared tier constant must NOT rise instead,
+// because that would demote 280–310 px pins to medium for a button they
+// don't have.
+export const GALLERY_SURFACE_FLOOR = PLAYER_SIZE_FULL_WIDTH + 30
 
 export function playerSizeForWidth(width: number): VideoPlayerSize {
     if (width >= PLAYER_SIZE_FULL_WIDTH) return "full"
@@ -244,8 +277,12 @@ function SurfaceButton({
     onClick: (e: React.MouseEvent) => void
     active?: boolean
     // Toggle state for assistive tech, when it differs from the lit look
-    // (the trim button also lights up merely because a trim exists)
-    pressed?: boolean
+    // (the trim button also lights up merely because a trim exists).
+    // Explicit `null` means "not a toggle at all" — omit aria-pressed, for the
+    // cycle buttons whose state is a ladder rather than on/off. Undefined keeps
+    // the original behaviour (follow the lit look), so no existing caller's
+    // markup moves.
+    pressed?: boolean | null
     className?: string
     children: React.ReactNode
 }) {
@@ -257,7 +294,7 @@ function SurfaceButton({
             type="button"
             title={title}
             aria-label={title}
-            aria-pressed={pressed ?? active}
+            aria-pressed={pressed === null ? undefined : (pressed ?? active)}
             onClick={onClick}
             className={cn(
                 "flex shrink-0 cursor-pointer items-center justify-center rounded p-1 text-white/90",
@@ -433,6 +470,8 @@ export function VideoPlayerSurface({
     trim,
     onTrimChange,
     outroCutPoint = null,
+    endAction,
+    onEndActionChange,
     duration,
     download,
     size = "full",
@@ -450,6 +489,17 @@ export function VideoPlayerSurface({
     // `outroCutPoint`), or null when the item is not eligible — in which case
     // the toggle button does not exist at all, no disabled ghost.
     outroCutPoint?: number | null
+    // What playback does at the end (docs/video-end-action-design.md §5), and
+    // the verb that cycles it. GALLERY-ONLY BY CONSTRUCTION: the pair is the
+    // whole gate — without both, no button exists, the same existence pattern
+    // as `outroCutPoint` and `download`. The pinboard passes neither and is
+    // untouched, because pins are an arrangement, not a sequence: "advance"
+    // names nothing there, and a board of parallel players has no use for
+    // play-once either. The surface never owns the value; the mode is a
+    // browser-level preference several components in the gallery tree read in
+    // the same commit, so it is passed in rather than read here.
+    endAction?: GalleryEndAction
+    onEndActionChange?: (next: GalleryEndAction) => void
     // The <video> element's own duration in seconds, NaN until its metadata
     // loads (lib/videoTrim's `useVideoDuration`). The HOST owns the listener
     // because the cut point above is computed from the same number — one
@@ -603,6 +653,19 @@ export function VideoPlayerSurface({
                 // suppressing it is the degenerate-range guard (§1): a loop
                 // start at, past, or within a freeze frame of the cut
                 : "Loop start sits at the detected end card, so outro skip does not apply here."
+
+    // The end action's button exists only where a host asked for it (both
+    // props), so this stays null on the board.
+    const endActionFace = endAction != null ? END_ACTION_FACES[endAction] : null
+    // The cycle order IS GALLERY_END_ACTIONS' order, stepped by index rather
+    // than re-listed here: that array is the store's canonical order (its
+    // parser derives validity from it too), and a second hand-written list is
+    // exactly how a mode added there would end up unreachable from the button.
+    const cycleEndAction = () => {
+        if (endAction == null || onEndActionChange == null) return
+        const next = (GALLERY_END_ACTIONS.indexOf(endAction) + 1) % GALLERY_END_ACTIONS.length
+        onEndActionChange(GALLERY_END_ACTIONS[next])
+    }
 
     // Per side, in px — must mirror the rail's mx-3/mx-2 below
     const railInset = isFullscreen ? 12 : 8
@@ -758,6 +821,37 @@ export function VideoPlayerSurface({
                 <div className="grow" />
 
                 <div className="relative flex shrink-0 items-center gap-0.5">
+                    {/* Leftmost of the group, so the row reads left to right as
+                        "what happens at the end → where the end is → edit the
+                        range". FULL tier only, one rung stricter than the trim
+                        button's ladder: at medium (160–280 px) the row's
+                        shrink-0 children already need ~192 px with an outro
+                        button present, and a fifth button pushes the overflow
+                        onto the kebab — the tier's only route to fullscreen
+                        and close. The mode still governs playback at the
+                        smaller tiers; the control is just not worth the verbs
+                        it would clip. No kebab fallback row either — the
+                        gallery only reaches those tiers in degenerate
+                        layouts. */}
+                    {size === "full" && endActionFace && onEndActionChange && (
+                        <SurfaceButton
+                            title={endActionFace.title}
+                            // Lit for anything but the default: the glow means
+                            // "this player will do something other than repeat
+                            // when it gets to the end".
+                            active={endAction !== "loop"}
+                            // A CYCLE, not a toggle. Three states have no
+                            // pressed/unpressed to report, and aria-pressed
+                            // would announce a two-state control that does not
+                            // exist — the title carries both the state and the
+                            // next one instead.
+                            pressed={null}
+                            onClick={cycleEndAction}
+                        >
+                            <endActionFace.Icon className="size-[20px]" />
+                        </SurfaceButton>
+                    )}
+
                     {/* Trim-adjacent in meaning, so it sits immediately left
                         of the trim button and follows the same size ladder.
                         Exists ONLY on an eligible item; dimmed-but-clickable
@@ -805,7 +899,7 @@ export function VideoPlayerSurface({
                         // wrapping: this one is a sentence. Anchored to the
                         // right GROUP rather than to the button, so it grows
                         // leftward from the row's own right edge instead of
-                        // from ~3 buttons in, and capped to fit the narrowest
+                        // from several buttons in, and capped to fit the narrowest
                         // surface that renders it (medium tier: 160 px, less
                         // the row's 12 px of padding) — it may never reach
                         // past the player's left edge.
