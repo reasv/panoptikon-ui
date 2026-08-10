@@ -132,6 +132,12 @@ export const getScrollPositionURL = (
   // `{ page }` above): dropped outright, not set to 1, so the URL says
   // "position, not pagination".
   queryParams.delete("page")
+  // Likewise the gallery index (`lib/state/gallery.ts`'s `gi`). In scroll mode
+  // `gi` is a GLOBAL index and it wins over `top` on load — it opens the
+  // gallery on that exact item — so carrying the current one into a virtual
+  // page link would open the middle-clicked page at the item the user is
+  // looking at now, not at the page the link is labelled with.
+  queryParams.delete("gi")
   const anchor = pageSize >= 1 ? Math.max(newPage - 1, 0) * pageSize : 0
   return scrollAnchorSerializer(queryParams, {
     [GRID_SCROLL_ANCHOR_KEY]: anchor > 0 ? anchor : null,

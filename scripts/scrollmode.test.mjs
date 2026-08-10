@@ -136,6 +136,53 @@ const shape = (value) => JSON.stringify(value)
   )
 }
 
+// ---- pages -> pages: the page-size remap ------------------------------
+//
+// Both wrappers above pin one side to "no pagination", so neither exercises
+// the both-sizes-finite branch that `useCommitPageSize` actually runs in
+// pages mode. Asserted directly here.
+
+{
+  // page 3 at k=10, 5th item of the page -> global (3-1)*10 + 4 = 24.
+  // At k=25 that global index is still on the first page: floor(24/25) = 0.
+  const grown = remapPageAnchor({
+    page: 3,
+    pageSize: 10,
+    nextPageSize: 25,
+    anchor: 4,
+  })
+  check(
+    "growing the page size re-expresses the same global item",
+    shape(grown) === shape({ page: 1, index: 24 }),
+    shape(grown)
+  )
+  // The same global 24 at k=15 lands mid-set: 24 = 1*15 + 9.
+  const regrouped = remapPageAnchor({
+    page: 3,
+    pageSize: 10,
+    nextPageSize: 15,
+    anchor: 4,
+  })
+  check(
+    "…and a size that regroups it moves the page number with it",
+    shape(regrouped) === shape({ page: 2, index: 9 }),
+    shape(regrouped)
+  )
+  // The remap is the identity when nothing changes, and it is reversible:
+  // going back to the old size must name the coordinates it started from.
+  const back = remapPageAnchor({
+    page: regrouped.page,
+    pageSize: 15,
+    nextPageSize: 10,
+    anchor: regrouped.index,
+  })
+  check(
+    "…and remapping back to the old size returns the original coordinates",
+    shape(back) === shape({ page: 3, index: 4 }),
+    shape(back)
+  )
+}
+
 // ---- the invariant the whole design rests on --------------------------
 //
 // floor(top_global / k) === page - 1, with the same k on both sides: the
@@ -177,19 +224,6 @@ const shape = (value) => JSON.stringify(value)
 }
 
 {
-  // The mode switch is the page-size remap with no pagination on one side —
-  // the same function, which is why the invariant holds at all.
-  const viaRemap = remapPageAnchor({
-    page: 37,
-    pageSize: 10,
-    nextPageSize: 0,
-    anchor: 4,
-  })
-  check(
-    "the switch is remapPageAnchor with an unbounded page on the far side",
-    viaRemap.index === scrollAnchorFromPage({ page: 37, pageSize: 10, anchor: 4 }),
-    shape(viaRemap)
-  )
   check(
     "clampToPage still brings a stale index inside its page",
     clampToPage(999, 10) === 9 && clampToPage(-3, 10) === 0 && clampToPage(999, 0) === 999,
@@ -292,12 +326,6 @@ const shape = (value) => JSON.stringify(value)
     shape({ page: chunk7.body.page, page_size: chunk7.body.page_size })
   )
   check(
-    "the chunk body is the ordinary results body with pagination overridden",
-    shape(chunk) ===
-      shape(buildResultsRequest(parts, { page: 1, pageSize: SCROLL_CHUNK_SIZE })),
-    shape(chunk)
-  )
-  check(
     "…and it overrides the URL's own page/page_size rather than inheriting them",
     chunk.body.page !== parts.searchQuery.page &&
       chunk.body.page_size !== parts.searchQuery.page_size
@@ -313,6 +341,86 @@ const shape = (value) => JSON.stringify(value)
       prefetch_rows: chunk.body.prefetch_rows,
     })
   )
+
+  // The byte-identical-body rule checked FIELD BY FIELD, against the ordinary
+  // results request rather than against the chunk builder's own definition:
+  // equal key sets is half the claim, because an absent field and a set one
+  // hash to different cache keys — that split is what this guards.
+  const main = buildResultsRequest(parts)
+  const keysOf = (o) => Object.keys(o).sort()
+  check(
+    "chunk and results bodies carry exactly the same set of fields",
+    shape(keysOf(main.body)) === shape(keysOf(chunk7.body)),
+    `${shape(keysOf(main.body))} vs ${shape(keysOf(chunk7.body))}`
+  )
+  const differing = keysOf(main.body).filter(
+    (key) => shape(main.body[key]) !== shape(chunk7.body[key])
+  )
+  check(
+    "…and the values differ in page/page_size and in nothing else",
+    shape(differing) === shape(["page", "page_size"]),
+    shape(differing)
+  )
+  check(
+    "…while the params (databases, bookmark namespace) are identical",
+    shape(main.params) === shape(chunk7.params),
+    shape(chunk7.params)
+  )
+
+  // The chunk store tags its wanted set with chunk 0's request hash precisely
+  // because it must NOT move on a page/page_size relabel. That only holds if
+  // no body field derives from the URL's pagination — guard it, or a future
+  // page_size-derived field silently reintroduces the teardown-on-relabel bug.
+  const relabeled = {
+    ...parts,
+    searchQuery: { ...parts.searchQuery, page: 9, page_size: 50 },
+  }
+  check(
+    "parts differing only in page/page_size build an identical chunk request",
+    shape(buildChunkRequest(parts, 0)) === shape(buildChunkRequest(relabeled, 0)),
+    "chunk-0 request must be pagination-independent"
+  )
+}
+
+{
+  // A vector search. `prefetch_rows` is the one body field whose value depends
+  // on the query's *content*, so a chunk of one must carry the budget the main
+  // query carries — otherwise the first chunk keys apart from the span the SSR
+  // prefetch already warmed. The server treats it as LIMIT max(limit,
+  // prefetch), so at a chunk size equal to the budget it is inert; carrying it
+  // is about the cache key, not about fetching more rows.
+  const parts = {
+    searchQuery: {
+      query: {
+        filters: [
+          { semantic: { image_embeddings: { model: "clip", query: "cat" } } },
+        ],
+      },
+      order_by: "last_modified",
+      page: 1,
+      page_size: 10,
+    },
+    dbs: { index_db: "index", user_data_db: "user" },
+    bookmarkNs: "default",
+    partitionBy: ["item_id"],
+  }
+  const chunk = buildChunkRequest(parts, 3)
+  check(
+    "a vector query's chunk N carries the prefetch row budget",
+    chunk.body.prefetch_rows === 320,
+    shape({ prefetch_rows: chunk.body.prefetch_rows })
+  )
+  check(
+    "…and it equals the chunk size, which is what makes it inert",
+    chunk.body.prefetch_rows === SCROLL_CHUNK_SIZE &&
+      chunk.body.page === 4 &&
+      chunk.body.page_size === SCROLL_CHUNK_SIZE,
+    shape({ page: chunk.body.page, page_size: chunk.body.page_size })
+  )
+  check(
+    "…and the main results request for the same query carries the same budget",
+    buildResultsRequest(parts).body.prefetch_rows === chunk.body.prefetch_rows
+  )
 }
 
 // ---- the scroll-mode page link ----------------------------------------
@@ -321,7 +429,7 @@ const params = (search) => new URLSearchParams(search)
 const of = (url) => new URLSearchParams(url)
 
 {
-  const base = params("tag.pos_match_all=cat&page=3&top=17&order=desc")
+  const base = params("tag.pos_match_all=cat&page=3&top=17&gi=5&order=desc")
   const first = of(getScrollPositionURL(base, 1, 10))
   check(
     "page 1 writes no anchor at all (absent means the top row is visible)",
@@ -329,6 +437,10 @@ const of = (url) => new URLSearchParams(url)
     first.toString()
   )
   check("…and no page either", !first.has("page"), first.toString())
+  // `gi` is a global index in scroll mode and wins over `top` on load, so a
+  // carried-over gallery index would open the link at the item the user is
+  // looking at now instead of at the page it is labelled with.
+  check("…and no carried-over gallery index", !first.has("gi"), first.toString())
   check(
     "…while every unrelated param survives",
     first.get("tag.pos_match_all") === "cat" && first.get("order") === "desc",

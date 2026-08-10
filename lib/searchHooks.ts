@@ -19,7 +19,7 @@ import {
 import type { components } from "./panoptikon"
 import { getSearchPageURL } from "./state/searchQuery/serializers"
 import { usePartitionBy } from "./state/partitionBy"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useThrottledValue } from "./useThrottledValue"
 import {
   useGalleryIndex,
@@ -157,12 +157,23 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   // library running the previous query until the next commit. Consumers
   // throttle what they get from here, which reproduces this query's own
   // "throttled, once live == committed" behaviour.
-  const { key: committedKey, value: committedQuery } = useCommittedQuery(
-    liveKey,
-    { searchQuery: liveRequest.searchQuery, dbs: liveRequest.dbs },
-    instantSearch,
-    commitToken
-  )
+  // All four request fields freeze together, as one `SearchRequestParts`: a
+  // consumer that mixed these with its own LIVE reads of `bookmarkNs` or
+  // `partitionBy` could build a request that is half-committed and half-live,
+  // which is exactly the hybrid the lock exists to prevent. Freezing the whole
+  // parts object makes that request unbuildable rather than merely unlikely.
+  const { key: committedKey, value: committedQuery } =
+    useCommittedQuery<SearchRequestParts>(
+      liveKey,
+      {
+        searchQuery: liveRequest.searchQuery,
+        dbs: liveRequest.dbs,
+        bookmarkNs: liveRequest.bookmarkNs,
+        partitionBy: liveRequest.partitionBy,
+      },
+      instantSearch,
+      commitToken
+    )
   const queryEnabled =
     searchEnabled &&
     (instantSearch || committedKey === liveKey) &&
@@ -246,9 +257,11 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     isError,
     refetch: refetchAll,
     isFetching,
-    // For on-demand consumers of the same search (the grid's Library tab):
-    // the query this hook would run, gated by the update lock exactly as this
-    // hook gates its own. See useCommittedQuery.
+    // For on-demand consumers of the same search (the grid's Library tab, the
+    // scroll-mode chunk store): the full `SearchRequestParts` this hook would
+    // run, gated by the update lock exactly as this hook gates its own. A
+    // consumer that needs only part of it takes a `Pick` and is unaffected.
+    // See useCommittedQuery.
     committedQuery,
     resultsAreStale,
     nResults,
@@ -440,17 +453,29 @@ export function useFetchPageRows() {
  * scroll mode, and in pages mode they are page-local because the array is the
  * page. The source never translates; whoever owns the URL does.
  *
- * DEPENDENCY RULE: `rowsIdentity` is the change signal. Put it — never the
- * source object — in effect deps, memo deps and supersession comparisons. The
- * source object's identity is not promised to be stable (`arrayResultsSource`
- * mints one per render), while `rowsIdentity` changes when, and essentially
- * only when, some underlying row array moved.
+ * DEPENDENCY RULE: `rowsIdentity` is the ROWS change signal. Put it — never
+ * the source object, never its methods — in effect deps, memo deps and
+ * supersession comparisons. Neither implementation promises a stable source
+ * object (both mint one per render), while `rowsIdentity` tracks the observed
+ * row set (see its own doc below).
+ *
+ * `count` is NOT part of it. It is a plain value that changes on its own
+ * schedule — the pre-count fallback growing into the real count is the normal
+ * case — so anything whose sizing depends on it must list `count` as its own
+ * dependency alongside `rowsIdentity`. Do not fold the two together: a count
+ * arriving must not read as "the rows moved" to a consumer that cancels work
+ * when they do.
  */
 export interface ResultsSource {
   /**
    * How far the user can navigate: the count query's answer once it lands,
    * the loaded extent while it is still in flight (the design's pre-count
    * fallback — size to what is known and grow once).
+   *
+   * The count rides its query's `keepPreviousData` deliberately (design §3
+   * pre-count fallback: the scroll space must not collapse and re-grow across
+   * a re-search), so a stale count carried across a query change is the
+   * intended behaviour, not a leak.
    */
   count: number
   /**
@@ -469,8 +494,38 @@ export interface ResultsSource {
    * apart (same discipline as `useFetchPageRows`).
    */
   fetchItem(index: number): Promise<SearchResult | undefined>
-  /** Changes when any underlying row array changes. See the rule above. */
-  rowsIdentity: object
+  /**
+   * A value-comparable token that changes when the OBSERVED row set changes —
+   * either in MEMBERSHIP (a chunk joining or leaving the wanted window) or in
+   * CONTENT (a row array reference actually replaced). Guaranteed stable
+   * across a no-op refetch: react-query's structural sharing returns the same
+   * array when nothing changed, so the token does not move either.
+   *
+   * Note what it does NOT track: `get` also serves chunks that have been
+   * evicted from the observed set but are still in the react-query cache, and
+   * those rows are outside this token's scope by construction.
+   *
+   * Membership churn is real churn to this token: once the observed set is at
+   * its cap, every seam crossing evicts one chunk and admits another, moving
+   * the token with no row anyone can see having changed. A supersession gate
+   * built on this comparison must tolerate that — compare only the chunks
+   * present in both snapshots, or accept the (rare, harmless) spurious
+   * cancellation.
+   *
+   * Compare with `!==` and nothing else: the two implementations return
+   * different kinds of value — the array itself in pages mode, a derived
+   * string in scroll mode — and `!==` is exactly right for both (references
+   * compare by identity, strings by value). Hence `unknown`: reading it for
+   * anything but a comparison is a bug.
+   *
+   * Deliberately NOT a timestamp or a fetch counter. Structural sharing is
+   * what makes a reference the honest answer to "did the rows move?", while
+   * `dataUpdatedAt` would say yes on every background refetch — and the pages
+   * -mode twin would say no to the same event. The comparison this feeds is
+   * the gallery's pending-advance cancellation, so the two modes disagreeing
+   * is precisely the bug this abstraction exists to prevent.
+   */
+  rowsIdentity: unknown
 }
 
 /**
@@ -489,29 +544,69 @@ const NO_FALLBACK_ROWS: SearchResult[] = []
 const NO_WANTED_CHUNKS: number[] = []
 
 /**
+ * A stable number per row-array *reference*, minted on first sight. The
+ * building block of `rowsIdentity` in the chunk store: composing these ids
+ * into a string turns "did any of these arrays move?" into a value
+ * comparison, which is what lets the token itself be the string (see
+ * `ResultsSource.rowsIdentity`).
+ *
+ * A WeakMap keyed on the array, so an id never keeps rows alive past their
+ * cache entry, and a monotonic counter rather than a hash, so two arrays that
+ * happen to hold equal rows still get distinct ids — reference identity is
+ * the whole claim being encoded.
+ */
+let nextRowsId = 1
+const rowsIds = new WeakMap<object, number>()
+function idOf(rows: object): number {
+  const seen = rowsIds.get(rows)
+  if (seen !== undefined) return seen
+  const id = nextRowsId++
+  rowsIds.set(rows, id)
+  return id
+}
+
+/**
  * The sparse chunk store behind scroll mode: fixed-size, offset-aligned
  * windows of the committed search, fetched on demand and read by global item
  * index.
  *
  * Keyed on `committedQuery` rather than live URL state, so chunk fetching
- * inherits the update lock and the throttle by construction — scrolling can
- * never fetch a search the user is still editing or has deliberately withheld
- * (see `useCommittedQuery`). The two request fields the committed value does
- * not carry, `bookmarkNs` and `partitionBy`, are read from LIVE state here.
- * That is safe rather than a hybrid-request hole: `useSearch` hashes all four
- * fields into its live key, so with the lock on an edit to either makes
- * `committedKey !== liveKey` and disables the queries before a chunk can be
- * requested, and with instant search on committed and live are the same
+ * inherits the update lock by construction — scrolling can never fetch a
+ * search the user is still editing or has deliberately withheld (see
+ * `useCommittedQuery`). The throttle is NOT inherited with it and is applied
+ * here instead: with instant search on, committed and live are the same
  * value.
+ *
+ * `committedQuery` is the WHOLE `SearchRequestParts`, and this hook reads no
+ * live request state of its own. That is the invariant, and it is structural:
+ * all four request fields (`searchQuery`, `dbs`, `bookmarkNs`, `partitionBy`)
+ * freeze in the same commit, so a chunk request mixing committed filters with
+ * an uncommitted live field cannot be BUILT — no `enabled` gating is load-
+ * bearing for it, which matters because the gating this hook does take
+ * (below) deliberately omits `committedKey === liveKey`.
  */
 export function useChunkedResults({
   committedQuery,
   enabled,
   fallbackResults,
+  resultsAreStale,
   count,
 }: {
-  committedQuery: Pick<SearchRequestParts, "searchQuery" | "dbs">
-  /** `useSearch`'s `queryEnabled`: the same gate the main query runs behind. */
+  committedQuery: SearchRequestParts
+  /**
+   * `searchEnabled && !pinboardMaximized` — NOT `useSearch`'s `queryEnabled`.
+   *
+   * Every chunk body is derived from the COMMITTED query, so fetching one is
+   * always safe for what is on screen: there is no uncommitted edit it could
+   * leak. `queryEnabled`'s other half (`committedKey === liveKey`) would
+   * therefore withhold nothing while breaking scrolling outright — with
+   * instant search off, a withheld sidebar edit, or a scroll-mode `page_size`
+   * nudge (which changes the live key while the committed query stands still),
+   * would disable chunk fetching and freeze the user on skeletons until they
+   * pressed Enter. The two gates that DO belong here are the `s_enable` one
+   * (invalid input has no request to make) and the maximized-board one (no
+   * consumer is on screen, and an embedding query costs a model load).
+   */
   enabled: boolean
   /**
    * The main results query's rows, read for indices below its length when no
@@ -521,23 +616,52 @@ export function useChunkedResults({
    * the main query is therefore always page 1: `results[i]` IS global item i.
    */
   fallbackResults: SearchResult[]
+  /**
+   * `useSearch`'s `resultsAreStale`, which gates the fallback off entirely.
+   *
+   * The main query runs `placeholderData: keepPreviousData`, so across a
+   * query change `fallbackResults` holds the PREVIOUS search's rows. This
+   * store's own policy is "skeletons, never stale rows" — that is why the
+   * chunk queries deliberately have no `keepPreviousData` — and the fallback
+   * must not be the hole that reintroduces them, either as visible items or
+   * as loaded extent the scroll space is sized from.
+   */
+  resultsAreStale: boolean
   /** `nResults` from the count query; 0 while it is in flight. */
   count: number
 }): ResultsSource {
   const queryClient = useQueryClient()
-  const bookmarkNs = useBookmarkNs((state) => state.namespace)
-  const [partitionBy] = usePartitionBy()
-  const parts: SearchRequestParts = {
-    ...committedQuery,
-    bookmarkNs,
-    partitionBy: partitionBy.partition_by,
-  }
+  const { data: clientConfig } = useClientConfig()
+  // ?? rather than ||: an explicit search_throttle_ms = 0 in the gateway
+  // policy's [policies.client] table disables throttling.
+  const throttleMs = clientConfig?.searchThrottleMs ?? 500
+  // Throttled here, not upstream. `committedQuery` is frozen by the update
+  // lock and by nothing else, so with instant search ON committed IS live and
+  // moves on every keystroke — `useSearch` says as much where it freezes the
+  // value (see `useCommittedQuery`): consumers throttle what they receive,
+  // which is what reproduces the main query's own coalescing. Unthrottled,
+  // every keystroke would re-key the whole chunk set and immediately fire up
+  // to MAX_WANTED_CHUNKS requests for a search the user is still typing. The
+  // whole parts object is throttled as one unit, so the four fields stay
+  // frozen together on the way through here too.
+  const throttledQuery = useThrottledValue(committedQuery, throttleMs)
+  // `throttledQuery` is state that only moves when its content does, so
+  // `parts` (and everything keyed on it below) sits still between committed
+  // searches without anyone having to lie about a dependency.
+  const parts: SearchRequestParts =
+    throttleMs > 0 ? throttledQuery : committedQuery
   const fallbackRows =
     fallbackResults.length > 0 ? fallbackResults : NO_FALLBACK_ROWS
-  // The content hash of the request everything below keys on. Used in place
-  // of `parts` in the callback deps: `parts` is rebuilt every render, this
-  // moves only when the committed search does.
-  const partsKey = hashKey([parts])
+  // Off entirely while the main query's rows belong to a search the user has
+  // left; see the `resultsAreStale` param.
+  const fallbackLive = !resultsAreStale && fallbackRows.length > 0
+  // The content hash of the request everything below keys on. Hashed from
+  // chunk 0's request rather than from `parts`, so it is byte-identical to
+  // what actually keys a chunk query and is page/page_size-independent by
+  // construction — a scroll-mode `page_size` relabel, which every chunk
+  // request overrides anyway, therefore cannot tear down the wanted set, and
+  // this key can never drift from the chunk keys it stands for.
+  const partsKey = hashKey([buildChunkRequest(parts, 0)])
   // The observed chunk set, oldest request first — a plain array rather than
   // a Set because the order IS the eviction order — tagged with the query it
   // was collected for. Reading it back through that tag is what stops a query
@@ -566,24 +690,32 @@ export function useChunkedResults({
     }),
   })
 
-  // The content key of everything derived below: the committed request, plus
-  // when react-query last delivered each LOADED chunk's rows. `useQueries`
-  // rebuilds its result array every render, so keying the derivation on that
-  // array would rebuild the source on every scroll frame; keying it here
-  // rebuilds only when rows actually moved. Chunks with no data yet are left
-  // out deliberately — merely wanting a chunk must not read as "the rows
-  // changed" to a gallery that cancels a pending advance when they do.
-  const loadedKey =
+  // `rowsIdentity` itself — a plain string, not a token object, so it can be
+  // compared by value and cannot be frozen by a memo (see
+  // `ResultsSource.rowsIdentity`).
+  //
+  // It names the committed request plus the REFERENCE of every row array this
+  // source can currently serve: each loaded chunk's rows, and the fallback's
+  // when it is live. References, because react-query's structural sharing
+  // returns the same array from a refetch that changed nothing — so this
+  // moves when rows move and at no other time, which is also what lets every
+  // dep list below be honest without churning.
+  //
+  // Chunks with no data yet are left out deliberately: merely *wanting* a
+  // chunk must not read as "the rows changed" to a gallery that cancels a
+  // pending advance when they do.
+  const rowsIdentity =
     partsKey +
     "|" +
     wantedChunks
-      .map((chunkIndex, i) =>
-        chunkQueries[i]?.data ? `${chunkIndex}:${chunkQueries[i].dataUpdatedAt}` : ""
-      )
+      .map((chunkIndex, i) => {
+        const rows = chunkQueries[i]?.data?.results as SearchResult[] | undefined
+        return rows ? `${chunkIndex}:${idOf(rows)}` : ""
+      })
       .filter(Boolean)
-      .join(",")
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const rowsIdentity = useMemo(() => ({}), [loadedKey, fallbackRows])
+      .join(",") +
+    "|" +
+    (fallbackLive ? idOf(fallbackRows) : "")
 
   // Stable across renders, but NOT across a committed-query change: the
   // identity moves with `partsKey` on purpose, so a range effect that lists
@@ -612,6 +744,25 @@ export function useChunkedResults({
     [partsKey]
   )
 
+  /**
+   * CONTRACT: this reads and populates the react-query cache and NOTHING
+   * else. It deliberately does not join the chunk to the observed set, so
+   * `rowsIdentity` does not move as a consequence of the caller's own fetch.
+   *
+   * That is load-bearing for the gallery's advance chain (design step 3),
+   * whose supersession gate cancels a pending advance when any row moves
+   * under it: if `fetchItem` observed the chunk it just fetched, the advance
+   * would be cancelled by its own lookahead and auto-advance could never
+   * cross a chunk seam. Leaving the observed set alone keeps that gate quiet
+   * under the chain's own fetch.
+   *
+   * The rows do not stay invisible: an advance that succeeds ends by writing
+   * a position (`gi`), which re-renders the consumers, whose `ensureRange`
+   * effects then adopt the chunk through the normal add/LRU path — that is
+   * when `rowsIdentity` moves, after the chain has completed. An advance that
+   * aborts leaves an unobserved but cached chunk behind, which is harmless:
+   * `get` reads the cache too, and gcTime collects it.
+   */
   const fetchItem = useCallback(
     async (index: number): Promise<SearchResult | undefined> => {
       if (index < 0) return undefined
@@ -635,57 +786,56 @@ export function useChunkedResults({
       })
       return ((data?.results as SearchResult[]) || [])[offset]
     },
-    // `parts` is captured from the render that built this callback, and
-    // `partsKey` is its content hash — so the capture is always the committed
-    // query and there is no ref to read at call time. Same stability as
-    // `ensureRange`: fixed except when the search itself moves.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [partsKey, queryClient]
+    // Honest and stable together: `parts` follows the throttled committed
+    // query, so this callback is fixed except when the search itself moves —
+    // the same lifetime as `ensureRange`. Consumers still compare
+    // `rowsIdentity`, never this, per the rule on `ResultsSource`.
+    [parts, queryClient]
   )
 
-  return useMemo<ResultsSource>(() => {
-    const loaded = new Map<number, SearchResult[]>()
-    wantedChunks.forEach((chunkIndex, i) => {
-      const rows = chunkQueries[i]?.data?.results
-      if (rows) loaded.set(chunkIndex, rows as SearchResult[])
-    })
-    const chunkParts = parts
-    let extent = fallbackRows.length
-    for (const [chunkIndex, rows] of loaded) {
-      extent = Math.max(extent, chunkIndex * SCROLL_CHUNK_SIZE + rows.length)
-    }
-    return {
-      // Grow-only until the count lands: sizing the scroll space to the
-      // loaded extent means one resize when the real count arrives instead of
-      // a scrollbar that thrashes as chunks come in.
-      count: count > 0 ? count : extent,
-      get(index: number): SearchResult | undefined {
-        if (index < 0) return undefined
-        const chunkIndex = chunkIndexOf(index, SCROLL_CHUNK_SIZE)
-        const offset = chunkOffsetOf(index, SCROLL_CHUNK_SIZE)
-        const rows = loaded.get(chunkIndex)
-        if (rows) return rows[offset]
-        // A chunk pushed out of the observed set is still in the react-query
-        // cache. Without this read, LRU eviction of a chunk the user is
-        // looking at would flash skeletons over rows that are in memory.
-        const cached = queryClient.getQueryData<{
-          results?: SearchResult[] | null
-        }>(["post", "/api/search/pql", buildChunkRequest(chunkParts, chunkIndex)])
-        if (cached?.results) return (cached.results as SearchResult[])[offset]
-        if (index < fallbackRows.length) return fallbackRows[index]
-        return undefined
-      },
-      ensureRange,
-      fetchItem,
-      rowsIdentity,
-    }
-    // Deps name `rowsIdentity` instead of the values the body reads
-    // (`wantedChunks`, `chunkQueries`, `parts`): the `loadedKey` behind it is
-    // precisely their content, and listing the result array `useQueries`
-    // rebuilds every render would defeat the memo this hook exists to keep
-    // cheap — the whole point is that scrolling does not rebuild the source.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowsIdentity, count, fallbackRows, ensureRange, fetchItem, queryClient])
+  const loaded = new Map<number, SearchResult[]>()
+  wantedChunks.forEach((chunkIndex, i) => {
+    const rows = chunkQueries[i]?.data?.results
+    if (rows) loaded.set(chunkIndex, rows as SearchResult[])
+  })
+  let extent = fallbackLive ? fallbackRows.length : 0
+  for (const [chunkIndex, rows] of loaded) {
+    extent = Math.max(extent, chunkIndex * SCROLL_CHUNK_SIZE + rows.length)
+  }
+  // Built fresh every render rather than memoized. `useQueries` rebuilds its
+  // result array each time, so any honest memo over this body would recompute
+  // anyway — and a memo keyed on `rowsIdentity` alone is the lying-deps token
+  // this hook used to carry, which under the React Compiler (which discards
+  // written dep arrays and derives its own) would have frozen the source on
+  // the first query's chunks forever. The cost is one Map of at most
+  // MAX_WANTED_CHUNKS entries per render, and nothing depends on the object's
+  // identity: consumers compare `rowsIdentity`, exactly as they do for the
+  // pages-mode twin, which has always minted one source per render.
+  return {
+    // Grow-only until the count lands: sizing the scroll space to the loaded
+    // extent means one resize when the real count arrives instead of a
+    // scrollbar that thrashes as chunks come in.
+    count: count > 0 ? count : extent,
+    get(index: number): SearchResult | undefined {
+      if (index < 0) return undefined
+      const chunkIndex = chunkIndexOf(index, SCROLL_CHUNK_SIZE)
+      const offset = chunkOffsetOf(index, SCROLL_CHUNK_SIZE)
+      const rows = loaded.get(chunkIndex)
+      if (rows) return rows[offset]
+      // A chunk pushed out of the observed set is still in the react-query
+      // cache. Without this read, LRU eviction of a chunk the user is
+      // looking at would flash skeletons over rows that are in memory.
+      const cached = queryClient.getQueryData<{
+        results?: SearchResult[] | null
+      }>(["post", "/api/search/pql", buildChunkRequest(parts, chunkIndex)])
+      if (cached?.results) return (cached.results as SearchResult[])[offset]
+      if (fallbackLive && index < fallbackRows.length) return fallbackRows[index]
+      return undefined
+    },
+    ensureRange,
+    fetchItem,
+    rowsIdentity,
+  }
 }
 
 /**
@@ -736,6 +886,11 @@ export function useCommitViewMode() {
   const pageSize = usePageSize()
   const [galleryIndex, setGalleryIndex] = useGalleryIndex()
   const [scrollAnchor, setScrollAnchor] = useGridScrollAnchor()
+  // A superseded call must not write. Unlike `useCommitPageSize` there is
+  // nothing to compose — a mode switch is idempotent and the later call simply
+  // wins — but the earlier one is still holding a target computed from a URL
+  // the later one has already moved past.
+  const inFlight = useRef<object | null>(null)
   return async (nextMode: ViewMode) => {
     if (nextMode === viewMode) return
     const push = { history: "push" as const }
@@ -743,9 +898,24 @@ export function useCommitViewMode() {
     // The position to carry: the open gallery's item, or the grid's scroll
     // anchor (absent while the top row is visible, hence the 0).
     const galleryOpen = galleryIndex !== null
-    const anchor = galleryOpen ? galleryIndex : scrollAnchor ?? 0
+    const rawAnchor = galleryOpen ? galleryIndex : scrollAnchor ?? 0
     const writes: Promise<unknown>[] = []
     if (nextMode === "scroll") {
+      // Nothing is awaited before the writes on this side (the rows on screen
+      // already cover the viewport, so there is no prefetch), so there is no
+      // window for a second call to interleave and no token to CHECK. The
+      // token is still cleared, for the same reason `useCommitPageSize`'s
+      // scroll branch clears its own: a pages-direction call still inside its
+      // prefetch must not resume and write a `page` into the scroll-mode URL
+      // this one is about to produce.
+      inFlight.current = null
+      // Clamped into the current page before it is globalized, exactly as
+      // `useCommitPageSize` clamps and for the same reason: a stale or
+      // hand-written index pointing past the page end must remap from the item
+      // actually on screen — both display surfaces clamp — or the switch
+      // breaks `floor(top / k) === page - 1` and lands the user pages away
+      // from what they were looking at.
+      const anchor = clampToPage(rawAnchor, pageSize)
       const global = scrollAnchorFromPage({ page, pageSize, anchor })
       writes.push(setViewMode("scroll", push))
       // Cleared unconditionally: scroll mode is defined by having no `page`
@@ -763,8 +933,18 @@ export function useCommitViewMode() {
         writes.push(setGalleryIndex(global, replace))
       }
     } else {
-      const target = pageStateFromScrollAnchor({ anchor, pageSize })
+      // NOT clamped: in scroll mode the anchor already IS a global index, and
+      // turning it into a (page, index) pair is exactly what
+      // `pageStateFromScrollAnchor` does.
+      const target = pageStateFromScrollAnchor({ anchor: rawAnchor, pageSize })
+      const token = {}
+      inFlight.current = token
       await prefetch({ page: target.page })
+      // A later switch superseded this one while its prefetch was in the air.
+      // That call owns the writes; this one's target was computed against a
+      // URL that has since moved.
+      if (inFlight.current !== token) return
+      inFlight.current = null
       writes.push(setViewMode("pages", push))
       // Unchanged values are skipped throughout: a setter called with what it
       // already holds can still produce a history entry for an identical URL
@@ -820,6 +1000,12 @@ export function useCommitPageSize() {
   } | null>(null)
   return async (nextPageSize: number) => {
     if (viewMode === "scroll") {
+      // Any pages-mode commit still inside its prefetch is abandoned here:
+      // its target is a (page, index) pair for a mode the URL has left, and
+      // resuming it would write `page` back into a scroll-mode URL — the two-
+      // live-position-params bug the mode is defined to avoid. Clearing the
+      // token is what makes its post-await check fail.
+      inFlight.current = null
       // A pure relabel: `top` and `gi` are global indices that k does not
       // enter into, and no request keys on it either (the main query's does,
       // but it refetches page 1 at the new size and the grid reads chunks).
