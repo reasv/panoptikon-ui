@@ -591,7 +591,7 @@ export function ImageGallery({
                     <BookmarkBtn sha256={currentItem.sha256} bookmarked={currentItem.bookmarked} buttonVariant />
                     <OpenFile sha256={currentItem.sha256} path={currentItem.path} buttonVariant />
                     <OpenFolder sha256={currentItem.sha256} path={currentItem.path} buttonVariant />
-                    <ShareButton sha256={currentItem.sha256} path={currentItem.path} buttonVariant shortcut="Ctrl+C" />
+                    <ShareButton sha256={currentItem.sha256} path={currentItem.path} shortcut="Ctrl+C" />
                     <Link
                         href={prevImageLink}
                         onClick={onClickPrevImage}
