@@ -24,8 +24,8 @@ type ShareMeta = { path?: string, filename: string, size?: number, sha256: strin
 
 // The adaptive share verb (docs/file-sharing-design.md "adaptive share
 // button"). The primary click is Copy where a native path exists (relay paired
-// with the copy feature, or a desktop-managed server whose backend-open is
-// enabled) and Download otherwise. Download is always available as the
+// with the copy feature, or a server whose backend-open actions are enabled)
+// and Download otherwise. Download is always available as the
 // alternate. Copy has no visible effect of its own, so every copy path shows a
 // toast; Download rides the browser's own download UI.
 export function useFileShare({ sha256, path, filename, size }: {
@@ -47,10 +47,15 @@ export function useFileShare({ sha256, path, filename, size }: {
   const pairing = useRelayPairing()
   const { mutateAsync: copyOnServer } = $api.useMutation("post", "/api/open/clipboard/{sha256}")
   const disableBackendOpen = clientConfig.data?.disableBackendOpen || false
-  const desktopManaged = clientConfig.data?.desktopManaged || false
 
   const canCopyRelay = relay.canCopyFiles
-  const canCopyServer = desktopManaged && !disableBackendOpen
+  // Backend-open availability is the server-copy gate (design §Resolution
+  // paths: "Desktop-managed local (or backend open actions available)") — the
+  // same admin-controlled policy signal Open/Reveal fall back on, covering the
+  // bare local gateway a desktopManaged check would wrongly exclude. Strict
+  // presence check: while the config is in flight the verb stays Download, so
+  // a restricted policy never flashes a Copy it would then retract.
+  const canCopyServer = clientConfig.data !== undefined && !disableBackendOpen
   const primaryVerb: "copy" | "download" = canCopyRelay || canCopyServer ? "copy" : "download"
 
   // One invocation at a time. A relay copy of a multi-GB video spends its
