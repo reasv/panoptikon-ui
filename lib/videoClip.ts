@@ -3,6 +3,7 @@ import { fetchClient } from "@/lib/api"
 import { downloadURL } from "@/lib/download"
 import { FREEZE_EPS } from "@/lib/videoTrim"
 import {
+  PLAYBACK_PRESET,
   POLL_TIMEOUT_MS,
   errorDetail,
   followTranscodeJob,
@@ -289,6 +290,51 @@ export function clipRows<T extends PresetRow>(
   return presets
     .filter((preset) => clipRowFits(preset, windowSeconds, context.limits))
     .map((preset) => ({ preset, label: clipRowLabel(preset, trimmed) }))
+}
+
+/**
+ * The label of the web-version row. Deliberately no work-language ("fast",
+ * "re-encode"): the row exists only while the bytes already do, so it names a
+ * file, not a job.
+ */
+export const WEB_VERSION_LABEL = "Web version"
+
+/**
+ * The "Web version" row: the playable rendition the PLAYBACK path already
+ * encoded, offered as a download next to "Original file". For a
+ * needs-transcode item the original is by definition unplayable on the web,
+ * and the clip rows would re-encode from scratch under a different cache key —
+ * while a fast h264 mp4 of this very file sits in the artifact cache.
+ *
+ * Gated on the playback store reading `done`, which is the whole rule:
+ *
+ * - `done` is written ONLY by the playback path (`sha:preset` keys; the clip
+ *   export keys always carry a third segment), and playback jobs are only ever
+ *   started for needs-transcode items — so a playable item can never grow this
+ *   row, and no separate playability input is needed.
+ * - In the gallery the download menu only mounts once a needs-transcode item's
+ *   rendition exists (`showVideo` requires the artifact URL), so there the row
+ *   is present exactly when the menu is.
+ * - A pin's context menu can open before the pin ever played; the row simply
+ *   is not there yet, rather than turning into a "start an encode" row wearing
+ *   an "already there" label.
+ *
+ * `presets` is the policy-filtered playback-surface list: a policy that
+ * withholds the playback preset hides the row, per hide-don't-disable.
+ *
+ * The row runs through `exportClip` with `request: null` rather than linking
+ * the stored artifact URL directly: the artifact lives in a global LRU, and a
+ * direct `<a download>` to an evicted entry saves a 404 body as an `.mp4`. The
+ * re-POST is a cache hit (instant, the near-certain case) or a fast fresh
+ * job, and either way the server's own filename rides back on the answer.
+ */
+export function webVersionRow<T extends PresetRow>(
+  presets: T[],
+  playbackState: TranscodeState,
+): { preset: T; label: string } | null {
+  if (playbackState.state !== "done") return null
+  const preset = presets.find((preset) => preset.id === PLAYBACK_PRESET)
+  return preset ? { preset, label: WEB_VERSION_LABEL } : null
 }
 
 /** The one-line description the progress toast carries while a job runs. */

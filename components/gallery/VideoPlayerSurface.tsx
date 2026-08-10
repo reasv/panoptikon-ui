@@ -21,7 +21,8 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TrimRange } from "@/lib/pinboardCrop"
-import { type ClipRequest, clipRows, exportClip, useClipBusy } from "@/lib/videoClip"
+import { type ClipRequest, clipRows, exportClip, useClipBusy, webVersionRow } from "@/lib/videoClip"
+import { PLAYBACK_PRESET, useTranscodeState } from "@/lib/videoTranscode"
 import { useVideoPresets } from "@/lib/useVideoPresets"
 import {
     GALLERY_END_ACTIONS,
@@ -1203,10 +1204,17 @@ export function VideoDownloadControl({
         duration: clip?.duration,
         limits,
     })
+    // The already-encoded playable rendition of a needs-transcode item. On
+    // this surface the store reads `done` whenever such an item is showing at
+    // all (the host's showVideo requires the artifact URL), so the row is
+    // there exactly when the menu is — see webVersionRow for the full rule.
+    const { presets: playbackPresets } = useVideoPresets("playback")
+    const playbackState = useTranscodeState(clip?.sha256, PLAYBACK_PRESET)
+    const webRow = clip ? webVersionRow(playbackPresets, playbackState) : null
     // The mini tier's picture is barely wider than this control; the kebab's
     // own "Download original" row is what serves it, and the host keeps that
     // row at every tier precisely so this one may vanish.
-    const canClip = clip != null && rows.length > 0 && size !== "mini"
+    const canClip = clip != null && (rows.length > 0 || webRow != null) && size !== "mini"
 
     // Click-open, so it must survive a pointer that wanders off the surface —
     // and it holds under its own key, because the surface's kebab is a second
@@ -1303,7 +1311,35 @@ export function VideoDownloadControl({
                             download={download.filename}
                             onClick={close}
                         />
-                        <div aria-hidden className="my-1 h-px bg-white/15" />
+                        {/* Above the divider with Original: this row too is a
+                            file that already exists (the playback rendition),
+                            not work to be started. A button all the same —
+                            the artifact can be evicted, and the re-POST it
+                            runs through is a hit or a self-heal, never a 404
+                            saved as an .mp4 (see webVersionRow). */}
+                        {webRow && (
+                            <MenuItem
+                                label={webRow.label}
+                                icon={<Download className="size-3.5" />}
+                                disabled={busy}
+                                title={busy
+                                    ? "Another export of this item is still running"
+                                    : "The playable copy this video was encoded into"}
+                                onClick={() => {
+                                    close()
+                                    void exportClip({
+                                        sha256: clip.sha256,
+                                        preset: webRow.preset,
+                                        request: null,
+                                        rowLabel: webRow.label,
+                                        dbs: clip.dbs,
+                                    })
+                                }}
+                            />
+                        )}
+                        {rows.length > 0 && (
+                            <div aria-hidden className="my-1 h-px bg-white/15" />
+                        )}
                         {/* Buttons, never links: these rows START WORK. The
                             bytes do not exist yet, so there is no href to give
                             them, and a link's "save link as" would hand the

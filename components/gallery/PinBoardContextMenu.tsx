@@ -1,3 +1,4 @@
+import React from "react";
 import type { LayoutItem } from "react-grid-layout";
 import { ContextMenuCheckboxItem, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger } from "../ui/context-menu";
 import { useGalleryPinAutoCrop, useGalleryPinSelectionCrop } from "@/lib/state/gallery";
@@ -14,7 +15,8 @@ import { usePinSelection } from "@/lib/state/pinboardSelection";
 import { usePinboardCarry } from "@/lib/state/pinboardCarry";
 import { SelectionExportSubmenu } from "./PinboardExportMenu";
 import { trimWithBound } from "@/lib/videoTrim";
-import { clipRequestFor, clipRows, exportClip, useClipBusy } from "@/lib/videoClip";
+import { clipRequestFor, clipRows, exportClip, useClipBusy, webVersionRow } from "@/lib/videoClip";
+import { PLAYBACK_PRESET, useTranscodeState } from "@/lib/videoTranscode";
 import { useVideoPresets } from "@/lib/useVideoPresets";
 
 /**
@@ -48,6 +50,56 @@ export type PinClipItem = {
  * Its own component because it needs hooks (the presets query and the busy
  * subscription) and the menu around it is a plain render.
  */
+/**
+ * The "Download web version" row: the already-encoded playable rendition of a
+ * needs-transcode pin, when this session has produced one (the store is
+ * shared with the gallery, so either surface's playback lights the row here).
+ * This menu can open before the pin ever played — the row is simply absent
+ * until the rendition exists, per webVersionRow's gate.
+ *
+ * Rendered next to "Download original" rather than with the clip rows: those
+ * sit far below among the loop verbs, where a noun-only row would read as a
+ * view toggle. Here the neighbour supplies the verb's meaning, and the
+ * spelled-out "Download" removes the rest of the doubt (the toasts still say
+ * "Web version", the row's name for the file itself).
+ *
+ * FROZEN at menu-open: this component mounts with the Radix content, and the
+ * initializer runs once per mount. The store is a live subscription, and a
+ * pin's playback job finishing while the menu is open would otherwise insert
+ * this row mid-open and shift every row below it under the cursor — onto a
+ * different verb. (The player surface's menu needs no freeze: it can only
+ * exist once the rendition does, because showVideo requires the artifact URL.)
+ */
+function WebVersionItem({
+    item,
+    dbs,
+}: {
+    item: PinClipItem | null
+    dbs: { index_db: string | null; user_data_db: string | null }
+}) {
+    const { presets } = useVideoPresets("playback")
+    const playbackState = useTranscodeState(item?.sha256, PLAYBACK_PRESET)
+    const busy = useClipBusy(item?.sha256)
+    const [webRow] = React.useState(() => webVersionRow(presets, playbackState))
+    if (!item || !item.mime?.startsWith("video/") || !webRow) return null
+    return (
+        <ContextMenuItem
+            disabled={busy}
+            // `onSelect`, not `onClick` — the same Radix disabled-item rule
+            // the clip rows document below.
+            onSelect={() => void exportClip({
+                sha256: item.sha256,
+                preset: webRow.preset,
+                request: null,
+                rowLabel: webRow.label,
+                dbs,
+            })}
+        >
+            Download web version
+        </ContextMenuItem>
+    )
+}
+
 function ClipExportItems({
     item,
     request,
@@ -321,6 +373,7 @@ export function PinBoardCtx({
                 otherwise lose the pinboard's download affordance while the
                 grid card's own share button still offers it. */}
             <ContextMenuItem disabled={share.busy} onClick={() => void share.download()}>Download original</ContextMenuItem>
+            <WebVersionItem item={clipItem} dbs={dbs} />
             {showFileMenu && (
                 <ContextMenuSub>
                     <ContextMenuSubTrigger inset>File</ContextMenuSubTrigger>
