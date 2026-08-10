@@ -18,10 +18,12 @@ const {
   chunkIndexOf,
   chunkOffsetOf,
   chunkRangeFor,
+  chunkStartOf,
   clampToPage,
   overscanItemsFor,
   pageStateFromScrollAnchor,
   remapPageAnchor,
+  scanLoadedForward,
   scrollAnchorFromPage,
   topRowHighlightItem,
   virtualPageAnchor,
@@ -712,6 +714,148 @@ const of = (url) => new URLSearchParams(url)
     warmed.length === 2 && warmed[0] === 0 && warmed[1] === 1,
     shape(warmed)
   )
+}
+
+// ---- the advance scan --------------------------------------------------
+//
+// The forward scan behind the gallery's auto-advance and its ahead-of-turn
+// prefetch (docs/video-end-action-design.md §3, generalized onto ResultsSource
+// by docs/search-scroll-mode-design.md §8). Two block shapes stand in for the
+// two modes: ONE block covering the whole page (what arrayResultsSource
+// serves) and a chunk lattice with holes in it (what the chunk store serves).
+
+// Pages mode: the source's single block is the page's array.
+const pageBlocks = (rows) => (i) =>
+  i >= 0 && i < rows.length ? { start: 0, rows } : undefined
+// Scroll mode: a sparse lattice. `chunks` maps a chunk index to its rows;
+// anything absent is "not loaded".
+const chunkBlocks = (chunks, size) => (i) => {
+  const chunkIndex = Math.floor(Math.max(i, 0) / size)
+  const rows = chunks[chunkIndex]
+  return rows ? { start: chunkIndex * size, rows } : undefined
+}
+const isVideo = (row) => row === "v"
+
+{
+  check("the chunk start of an index is its chunk's first item",
+    chunkStartOf(0, 320) === 0
+    && chunkStartOf(319, 320) === 0
+    && chunkStartOf(320, 320) === 320
+    && chunkStartOf(1000, 320) === 960,
+    `${chunkStartOf(1000, 320)}`)
+  check("an unpaginated chunk size is one chunk starting at 0",
+    chunkStartOf(500, 0) === 0)
+}
+
+{
+  // Pages mode, a match ahead: exactly the `for (i = index + 1; ...)` loop
+  // this replaced, including that the scan starts AFTER the current item.
+  const rows = ["v", "i", "i", "v", "i"]
+  const scan = scanLoadedForward(pageBlocks(rows), 1, rows.length, isVideo)
+  check("the next playable item ahead is the match",
+    scan.match === 3 && scan.stopped === 3, shape(scan))
+  const fromMatch = scanLoadedForward(pageBlocks(rows), 3, rows.length, isVideo)
+  check("a match at the scan's own start is found there",
+    fromMatch.match === 3, shape(fromMatch))
+}
+
+{
+  // Pages mode, nothing ahead: `stopped` is the end of the page, which is the
+  // signal that the turn (if any) is a PAGE turn. The chunked continuation is
+  // unreachable in pages mode precisely because this can never be less.
+  const rows = ["v", "i", "i"]
+  const scan = scanLoadedForward(pageBlocks(rows), 1, rows.length, isVideo)
+  check("no match on the page stops at the end of the page",
+    scan.match === null && scan.stopped === rows.length, shape(scan))
+}
+
+{
+  // Scroll mode: chunk 0 loaded and videoless, chunk 1 never fetched, the set
+  // far longer. The scan must stop at the seam and name it — that index is
+  // what the continuation fetches.
+  const size = 4
+  const scan = scanLoadedForward(
+    chunkBlocks({ 0: ["v", "i", "i", "i"] }, size),
+    1,
+    100,
+    isVideo
+  )
+  check("running off the loaded range stops at the first unloaded index",
+    scan.match === null && scan.stopped === 4, shape(scan))
+}
+
+{
+  // A hole between two loaded chunks: the scan must stop AT the hole rather
+  // than jump it, or the continuation would fetch the wrong chunk and the
+  // chain would skip a stretch of the set unseen.
+  const size = 4
+  const scan = scanLoadedForward(
+    chunkBlocks({ 0: ["v", "i", "i", "i"], 2: ["v", "v", "v", "v"] }, size),
+    1,
+    100,
+    isVideo
+  )
+  check("a hole stops the scan even with loaded rows beyond it",
+    scan.match === null && scan.stopped === 4, shape(scan))
+}
+
+{
+  // The count is the bound, not the lattice: a last chunk longer than the
+  // remaining results must not be scanned past the end of the set.
+  const size = 4
+  const scan = scanLoadedForward(
+    chunkBlocks({ 0: ["i", "i", "i", "v"] }, size),
+    0,
+    3,
+    isVideo
+  )
+  check("the scan never looks past the result count",
+    scan.match === null && scan.stopped === 3, shape(scan))
+}
+
+{
+  // The past-the-end chunk: a request beyond the last result answers with an
+  // empty page, and an empty block covers nothing. It must terminate the scan
+  // rather than loop on an index its own block does not reach.
+  const size = 4
+  const scan = scanLoadedForward(
+    chunkBlocks({ 0: ["v", "i", "i", "i"], 1: [] }, size),
+    1,
+    100,
+    isVideo
+  )
+  check("an empty block ends the scan instead of spinning",
+    scan.match === null && scan.stopped === 4, shape(scan))
+}
+
+{
+  // The continuation's own scan of the chunk it just fetched: ONE block, read
+  // from the index that ended the session forward — never from the block's
+  // start, which can lie behind it.
+  const block = { start: 8, rows: ["i", "v", "i", "v"] }
+  const scan = scanLoadedForward(() => block, 10, 12, isVideo)
+  check("the fetched chunk is scanned forward from the landing index",
+    scan.match === 11, shape(scan))
+  const none = scanLoadedForward(
+    () => ({ start: 8, rows: ["i", "i", "i", "i"] }),
+    10,
+    12,
+    isVideo
+  )
+  check("a videoless fetched chunk reports no match, which ends the chain",
+    none.match === null && none.stopped === 12, shape(none))
+}
+
+{
+  // A scan starting at the end of the set has nothing to do, and one starting
+  // past it is the last item's own advance: both must terminate immediately.
+  check("a scan at the end of the set finds nothing",
+    scanLoadedForward(pageBlocks(["v"]), 1, 1, isVideo).stopped === 1)
+  // …and one starting past the end reports the END, not its own start: the
+  // caller reads `stopped < count` as "there are unfetched items ahead", and
+  // an out-of-range start must never be mistaken for one.
+  check("a scan past the end of the set reports the end of the set",
+    scanLoadedForward(pageBlocks(["v"]), 5, 1, isVideo).stopped === 1)
 }
 
 console.log(all ? "\nALL PASS" : "\nFAILURES")

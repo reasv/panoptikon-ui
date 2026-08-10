@@ -16,17 +16,38 @@ import { PinButton } from './PinButton'
 import { FindButton } from './FindButton'
 import { blurHashToDataURL } from '@/lib/state/blurHashDataURL'
 import { useSearchLoading } from '@/lib/state/zust'
+import type { ResultsSource } from '@/lib/searchHooks'
+
+// How far past the rendered cards the strip warms rows, in items. The strip
+// renders about a screen's worth of 256px cards at a time, so a couple of
+// screens of margin is what keeps a flick from landing on skeletons; the warm
+// itself is chunk-granular, so anything in this range costs the same one or
+// two chunks (see ResultsSource.ensureRange).
+const STRIP_WARM_MARGIN = 32
 
 export function VirtualGalleryHorizontalScroll({
-    items,
+    source,
 }: {
-    items: SearchResult[]
+    /**
+     * The same rows the gallery reads: the page's array in pages mode, a
+     * sparse window over the whole result set in scroll mode. The strip spans
+     * `source.count` either way — the whole set, not the loaded part of it, so
+     * its geometry (a fixed 256px per card, which is exact) never rescales as
+     * chunks land — and renders a skeleton card wherever a row is not loaded
+     * yet.
+     */
+    source: ResultsSource
 }) {
     "use no memo"
     const parentRef = useRef<HTMLDivElement>(null)
+    // Per the ResultsSource dependency rule, the source object itself never
+    // appears in a dep list (it is minted per render) — `count` does, and the
+    // rows change signal this file needs turns out to be narrower than
+    // `rowsIdentity`: see `fileAtTarget` below.
+    const count = source.count
 
     const virtualizer = useVirtualizer({
-        count: items.length,
+        count,
         getScrollElement: () => parentRef.current,
         estimateSize: () => 256,
         horizontal: true,
@@ -45,14 +66,51 @@ export function VirtualGalleryHorizontalScroll({
         )
     }, [])
     const [qIndex] = useGalleryIndex()
+    // The item the strip must keep in view, and WHICH FILE is currently at it.
+    // The second half is the re-assert trigger, and it is deliberately not
+    // `rowsIdentity`:
+    //
+    //   - a page turn can land on the same `gi` with a completely different
+    //     page under it, and the strip must scroll back rather than stay where
+    //     the previous page left it — the file at the index changes, so it
+    //     does (this is what the old `items` dependency bought);
+    //   - in scroll mode `rowsIdentity` ALSO moves on every chunk that lands,
+    //     including one the user's own drag of the strip just warmed. Keying
+    //     the re-assert on that would snap the strip back to the current item
+    //     the moment it crossed a chunk seam — undraggable past the loaded
+    //     window. The file at `gi` does not move when a chunk lands elsewhere,
+    //     so this trigger is silent for it;
+    //   - and when the current item's OWN chunk lands (a cold deep link, where
+    //     it was undefined until then) the file at the index changes from
+    //     nothing to something, which is exactly when the strip should centre
+    //     itself for the first time.
+    const stripTarget = count > 0 ? (qIndex || 0) % count : 0
+    const fileAtTarget = source.get(stripTarget)?.file_id
     // Keep the selected thumbnail in view as the gallery index moves — the
     // ← / → keys of the gallery keyboard scope (GalleryImageLarge), the
     // click-through halves of the large image, the header arrows and
     // pagination all land here.
     useEffect(() => {
-        if (items.length === 0) return
-        virtualizer.scrollToIndex((qIndex || 0) % items.length)
-    }, [items, qIndex, virtualizer])
+        if (count === 0) return
+        virtualizer.scrollToIndex(stripTarget)
+    }, [stripTarget, fileAtTarget, count, virtualizer])
+
+    // Warm the rows the strip is showing, the same way the result grid warms
+    // the rows it is showing: without it a scroll-mode strip dragged past the
+    // loaded window would be a field of skeletons that never fills. No
+    // dependency array on purpose — the virtualizer signals a moved range by
+    // re-rendering, and its `range` is mutated internal state no dep list can
+    // name — and cheap to call at that rate by contract: an unchanged chunk
+    // set returns the previous state, so this does not re-render the tree once
+    // a frame. A no-op in pages mode, where ensureRange is empty.
+    useEffect(() => {
+        const range = virtualizer.range
+        if (!range) return
+        source.ensureRange(
+            range.startIndex - STRIP_WARM_MARGIN,
+            range.endIndex + STRIP_WARM_MARGIN,
+        )
+    })
 
     return (
         <ScrollAreaPrimitive.Root
@@ -70,26 +128,60 @@ export function VirtualGalleryHorizontalScroll({
                         position: 'relative',
                     }}
                 >
-                    {virtualizer.getVirtualItems().map((virtualItem) => (
-                        <VirtualHorizontalScrollElement
-                            key={items[virtualItem.index].file_id}
-                            item={items[virtualItem.index]}
-                            ownIndex={virtualItem.index}
-                            nItems={items.length}
-                            style={{
-                                position: 'absolute',
-                                top: 0,
-                                left: 0,
-                                width: `${virtualItem.size}px`,
-                                transform: `translateX(${virtualItem.start}px)`,
-                            }}
-                        />
-                    ))}
+                    {virtualizer.getVirtualItems().map((virtualItem) => {
+                        const style = {
+                            position: 'absolute' as const,
+                            top: 0,
+                            left: 0,
+                            width: `${virtualItem.size}px`,
+                            transform: `translateX(${virtualItem.start}px)`,
+                        }
+                        const item = source.get(virtualItem.index)
+                        // Not loaded: a card-shaped placeholder, never an
+                        // end-of-results marker — the strip only renders
+                        // indices below the known count, and `undefined` there
+                        // means "its chunk is in flight or has not been asked
+                        // for" (see ResultsSource.get). Unreachable in pages
+                        // mode, where the source always has the row.
+                        if (!item) {
+                            return <HorizontalScrollSkeleton
+                                key={`pending-${virtualItem.index}`}
+                                style={style}
+                            />
+                        }
+                        return (
+                            <VirtualHorizontalScrollElement
+                                key={item.file_id}
+                                item={item}
+                                ownIndex={virtualItem.index}
+                                nItems={count}
+                                style={style}
+                            />
+                        )
+                    })}
                 </div>
             </ScrollAreaPrimitive.Viewport>
             <ScrollBar orientation="horizontal" />
             <ScrollAreaPrimitive.Corner />
         </ScrollAreaPrimitive.Root>
+    )
+}
+
+// The strip's thumbnail frame with nothing in it yet. EVERY class is copied
+// from the loaded card below — the outer 240px/16px padding box and the
+// w-[240px] h-80 figure — because the card's footprint is what makes the
+// virtualizer's fixed 256px estimate exact, and a skeleton of another size
+// would put the strip's geometry a few pixels out per unloaded card. `bg-muted`
+// rather than the shared Skeleton primitive, whose bg-slate-100 is a
+// light-mode-only value (same call as ResultCellSkeleton's).
+function HorizontalScrollSkeleton({ style }: { style: React.CSSProperties }) {
+    return (
+        <div
+            aria-hidden="true"
+            style={{ ...style, width: '240px', padding: '16px' }}
+        >
+            <div className="w-[240px] h-80 relative rounded-md animate-pulse bg-muted" />
+        </div>
     )
 }
 

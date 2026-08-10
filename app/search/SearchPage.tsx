@@ -155,13 +155,27 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
         resultsAreStale,
         count: nResults,
     })
-    // ONE grid implementation reads both modes through this: in pages mode the
-    // page's array behind the same interface, so every index the grid computes
-    // is page-local exactly as it has always been, and every dep that used to
-    // be `results` is now `rowsIdentity` — which IS that array (see
-    // arrayResultsSource). Nothing about the pages-mode path changes value.
-    const gridSource = scrollMode ? chunkSource : arrayResultsSource(results)
-    const itemCount = gridSource.count
+    // ONE grid implementation AND one gallery read both modes through this: in
+    // pages mode the page's array behind the same interface, so every index
+    // either surface computes is page-local exactly as it has always been, and
+    // every dep that used to be `results` is now `rowsIdentity` — which IS
+    // that array (see arrayResultsSource). Nothing about the pages-mode path
+    // changes value.
+    const resultsSource = scrollMode ? chunkSource : arrayResultsSource(results)
+    const itemCount = resultsSource.count
+    // Whether `source.count` is the count query's answer rather than the
+    // still-growing loaded extent. Always true in pages mode, where the page's
+    // array IS the count. ONE expression for both surfaces: the grid uses it to
+    // decide whether a position past the extent is stale or merely not reached
+    // yet, and the gallery to decide whether to clamp `gi` against it at all —
+    // two surfaces answering that question differently is a wrong item on one
+    // of them.
+    //
+    // A non-zero count is not a SETTLED count: the count query keeps the
+    // previous search's answer across a re-key, and clamping a deep anchor
+    // against the wrong extent records it as applied and loses it for good
+    // (see useSearch's countIsPlaceholder).
+    const countSettled = !scrollMode || (nResults > 0 && !countIsPlaceholder)
 
     const [options, setOptions] = useQueryOptions()
     const dbs = useSelectedDBs()[0]
@@ -398,10 +412,17 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                 </div>
             </div>}
             {
-                (qIndex !== null && results.length > 0)
+                // The gallery is mounted while there is a position and there
+                // are results to resolve it against. `itemCount`, not
+                // `results.length`: in pages mode they are the same number
+                // (the source wraps the page's array), while in scroll mode
+                // the navigable extent is the whole set — and the gallery
+                // resolves a global `gi` against it, holding a loading frame
+                // for the frame or two a cold chunk takes to arrive.
+                (qIndex !== null && itemCount > 0)
                     ?
                     <ImageGallery
-                        items={results}
+                        source={resultsSource}
                         // ONE giant page in scroll mode, permanently — design
                         // delta 6, arriving here early because the gallery is
                         // the one surface that can still WRITE `page`, and a
@@ -411,9 +432,10 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                         // edges, the prev/next hrefs) and the whole auto-
                         // advance chain guard on `page < totalPages`, so this
                         // is what makes them inert rather than a second set of
-                        // mode checks scattered through the gallery. Not a
-                        // phase-1 stopgap: in scroll mode there is no page to
-                        // turn to, now or after step 3.
+                        // mode checks scattered through the gallery. In scroll
+                        // mode there is no page to turn to: the chain's
+                        // continuation past the loaded rows is a chunk fetch,
+                        // not a page turn.
                         totalPages={scrollMode ? 1 : totalPages}
                         // …which is why the pagination bar's presence has to be
                         // told separately: the gallery sizes its image panel
@@ -423,6 +445,9 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                         // computed for itself in pages mode.
                         paginationVisible={scrollMode ? scrollTotalPages > 1 : undefined}
                         setPage={setPage}
+                        // Same flag, same expression as the grid's — see
+                        // countSettled above.
+                        countSettled={countSettled}
                         resultsAreStale={resultsAreStale}
                         // The gallery's auto-advance chain acts on the search
                         // with no user gesture in sight, so it needs to know
@@ -432,7 +457,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                     />
                     :
                     <GridPanel
-                        source={gridSource}
+                        source={resultsSource}
                         mode={viewMode}
                         pageSize={k}
                         // Stable by construction (a useState setter), which the
@@ -440,43 +465,24 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                         // minted per render would re-subscribe that listener
                         // and reset its 350ms scroll-stop timer.
                         onDerivedPageChange={scrollMode ? setDerivedPage : undefined}
-                        // Whether `source.count` is the count query's answer
-                        // rather than the still-growing loaded extent. Always
-                        // true in pages mode, where the page's array IS the
-                        // count. See the restore effect: a position past a
-                        // number that is still growing must not be mistaken
-                        // for a position past the end of the results.
-                        //
-                        // A non-zero count is not a SETTLED count: the count
-                        // query keeps the previous search's answer across a
-                        // re-key, and clamping a deep anchor against the wrong
-                        // extent records it as applied and loses it for good
-                        // (see useSearch's countIsPlaceholder).
-                        countSettled={!scrollMode || (nResults > 0 && !countIsPlaceholder)}
-                        // PHASE-1 GUARD, removed when the gallery moves onto
-                        // ResultsSource: the gallery still receives `results`
-                        // (the main query's page-1 rows), so an item beyond
-                        // them has no gallery to open. Cards above the bound
-                        // go link-INERT with it — the click below is guarded,
-                        // but a middle-clicked link would otherwise mint a URL
-                        // the gallery cannot yet resolve.
-                        //
-                        // `page === 1` is the same guard `fallbackResults`
-                        // above applies for the same reason: `results[i]` is
-                        // global item i only while the main query is on page 1,
-                        // and a hand-made `vm=scroll&page=3` URL breaks that
-                        // for the tick before the normalization effect removes
-                        // the param. Nothing is openable in that tick.
-                        openableCount={scrollMode ? (page === 1 ? results.length : 0) : itemCount}
+                        // See the restore effect for what the grid does with
+                        // it: a position past a number that is still growing
+                        // must not be mistaken for a position past the end of
+                        // the results.
+                        countSettled={countSettled}
                         totalCount={nResults}
                         resultMetrics={data?.result_metrics}
                         countMetrics={data?.count_metrics}
+                        // Every card in the set is openable in both modes: the
+                        // gallery reads the same source the grid does, so an
+                        // index it has never fetched is a chunk fetch away,
+                        // not an unresolvable URL. (The stale-URL tick a
+                        // hand-made `vm=scroll&page=3` produces needs no guard
+                        // here either — the chunk store withholds its page-1
+                        // fallback for exactly that tick, so the gallery holds
+                        // a loading frame instead of showing page 3's rows at
+                        // the top of the set.)
                         onImageClick={(index) => {
-                            // The same phase-1 bound as openableCount, at the
-                            // click seam — including its `page === 1` half, so
-                            // the stale-URL tick cannot open a gallery onto
-                            // rows that are not the ones under the cursor.
-                            if (scrollMode && (page !== 1 || (index !== undefined && index >= results.length))) return
                             setIndex(index !== undefined ? index : null)
                         }}
                         isLoading={loading}
@@ -558,7 +564,6 @@ export function GridPanel({
     pageSize,
     onDerivedPageChange,
     countSettled = true,
-    openableCount,
     totalCount,
     resultMetrics,
     countMetrics,
@@ -577,7 +582,6 @@ export function GridPanel({
     pageSize: number,
     onDerivedPageChange?: (page: number) => void,
     countSettled?: boolean,
-    openableCount: number,
     resultMetrics?: components["schemas"]["SearchMetrics"],
     countMetrics?: components["schemas"]["SearchMetrics"],
     totalCount: number,
@@ -735,7 +739,6 @@ export function GridPanel({
                     pageSize={pageSize}
                     onDerivedPageChange={onDerivedPageChange}
                     countSettled={countSettled}
-                    openableCount={openableCount}
                     onImageClick={onImageClick}
                     isLoading={isLoading}
                     resultsAreStale={resultsAreStale}
@@ -818,7 +821,6 @@ export function ResultGrid({
     pageSize,
     onDerivedPageChange,
     countSettled = true,
-    openableCount,
     onImageClick,
     isLoading,
     resultsAreStale = false,
@@ -847,14 +849,6 @@ export function ResultGrid({
      * page's array IS the count.
      */
     countSettled?: boolean,
-    /**
-     * How many leading items may open the gallery. PHASE-1 ONLY: in scroll
-     * mode the gallery still receives the main query's rows, so items past
-     * them have nothing to open and neither their click nor their `gi` href
-     * is armed. Removed when the gallery moves onto ResultsSource; pages mode
-     * passes the item count, which arms everything, exactly as today.
-     */
-    openableCount: number,
     onImageClick?: (index?: number) => void,
     isLoading?: boolean,
     resultsAreStale?: boolean,
@@ -1306,7 +1300,6 @@ export function ResultGrid({
                                         if (!result) {
                                             return <ResultCellSkeleton key={`pending-${index}`} />
                                         }
-                                        const openable = index < openableCount
                                         return (
                                             <SearchResultImage
                                                 key={result.file_id}
@@ -1314,18 +1307,12 @@ export function ResultGrid({
                                                 index={index}
                                                 dbs={dbs}
                                                 onImageClick={onImageClick}
-                                                galleryLink={openable}
-                                                // Beyond the phase-1 bound the
-                                                // card is link-INERT, not a
-                                                // link to the raw file: the
-                                                // left click is guarded, but
-                                                // the card's default href is
-                                                // the file itself, and a
-                                                // middle click would follow it
-                                                // into a full-size download.
-                                                // Pages mode never gets here
-                                                // (everything is openable).
-                                                linkInert={scroll && !openable}
+                                                // Every card in the set opens
+                                                // the gallery, in both modes:
+                                                // `gi` is a global index and
+                                                // the gallery resolves it
+                                                // against this same source.
+                                                galleryLink
                                                 nItems={itemCount}
                                                 showLoadingSpinner={isLoading}
                                             />

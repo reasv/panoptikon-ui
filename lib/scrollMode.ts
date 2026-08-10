@@ -188,6 +188,69 @@ export function chunkOffsetOf(index: number, chunkSize: number): number {
 }
 
 /**
+ * The first global item index of the chunk holding `index` — the start of the
+ * range a caller warms when it wants that whole chunk, and the landing the
+ * gallery's advance chain uses when a freshly fetched chunk turns out to hold
+ * no playable video (the scroll-mode mirror of "land at the top of the page
+ * that ended the session", docs/video-end-action-design.md §3).
+ */
+export function chunkStartOf(index: number, chunkSize: number): number {
+  if (chunkSize < 1) return 0
+  return chunkIndexOf(index, chunkSize) * chunkSize
+}
+
+/**
+ * Scan forward from `from` over the rows a source has LOADED, stopping at the
+ * first match or at the first index nothing is loaded for.
+ *
+ * The one scan behind both halves of the gallery's auto-advance
+ * (docs/video-end-action-design.md §3): "where is the next playable video" and
+ * its ahead-of-turn twin "is there one at all before the loaded range ends".
+ * Its answer is deliberately a PAIR, because the two facts are what the two
+ * modes need to stay one code path:
+ *
+ *   - `match` is the index to move to, or null.
+ *   - `stopped` is where the scan gave up: `count` when it reached the end of
+ *     the result set (which in pages mode is the end of the page — the source
+ *     holds one block covering all of it, so this is ALWAYS the answer there),
+ *     and a smaller index when it ran off the end of what is loaded, which is
+ *     the scroll-mode signal to fetch the chunk containing that index.
+ *
+ * Block-wise, never index-wise: `getBlock` hands over the whole run of rows
+ * covering an index at once, so a scan of several hundred rows costs one
+ * lookup per block rather than one per row (see ResultsSource.getBlock).
+ * A block shorter than the index it was asked about — the empty page a chunk
+ * requested past the end answers with — is "nothing loaded here" and stops the
+ * scan, which is also what guarantees termination.
+ *
+ * Generic over the row type: this module is import-free so that
+ * scripts/scrollmode.test.mjs can execute it under plain node.
+ */
+export function scanLoadedForward<T>(
+  getBlock: (index: number) => { start: number; rows: T[] } | undefined,
+  from: number,
+  count: number,
+  isMatch: (row: T) => boolean
+): { match: number | null; stopped: number } {
+  let i = Math.max(from, 0)
+  while (i < count) {
+    const block = getBlock(i)
+    if (!block) return { match: null, stopped: i }
+    const end = block.start + block.rows.length
+    if (end <= i) return { match: null, stopped: i }
+    const limit = Math.min(end, count)
+    for (let offset = Math.max(i - block.start, 0); block.start + offset < limit; offset++) {
+      if (isMatch(block.rows[offset])) {
+        const hit = block.start + offset
+        return { match: hit, stopped: hit }
+      }
+    }
+    i = limit
+  }
+  return { match: null, stopped: count }
+}
+
+/**
  * Every chunk index covering the item range `[start, end]`, inclusive on both
  * ends — what a visible range plus overscan converts to before it is warmed.
  *
