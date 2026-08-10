@@ -18,6 +18,8 @@ import { trimWithBound } from "@/lib/videoTrim";
 import { clipRequestFor, clipRows, exportClip, useClipBusy, webVersionRow } from "@/lib/videoClip";
 import { PLAYBACK_PRESET, useTranscodeState } from "@/lib/videoTranscode";
 import { useVideoPresets } from "@/lib/useVideoPresets";
+import { useCopyDelivery } from "@/lib/state/copyDelivery";
+import { useArtifactDelivery } from "@/hooks/artifactShare";
 
 /**
  * What a pin needs to offer a clip of itself. Null until the item query
@@ -80,10 +82,23 @@ function WebVersionItem({
     const { presets } = useVideoPresets("playback")
     const playbackState = useTranscodeState(item?.sha256, PLAYBACK_PRESET)
     const busy = useClipBusy(item?.sha256)
+    // "Copy, don't download" (lib/state/copyDelivery.ts). The deliverer lives
+    // HERE rather than in PinBoardCtx for the reason that component's own
+    // §FIX 11 note gives: PinBoardCtx renders once PER PIN, while this one
+    // mounts with the open Radix content — so a 200-pin board holds one of
+    // these mutations at a time instead of two hundred.
+    const delivery = useArtifactDelivery()
+    const copyInstead = useCopyDelivery((state) => state.copyInstead)
+    const copyMode = copyInstead && delivery != null
     const [webRow] = React.useState(() => webVersionRow(presets, playbackState))
     if (!item || !item.mime?.startsWith("video/") || !webRow) return null
     return (
         <ContextMenuItem
+            // The row's own verb is spelled out (see above), so it has to
+            // follow the mode — unlike the player menu's noun-only twin, which
+            // names the file and lets the mode stay implicit. The per-item
+            // guard alone: exportClip awaits the deliverer inside it, so the
+            // delivery window is already a busy window.
             disabled={busy}
             // `onSelect`, not `onClick` — the same Radix disabled-item rule
             // the clip rows document below.
@@ -93,10 +108,48 @@ function WebVersionItem({
                 request: null,
                 rowLabel: webRow.label,
                 dbs,
+                deliver: copyMode ? delivery.deliver : undefined,
             })}
         >
-            Download web version
+            {copyMode ? "Copy web version" : "Download web version"}
         </ContextMenuItem>
+    )
+}
+
+/**
+ * The mode switch itself, next to the download rows whose verb it names.
+ *
+ * Rendered by the open menu rather than by PinBoardCtx's body so it costs a
+ * board of pins nothing, and gated on the availability its parent already
+ * holds (`share.primaryVerb`) rather than asking the client config a second
+ * time. Absent where no copy route exists at all — a preference that could
+ * never take effect here is not worth a row.
+ */
+function CopyDeliveryItem({ available }: { available: boolean }) {
+    const copyInstead = useCopyDelivery((state) => state.copyInstead)
+    const setCopyInstead = useCopyDelivery((state) => state.setCopyInstead)
+    if (!available) return null
+    // The separator sits BELOW the toggle: the rows this mode governs are the
+    // ones above it (Copy original, the web/clip rows), and the File submenu
+    // past the fence deliberately does not obey it — its own copy row adapts
+    // by availability, not by this preference. A fence above the toggle would
+    // group it with exactly the rows it cannot touch.
+    return (
+        <>
+            <ContextMenuCheckboxItem
+                checked={copyInstead}
+                title="Copy files to the clipboard instead of downloading them"
+                // Radix closes the menu on a selection; this row's answer is
+                // drawn ON the row, and the rows above it change verb as it
+                // flips, so both halves of the feedback need the menu to stay
+                // open. The same keep-open select the lock checkboxes use.
+                onSelect={(e) => e.preventDefault()}
+                onCheckedChange={setCopyInstead}
+            >
+                Copy, don&apos;t download
+            </ContextMenuCheckboxItem>
+            <ContextMenuSeparator />
+        </>
     )
 }
 
@@ -116,6 +169,14 @@ function ClipExportItems({
     // whether an animated-image row is offered at all.
     const { presets, limits } = useVideoPresets("clip")
     const busy = useClipBusy(item?.sha256)
+    // Copy mode changes these rows' DELIVERY, never their identity: same
+    // labels, same order, same per-item busy guard. The label names the
+    // rendition it produces; where those bytes land is the mode's business,
+    // and renaming every row would make one preference look like several.
+    // (See WebVersionItem for why the deliverer is instantiated here.)
+    const delivery = useArtifactDelivery()
+    const copyInstead = useCopyDelivery((state) => state.copyInstead)
+    const copyMode = copyInstead && delivery != null
     if (!item || !item.mime?.startsWith("video/")) return null
     const rows = clipRows(presets, { request, duration: item.duration, limits })
     if (rows.length === 0) return null
@@ -124,6 +185,9 @@ function ClipExportItems({
             {rows.map(({ preset, label }) => (
                 <ContextMenuItem
                     key={preset.id}
+                    // The per-item guard alone: exportClip awaits the deliverer
+                    // inside it, so a running delivery already reads as busy
+                    // and a second flag could only ever agree with this one.
                     disabled={busy}
                     // `onSelect`, not `onClick`: Radix gates the selection
                     // event on `disabled` but the DOM click still fires on a
@@ -135,6 +199,7 @@ function ClipExportItems({
                         request,
                         rowLabel: label,
                         dbs,
+                        deliver: copyMode ? delivery.deliver : undefined,
                     })}
                 >
                     {label}
@@ -277,6 +342,15 @@ export function PinBoardCtx({
     // accept a prefix as the sha256 id, same as the pin's own item lookup.
     const { openFile, showInFolder, disableBackendOpen, relayEnabled } = useFileOpenActions({ sha256 })
     const share = useFileShare({ sha256 })
+    // "Copy, don't download" for the original-file row below. `primaryVerb` is
+    // already the availability answer (copy iff a relay or a server route
+    // exists — one useCopyAvailability, shared), so the mode costs this
+    // component no extra hook, which is what matters in a body that runs once
+    // PER PIN. Everything heavier — the artifact deliverer the transcode rows
+    // need — is instantiated inside the menu-open children instead.
+    const copyInstead = useCopyDelivery((state) => state.copyInstead)
+    const copyAvailable = share.primaryVerb === "copy"
+    const copyMode = copyInstead && copyAvailable
     // In restricted mode the File actions degrade to things this pin already
     // offers: Open File becomes a new browser tab (== "Open in New Tab" below)
     // and Show in Folder becomes the FindButton the pin already renders. Only
@@ -371,9 +445,28 @@ export function PinBoardCtx({
                 the backend-open policy has no bearing on, so it sits OUTSIDE
                 the File submenu's gate — a restricted remote server would
                 otherwise lose the pinboard's download affordance while the
-                grid card's own share button still offers it. */}
-            <ContextMenuItem disabled={share.busy} onClick={() => void share.download()}>Download original</ContextMenuItem>
+                grid card's own share button still offers it.
+
+                In copy mode it becomes the copy instead. That is a policy-gated
+                verb, but `copyMode` already carries the gate (it requires
+                `primaryVerb === "copy"`), so the row falls back to the
+                unconditional download exactly where the copy could not run.
+                Distinct from the File submenu's "Copy file", which adapts to
+                AVAILABILITY rather than to this preference and is left alone. */}
+            {copyMode ? (
+                <ContextMenuItem disabled={share.busy} onClick={() => void share.execute()}>Copy original</ContextMenuItem>
+            ) : (
+                <ContextMenuItem disabled={share.busy} onClick={() => void share.download()}>Download original</ContextMenuItem>
+            )}
             <WebVersionItem item={clipItem} dbs={dbs} />
+            {/* The mode switch, with the two rows above it rather than beside
+                the clip rows far below: those are behind a video-only gate,
+                and the row this toggle renames ("Download original") is on
+                every pin. Its trailing separator closes the group it governs
+                — toggle and file rows on one side, the File submenu (whose
+                copy row adapts by availability, not by this preference) on
+                the other. */}
+            <CopyDeliveryItem available={copyAvailable} />
             {showFileMenu && (
                 <ContextMenuSub>
                     <ContextMenuSubTrigger inset>File</ContextMenuSubTrigger>
