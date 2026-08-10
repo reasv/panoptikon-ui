@@ -452,6 +452,14 @@ export function queryFromState(
       // for the sidebar-to-main swap to hit the result cache.
       "duration",
       "content_end_ms",
+      // The playability tri-state (lib/videoPlayability.ts): the stored
+      // ffprobe codec names are what turn today's container-only mime guess
+      // into an RFC 6381 canPlayType probe, so an HEVC-in-mp4 stops mounting
+      // a <video> that decodes to a black frame. NULL (not yet probed) falls
+      // back to the legacy mime check, so requesting them is free during the
+      // backfill window.
+      "video_codec",
+      "audio_codec",
     ],
     entity: "file",
 
@@ -599,6 +607,14 @@ export function sbSimilarityQueryFromState(
       // for the sidebar-to-main swap to hit the result cache.
       "duration",
       "content_end_ms",
+      // The playability tri-state (lib/videoPlayability.ts): the stored
+      // ffprobe codec names are what turn today's container-only mime guess
+      // into an RFC 6381 canPlayType probe, so an HEVC-in-mp4 stops mounting
+      // a <video> that decodes to a black frame. NULL (not yet probed) falls
+      // back to the legacy mime check, so requesting them is free during the
+      // backfill window.
+      "video_codec",
+      "audio_codec",
     ],
     entity: "file",
     // Never random-ordered, so never seeded — but the key must be *present*

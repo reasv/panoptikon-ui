@@ -20,6 +20,7 @@ export interface ClientConfig {
   desktopShellAvailable: boolean
   relayEnabled: boolean
   pinboardSearchEnabled: boolean
+  videoTranscodeEnabled: boolean
 }
 
 // [policies.client] keys are free-form; these are the by-convention keys the
@@ -58,6 +59,14 @@ export function deriveClientConfig(response: ClientConfigResponse): ClientConfig
     // a write (POST /api/pinboards), so a read-only-boards policy would lose
     // the Library tab even though both of its requests would succeed.
     pinboardSearchEnabled: capabilities.pinboard_search !== false,
+    // Probed off POST /api/video/transcode, so this is "may this client ask
+    // for a new encode", not "may it play one" — a policy that serves cached
+    // artifacts but denies conversions still reports false here. The
+    // playability ladder (lib/videoPlayability.ts) uses it to decide whether
+    // an unplayable file gets a play affordance at all; it never suppresses
+    // NATIVE playability, so a browser that decodes the file itself is
+    // unaffected by a policy that forbids transcoding.
+    videoTranscodeEnabled: capabilities.video_transcode !== false,
   }
 }
 

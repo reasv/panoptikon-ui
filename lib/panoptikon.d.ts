@@ -1419,12 +1419,155 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/video/artifact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Serve a cached transcode artifact
+         * @description Serves a finished rendition by `key` (primary form) or by the `(id, id_type, preset, start_cs, end_cs)` that produced it. Supports Range requests. **Never starts a job**: a miss is a 404 whose body names the live job when one exists. The `key=` form is `immutable` — that URL is content-addressed on both the source hash and the resolved settings — while the resolvable form is `no-cache`, so its ETag revalidates: the same parameters name different bytes after a profile edit.
+         */
+        get: operations["video_artifact"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/video/cache": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get transcode artifact cache stats */
+        get: operations["get_transcode_cache"];
+        /**
+         * Resize the transcode artifact cache
+         * @description Sets the live byte budget and evicts down to it. Sizes above the `[transcode] cache_size_max_mb` ceiling are rejected. Not persisted — the TOML value applies again at the next startup.
+         */
+        put: operations["resize_transcode_cache"];
+        post?: never;
+        /**
+         * Clear the transcode artifact cache
+         * @description Removes every unpinned artifact (pinned rows are the share-link guarantee and survive). `include_failures` also forgets the recorded encode verdicts.
+         */
+        delete: operations["clear_transcode_cache"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/video/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a transcode job snapshot
+         * @description The same envelope the SSE stream carries. Exists for late joiners and as the fallback when `text/event-stream` cannot get through.
+         */
+        get: operations["video_job"];
+        put?: never;
+        post?: never;
+        /**
+         * Cancel a transcode job
+         * @description A queued job settles immediately; a running one is flagged and its ffmpeg child killed. Cancellation is never recorded as a verdict on the file.
+         */
+        delete: operations["video_job_cancel"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/video/jobs/{job_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Follow a transcode job (SSE)
+         * @description A `text/event-stream` of job snapshots. The first event is always the current snapshot, keep-alive comments are sent every 10 seconds, and the stream ends after the terminal event — clients must close their EventSource then, or it will reconnect forever.
+         */
+        get: operations["video_job_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/video/presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the available transcode presets
+         * @description The resolved preset table (built-ins merged with `[transcode.profiles]`), filtered by the matched policy's `[policies.client] transcode_presets` when it is set. The envelope also carries the composition limits, so clients clamp against live config.
+         */
+        get: operations["video_presets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/video/transcode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create or join a transcode job
+         * @description Resolves the item, validates the preset and trim bounds, and either answers from the artifact cache (200, `outcome: "hit"`) or creates/joins a job (202). `cut` is reserved for the server-side outro cut and is rejected for now.
+         */
+        post: operations["video_transcode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         AndOperator: {
             and_: components["schemas"]["QueryElement"][];
+        };
+        ArtifactMissResponse: {
+            detail: string;
+            job?: null | components["schemas"]["TranscodeJobSnapshot"];
+        };
+        /** @description A finished artifact, as every client-facing shape refers to it. */
+        ArtifactRef: {
+            /** @description Cache key; also the artifact's ETag and its `?key=` query value. */
+            key: string;
+            mime_type: string;
+            /** Format: int64 */
+            size_bytes: number;
+            /** @description Ready-to-use URL for `GET /api/video/artifact`. */
+            url: string;
         };
         /**
          * Format: binary
@@ -1470,6 +1613,14 @@ export interface components {
             detail: string;
         };
         /**
+         * @description Which encoder family a preset draws from: `Quality` is software x264 at a
+         *     decent CRF, `Fast` is the validated hardware encoder when there is one
+         *     (design §5 — hardware encoders are meaningfully worse per bit, so export
+         *     quality never rides on them).
+         * @enum {string}
+         */
+        Channel: "quality" | "fast";
+        /**
          * @description Coarse feature switches derived from the matched policy's ruleset. Each
          *     capability is one representative probe from the real route list in
          *     main.rs, evaluated with the exact rule-matching code enforcement uses
@@ -1501,6 +1652,14 @@ export interface components {
             scan_jobs: boolean;
             /** @description POST /api/search/pql */
             search: boolean;
+            /**
+             * @description POST /api/video/transcode
+             *
+             *     The write probe of the video surface: a policy may serve already
+             *     encoded artifacts (`GET /api/video/artifact`) while denying new
+             *     conversions, so this is deliberately not probed off the GET.
+             */
+            video_transcode: boolean;
         };
         ClientConfigResponse: {
             /** @description Ruleset-derived feature switches (see ClientCapabilities). */
@@ -1526,11 +1685,17 @@ export interface components {
             policy: string;
         };
         /** @enum {string} */
-        Column: "file_id" | "sha256" | "path" | "filename" | "last_modified" | "item_id" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks" | "blurhash" | "outro_kind" | "content_end_ms" | "data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id";
+        Column: "file_id" | "sha256" | "path" | "filename" | "last_modified" | "item_id" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks" | "blurhash" | "outro_kind" | "content_end_ms" | "video_codec" | "audio_codec" | "data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id";
         CompiledQuery: {
             params: unknown[];
             sql: string;
         };
+        /**
+         * @description Output container. Fixes the file extension, the MIME type the artifact is
+         *     served with, and whether an audio stream is possible at all.
+         * @enum {string}
+         */
+        Container: "mp4" | "webm" | "webp";
         ContinuousFilescanConfig: {
             enabled?: boolean;
             included_folders?: string[];
@@ -2060,6 +2225,13 @@ export interface components {
             item: components["schemas"]["ItemRecordResponse"];
         };
         ItemRecordResponse: {
+            /**
+             * @description The *first* audio stream's codec name (`aac`, `opus`, `ac3`, ...), or
+             *     `unknown` when a stream exists that ffprobe named no codec for. `null`
+             *     conflates "no audio stream" with "not probed yet" — deliberately, since
+             *     neither is a reason to veto playback. Never gated, as above.
+             */
+            audio_codec: string | null;
             /** Format: int64 */
             audio_tracks: number | null;
             blurhash: string | null;
@@ -2107,6 +2279,19 @@ export interface components {
             subtitle_tracks: number | null;
             time_added: string;
             type: string;
+            /**
+             * @description The video stream's codec name as ffprobe reports it (`h264`, `hevc`,
+             *     `av1`, ...), with two in-band sentinels: `none` means the container was
+             *     probed and has no video stream, `unknown` means a video stream exists
+             *     but ffprobe named no codec. `null` means the item has not been probed
+             *     yet — an existing library fills in over its next few scans, so a client
+             *     must keep whatever it did before these columns existed as the `null`
+             *     behaviour.
+             *
+             *     Unlike the outro fields this is never gated: a codec name is an
+             *     objective property of the file, like `duration` or `width`.
+             */
+            video_codec: string | null;
             /** Format: int64 */
             video_tracks: number | null;
             /** Format: int64 */
@@ -2379,6 +2564,8 @@ export interface components {
             setters?: string[];
         };
         MatchValue: {
+            /** @description See [`MatchValues::audio_codec`]. */
+            audio_codec?: string | null;
             /** Format: int64 */
             audio_tracks?: number | null;
             blurhash?: string | null;
@@ -2424,12 +2611,15 @@ export interface components {
             text_length?: number | null;
             time_added?: string | null;
             type?: string | null;
+            /** @description See [`MatchValues::video_codec`]. */
+            video_codec?: string | null;
             /** Format: int64 */
             video_tracks?: number | null;
             /** Format: int64 */
             width?: number | null;
         };
         MatchValues: {
+            audio_codec?: null | components["schemas"]["OneOrMany_String"];
             audio_tracks?: null | components["schemas"]["OneOrMany_i64"];
             blurhash?: null | components["schemas"]["OneOrMany_String"];
             confidence?: null | components["schemas"]["OneOrMany_f64"];
@@ -2458,6 +2648,7 @@ export interface components {
             text_length?: null | components["schemas"]["OneOrMany_i64"];
             time_added?: null | components["schemas"]["OneOrMany_String"];
             type?: null | components["schemas"]["OneOrMany_String"];
+            video_codec?: null | components["schemas"]["OneOrMany_String"];
             video_tracks?: null | components["schemas"]["OneOrMany_i64"];
             width?: null | components["schemas"]["OneOrMany_i64"];
         };
@@ -2533,7 +2724,7 @@ export interface components {
             priority?: number;
         };
         /** @enum {string} */
-        OrderByField: "file_id" | "sha256" | "path" | "filename" | "last_modified" | "item_id" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks" | "blurhash" | "outro_kind" | "content_end_ms" | "data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id" | "random";
+        OrderByField: "file_id" | "sha256" | "path" | "filename" | "last_modified" | "item_id" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks" | "blurhash" | "outro_kind" | "content_end_ms" | "video_codec" | "audio_codec" | "data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id" | "random";
         /** @enum {string} */
         OrderDirection: "asc" | "desc";
         /**
@@ -3192,6 +3383,15 @@ export interface components {
             preprocess?: number;
         };
         SearchResult: {
+            /**
+             * @description Audio Codec
+             *
+             *     The *first* audio stream's codec name (`aac`, `opus`, `ac3`, ...), or
+             *     `unknown` when a stream exists that ffprobe named no codec for. Absent
+             *     for a file with no audio stream as well as for one not yet probed —
+             *     the column does not distinguish them. Never withheld, as above.
+             */
+            audio_codec?: string | null;
             /** Format: int64 */
             audio_tracks?: number | null;
             blurhash?: string | null;
@@ -3283,6 +3483,19 @@ export interface components {
             text_length?: number | null;
             time_added?: string | null;
             type?: string | null;
+            /**
+             * @description Video Codec
+             *
+             *     The video stream's codec name as ffprobe reports it (`h264`, `hevc`,
+             *     `av1`, ...), with two in-band sentinels: `none` means the container was
+             *     probed and has no video stream, `unknown` means a video stream exists
+             *     but ffprobe named no codec. Absent when the item has not been probed
+             *     yet or the column was not selected.
+             *
+             *     Unlike the outro fields this is never withheld: a codec name is an
+             *     objective property of the file, like `duration` or `width`.
+             */
+            video_codec?: string | null;
             /** Format: int64 */
             video_tracks?: number | null;
             /** Format: int64 */
@@ -3660,6 +3873,12 @@ export interface components {
         StatusResponse: {
             status: string;
         };
+        /**
+         * @description Where the UI may offer a preset. Presets carry their own surfaces so a
+         *     user-declared profile appears in the right dropdowns with no client change.
+         * @enum {string}
+         */
+        Surface: "playback" | "clip" | "mosaic";
         SystemConfig: {
             continuous_filescan?: components["schemas"]["ContinuousFilescanConfig"];
             cron_jobs?: components["schemas"]["CronJob"][];
@@ -3762,6 +3981,111 @@ export interface components {
         };
         TextResponse: {
             text: components["schemas"]["ExtractedTextRecord"][];
+        };
+        TranscodeCacheResize: {
+            /**
+             * Format: int64
+             * @description New byte budget in megabytes. `0` empties the cache; values above the
+             *     `[transcode] cache_size_max_mb` ceiling are rejected. Not persisted.
+             */
+            size_mb: number;
+        };
+        TranscodeCacheStats: {
+            /** Format: int64 */
+            capacity_bytes: number;
+            /** Format: int64 */
+            entries: number;
+            /**
+             * Format: int64
+             * @description The `[transcode] cache_size_max_mb` ceiling, in bytes.
+             */
+            limit_bytes: number;
+            /** Format: int64 */
+            pinned_entries: number;
+            /** Format: int64 */
+            used_bytes: number;
+        };
+        /**
+         * @description Job state, as both the SSE payload and the snapshot body. Deliberately
+         *     generic (no transcode-specific fields): `jobs/queue.rs`'s polled status is
+         *     expected to migrate onto the same envelope.
+         */
+        TranscodeJobEvent: {
+            position: number;
+            /** @enum {string} */
+            state: "queued";
+        } | {
+            /** Format: float */
+            progress?: number | null;
+            /** @enum {string} */
+            state: "running";
+        } | {
+            artifact: components["schemas"]["ArtifactRef"];
+            /** @enum {string} */
+            state: "done";
+        } | {
+            cancelled: boolean;
+            error: string;
+            /** @enum {string} */
+            state: "failed";
+        };
+        TranscodeJobSnapshot: components["schemas"]["TranscodeJobEvent"] & {
+            id: string;
+        };
+        /**
+         * @description Composition limits, carried alongside the presets so a client builder
+         *     clamps against live config instead of mirrored constants.
+         */
+        TranscodeLimits: {
+            /** Format: int64 */
+            max_animated_image_seconds: number;
+            max_mosaic_inputs: number;
+            /** Format: int64 */
+            max_mosaic_loop_mb: number;
+            /** Format: int64 */
+            max_output_seconds: number;
+        };
+        TranscodePresetInfo: {
+            channel: components["schemas"]["Channel"];
+            container: components["schemas"]["Container"];
+            /** @description File extension for the container, so clients keep no lookup table. */
+            ext: string;
+            id: string;
+            label: string;
+            surfaces: components["schemas"]["Surface"][];
+        };
+        TranscodePresetsResponse: {
+            limits: components["schemas"]["TranscodeLimits"];
+            presets: components["schemas"]["TranscodePresetInfo"][];
+        };
+        TranscodeRequest: {
+            /**
+             * @description Reserved for the server-side outro cut (`"outro"`), which arrives with
+             *     clip export. Rejected until then rather than ignored: a client that
+             *     sent it and got a full-length file would have no way to notice.
+             */
+            cut?: string | null;
+            /**
+             * Format: int64
+             * @description Trim end, in centiseconds from the start of the file.
+             */
+            end_cs?: number | null;
+            /** @description An item identifier (sha256 hash, file ID, path, item ID, ...). */
+            id: string;
+            id_type: components["schemas"]["ItemIdentifierType"];
+            /** @description Preset id from `GET /api/video/presets`. */
+            preset: string;
+            /**
+             * Format: int64
+             * @description Trim start, in centiseconds from the start of the file.
+             */
+            start_cs?: number | null;
+        };
+        TranscodeSubmitResponse: {
+            artifact?: null | components["schemas"]["ArtifactRef"];
+            job?: null | components["schemas"]["TranscodeJobSnapshot"];
+            /** @description `hit` | `created` | `joined` | `known_failure`. */
+            outcome: string;
         };
         /**
          * @description A replacement preview image for an existing version. Same field semantics
@@ -6534,6 +6858,300 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TagFrequency"];
                 };
+            };
+        };
+    };
+    video_artifact: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+                /** @description The cache key, as carried by every `ArtifactRef`. Primary form. */
+                key?: string;
+                /**
+                 * @description Resolvable form: the same `(id, id_type, preset, start_cs, end_cs)`
+                 *     that produced the artifact.
+                 */
+                id?: string;
+                id_type?: components["schemas"]["ItemIdentifierType"];
+                preset?: string;
+                start_cs?: number;
+                end_cs?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Artifact contents */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Partial artifact contents (Range request) */
+            206: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not cached */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactMissResponse"];
+                };
+            };
+            /** @description Requested range not satisfiable */
+            416: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_transcode_cache: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Artifact cache stats */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscodeCacheStats"];
+                };
+            };
+        };
+    };
+    resize_transcode_cache: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TranscodeCacheResize"];
+            };
+        };
+        responses: {
+            /** @description Artifact cache stats after resizing */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscodeCacheStats"];
+                };
+            };
+            /** @description Above the configured ceiling */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The eviction pass behind the resize failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    clear_transcode_cache: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Also forget the recorded encode verdicts, so files that failed twice
+                 *     are attempted again.
+                 */
+                include_failures?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Artifact cache stats after clearing */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscodeCacheStats"];
+                };
+            };
+        };
+    };
+    video_job: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Job id */
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Job snapshot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscodeJobSnapshot"];
+                };
+            };
+            /** @description No such job */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    video_job_cancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Job id */
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Job snapshot after the cancel */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscodeJobSnapshot"];
+                };
+            };
+            /** @description No such job */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    video_job_events: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Job id */
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Stream of TranscodeJobSnapshot events (text/event-stream) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such job */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    video_presets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Presets and limits */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscodePresetsResponse"];
+                };
+            };
+        };
+    };
+    video_transcode: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TranscodeRequest"];
+            };
+        };
+        responses: {
+            /** @description The rendition was already cached */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscodeSubmitResponse"];
+                };
+            };
+            /** @description A job was created or joined */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscodeSubmitResponse"];
+                };
+            };
+            /** @description No such item, or no readable file for it */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

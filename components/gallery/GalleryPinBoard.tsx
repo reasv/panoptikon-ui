@@ -28,6 +28,9 @@ import { useOutroSkipEnabled, useVideoPlayerState } from '@/lib/videoPlayerState
 import { CropRect, PinLock, PinOrientation, TrimRange, clampCrop, composeCrops, isEmptyTrim, isIdentityOrientation, packHField, parseHField } from '@/lib/pinboardCrop'
 import { effectiveVideoTrim, outroCutPoint, outroProbeEligible, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
 import { useVideoEndProbe } from '@/lib/videoEndProbe'
+import { noteVideoPlaybackError, useVideoPlayability } from '@/lib/videoPlayability'
+import { useVideoPlayback } from '@/lib/videoTranscode'
+import { useVideoTranscodeEnabled } from '@/lib/useClientConfig'
 import { CropGeometry, CropView } from './CropView'
 import { NativeControlsEscape, VideoPlayerSurface, playerSizeForWidth, useVideoPlayerSurface } from './VideoPlayerSurface'
 import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, Check, ChevronDown, ChevronsLeft, ChevronsRight, ChevronsUp, Columns3, Crop, Dices, Expand, FlipHorizontal, FlipHorizontal2, FlipVertical, FlipVertical2, FoldHorizontal, GripVertical, ImageDown, LayoutDashboard, ListX, LockOpen, Maximize, RotateCcw, RotateCw, Ruler, Scaling, SquareDashed, Trash2, X, type LucideIcon } from 'lucide-react'
@@ -2993,7 +2996,14 @@ function PinBoardPin({
             },
         }
     })
-    const isPlayable = data?.item?.type === "video/mp4" || data?.item?.type === "video/webm"
+    // The playability tri-state (lib/videoPlayability.ts), the same ladder the
+    // gallery runs: `unsupported` is the only verdict with no play affordance
+    // (and no `data-playable` band), `needs-transcode` plays the server's
+    // rendition. The item query already carries both codec columns and the
+    // stream counts.
+    const transcodeEnabled = useVideoTranscodeEnabled()
+    const playability = useVideoPlayability(data?.item, transcodeEnabled)
+    const isPlayable = playability !== "unsupported"
     const videoRef = React.useRef<HTMLVideoElement>(null)
     const videoState = useVideoPlayerState({ videoRef, persistVolume: true })
     // The pin's content layer: the only element containing BOTH the <video>
@@ -3058,15 +3068,19 @@ function PinBoardPin({
         : mediaDims
 
     useEffect(() => {
-        if (data?.item?.type === "video/mp4" || data?.item?.type === "video/webm") {
+        // `playable` ONLY, never the tri-state: a board that laid out a
+        // dozen unplayable pins would otherwise queue a dozen encodes by
+        // merely existing. A transcode is started by a deliberate press and
+        // by nothing else.
+        if (playability === "playable") {
             // Autoplay short videos
-            if (data?.item.duration && data?.item.duration <= 10) {
+            if (data?.item?.duration && data?.item.duration <= 10) {
                 videoState.setShowVideo(true)
                 videoState.setVideoIsPlaying(true)
                 videoState.setVideoIsMuted(true)
             }
         }
-    }, [data])
+    }, [data, playability])
 
     useEffect(() => {
         if (!cropMode) return
@@ -3077,7 +3091,23 @@ function PinBoardPin({
         return () => window.removeEventListener("keydown", onKeyDown)
     }, [cropMode, onCropModeToggle])
 
-    const showVideo = isPlayable && videoState.showVideo
+    // The bytes this pin mounts: the original file when the browser can
+    // decode it, the artifact once a needs-transcode item's job finishes,
+    // null until then. The download row and the drag-out keep `file`.
+    const playback = useVideoPlayback({
+        // The board's own records carry a 10-char PREFIX; the job store is
+        // keyed by the full hash so a pin and the gallery share one job (and
+        // so the POST never asks the server to disambiguate a prefix). Null
+        // until the item query resolves — which is also when `playability`
+        // stops saying `unsupported`, so nothing is playable before then
+        // anyway.
+        sha256: data?.item?.sha256 ?? null,
+        playability,
+        fileURL: file,
+        dbs,
+    })
+    const playbackURL = playback.url
+    const showVideo = isPlayable && videoState.showVideo && playbackURL != null
     // A detected TikTok end card is a playback-time DEFAULT for the end
     // bound, never a stored one: the pin's h field keeps carrying the user's
     // trim alone (docs/video-outro-skip-design.md §1). The item query already
@@ -3097,12 +3127,16 @@ function PinBoardPin({
     // (lib/videoEndProbe.ts). It runs on its OWN offscreen element — the
     // pin's <video> is never seeked by it — and is deduplicated per sha with
     // a concurrency cap, which is what makes it safe on a board that mounts
-    // dozens of eligible pins in one pass. `file` is the same URL this pin's
-    // <video> loads.
+    // dozens of eligible pins in one pass. The EFFECTIVE playback URL, not
+    // `file`: the probe measures the bytes the element mounts, and a
+    // transcoded rendition has its own timeline — hence also the null gate,
+    // since an item still waiting on its encode has nothing to measure. The
+    // cache stays keyed by the pin's sha either way.
     const probedVideoEnd = useVideoEndProbe(
-        file,
+        playbackURL,
         sha256,
-        outroSkip && outroProbeEligible(data?.item?.content_end_ms, data?.item?.duration),
+        playbackURL != null
+        && outroSkip && outroProbeEligible(data?.item?.content_end_ms, data?.item?.duration),
     )
     const outroCut = outroCutPoint(
         data?.item?.content_end_ms,
@@ -3195,11 +3229,24 @@ function PinBoardPin({
                                             controls={videoState.showControls}
                                             className="rounded"
                                             style={style}
-                                            src={file}
+                                            src={playbackURL ?? undefined}
                                             onLoadedMetadata={(e) => noteMediaDims(
                                                 e.currentTarget.videoWidth,
                                                 e.currentTarget.videoHeight,
                                             )}
+                                            // The representative-profile
+                                            // recovery: one element error
+                                            // demotes this sha to
+                                            // needs-transcode for the session
+                                            // (docs/video-transcoding-design
+                                            // .md §6). Only for a `playable`
+                                            // verdict — a failing ARTIFACT is
+                                            // the job's problem, not evidence
+                                            // about the source.
+                                            onError={playability === "playable"
+                                                ? (() => noteVideoPlaybackError(
+                                                    data?.item?.sha256 ?? sha256))
+                                                : undefined}
                                         />
                                         :
                                         <img
@@ -3373,9 +3420,15 @@ function PinBoardPin({
             {isPlayable && !showVideo && <MediaControls
                 isPlaying={false}
                 setPlaying={(playing) => {
+                    // The only thing that ever starts a playback transcode:
+                    // a deliberate press (a no-op on a playable pin, and
+                    // deduplicated per sha:preset, so pressing again while
+                    // the job runs joins it).
+                    playback.start()
                     videoState.setPlaying(playing)
                     player.show()
                 }}
+                progress={playback.badge}
                 playButtonClassName="left-2 bottom-2"
             />}
             {/* Navigate has one permanent home on pins: the right edge under

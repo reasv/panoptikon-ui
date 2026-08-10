@@ -13,7 +13,9 @@
     "test:overlap": "node --experimental-strip-types scripts/overlap.test.mjs",
     "test:mosaic": "node --experimental-strip-types scripts/mosaic.test.mjs",
     "test:trimparam": "node --experimental-strip-types scripts/trimparam.test.mjs",
-    "test:outroskip": "node --experimental-strip-types scripts/outroskip.test.mjs"
+    "test:outroskip": "node --experimental-strip-types scripts/outroskip.test.mjs",
+    "test:playability": "node --experimental-strip-types scripts/playability.test.mjs",
+    "test:transcode": "node --experimental-strip-types scripts/transcode.test.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.1.2",
