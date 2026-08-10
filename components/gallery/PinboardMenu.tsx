@@ -500,13 +500,28 @@ export function PinboardFullscreenBar() {
     const { save, pbid, board, openLibrary, openHistory, openRename, dialogs } =
         usePinboardDialogs()
     const [hover, setHover] = useState(false)
-    const [menuOpen, setMenuOpen] = useState(false)
+    // The bar's two dropdowns (Layout, Mosaic) share one exclusive slot.
+    // Left uncontrolled they could BOTH end up open: the bar forces
+    // pointer-events-auto on itself, which pierces a modal menu's
+    // body-wide pointer lock, so a press on the other trigger opens the
+    // second menu — and once that menu registers as the topmost modal
+    // layer, the first menu's own outside-press dismissal is suppressed.
+    // One controlled slot makes opening either menu close the other.
+    const [openMenu, setOpenMenu] = useState<"layout" | "mosaic" | null>(null)
+    // Functional update: when a press moves from one menu to the other,
+    // the loser's close and the winner's open land in the same batch in
+    // either order — the close must only clear its own slot.
+    const menuProps = (id: "layout" | "mosaic") => ({
+        open: openMenu === id,
+        onOpenChange: (o: boolean) =>
+            setOpenMenu(prev => (o ? id : prev === id ? null : prev)),
+    })
     const [peek, setPeek] = useState(true)
     useEffect(() => {
         const t = setTimeout(() => setPeek(false), 2500)
         return () => clearTimeout(t)
     }, [])
-    const show = hover || menuOpen || peek
+    const show = hover || openMenu !== null || peek
     return (
         <>
             {/* The hot band: full width but only as tall as the board's own
@@ -658,7 +673,7 @@ export function PinboardFullscreenBar() {
                         </ToolbarButton>
                     )}
                     {boardApi && (
-                        <DropdownMenu onOpenChange={setMenuOpen}>
+                        <DropdownMenu {...menuProps("layout")}>
                             {/* Lit while its menu is open (Radix stamps
                                 data-state on the trigger), like the
                                 selection toolbar's menus */}
@@ -684,7 +699,7 @@ export function PinboardFullscreenBar() {
                         composite without pins, so it goes disabled — but it
                         stays in the bar, like History and Rename above, and
                         the tooltip says what would enable it. */}
-                    <DropdownMenu onOpenChange={setMenuOpen}>
+                    <DropdownMenu {...menuProps("mosaic")}>
                         <DropdownMenuTrigger asChild>
                             <button
                                 disabled={!hasPins}
