@@ -1,4 +1,4 @@
-import { components } from "@/lib/panoptikon"
+import type { components } from "@/lib/panoptikon"
 import * as def from "nuqs/server"
 
 export type OrderArgsType = {

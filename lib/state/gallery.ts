@@ -4,6 +4,7 @@ import {
   parseAsBoolean,
   parseAsInteger,
   parseAsString,
+  parseAsStringEnum,
   useQueryState,
 } from "nuqs"
 import type { TrimRange } from "@/lib/pinboardCrop"
@@ -51,6 +52,31 @@ const useGalleryHidePinBoard = () =>
       history: "push",
     })
   )
+export type ViewMode = "pages" | "scroll"
+
+// THE VIEW MODE DEFAULT IS WIRE FORMAT, exactly like the board flags above:
+// "pages" is what an ABSENT `vm` means in every search URL ever shared, and
+// it is frozen forever. Making scroll the product default is a CREATION
+// default flip — a stamped explicit parameter at session creation
+// (lib/searchDefaults.ts, the lib/pinboardDefaults.ts pattern) — never a flip
+// of the withDefault below, which would silently re-render every existing
+// link and bookmark in the other mode. The accepted cost is that scroll-mode
+// URLs always carry `vm=scroll` explicitly.
+//
+// history "push": switching modes is navigation, so Back undoes it. The
+// position params that ride along with the switch write "replace" and nuqs
+// escalates the batch to a single pushed entry — see useCommitViewMode.
+const useViewMode = () =>
+  useQueryState(
+    "vm",
+    parseAsStringEnum<ViewMode>(["pages", "scroll"])
+      .withDefault("pages")
+      .withOptions({
+        clearOnDefault: true,
+        history: "push",
+      })
+  )
+
 // The grid results view's tab choice (gallery closed): true shows the
 // pinboard in place of the results. Deliberately separate from ghp, with
 // the opposite default: the gallery shows the board as soon as pins exist,
@@ -247,4 +273,5 @@ export {
   useGalleryPinResizeHandles,
   useGalleryTrim,
   usePinboardMaximized,
+  useViewMode,
 }

@@ -1,5 +1,5 @@
 import type { SearchQueryArgs } from "@/app/search/queryFns"
-import { components } from "./panoptikon"
+import type { components } from "./panoptikon"
 
 // Server-side prefetching is worth it exactly when the query cost does not
 // scale down with LIMIT — vector searches scan every candidate embedding
@@ -92,6 +92,38 @@ export function buildResultsRequest(
       prefetch_rows: prefetchRowsFor(searchQuery.query),
     },
   }
+}
+
+/**
+ * The fetch granularity of scroll mode: one chunk is one offset-aligned
+ * request for `SCROLL_CHUNK_SIZE` rows, so the item at global index `i` is
+ * row `i % SCROLL_CHUNK_SIZE` of chunk `floor(i / SCROLL_CHUNK_SIZE)`.
+ *
+ * Equal to VECTOR_PREFETCH_ROW_BUDGET on purpose, and the two must stay
+ * equal: the server's result cache stores rows as page-size-agnostic spans of
+ * that width, so a vector search's first chunk is exactly the span its
+ * prefetch already warmed, and every chunk of every search is one whole
+ * span-cache unit instead of a window straddling two. Internal — never a
+ * user-facing setting, and deliberately decoupled from `page_size`, which is
+ * what makes a page-size change in scroll mode refetch nothing.
+ */
+export const SCROLL_CHUNK_SIZE = 320
+
+/**
+ * A chunk request: the results request every other caller builds, with
+ * pagination overridden onto the chunk lattice. Trivial by construction, and
+ * that is the point — the byte-identical-body rule above needs exactly one
+ * owner, so nothing assembles a chunk body by hand and splits the cache key
+ * for the fourth time.
+ */
+export function buildChunkRequest(
+  parts: SearchRequestParts,
+  chunkIndex: number
+): SearchQueryArgs {
+  return buildResultsRequest(parts, {
+    page: chunkIndex + 1,
+    pageSize: SCROLL_CHUNK_SIZE,
+  })
 }
 
 /** The argument shape of `POST /api/pinboards/search`. */
