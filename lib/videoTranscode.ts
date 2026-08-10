@@ -521,7 +521,13 @@ const POLL_INTERVAL_MS = 1000
 // job is by design (the server pushes when there is something to say), but a
 // poll loop is a request per second forever, and a job the pool silently lost
 // would keep one running for the life of the tab.
-const POLL_TIMEOUT_MS = 10 * 60 * 1000
+//
+// Exported because the clip export waits on the SAME job through a promise
+// (lib/videoClip's `awaitTerminal`), and a wait with no deadline outlives even
+// the poller's: an EventSource that never delivers a terminal event would
+// leave that promise — and the per-item busy guard behind it — pending
+// forever. One number, so the two ways of waiting give up together.
+export const POLL_TIMEOUT_MS = 10 * 60 * 1000
 
 function pollJob(key: string, jobId: string) {
   let stopped = false

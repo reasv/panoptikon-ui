@@ -1045,6 +1045,13 @@ export type VideoClipTarget = {
     sha256: string
     dbs: { index_db: string | null; user_data_db: string | null }
     /**
+     * The item's recorded duration, in seconds — what an UNTRIMMED row would
+     * encode. The animated-image rows are offered only inside the server's
+     * length cap, and this is the only way to know that without a trim (see
+     * lib/videoClip's `clipRows`).
+     */
+    duration: number | null | undefined
+    /**
      * `clipRequestFor(trim, effectiveTrim, outroGoverns)` — computed by the
      * host, which is the only place all three inputs exist. Null means the
      * player is showing the whole file (or a freeze-frame trim, which is the
@@ -1091,13 +1098,20 @@ export function VideoDownloadControl({
     const close = React.useCallback(() => setOpen(false), [])
     useDismissOnOutside(open, close, rootRef)
 
-    const { presets } = useVideoPresets("clip")
+    const { presets, limits } = useVideoPresets("clip")
     const busy = useClipBusy(clip?.sha256)
+    // The rows, derived once: the length cap can empty a table that is not
+    // empty, so the chevron is gated on what the menu would actually contain
+    // rather than on how many presets the policy offers.
+    const rows = clipRows(presets, {
+        request: clip?.request ?? null,
+        duration: clip?.duration,
+        limits,
+    })
     // The mini tier's picture is barely wider than this control; the kebab's
     // own "Download original" row is what serves it, and the host keeps that
     // row at every tier precisely so this one may vanish.
-    const canClip = clip != null && presets.length > 0 && size !== "mini"
-    const trimmed = clip?.request != null
+    const canClip = clip != null && rows.length > 0 && size !== "mini"
 
     // Click-open, so it must survive a pointer that wanders off the surface —
     // and it holds under its own key, because the surface's kebab is a second
@@ -1185,7 +1199,7 @@ export function VideoDownloadControl({
                             them, and a link's "save link as" would hand the
                             user a 404 from the artifact route (which never
                             starts a job — design §0.2). */}
-                        {clipRows(presets, trimmed).map(({ preset, label }) => (
+                        {rows.map(({ preset, label }) => (
                             <MenuItem
                                 key={preset.id}
                                 label={label}

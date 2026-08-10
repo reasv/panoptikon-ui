@@ -3166,8 +3166,15 @@ function PinBoardPin({
     useVideoTrim({ videoRef, trim: effectiveTrim, active: showVideo })
     // The FULL hash and the item's type, for the menu's clip rows: the board's
     // records carry only a 10-char prefix, and only a video has a clip.
+    // The duration rides along for the animated-image rows, which are offered
+    // only inside the server's length cap and have nothing else to measure an
+    // untrimmed export against.
     const clipItem = data?.item
-        ? { sha256: data.item.sha256, mime: data.item.type }
+        ? {
+            sha256: data.item.sha256,
+            mime: data.item.type,
+            duration: data.item.duration,
+        }
         : null
     // Native controls stand the whole player world down (only the escape
     // kebab remains), so the controller is inactive there too. Crop mode

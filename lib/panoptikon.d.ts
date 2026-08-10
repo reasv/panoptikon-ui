@@ -7179,7 +7179,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Unknown preset, an unusable trim window (bounds that name a freeze frame rather than a clip, a start bound past the end of the item, or a start bound at or past the resolved outro cut), or an unknown/conflicting `cut` */
+            /** @description Unknown preset, an unusable trim window (bounds that name a freeze frame rather than a clip, a start bound past the end of the item, or a start bound at or past the resolved outro cut), an unknown/conflicting `cut`, or an animated-image preset asked for more than `max_animated_image_seconds` of output (including an unbounded one on an item with no recorded duration) */
             422: {
                 headers: {
                     [name: string]: unknown;

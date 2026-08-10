@@ -30,6 +30,12 @@ export type PinClipItem = {
     sha256: string
     /** The item's mime type; only `video/*` has anything to clip. */
     mime: string | null | undefined
+    /**
+     * The item's recorded duration, in seconds. What an UNTRIMMED row would
+     * encode, which is how the animated-image rows know whether they are
+     * within the server's length cap (see lib/videoClip's `clipRows`).
+     */
+    duration: number | null | undefined
 }
 
 /**
@@ -52,18 +58,25 @@ function ClipExportItems({
 }) {
     // The capability lives inside the hook (a policy without it never fetches,
     // so the list stays empty) — which is also what makes "no rows" the answer
-    // for a restricted profile, per the hide-don't-disable rule.
-    const { presets } = useVideoPresets("clip")
+    // for a restricted profile, per the hide-don't-disable rule. The limits
+    // ride in the same envelope, and the length cap they carry is what decides
+    // whether an animated-image row is offered at all.
+    const { presets, limits } = useVideoPresets("clip")
     const busy = useClipBusy(item?.sha256)
-    if (!item || !item.mime?.startsWith("video/") || presets.length === 0) return null
-    const trimmed = request != null
+    if (!item || !item.mime?.startsWith("video/")) return null
+    const rows = clipRows(presets, { request, duration: item.duration, limits })
+    if (rows.length === 0) return null
     return (
         <>
-            {clipRows(presets, trimmed).map(({ preset, label }) => (
+            {rows.map(({ preset, label }) => (
                 <ContextMenuItem
                     key={preset.id}
                     disabled={busy}
-                    onClick={() => void exportClip({
+                    // `onSelect`, not `onClick`: Radix gates the selection
+                    // event on `disabled` but the DOM click still fires on a
+                    // disabled item, so an onClick row would start a second
+                    // export of the item the busy guard is greying it out for.
+                    onSelect={() => void exportClip({
                         sha256: item.sha256,
                         preset,
                         request,

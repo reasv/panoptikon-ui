@@ -3,6 +3,7 @@ import { fetchClient } from "@/lib/api"
 import { downloadURL } from "@/lib/download"
 import { FREEZE_EPS } from "@/lib/videoTrim"
 import {
+  POLL_TIMEOUT_MS,
   errorDetail,
   followTranscodeJob,
   getTranscodeState,
@@ -110,7 +111,11 @@ export function clipRequestFor(
     // construction (the default only ever supplies an END), and reading the
     // user's own bound is what the rule means.
     const start = trim?.start ?? null
-    return start != null ? { start_cs: toCs(start), cut: "outro" } : { cut: "outro" }
+    const startCs = start == null ? null : toCs(start)
+    // A ZERO start is elided, exactly as an absent one is (see below).
+    return startCs != null && startCs > 0
+      ? { start_cs: startCs, cut: "outro" }
+      : { cut: "outro" }
   }
   const start = effective?.start ?? null
   const end = effective?.end ?? null
@@ -124,9 +129,20 @@ export function clipRequestFor(
   // reads null as "offer the untrimmed rows".
   if (endCs != null && endCs - (startCs ?? 0) <= FREEZE_GUARD_CS) return null
   const request: ClipRequest = {}
-  if (startCs != null) request.start_cs = startCs
+  // A start of ZERO is elided rather than sent. The two spellings describe the
+  // identical encode — ffmpeg is handed no `-ss` either way — but the server
+  // hashes the request as it arrives, so `Some(0)` and `None` are two cache
+  // keys for one artifact: the same clip asked for by a player parked at the
+  // origin and by one that never had a start bound would be encoded twice, and
+  // neither would ever hit the other's entry. The whole-file case is the one
+  // most likely to be asked for both ways, which is what makes this worth a
+  // branch.
+  if (startCs != null && startCs > 0) request.start_cs = startCs
   if (endCs != null) request.end_cs = endCs
-  return request
+  // ...and once the zero is gone, a start-only trim at the origin is not a
+  // trim at all: an empty request would otherwise read as `trimmed` to every
+  // caller and label a whole-file re-encode a clip.
+  return request.start_cs == null && request.end_cs == null ? null : request
 }
 
 /**
@@ -155,14 +171,25 @@ export function clipStoreKey(
 // ---- row labels (pure) --------------------------------------------------
 
 /**
- * The two clip presets that ship. Only these get a derived label: a
- * user-declared profile carries its own, and inventing one for it would both
- * hide the name its author chose and collide with these.
+ * The clip presets that SHIP. Only these get a derived label: a user-declared
+ * profile carries its own, and inventing one for it would both hide the name
+ * its author chose and collide with these.
+ *
+ * All three of them, and the wording is chosen by CONTAINER rather than by id
+ * — an mp4/webm row is a video ("Clip", "Re-encode"), a webp row is an
+ * animated image and says so. The earlier set named two of the three, which
+ * meant the shipped `webp-anim` fell through to the untouched server label:
+ * one row in the menu that never learned whether it was about to encode a trim
+ * or the whole file, next to two that did.
  */
-const BUILTIN_CLIP_PRESETS = new Set(["clip", "clip-fast"])
+const BUILTIN_CLIP_PRESETS = new Set(["clip", "clip-fast", "webp-anim"])
 
 type TranscodePreset = components["schemas"]["TranscodePresetInfo"]
-type PresetRow = Pick<TranscodePreset, "id" | "label" | "channel">
+type PresetRow = Pick<TranscodePreset, "id" | "label" | "channel" | "container">
+type TranscodeLimits = components["schemas"]["TranscodeLimits"]
+
+/** The animated-image container, the one the server puts a length cap on. */
+const ANIMATED_CONTAINER: TranscodePreset["container"] = "webp"
 
 /**
  * What one clip row says. `trimmed` is whether `clipRequestFor` returned a
@@ -172,9 +199,63 @@ type PresetRow = Pick<TranscodePreset, "id" | "label" | "channel">
  */
 export function clipRowLabel(preset: PresetRow, trimmed: boolean): string {
   if (!BUILTIN_CLIP_PRESETS.has(preset.id)) return preset.label
+  if (preset.container === ANIMATED_CONTAINER) {
+    // No channel split: one animated-image preset ships, and "fast" is not a
+    // choice the user is being offered between two rows here.
+    return trimmed ? "Animated WebP (trimmed)" : "Animated WebP"
+  }
   const fast = preset.channel === "fast"
   if (trimmed) return fast ? "Clip (trimmed, fast)" : "Clip (trimmed)"
   return fast ? "Re-encode (fast)" : "Re-encode"
+}
+
+/**
+ * How many seconds of output the rows would encode, or null when that is not
+ * knowable from here.
+ *
+ * The same arithmetic `api/video.rs`'s `expected_output_seconds` does, and for
+ * the same reason: an animated image is capped by length, so the length has to
+ * be computed before a row is offered rather than discovered in a 422.
+ *
+ * With an end bound it is exact. Without one it is the item's own duration
+ * less the start — an UPPER bound, which is the safe direction for a cap, and
+ * deliberately also what a `cut: "outro"` request gets: the real cut is
+ * earlier (the server resolves it from `content_end_ms`), so this may hide a
+ * row that would in fact have been accepted. Hiding a row that would have
+ * worked is a smaller lie than offering one that would not, and the trim the
+ * user can always place makes the window knowable exactly.
+ */
+export function clipWindowSeconds(
+  request: ClipRequest | null,
+  duration: number | null | undefined,
+): number | null {
+  const startCs = request?.start_cs ?? 0
+  if (request?.end_cs != null) {
+    return Math.max(0, (request.end_cs - startCs) / 100)
+  }
+  if (typeof duration !== "number" || !isFinite(duration) || duration <= 0) return null
+  return Math.max(0, duration - startCs / 100)
+}
+
+/**
+ * Whether one preset may be offered for this window. Everything but the
+ * animated-image container always may: a long mp4 is exactly what a whole-file
+ * re-encode is for, and the server puts no length limit on one.
+ *
+ * An animated-image row is offered only when the window is both KNOWN and
+ * within the server's `max_animated_image_seconds`. Unknown counts as no —
+ * the server refuses an unbounded animated encode on an item whose duration it
+ * has not recorded, and a row that always 422s is worse than no row.
+ */
+function clipRowFits(
+  preset: PresetRow,
+  windowSeconds: number | null,
+  limits: TranscodeLimits | null,
+): boolean {
+  if (preset.container !== ANIMATED_CONTAINER) return true
+  const limit = limits?.max_animated_image_seconds
+  if (limit == null || windowSeconds == null) return false
+  return windowSeconds <= limit
 }
 
 /**
@@ -187,12 +268,27 @@ export function clipRowLabel(preset: PresetRow, trimmed: boolean): string {
  * server filters the table by the matched policy, so "off" and "this policy
  * offers no clip preset" both arrive here as an empty array — and the callers
  * render no menu rather than a disabled one.
+ *
+ * HIDE, never disable, is also what the length cap does: an animated-image row
+ * for a window over the limit simply is not there. `request` doubles as the
+ * trimmed/whole-file signal the labels carry, so the two can never disagree.
  */
 export function clipRows<T extends PresetRow>(
   presets: T[],
-  trimmed: boolean,
+  context: {
+    /** `clipRequestFor`'s answer; null is the whole file, re-encoded. */
+    request: ClipRequest | null
+    /** The item's recorded duration, in seconds, when the host knows it. */
+    duration: number | null | undefined
+    /** `useVideoPresets`' limits envelope — live config, not a mirror. */
+    limits: TranscodeLimits | null
+  },
 ): { preset: T; label: string }[] {
-  return presets.map((preset) => ({ preset, label: clipRowLabel(preset, trimmed) }))
+  const trimmed = context.request != null
+  const windowSeconds = clipWindowSeconds(context.request, context.duration)
+  return presets
+    .filter((preset) => clipRowFits(preset, windowSeconds, context.limits))
+    .map((preset) => ({ preset, label: clipRowLabel(preset, trimmed) }))
 }
 
 /** The one-line description the progress toast carries while a job runs. */
@@ -286,12 +382,19 @@ function fallbackFileName(sha256: string, ext: string): string {
  * POST returning and this call (a very fast encode, or a `hit` that arrived
  * as a job) is already terminal in the store, and a listener-only wait would
  * hang forever on an event that has already been delivered.
+ *
+ * Returns its `cancel` alongside the promise rather than resolving on a
+ * deadline itself: the deadline belongs to the caller (which is the only place
+ * that knows the job id to cancel), and a wait that gave up must take its
+ * listener with it — the store outlives this call, and a subscription left
+ * behind would keep calling `onUpdate` into a toast that is already gone.
  */
 function awaitTerminal(
   key: string,
   onUpdate: (state: TranscodeState) => void,
-): Promise<TranscodeState> {
-  return new Promise((resolve) => {
+): { promise: Promise<TranscodeState>; cancel: () => void } {
+  let unsubscribe = () => {}
+  const promise = new Promise<TranscodeState>((resolve) => {
     const check = () => {
       const state = getTranscodeState(key)
       if (isTerminalState(state)) {
@@ -301,9 +404,49 @@ function awaitTerminal(
       }
       onUpdate(state)
     }
-    const unsubscribe = subscribeTranscodeKey(key, check)
+    unsubscribe = subscribeTranscodeKey(key, check)
     check()
   })
+  return { promise, cancel: () => unsubscribe() }
+}
+
+/**
+ * Whichever lands first: the work, or the deadline.
+ *
+ * Pure, and separated from everything it is used for, because the bug it
+ * exists to prevent has no symptom until it has been running for ten minutes:
+ * a promise that never settles. The timer is cleared on BOTH outcomes — a
+ * ten-minute `setTimeout` left armed after a fast encode holds the event loop
+ * (and, in node, the process) open for the rest of it.
+ */
+export function raceDeadline<T>(
+  work: Promise<T>,
+  ms: number,
+  onDeadline: () => T,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(onDeadline()), ms)
+  })
+  return Promise.race([work, deadline]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer)
+  })
+}
+
+/**
+ * Stop an export the client has stopped waiting for. Fire-and-forget: nothing
+ * about the toast the user is looking at depends on the answer, and a cancel
+ * that fails leaves the job exactly where the timeout already found it.
+ *
+ * The real bound on a runaway encode is the SERVER's watchdog (the pool kills
+ * a job that outlives its own limit); this is the polite half — an abandoned
+ * export should not go on holding an encoder slot for ten more minutes just
+ * because this tab gave up on hearing about it.
+ */
+function abandonJob(jobId: string) {
+  void fetchClient
+    .DELETE("/api/video/jobs/{job_id}", { params: { path: { job_id: jobId } } })
+    .catch(() => {})
 }
 
 /**
@@ -379,7 +522,26 @@ export async function exportClip(options: {
       }
       setTranscodeState(key, state)
       followTranscodeJob(key, jobId)
-      state = await awaitTerminal(key, (next) => step(clipProgressText(next)))
+      // The wait has the SAME deadline the poll fallback does, and needs one
+      // for a stronger reason: the poller gives up on its own, but an
+      // EventSource that connects and then says nothing (a job the pool lost,
+      // a relay that buffers the stream) leaves this promise pending forever —
+      // with the per-item busy guard behind it, which would then refuse every
+      // later export of this item for the life of the tab.
+      const wait = awaitTerminal(key, (next) => step(clipProgressText(next)))
+      state = await raceDeadline(wait.promise, POLL_TIMEOUT_MS, () => {
+        wait.cancel()
+        abandonJob(jobId)
+        // Retryable, never sticky: nothing was learned about the ITEM here,
+        // only about this exchange, so the next press means what it says.
+        const timedOut: TranscodeState = {
+          state: "failed",
+          error: "Gave up waiting for the transcode",
+          sticky: false,
+        }
+        setTranscodeState(key, timedOut)
+        return timedOut
+      })
     }
     if (state.state === "failed") {
       fail(state.error)
@@ -395,7 +557,9 @@ export async function exportClip(options: {
     // only place that name can be computed is where the request still is.
     const filename = state.filename ?? fallbackFileName(sha256, preset.ext)
     downloadURL(state.artifactUrl, filename)
-    finish("Clip saved", filename, RECEIPT_TOAST_MS)
+    // The receipt names what actually landed: a whole-file re-encode is a
+    // video, not a clip, and the row that started it said so too.
+    finish(request ? "Clip saved" : "Video saved", filename, RECEIPT_TOAST_MS)
   } catch {
     fail("The transcode request failed")
   } finally {

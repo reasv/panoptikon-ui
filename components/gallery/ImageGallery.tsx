@@ -1021,6 +1021,10 @@ export function GalleryImageLarge(
                                         sha256: item.sha256,
                                         dbs,
                                         request: clipRequest,
+                                        // What an untrimmed row would encode:
+                                        // the animated-image row is offered
+                                        // only inside the server's cap
+                                        duration: item.duration,
                                     }}
                                     size={surfaceBox ? playerSizeForWidth(surfaceWidth) : "full"}
                                 />
