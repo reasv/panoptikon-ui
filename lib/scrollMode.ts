@@ -94,6 +94,53 @@ export function pageStateFromScrollAnchor({
   return remapPageAnchor({ page: 1, pageSize: 0, nextPageSize: pageSize, anchor })
 }
 
+/**
+ * The virtual page a global item index falls on — `floor(top / k) + 1`, the
+ * invariant the whole feature rests on (design §4) read from the scroll side.
+ * It is the same expression `pageStateFromScrollAnchor` computes, kept
+ * separate because the two callers want different things from it: that one
+ * needs the (page, index) pair a mode switch writes, this one needs only the
+ * number the pagination bar highlights, on every scroll frame.
+ *
+ * `k < 1` is "no pagination" — one unbounded virtual page — so everything is
+ * page 1, exactly as paginated mode behaves at that size.
+ */
+export function virtualPageOf(anchor: number, pageSize: number): number {
+  if (pageSize < 1) return 1
+  return Math.floor(Math.max(anchor, 0) / pageSize) + 1
+}
+
+/**
+ * The inverse: the first item of virtual page N, which is what a scrubber
+ * click and a virtual page's `<a href>` both write into `top`.
+ *
+ * Returns 0 for page 1 and for the unpaginated case, and the CALLER turns
+ * that 0 into an absent `top` — the anchor codec's convention is "absent
+ * while the top row is visible" (lib/state/gridScroll.ts), and there are two
+ * writers of this value (the click and the link serializer) that must agree
+ * about it.
+ */
+export function virtualPageAnchor(page: number, pageSize: number): number {
+  if (pageSize < 1) return 0
+  return Math.max(page - 1, 0) * pageSize
+}
+
+/**
+ * How many items to warm on either side of the visible range: `overscanRows`
+ * is the virtualizer's own row overscan, and the doubling is the deliberate
+ * margin — the rows the virtualizer renders ahead must already have DATA when
+ * they scroll in, so warming exactly the rendered overscan would start the
+ * fetch at the moment it is needed rather than before.
+ *
+ * Item-space rather than chunk-space on purpose: the caller converts a pixel
+ * range to items and hands the result to `ensureRange`, which owns the
+ * conversion to the chunk lattice (`chunkRangeFor`). Nothing outside this
+ * module's arithmetic ever needs to know the chunk size.
+ */
+export function overscanItemsFor(columns: number, overscanRows: number): number {
+  return 2 * Math.max(columns, 1) * Math.max(overscanRows, 0)
+}
+
 /** The chunk holding a global item index. */
 export function chunkIndexOf(index: number, chunkSize: number): number {
   if (chunkSize < 1) return 0

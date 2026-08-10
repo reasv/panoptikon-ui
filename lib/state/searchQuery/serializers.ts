@@ -23,6 +23,9 @@ import {
 import { createScopedSerializer } from "../nuqsScopedWrappers/scopedSerializer"
 import type { ReadonlyURLSearchParams } from "next/navigation"
 import { GRID_SCROLL_ANCHOR_KEY } from "../gridScroll"
+// Relative, not "@/lib/...": scripts/scrollmode.test.mjs imports this module
+// under plain node, which resolves no path aliases.
+import { virtualPageAnchor } from "../../scrollMode"
 
 export const serializers = {
   embedArgs: createSerializer(embedArgsKeyMap(def)),
@@ -121,6 +124,12 @@ const scrollAnchorSerializer = createSerializer({
  * k comes in as an argument — this is a pure serializer, and the caller is
  * the one holding the page-size state. `k < 1` is "no pagination": one
  * unbounded virtual page, hence the top of the set.
+ *
+ * The anchor itself comes from `virtualPageAnchor` rather than being spelled
+ * out here, because the pagination bar has TWO writers of the same
+ * destination — this link and the click handler's `setScrollAnchor` — and a
+ * middle-click that lands one item away from a left-click is exactly the kind
+ * of drift a second copy of `(N-1)*k` produces.
  */
 export const getScrollPositionURL = (
   base: ReadonlyURLSearchParams | URLSearchParams,
@@ -138,7 +147,7 @@ export const getScrollPositionURL = (
   // page link would open the middle-clicked page at the item the user is
   // looking at now, not at the page the link is labelled with.
   queryParams.delete("gi")
-  const anchor = pageSize >= 1 ? Math.max(newPage - 1, 0) * pageSize : 0
+  const anchor = virtualPageAnchor(newPage, pageSize)
   return scrollAnchorSerializer(queryParams, {
     [GRID_SCROLL_ANCHOR_KEY]: anchor > 0 ? anchor : null,
   })

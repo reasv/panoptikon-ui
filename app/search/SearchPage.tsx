@@ -8,7 +8,7 @@ import { InstantSearchLock } from "@/components/InstantSearchLock"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/use-toast"
 import { SearchBar, TagSearchBar } from "@/components/searchBar"
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { SearchQueryArgs } from "./queryFns"
 import { SearchErrorToast } from "@/components/searchErrorToaster"
 import { cn } from "@/lib/utils"
@@ -16,11 +16,12 @@ import { ScrollBar } from "@/components/ui/scroll-area"
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { SideBar } from "@/components/sidebar/SideBar"
 import { SearchResultImage } from "@/components/SearchResultImage"
-import { useGalleryFullscreen, useGalleryIndex, useGalleryPinBoardLayout, useGridLibraryTab, useGridPinboardTab } from "@/lib/state/gallery"
+import { useGalleryFullscreen, useGalleryIndex, useGalleryPinBoardLayout, useGridLibraryTab, useGridPinboardTab, usePinboardMaximized, useViewMode } from "@/lib/state/gallery"
+import type { ViewMode } from "@/lib/state/gallery"
 import { useSideBarOpen } from "@/lib/state/sideBar"
 import { selectedDBsSerializer, useSelectedDBs } from "@/lib/state/database"
-import { useSearch } from "@/lib/searchHooks"
-import type { SearchRequestParts } from "@/lib/searchRequest"
+import { arrayResultsSource, useChunkedResults, useSearch, type ResultsSource } from "@/lib/searchHooks"
+import { SCROLL_CHUNK_SIZE, type SearchRequestParts } from "@/lib/searchRequest"
 import { ImageGallery, PinboardTabChip } from '@/components/gallery/ImageGallery'
 import { PinBoard } from '@/components/gallery/GalleryPinBoard'
 import { PinboardLibraryButton } from '@/components/gallery/PinboardLibrary'
@@ -29,14 +30,18 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { usePinboardURLLoader } from '@/lib/pinboardLinks'
 import { usePinboardAssociatedOnly } from '@/lib/state/pinboardLibraryPrefs'
 import { ImageSimilarityHeader } from '@/components/ImageSimilarityHeader'
-import { mintSeed, useOrderBy, usePageSize, useQueryOptions, useRandomSeed, useStampRandomSeed } from "@/lib/state/searchQuery/clientHooks"
+import { mintSeed, useOrderBy, usePageSize, useQueryOptions, useRandomSeed, useSearchPageRaw, useStampRandomSeed } from "@/lib/state/searchQuery/clientHooks"
+import { getScrollPositionURL } from "@/lib/state/searchQuery/serializers"
+import { overscanItemsFor, virtualPageAnchor, virtualPageOf } from "@/lib/scrollMode"
+import { useSearchParams, type ReadonlyURLSearchParams } from "next/navigation"
+import { ResultCellSkeleton } from "@/components/ResultCellSkeleton"
 import Link from "next/link"
 import { useScanDrawerOpen } from "@/lib/state/scanDrawer"
 import { ScanDrawer } from "@/components/scan/ScanDrawer"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { components } from "@/lib/panoptikon"
-import { useGridScrollAnchor } from "@/lib/state/gridScroll"
+import { GRID_SCROLL_ANCHOR_KEY, useGridScrollAnchor } from "@/lib/state/gridScroll"
 import { DesktopUpdateRibbon } from "@/components/DesktopUpdateRibbon"
 import { SearchMetricsHoverCard } from "@/components/SearchMetricsCard"
 import { $api } from "@/lib/api"
@@ -122,6 +127,41 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     const [qIndex, setIndex] = useGalleryIndex()
     const results = data?.results || []
     const [sidebarOpen, setSideBarOpen] = useSideBarOpen()
+    const [viewMode] = useViewMode()
+    const scrollMode = viewMode === "scroll"
+    // The sparse window over the WHOLE result set that scroll mode reads rows
+    // from. Mounted in both modes because hooks are unconditional; `enabled`
+    // is what keeps pages mode from issuing a single chunk request (nothing
+    // calls `ensureRange` there either, so its query set is empty regardless —
+    // the flag is the belt to that braces).
+    //
+    // `searchEnabled && !pinboardMaximized` rather than useSearch's
+    // `queryEnabled`: chunk bodies are built from the COMMITTED query, so
+    // there is no uncommitted edit a chunk fetch could leak, while the
+    // committed-vs-live half of `queryEnabled` would freeze scrolling on
+    // skeletons whenever the user has instant search off or nudges page_size
+    // (see useChunkedResults' `enabled` param).
+    const pinboardMaximized = usePinboardMaximized()
+    const chunkSource = useChunkedResults({
+        committedQuery,
+        enabled: scrollMode && searchEnabled && !pinboardMaximized,
+        // The fallback reads `results[i]` AS global item i, which is only true
+        // while the main query is on page 1 — scroll mode's own invariant, but
+        // one that a hand-made `vm=scroll&page=3` URL breaks for the tick
+        // before the normalization effect below removes the param. Withheld
+        // rather than trusted for that tick: page 3's rows painted at the top
+        // of the set is a wrong ANSWER, where a skeleton is merely a slow one.
+        fallbackResults: page === 1 ? results : [],
+        resultsAreStale,
+        count: nResults,
+    })
+    // ONE grid implementation reads both modes through this: in pages mode the
+    // page's array behind the same interface, so every index the grid computes
+    // is page-local exactly as it has always been, and every dep that used to
+    // be `results` is now `rowsIdentity` — which IS that array (see
+    // arrayResultsSource). Nothing about the pages-mode path changes value.
+    const gridSource = scrollMode ? chunkSource : arrayResultsSource(results)
+    const itemCount = gridSource.count
 
     const [options, setOptions] = useQueryOptions()
     const dbs = useSelectedDBs()[0]
@@ -194,6 +234,75 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     useEffect(() => {
         gridScrollOffsetRef.current = 0
     }, [page, urlPageSize])
+
+    // ---- scroll mode: the pagination bar as position indicator and scrubber
+    //
+    // k, the virtual-page size, is `page_size` — the same param, the same
+    // user-configured value (design §4). The URL's value, not useSearch's:
+    // that one trails the request throttle, and in scroll mode a page-size
+    // change is a pure relabel with nothing to fetch, so making the labels
+    // wait on a throttle would be a lag with no reason behind it.
+    const k = urlPageSize
+    const [scrollAnchor, setScrollAnchor] = useGridScrollAnchor()
+    // The highlighted virtual page. Written from two directions that agree by
+    // construction: the grid reports `floor(topItem / k) + 1` live while
+    // scrolling (never per frame — only when the number changes), and the
+    // effect below re-derives the same expression from the URL anchor. The
+    // grid's own scroll-stop write puts exactly that `topItem` into `top`, so
+    // a self-write re-derives the value already held and the two can never
+    // fight; what the effect actually covers is every position the grid did
+    // NOT scroll to itself — first paint of a deep link, back/forward, a
+    // scrubber jump, and a page-size relabel.
+    const [derivedPage, setDerivedPage] = useState(() => virtualPageOf(scrollAnchor ?? 0, k))
+    useEffect(() => {
+        if (!scrollMode) return
+        setDerivedPage(virtualPageOf(scrollAnchor ?? 0, k))
+    }, [scrollMode, scrollAnchor, k])
+
+    // A hand-made or hand-edited `vm=scroll&page=N` URL, self-healed on load
+    // the way a seedless random URL is (useStampRandomSeed): scroll mode is
+    // DEFINED by having no `page` at all — two live position params is the bug
+    // class the mode avoids — so the page number is re-expressed as the
+    // position it names and the param dropped, in one tick and in "replace"
+    // (a correction to a URL that was never valid, not somewhere to navigate
+    // back to).
+    //
+    // Presence is read from `useSearchParams`, not from nuqs: nuqs cannot tell
+    // `page=1` from absent, and `page=1` is exactly the case that must still
+    // lose the param. `top` WINS when both are present — it is the mode's own
+    // coordinate and the more specific one, so a link carrying both is read as
+    // a position with a stale page number attached.
+    const urlParams = useSearchParams()
+    const setPageRaw = useSearchPageRaw()[1]
+    const normalizedScrollURL = useRef(false)
+    useEffect(() => {
+        if (normalizedScrollURL.current) return
+        if (!scrollMode || !urlParams.has("page")) return
+        normalizedScrollURL.current = true
+        const replace = { history: "replace" as const }
+        if (!urlParams.has(GRID_SCROLL_ANCHOR_KEY)) {
+            const anchor = virtualPageAnchor(page, k)
+            setScrollAnchor(anchor > 0 ? anchor : null, replace)
+        }
+        setPageRaw(null, replace)
+        // The setters churn identity per render; the guard above is the real
+        // condition, and the ref makes this once-per-mount even if the shallow
+        // URL write doesn't propagate back through useSearchParams.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [scrollMode, urlParams])
+
+    // The scrubber's three props. Virtual page N covers items [(N-1)k, Nk), so
+    // a click is a position write and rides the grid's existing external-anchor
+    // effect — there is no imperative channel into the grid, which is what
+    // makes a click, a Back and a middle-clicked link the same operation.
+    // "push" because a jump across the set IS navigation, unlike a scroll stop.
+    const scrollTotalPages = k > 0 ? (Math.ceil((nResults || 1) / k) || 1) : 1
+    const setVirtualPage = (newPage: number) => {
+        const anchor = virtualPageAnchor(newPage, k)
+        return setScrollAnchor(anchor > 0 ? anchor : null, { history: "push" })
+    }
+    const getVirtualPageURL = (base: ReadonlyURLSearchParams | URLSearchParams, newPage: number) =>
+        getScrollPositionURL(base, newPage, k)
     return (
         <>
             <SearchErrorToast noFtsErrors={options.e_iss} isError={isError} error={error} />
@@ -240,11 +349,37 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                     />
                     :
                     <GridPanel
-                        results={results}
+                        source={gridSource}
+                        mode={viewMode}
+                        pageSize={k}
+                        // Stable by construction (a useState setter), which the
+                        // grid's scroll-listener effect depends on: a callback
+                        // minted per render would re-subscribe that listener
+                        // and reset its 350ms scroll-stop timer.
+                        onDerivedPageChange={scrollMode ? setDerivedPage : undefined}
+                        // Whether `source.count` is the count query's answer
+                        // rather than the still-growing loaded extent. Always
+                        // true in pages mode, where the page's array IS the
+                        // count. See the restore effect: a position past a
+                        // number that is still growing must not be mistaken
+                        // for a position past the end of the results.
+                        countSettled={!scrollMode || nResults > 0}
+                        // PHASE-1 GUARD, removed when the gallery moves onto
+                        // ResultsSource: the gallery still receives `results`
+                        // (the main query's page-1 rows), so an item beyond
+                        // them has no gallery to open. Cards above the bound
+                        // drop their gi href with it — the click below is
+                        // guarded, but a middle-clicked link would otherwise
+                        // mint a URL the gallery cannot yet resolve.
+                        openableCount={scrollMode ? results.length : itemCount}
                         totalCount={nResults}
                         resultMetrics={data?.result_metrics}
                         countMetrics={data?.count_metrics}
-                        onImageClick={(index) => setIndex(index !== undefined ? index : null)}
+                        onImageClick={(index) => {
+                            // Same phase-1 bound, at the click seam.
+                            if (scrollMode && index !== undefined && index >= results.length) return
+                            setIndex(index !== undefined ? index : null)
+                        }}
                         isLoading={loading}
                         resultsAreStale={resultsAreStale}
                         showPagination={showPagination}
@@ -256,10 +391,10 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
             {
                 showPagination && (
                     <PageSelect
-                        totalPages={totalPages}
-                        currentPage={page}
-                        setPage={setPage}
-                        getPageURL={getPageURL}
+                        totalPages={scrollMode ? scrollTotalPages : totalPages}
+                        currentPage={scrollMode ? derivedPage : page}
+                        setPage={scrollMode ? setVirtualPage : setPage}
+                        getPageURL={scrollMode ? getVirtualPageURL : getPageURL}
                     />
                 )
             }
@@ -319,7 +454,12 @@ function useResultGridLayout(sidebarOpen: boolean): { columns: number, rowEstima
 // panel's own padding can start a pinboard marquee select, same as the
 // gallery frame (see the frame listener in GalleryPinBoard).
 export function GridPanel({
-    results,
+    source,
+    mode = "pages",
+    pageSize,
+    onDerivedPageChange,
+    countSettled = true,
+    openableCount,
     totalCount,
     resultMetrics,
     countMetrics,
@@ -331,7 +471,14 @@ export function GridPanel({
     updateRibbonVisible = false,
     committedQuery,
 }: {
-    results: SearchResult[],
+    /** The rows, however they are fetched — see ResultsSource. */
+    source: ResultsSource,
+    mode?: ViewMode,
+    /** k, the virtual-page size, for the scroll grid's derived page number. */
+    pageSize: number,
+    onDerivedPageChange?: (page: number) => void,
+    countSettled?: boolean,
+    openableCount: number,
     resultMetrics?: components["schemas"]["SearchMetrics"],
     countMetrics?: components["schemas"]["SearchMetrics"],
     totalCount: number,
@@ -484,7 +631,12 @@ export function GridPanel({
                 />
             ) : (
                 <ResultGrid
-                    results={results}
+                    source={source}
+                    mode={mode}
+                    pageSize={pageSize}
+                    onDerivedPageChange={onDerivedPageChange}
+                    countSettled={countSettled}
+                    openableCount={openableCount}
                     onImageClick={onImageClick}
                     isLoading={isLoading}
                     resultsAreStale={resultsAreStale}
@@ -497,8 +649,44 @@ export function GridPanel({
     )
 }
 
+// The virtualizer's row overscan, and the basis for how far ahead scroll mode
+// warms chunks. Shared deliberately: rows are RENDERED ahead of the viewport,
+// so the data behind them has to be ASKED FOR further ahead still, and the two
+// numbers drifting apart is what would make the overscan rows the ones that
+// show skeletons (see overscanItemsFor).
+const GRID_OVERSCAN_ROWS = 3
+
+/**
+ * Where the gallery's item sits in the source, for the ensure-visible pass on
+ * gallery close.
+ *
+ * Pages mode scans `[0, count)` — the source IS the page's array, so this is
+ * the `findIndex` it has always been. Scroll mode cannot scan a result set of
+ * unbounded size and must not FETCH to look (an ensure-visible is not worth a
+ * request), so its caller passes the loaded neighbourhood of the position
+ * being restored, which is where an item the user just closed the gallery on
+ * always is. Not found is an ordinary answer and the caller skips: `undefined`
+ * from `get` means "not loaded", never "end of results".
+ */
+function findSelectedIndex(
+    source: ResultsSource,
+    selected: { item_id: SearchResult["item_id"] },
+    from: number,
+    to: number
+): number {
+    for (let i = from; i < to; i++) {
+        if (source.get(i)?.item_id === selected.item_id) return i
+    }
+    return -1
+}
+
 export function ResultGrid({
-    results,
+    source,
+    mode = "pages",
+    pageSize,
+    onDerivedPageChange,
+    countSettled = true,
+    openableCount,
     onImageClick,
     isLoading,
     resultsAreStale = false,
@@ -506,7 +694,35 @@ export function ResultGrid({
     savedScrollOffsetRef,
     updateRibbonVisible = false,
 }: {
-    results: SearchResult[],
+    source: ResultsSource,
+    mode?: ViewMode,
+    /** k, the virtual-page size, for the derived page number in scroll mode. */
+    pageSize: number,
+    /**
+     * The live position indicator (design §4): called with
+     * `floor(topItem / k) + 1` and ONLY when that number changes, so scrolling
+     * doesn't re-render the host per frame. Must be referentially stable — it
+     * is a dependency of the scroll listener below.
+     */
+    onDerivedPageChange?: (page: number) => void,
+    /**
+     * Whether `source.count` is the count query's answer rather than the
+     * still-growing loaded extent (ResultsSource.count). The anchor machinery
+     * needs the difference: "past the end of the results" and "past what has
+     * loaded so far" call for opposite decisions, and on a cold scroll-mode
+     * load — SSR-hydrated rows, count still in flight — the second one is the
+     * ordinary state, not an edge case. Always true in pages mode, where the
+     * page's array IS the count.
+     */
+    countSettled?: boolean,
+    /**
+     * How many leading items may open the gallery. PHASE-1 ONLY: in scroll
+     * mode the gallery still receives the main query's rows, so items past
+     * them have nothing to open and neither their click nor their `gi` href
+     * is armed. Removed when the gallery moves onto ResultsSource; pages mode
+     * passes the item count, which arms everything, exactly as today.
+     */
+    openableCount: number,
     onImageClick?: (index?: number) => void,
     isLoading?: boolean,
     resultsAreStale?: boolean,
@@ -527,13 +743,53 @@ export function ResultGrid({
     const parentRef = useRef<HTMLDivElement>(null)
     const [sidebarOpen] = useSideBarOpen()
     const { columns, rowEstimate } = useResultGridLayout(sidebarOpen)
-    const rowCount = columns > 0 ? Math.ceil(results.length / columns) : 0
+    const scroll = mode === "scroll"
+    // The navigable extent. In pages mode this IS `results.length` (the source
+    // wraps the page's array); in scroll mode it is the count query's answer,
+    // falling back to the loaded extent while that is in flight so the scroll
+    // space grows once instead of thrashing as chunks land (see
+    // ResultsSource.count). Rows past the extent simply aren't rendered, which
+    // is what keeps the last partial row identical in both modes.
+    const itemCount = source.count
+    // The rows change signal, per the ResultsSource dependency rule: every dep
+    // list below lists THIS, never the source or its methods (both are minted
+    // per render). In pages mode it is the results array itself, so those dep
+    // lists hold the value they always held.
+    const rowsIdentity = source.rowsIdentity
+    const rowCount = columns > 0 ? Math.ceil(itemCount / columns) : 0
+
+    // FIXED ROW HEIGHT (scroll mode only, design §6): the breakpoint constants
+    // in useResultGridLayout *are* the row height rather than an estimate of
+    // it, so scroll mode measures the first row that mounts and uses that one
+    // number for every row in the set — no measureElement, no progressive
+    // measurement, and therefore a scrollToIndex into never-fetched territory
+    // that is exact on the first try. Measured rather than trusted because the
+    // constants are the thing CSS drift would silently invalidate. Null until
+    // the first row mounts, where the constant stands in.
+    const [measuredRowHeight, setMeasuredRowHeight] = useState<number | null>(null)
+    const measureFirstRow = useCallback((node: HTMLDivElement | null) => {
+        // Also called with null when the ref detaches (the render after the
+        // first measurement lands, since the ref is only attached while the
+        // height is unknown).
+        if (!node) return
+        const height = node.getBoundingClientRect().height
+        if (height > 0) {
+            setMeasuredRowHeight((prev) => (prev === height ? prev : height))
+        }
+    }, [])
+    // A breakpoint change is a different card height, so the measurement it
+    // produced no longer describes anything: drop it and measure again rather
+    // than scaling rows by a number taken at another size.
+    useEffect(() => {
+        if (!scroll) return
+        setMeasuredRowHeight(null)
+    }, [scroll, rowEstimate])
 
     const virtualizer = useVirtualizer({
         count: rowCount,
         getScrollElement: () => parentRef.current,
-        estimateSize: () => rowEstimate,
-        overscan: 3,
+        estimateSize: () => (scroll ? measuredRowHeight ?? rowEstimate : rowEstimate),
+        overscan: GRID_OVERSCAN_ROWS,
     })
 
     // Record the scroll position continuously so it survives this component
@@ -554,11 +810,22 @@ export function ResultGrid({
     // query-change resets — which have to move the actual scroll position
     const lastWrittenAnchor = useRef<number | null>(null)
 
+    // The last virtual page reported to the host, so the live position
+    // indicator fires on a page CROSSING rather than on a scroll frame.
+    const lastDerivedPage = useRef<number | null>(null)
+
     // Persist the anchor only once scrolling pauses — never during a scroll,
     // so the URL write can't cost scroll frames (and browsers rate-limit
     // history.replaceState). While the top row is still (partially) visible
     // the param is removed entirely: short result sets and barely-scrolled
     // views keep a clean URL and today's behaviour.
+    //
+    // In scroll mode this same listener also drives the pagination bar's live
+    // highlight. Same listener, not a second one: the two answers are the same
+    // `topItem` seen at two different moments (continuously for the indicator,
+    // on the 350ms stop for the URL), and computing them apart is how they
+    // would come to disagree. The anchor written here is GLOBAL by
+    // construction — the rows are global — so nothing about the write changes.
     useEffect(() => {
         const element = parentRef.current
         if (!element || columns <= 0) return
@@ -571,6 +838,14 @@ export function ResultGrid({
             setScrollAnchor(anchor)
         }
         const onScroll = () => {
+            if (scroll && onDerivedPageChange) {
+                const topItem = (virtualizer.range?.startIndex ?? 0) * columns
+                const derived = virtualPageOf(topItem, pageSize)
+                if (derived !== lastDerivedPage.current) {
+                    lastDerivedPage.current = derived
+                    onDerivedPageChange(derived)
+                }
+            }
             clearTimeout(timer)
             timer = setTimeout(onScrollStop, 350)
         }
@@ -579,7 +854,7 @@ export function ResultGrid({
             clearTimeout(timer)
             element.removeEventListener('scroll', onScroll)
         }
-    }, [columns, virtualizer, setScrollAnchor])
+    }, [columns, virtualizer, setScrollAnchor, scroll, onDerivedPageChange, pageSize])
 
     // When the column count changes, rows recompose and the same pixel offset lands
     // on entirely different results: re-anchor the scroll to the item that was at the
@@ -602,6 +877,21 @@ export function ResultGrid({
         }
     })
 
+    // Fixed rows mean ONE number decides every offset in the set, so a measured
+    // height that differs from the breakpoint constant moves every row below
+    // the first: re-derive the offsets, then put the item that was at the top
+    // back at the top. This is what the pages-mode double-rAF re-assert (below)
+    // is for there — but where that one waits out a progressive measurement it
+    // cannot observe, this fires exactly once, on the commit that learns the
+    // height, which is why the restore path can skip it in scroll mode.
+    useEffect(() => {
+        if (!scroll) return
+        virtualizer.measure()
+        if (anchorItem.current > 0 && columns > 0) {
+            virtualizer.scrollToIndex(Math.floor(anchorItem.current / columns), { align: 'start' })
+        }
+    }, [scroll, measuredRowHeight, rowEstimate, columns, virtualizer])
+
     // When returning from the gallery: restore the exact scroll position from
     // before it opened — a quick look at one item must not shift the grid at all.
     // Then, as an invariant, the item selected in the gallery must be visible:
@@ -619,25 +909,46 @@ export function ResultGrid({
         // computed. restoredScroll stays false, so this runs again on the
         // results it belongs to.
         if (resultsAreStale) return
+        const savedOffset = savedScrollOffsetRef?.current ?? 0
+        // Scroll mode before the count lands: `itemCount` is the loaded extent
+        // and still growing, so an anchor past it is NOT the stale anchor the
+        // branch below deletes — it is a position the scroll space has not
+        // reached yet. On a cold load the results query is SSR-hydrated while
+        // the count is still in flight, so this is the ordinary state of every
+        // deep link, and deciding now would delete the position it arrived
+        // with. Decide nothing: `itemCount` is a dependency, so this runs again
+        // on the commit that learns the count.
+        if (scroll && !countSettled && savedOffset <= 0
+            && scrollAnchor !== null && scrollAnchor >= itemCount) {
+            return
+        }
         restoredScroll.current = true
         // From here on the current URL anchor is accounted for: the external-
         // change effect below must only react to values arriving later
         lastWrittenAnchor.current = scrollAnchor
-        const savedOffset = savedScrollOffsetRef?.current ?? 0
         if (savedOffset > 0) {
             // Returning from the gallery: the exact pixel restore wins — the
             // URL anchor is just a coarser record of the same position
             virtualizer.scrollToOffset(savedOffset)
         } else if (scrollAnchor !== null && scrollAnchor > 0) {
-            if (scrollAnchor < results.length) {
+            if (scrollAnchor < itemCount) {
                 const anchorRow = Math.floor(scrollAnchor / columns)
                 virtualizer.scrollToIndex(anchorRow, { align: 'start' })
                 // Unmeasured rows above the target make the first scroll land on
                 // estimated offsets — re-assert once the rows around the target
                 // have mounted and been measured
-                requestAnimationFrame(() => requestAnimationFrame(() => {
-                    virtualizer.scrollToIndex(anchorRow, { align: 'start' })
-                }))
+                //
+                // Scroll mode has nothing to wait for: every row is the same
+                // measured height, so the first scroll already lands on real
+                // offsets, and a height correction (if the constant was wrong)
+                // arrives as one event the measure effect above re-asserts
+                // against. Re-asserting on a frame timer here would instead
+                // race the user's own first scroll.
+                if (!scroll) {
+                    requestAnimationFrame(() => requestAnimationFrame(() => {
+                        virtualizer.scrollToIndex(anchorRow, { align: 'start' })
+                    }))
+                }
             } else {
                 // Stale anchor (e.g. a shared link into a result set that no
                 // longer reaches that far) — drop it rather than landing
@@ -647,7 +958,19 @@ export function ResultGrid({
             }
         }
         if (!selected) return
-        const index = results.findIndex((item) => item.item_id === selected.item_id)
+        // Pages mode scans the page, as it always has. Scroll mode scans only
+        // the loaded neighbourhood of the position being restored — the whole
+        // set is not scannable and this must not fetch — and skips when the
+        // item isn't there; see findSelectedIndex.
+        const anchorItemIndex = Math.max(scrollAnchor ?? 0, 0)
+        const index = scroll
+            ? findSelectedIndex(
+                source,
+                selected,
+                Math.max(anchorItemIndex - SCROLL_CHUNK_SIZE, 0),
+                Math.min(anchorItemIndex + SCROLL_CHUNK_SIZE, itemCount)
+            )
+            : findSelectedIndex(source, selected, 0, itemCount)
         if (index < 0) return
         const row = Math.floor(index / columns)
         // The visibility decision must use real DOM geometry: the virtualizer's own
@@ -674,7 +997,11 @@ export function ResultGrid({
             ensureVisible()
             requestAnimationFrame(ensureVisible)
         })
-    }, [rowCount, columns, results, selected, virtualizer, savedScrollOffsetRef, rowEstimate, scrollAnchor, setScrollAnchor, resultsAreStale])
+        // `source` is deliberately absent from the deps (it is minted per
+        // render): `rowsIdentity` is the rows change signal, and it moves
+        // whenever anything this body reads through `source` could have — so
+        // the closure captured here is never stale on a run that matters.
+    }, [rowCount, columns, rowsIdentity, itemCount, selected, virtualizer, savedScrollOffsetRef, rowEstimate, scrollAnchor, setScrollAnchor, resultsAreStale, scroll, countSettled])
 
     // Anchor values we didn't write ourselves arrive from history navigation
     // (back/forward restoring the entry's anchor) or from a query change
@@ -692,14 +1019,41 @@ export function ResultGrid({
         if (scrollAnchor === lastWrittenAnchor.current) return
         if (columns <= 0 || rowCount === 0) return
         if (resultsAreStale) return
+        // The same discipline for the same reason one step further out: while
+        // the count is in flight the extent is not the end of the results, so
+        // clamping a back/forward anchor into the loaded window — and recording
+        // it as applied — would strand the user short of where the history
+        // entry says they were, with no later commit able to correct it.
+        if (scroll && !countSettled && scrollAnchor !== null && scrollAnchor >= itemCount) return
         lastWrittenAnchor.current = scrollAnchor
         if (scrollAnchor === null || scrollAnchor <= 0) {
             virtualizer.scrollToOffset(0)
         } else {
-            const clamped = Math.min(scrollAnchor, results.length - 1)
+            const clamped = Math.min(scrollAnchor, itemCount - 1)
             virtualizer.scrollToIndex(Math.floor(clamped / columns), { align: 'start' })
         }
-    }, [scrollAnchor, columns, rowCount, results.length, virtualizer, resultsAreStale])
+    }, [scrollAnchor, columns, rowCount, itemCount, virtualizer, resultsAreStale, scroll, countSettled])
+
+    // Fetch driving (scroll mode): warm the chunks behind the visible range
+    // plus a margin, on every commit. No dependency array on purpose — the
+    // same reasoning as the anchor tracker above: the virtualizer signals a
+    // moved range by re-rendering, and its `range` is mutated internal state
+    // that no dep list can name. `ensureRange` is cheap to call at that rate by
+    // contract: an unchanged chunk set returns the previous state, so this
+    // does not re-render the tree once a frame.
+    //
+    // Before the virtualizer has a range (first commit, and the commit a deep
+    // link's restore scroll is about to happen in) the URL anchor stands in, so
+    // the chunk the user is landing on is already in flight rather than being
+    // asked for after the scroll settles.
+    useEffect(() => {
+        if (!scroll || columns <= 0) return
+        const range = virtualizer.range
+        const firstItem = range ? range.startIndex * columns : Math.max(scrollAnchor ?? 0, 0)
+        const lastItem = range ? range.endIndex * columns + columns - 1 : firstItem
+        const margin = overscanItemsFor(columns, GRID_OVERSCAN_ROWS)
+        source.ensureRange(firstItem - margin, lastItem + margin)
+    })
 
     return (
         <ScrollAreaPrimitive.Root className="relative overflow-hidden">
@@ -725,12 +1079,18 @@ export function ResultGrid({
                 >
                     {virtualizer.getVirtualItems().map((virtualRow) => {
                         const startIndex = virtualRow.index * columns
-                        const rowItems = results.slice(startIndex, startIndex + columns)
                         return (
                             <div
                                 key={virtualRow.key}
                                 data-index={virtualRow.index}
-                                ref={virtualizer.measureElement}
+                                // Pages mode measures every row as it mounts.
+                                // Scroll mode attaches its one-shot measurement
+                                // instead, and only until it has an answer —
+                                // after that no row carries a ref at all, so
+                                // scrolling costs no layout reads.
+                                ref={scroll
+                                    ? (measuredRowHeight === null ? measureFirstRow : undefined)
+                                    : virtualizer.measureElement}
                                 className="absolute top-0 left-0 w-full"
                                 style={{ transform: `translateY(${virtualRow.start}px)` }}
                             >
@@ -742,18 +1102,35 @@ export function ResultGrid({
                                             ('lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5')
                                     )}
                                 >
-                                    {rowItems.map((result, indexInRow) => (
-                                        <SearchResultImage
-                                            key={result.file_id}
-                                            result={result}
-                                            index={startIndex + indexInRow}
-                                            dbs={dbs}
-                                            onImageClick={onImageClick}
-                                            galleryLink
-                                            nItems={results.length}
-                                            showLoadingSpinner={isLoading}
-                                        />
-                                    ))}
+                                    {/* Cells are addressed by global index and
+                                        capped at the item count, so the last
+                                        row is short in exactly the way slicing
+                                        the page's array used to make it. An
+                                        index below the count with no row yet is
+                                        the scroll-mode "chunk in flight" case
+                                        and renders a skeleton; in pages mode
+                                        the source always has the row, so that
+                                        branch is unreachable there. */}
+                                    {Array.from({ length: columns }, (_, indexInRow) => {
+                                        const index = startIndex + indexInRow
+                                        if (index >= itemCount) return null
+                                        const result = source.get(index)
+                                        if (!result) {
+                                            return <ResultCellSkeleton key={`pending-${index}`} />
+                                        }
+                                        return (
+                                            <SearchResultImage
+                                                key={result.file_id}
+                                                result={result}
+                                                index={index}
+                                                dbs={dbs}
+                                                onImageClick={onImageClick}
+                                                galleryLink={index < openableCount}
+                                                nItems={itemCount}
+                                                showLoadingSpinner={isLoading}
+                                            />
+                                        )
+                                    })}
                                 </div>
                             </div>
                         )

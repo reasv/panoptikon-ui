@@ -19,9 +19,12 @@ const {
   chunkOffsetOf,
   chunkRangeFor,
   clampToPage,
+  overscanItemsFor,
   pageStateFromScrollAnchor,
   remapPageAnchor,
   scrollAnchorFromPage,
+  virtualPageAnchor,
+  virtualPageOf,
 } = await import("../lib/scrollMode.ts")
 const { SCROLL_CHUNK_SIZE, buildChunkRequest, buildResultsRequest } =
   await import("../lib/searchRequest.ts")
@@ -490,6 +493,108 @@ const of = (url) => new URLSearchParams(url)
       !paged.has("top") &&
       paged.get("tag.pos_match_all") === "cat",
     paged.toString()
+  )
+}
+
+// ---- the scrubber: derived page and its inverse -----------------------
+//
+// The pagination bar in scroll mode is these two functions and nothing else:
+// `virtualPageOf` highlights, `virtualPageAnchor` jumps.
+
+{
+  check(
+    "the top of the set is page 1",
+    virtualPageOf(0, 10) === 1 && virtualPageOf(9, 10) === 1,
+    `${virtualPageOf(0, 10)} ${virtualPageOf(9, 10)}`
+  )
+  check(
+    "the page number advances at every k-th item",
+    virtualPageOf(10, 10) === 2 && virtualPageOf(364, 10) === 37,
+    `${virtualPageOf(10, 10)} ${virtualPageOf(364, 10)}`
+  )
+  check(
+    "an absent anchor and a negative one both read as the top",
+    virtualPageOf(0, 25) === 1 && virtualPageOf(-5, 25) === 1
+  )
+  check(
+    "k < 1 is one unbounded virtual page",
+    virtualPageOf(999999, 0) === 1,
+    `${virtualPageOf(999999, 0)}`
+  )
+}
+
+{
+  // THE INVARIANT OF THE WHOLE FEATURE (design §4), stated in scroll-mode
+  // terms: the page the bar highlights is the page whose link you clicked,
+  // and it is the same number paginated mode would show for the same item.
+  let roundTrips = true
+  let matchesPagesMode = true
+  for (const k of [1, 10, 25, 100]) {
+    for (const n of [1, 2, 7, 37, 1000]) {
+      const anchor = virtualPageAnchor(n, k)
+      if (virtualPageOf(anchor, k) !== n) roundTrips = false
+      // ...and identical to what the mode switch computes for that anchor.
+      if (pageStateFromScrollAnchor({ anchor, pageSize: k }).page !== n) {
+        matchesPagesMode = false
+      }
+    }
+  }
+  check("a virtual page link round-trips to its own page number", roundTrips)
+  check(
+    "…and agrees with the mode switch's page for the same anchor",
+    matchesPagesMode
+  )
+}
+
+{
+  check(
+    "page 1 anchors at the top, which the caller writes as an absent param",
+    virtualPageAnchor(1, 10) === 0,
+    `${virtualPageAnchor(1, 10)}`
+  )
+  check(
+    "a page below 1 cannot produce a negative anchor",
+    virtualPageAnchor(0, 10) === 0 && virtualPageAnchor(-3, 10) === 0
+  )
+  check(
+    "k < 1 sends every page to the top of the set",
+    virtualPageAnchor(50, 0) === 0,
+    `${virtualPageAnchor(50, 0)}`
+  )
+  // The scrubber click and the scrubber link must land on the same item —
+  // they are two writers of one destination (see getScrollPositionURL).
+  const linked = new URLSearchParams(getScrollPositionURL(new URLSearchParams(""), 37, 10))
+  check(
+    "the click's anchor and the link's anchor are the same value",
+    Number(linked.get("top")) === virtualPageAnchor(37, 10),
+    `${linked.get("top")} vs ${virtualPageAnchor(37, 10)}`
+  )
+}
+
+// ---- fetch margin ------------------------------------------------------
+
+{
+  check(
+    "the warm margin is two rows of overscan on each side, in items",
+    overscanItemsFor(4, 3) === 24,
+    `${overscanItemsFor(4, 3)}`
+  )
+  check(
+    "a not-yet-measured layout (columns 0) still warms something",
+    overscanItemsFor(0, 3) === 6,
+    `${overscanItemsFor(0, 3)}`
+  )
+  check("no overscan means no margin", overscanItemsFor(5, 0) === 0)
+  // The margin only earns its name if it reaches past the chunk the visible
+  // range sits in — otherwise the overscan rows are the ones showing
+  // skeletons, which is the failure it exists to prevent.
+  const columns = 5
+  const margin = overscanItemsFor(columns, 3)
+  const warmed = chunkRangeFor(319 - margin, 320 + margin, SCROLL_CHUNK_SIZE)
+  check(
+    "a range straddling a chunk seam warms both chunks",
+    warmed.length === 2 && warmed[0] === 0 && warmed[1] === 1,
+    shape(warmed)
   )
 }
 
