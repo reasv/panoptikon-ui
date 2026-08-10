@@ -1251,7 +1251,7 @@ export function VideoDownloadControl({
             onClick={(e) => e.stopPropagation()}
             onDoubleClick={(e) => e.stopPropagation()}
         >
-            <div className="relative flex items-center gap-px">
+            <div className="relative flex items-center">
                 <a
                     title="Download the original file"
                     aria-label="Download the original file"
@@ -1261,16 +1261,31 @@ export function VideoDownloadControl({
                     // path reads any text/plain payload as a sha256 — dragging
                     // this onto the board would mint an unresolvable pin
                     draggable={false}
-                    className={cn(SURFACE_BUTTON_CLASS, "bg-black/50 hover:bg-black/70")}
+                    className={cn(
+                        SURFACE_BUTTON_CLASS,
+                        // The corner floats over the raw picture with no
+                        // scrim, so a bare glyph vanishes on bright video; a
+                        // light backing, not the bottom row's transparency.
+                        "bg-black/30 hover:bg-black/50",
+                        canClip && "rounded-r-none",
+                    )}
                 >
                     <Download className="size-[20px]" />
                 </a>
                 {canClip && (
+                    // The narrower flush half of one split button: same 28px
+                    // height as the primary, joined edge unrounded on both
+                    // sides so the hover highlights meet as halves of a whole.
                     <SurfaceButton
                         title="Other download formats"
                         active={open}
                         onClick={() => setOpen((v) => !v)}
-                        className="bg-black/50 p-0.5 hover:bg-black/70"
+                        className={cn(
+                            "rounded-l-none bg-black/30 px-0.5 hover:bg-black/50",
+                            // className outranks SurfaceButton's active wash,
+                            // so the open state must carry its own lit look
+                            open && "bg-black/50",
+                        )}
                     >
                         <ChevronDown className="size-[20px]" />
                     </SurfaceButton>
@@ -1357,7 +1372,10 @@ export function NativeControlsEscape({
                     title="More"
                     active={open}
                     onClick={() => setOpen((v) => !v)}
-                    className="bg-black/50 hover:bg-black/70"
+                    className={cn(
+                        "bg-black/30 hover:bg-black/50",
+                        open && "bg-black/50",
+                    )}
                 >
                     <EllipsisVertical className="size-[20px]" />
                 </SurfaceButton>
