@@ -279,8 +279,10 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     //
     // What is derived HERE — from the URL anchor, as `floor(top / k) + 1` — is
     // a placeholder for the window before the grid's first scroll event: first
-    // paint of a deep link, back/forward, a scrubber jump, a page-size
-    // relabel. It is deliberately the plainer expression, because a URL anchor
+    // paint of a deep link, back/forward, a scrubber jump. (A page-size relabel
+    // moves nothing and produces no scroll, so it is not in that list — the
+    // grid reports that one directly; see below and ResultGrid's [pageSize]
+    // effect.) It is deliberately the plainer expression, because a URL anchor
     // is an item and needs no row geometry to place; and it is deliberately
     // not authoritative, because it cannot see the columns. Every one of those
     // positions reaches the grid as a scroll (the restore's programmatic one
@@ -297,9 +299,17 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     // query reset) moves the grid, and the resulting scroll reports the
     // correct number itself.
     //
-    // k is a trigger, because a page-size relabel changes the page number of a
-    // position that has not moved and produces no scroll to report it. And the
-    // anchor BECOMING NULL is a trigger — the restore effect clears a stale
+    // k is NOT a trigger either, for a reason worth stating because it looks
+    // like one: a page-size relabel does renumber a position that has not
+    // moved, and does produce no scroll to report it — but the number it needs
+    // is the row-derived one, and this expression cannot compute that. The GRID
+    // pushes it instead, from its own [pageSize] effect (see ResultGrid). Both
+    // firing would be worse than either alone: child effects run before parent
+    // ones, so the grid's correct value would land first and this placeholder
+    // would immediately overwrite it — the bar sitting a page low until the
+    // next scroll, which is the bug the grid-side trigger exists to remove.
+    //
+    // The anchor BECOMING NULL is a trigger — the restore effect clears a stale
     // anchor without scrolling anything (there is nowhere to scroll to), so no
     // event would ever walk the bar back from the dead page the stale anchor
     // placed it on. Only the null transition: a non-null self-write is the
@@ -308,7 +318,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
         if (!scrollMode) return
         setDerivedPage(virtualPageOf(scrollAnchor ?? 0, k))
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [scrollMode, k, scrollAnchor === null])
+    }, [scrollMode, scrollAnchor === null])
 
     // A hand-made or hand-edited `vm=scroll&page=N` URL, self-healed on load
     // the way a seedless random URL is (useStampRandomSeed): scroll mode is
@@ -997,6 +1007,18 @@ export function ResultGrid({
         setMeasuredRowHeight(null)
     }, [scroll, rowEstimate])
 
+    // KNOWN LIMIT, accepted for this release. Scroll mode gives the spacer div
+    // below a real pixel height for the WHOLE result set, and browsers cap how
+    // tall an element may be — ~33.5M px in Chrome, less in some engines. At the
+    // row heights above (470/566/694px) that ceiling is somewhere around 50–70k
+    // ROWS, i.e. a few hundred thousand items at typical column counts. Past it
+    // the scroll space saturates: the offsets keep computing correctly but the
+    // element stops growing, so the far end of the set is no longer reachable by
+    // dragging. The scrubber still is — a virtual-page jump writes `top` and
+    // rides scrollToIndex — so the set stays fully navigable; only the scrollbar
+    // runs out of room. The fix, if it is ever wanted, is windowed offsets
+    // (rebasing the spacer around the visible region), which is a different
+    // sizing model and not worth carrying before a user meets the ceiling.
     const virtualizer = useVirtualizer({
         count: rowCount,
         getScrollElement: () => parentRef.current,
@@ -1042,8 +1064,40 @@ export function ResultGrid({
     // standing it could swallow the first crossing under the new one while the
     // host is showing something else. (The columns case is covered by the
     // listener's own re-subscription; see its body.)
+    //
+    // And the relabel is REPORTED from here, which is why this effect is the
+    // one that owns it. A page-size change renumbers the position the user is
+    // already at and produces no scroll to announce it, so something has to
+    // push; the grid is the only place that can push the RIGHT number, because
+    // the highlight is derived from the top visible ROW (topRowHighlightItem)
+    // and rows exist only inside the virtualizer. The host used to re-derive it
+    // from the URL anchor on a k change — `floor(top / k) + 1` over an anchor
+    // that speaks for the row's FIRST item — which lands a page low whenever
+    // the row straddles a boundary, and stuck there until the next scroll. That
+    // trigger now lives here and the host's effect no longer depends on k (see
+    // MultiSearchView's derived page); two writers on the same commit would
+    // have resolved parent-last, i.e. the wrong value winning.
+    //
+    // `virtualizer.range` is mutated internal state and legitimately null
+    // before the first rows are laid out (a mount, an empty result set): there
+    // is nothing to report from then, and `lastDerivedPage` is left cleared so
+    // the first real scroll reports under the new numbering.
     useEffect(() => {
         lastDerivedPage.current = null
+        if (!scroll || !onDerivedPageChange || columns <= 0) return
+        const range = virtualizer.range
+        if (range === null) return
+        // Same expression as the scroll listener's, deliberately — the two
+        // answers describe the same visible rows and may not disagree.
+        const lastRowVisible = range.endIndex >= rowCount - 1
+        const item = topRowHighlightItem(range.startIndex, columns, itemCount, lastRowVisible)
+        const derived = virtualPageOf(item, pageSize)
+        lastDerivedPage.current = derived
+        onDerivedPageChange(derived)
+        // pageSize ONLY: this is the relabel trigger, not a subscription to the
+        // range. Every other value it reads moves the position by scrolling,
+        // and the listener reports those itself.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pageSize])
 
     // Persist the anchor only once scrolling pauses — never during a scroll,
@@ -1335,7 +1389,20 @@ export function ResultGrid({
                 // bottom and the viewport is pixel-identical to the pinboard tab
                 // (and to the gallery pinboard with thumbnails off, which uses the
                 // same 213/151 constants; the ribbon variants add its 48px).
-                className={cn('w-full rounded-[inherit] [&>div]:block!',
+                //
+                // pr-4 pairs with the widened scrollbar below (design §10): the
+                // thumb sits over the rightmost 16px of the Root, so without
+                // this the cards' right edge runs underneath it. The padding
+                // belongs on the VIEWPORT and not on the row container below —
+                // rows are absolutely positioned, and an abs-positioned child
+                // resolves `w-full` against its containing block's PADDING box,
+                // so padding there would inset nothing. Nothing derives from the
+                // narrowed content width either: the column count comes from
+                // window-level media queries (useResultGridLayout), not from a
+                // container measurement, and the row height — the one number
+                // scroll mode's whole offset space is built on — is fixed per
+                // breakpoint and untouched by horizontal padding.
+                className={cn('w-full rounded-[inherit] [&>div]:block! pr-4',
                     showPagination
                         ? (updateRibbonVisible ? 'h-[calc(100vh-261px)]' : 'h-[calc(100vh-213px)]')
                         : (updateRibbonVisible ? 'h-[calc(100vh-199px)]' : 'h-[calc(100vh-151px)]')
@@ -1378,7 +1445,21 @@ export function ResultGrid({
                                         the scroll-mode "chunk in flight" case
                                         and renders a skeleton; in pages mode
                                         the source always has the row, so that
-                                        branch is unreachable there. */}
+                                        branch is unreachable there.
+
+                                        KNOWN LIMIT, accepted: a chunk that has
+                                        given up (ResultsSource.errorAt) also
+                                        renders as skeletons here, with no retry
+                                        affordance — the gallery has one because
+                                        it is showing a single item the user
+                                        asked for, while a grid row is one of
+                                        many and a per-cell retry button would
+                                        be a wall of them. Recovery in the grid
+                                        is a window focus or reconnect refetch,
+                                        or scrolling far enough away for the
+                                        chunk to leave the observed set
+                                        (MAX_WANTED_CHUNKS) and coming back, so
+                                        a fresh observer re-arms the query. */}
                                     {Array.from({ length: columns }, (_, indexInRow) => {
                                         const index = startIndex + indexInRow
                                         if (index >= itemCount) return null
@@ -1410,7 +1491,25 @@ export function ResultGrid({
                     })}
                 </div>
             </ScrollAreaPrimitive.Viewport>
-            <ScrollBar orientation="vertical" />
+            {/* Wider and higher-contrast than the shared default, at THIS call
+                site only (design §10): the results grid is the one surface in
+                the app that is dragged across tens of thousands of rows, where
+                a 10px `bg-border` thumb — a token that is nearly the background
+                in the light theme — is both hard to see and hard to grab. The
+                component itself has ~15 other consumers and stays untouched;
+                everything here goes through `className`, which twMerge resolves
+                against the defaults (w-4 replaces w-2.5, the `p-px` inset and
+                the thumb's `rounded-full` survive, so the thumb is 13px inside
+                a 16px grab track). The thumb is the scrollbar's only child, so
+                `[&>div]` addresses it; the hover selector is written as
+                `[&:hover>div]` rather than a stacked `hover:` variant so the
+                generated rule is unambiguous — hovering anywhere on the track
+                darkens the thumb. Theme tokens, not literals: muted-foreground
+                is defined for both themes (app/globals.css). */}
+            <ScrollBar
+                orientation="vertical"
+                className="w-4 [&>div]:bg-muted-foreground/60 [&>div]:transition-colors [&:hover>div]:bg-muted-foreground/90"
+            />
             <ScrollAreaPrimitive.Corner />
         </ScrollAreaPrimitive.Root>
     )
