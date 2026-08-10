@@ -427,15 +427,24 @@ export const ShareButton = (
     </Button>
 }
 
-// Slot geometry of the grid overlay's 2x2 file action corner. Buttons are
-// 2.5rem circles; every gap is 0.25rem, so the columns sit at left-1/left-12
-// and the rows at bottom-3/bottom-14.
-const CLUSTER_SLOTS = [
-    "absolute bottom-3 left-1",   // corner — the one visible while collapsed
-    "absolute bottom-14 left-1",  // above
-    "absolute bottom-3 left-12",  // beside
-    "absolute bottom-14 left-12", // diagonal
-] as const
+// Slot geometry of the 2x2 file action corner, in order [corner, above,
+// beside, diagonal]. Buttons are 2.5rem circles and every gap is 0.25rem;
+// each anchor matches the button inset convention of the surface it serves
+// (the search grid's bottom-left, the gallery filmstrip's bottom-right).
+const CLUSTER_SLOTS = {
+    "bottom-left": [
+        "absolute bottom-3 left-1",
+        "absolute bottom-14 left-1",
+        "absolute bottom-3 left-12",
+        "absolute bottom-14 left-12",
+    ],
+    "bottom-right": [
+        "absolute bottom-2 right-2",
+        "absolute bottom-13 right-2",
+        "absolute bottom-2 right-13",
+        "absolute bottom-13 right-13",
+    ],
+} as const
 
 // The grid card's file actions, collapsed to ONE button: the last-used verb
 // (persisted). Hovering it — or tabbing into the cluster — expands the other
@@ -443,7 +452,11 @@ const CLUSTER_SLOTS = [
 // diagonal. Copy participates only where useFileShare resolves a native copy
 // path; without one the set is three and the diagonal slot stays empty (a
 // remembered Copy corner degrades to Download, like the old adaptive button).
-export const FileActionCluster = ({ sha256, path }: { sha256: string, path?: string }) => {
+export const FileActionCluster = ({ sha256, path, anchor = "bottom-left" }: {
+    sha256: string
+    path?: string
+    anchor?: keyof typeof CLUSTER_SLOTS
+}) => {
     const share = useFileShare({ sha256, path })
     const lastVerb = useLastFileAction((state) => state.verb)
     const setLastVerb = useLastFileAction((state) => state.setVerb)
@@ -465,11 +478,12 @@ export const FileActionCluster = ({ sha256, path }: { sha256: string, path?: str
         closeTimer.current = setTimeout(() => setExpanded(false), 150)
     }
 
+    const slots = CLUSTER_SLOTS[anchor]
     const canCopy = share.primaryVerb === "copy"
     const verbs: FileActionVerb[] = canCopy ? ["copy", "open", "folder", "download"] : ["open", "folder", "download"]
     const corner: FileActionVerb = verbs.includes(lastVerb) ? lastVerb : "download"
-    const slotOf: Partial<Record<FileActionVerb, string>> = { [corner]: CLUSTER_SLOTS[0] }
-    verbs.filter((verb) => verb !== corner).forEach((verb, i) => { slotOf[verb] = CLUSTER_SLOTS[i + 1] })
+    const slotOf: Partial<Record<FileActionVerb, string>> = { [corner]: slots[0] }
+    verbs.filter((verb) => verb !== corner).forEach((verb, i) => { slotOf[verb] = slots[i + 1] })
 
     // The corner keeps the classic card-hover fade; the expansion slots are
     // hidden AND click-transparent until the cluster opens, so an invisible
