@@ -337,7 +337,7 @@ function ButtonElement({
         </Button>
         : <button
             title={"Navigate to this image's folder in Panoptikon"}
-            className={cn("hover:scale-105 absolute bottom-2 left-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300", buttonClassName)}
+            className={cn("hover:scale-105 absolute bottom-2 left-2 bg-white rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300", buttonClassName)}
             onClick={handleClick}
             onMouseEnter={handleHover}
         >

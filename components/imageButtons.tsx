@@ -222,7 +222,7 @@ function BookmarksButtonElement({
                     `Remove from current bookmark group (${namespace})`
                     : `Add to current bookmark group (${namespace})`
             }
-            className={cn("hover:scale-105 absolute top-2 right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300",
+            className={cn("hover:scale-105 absolute top-2 right-2 bg-white rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300",
                 (alwaysShow && isBookmarked) ? 'opacity-100' : 'opacity-0'
             )}
             onClick={handleBookmarkClick}
@@ -297,7 +297,7 @@ export const OpenFile = (
                 <button
                     onClick={() => handleClick()}
                     title={buttonTitle}
-                    className="rounded-full bg-white p-2 hover:scale-105"
+                    className="rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-2 hover:scale-105"
                 >
                     <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -373,7 +373,7 @@ export const OpenFolder = (
             <button
                 title="Show file in folder"
                 onClick={() => handleClick()}
-                className="rounded-full bg-white p-2 hover:scale-105"
+                className="rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-2 hover:scale-105"
             >
                 <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -516,7 +516,7 @@ export const FileActionCluster = ({ sha256, path, anchor = "bottom-left" }: {
             aria-busy={busy}
             disabled={share.busy}
             className={cn(
-                "rounded-full bg-white p-2 hover:scale-105",
+                "rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-2 hover:scale-105",
                 position(verb),
                 busy && "opacity-100 pointer-events-auto cursor-progress",
             )}
