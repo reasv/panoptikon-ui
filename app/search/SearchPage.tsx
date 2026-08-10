@@ -198,6 +198,15 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
         if (qIndex === null) {
             return
         }
+        // `results` is a PAGE of rows while `gi` in scroll mode is a GLOBAL
+        // index; the two coincide only because scroll mode's main query is
+        // always page 1 — which a hand-made `vm=scroll&page=N` URL breaks for
+        // the tick before the normalization effect below drops the param. A
+        // findIndex hit in that tick would write a page-local index into a
+        // global `gi` and teleport the gallery to the top of the set.
+        if (scrollMode && page !== 1) {
+            return
+        }
         // Clamped, not wrapped, for the same reason as in the gallery: an
         // index past the end means these results are momentarily the wrong
         // ones, and wrapping would compare the selection against an unrelated

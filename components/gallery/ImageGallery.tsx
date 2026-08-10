@@ -163,12 +163,13 @@ export function ImageGallery({
     const setPageRaw = useSearchPageRaw()[1]
     const [scrollAnchor, setScrollAnchor] = useGridScrollAnchor()
     const pageSize = usePageSize()
-    // How far the gallery can navigate, and the rows change signal, per the
-    // ResultsSource dependency rule: every dep list and every supersession
-    // comparison below names `rowsIdentity` (a VALUE, compared with !==) and
-    // `count`, never the source object or its methods — both are minted per
-    // render. In pages mode `rowsIdentity` IS the results array and `count` is
-    // its length, so those lists hold exactly the values they always held.
+    // How far the gallery can navigate, and the two change signals, per the
+    // ResultsSource dependency rule: every dep list below names `rowsIdentity`
+    // and `count`, every supersession gate names `queryIdentity`, and nothing
+    // names the source object or its methods — all are minted per render. Both
+    // identities are VALUES, compared with !==. In pages mode both of them ARE
+    // the results array and `count` is its length, so every dep list and every
+    // gate holds exactly the value it always held.
     //
     // `count` is `source.count` with one correction, and only while the count
     // query is still in flight (pages mode never takes it): the source's
@@ -182,6 +183,7 @@ export function ImageGallery({
     // onto the last result rather than waiting forever for a row that no
     // longer exists.
     const rowsIdentity = source.rowsIdentity
+    const queryIdentity = source.queryIdentity
     const count = countSettled
         ? source.count
         : Math.max(source.count, (qIndex || 0) + 1)
@@ -210,7 +212,18 @@ export function ImageGallery({
     // forbids, and this way the held value can never lag a commit behind.
     // React re-runs the component immediately without committing, and the
     // non-holding branch doesn't read it anyway, so the extra pass is free.
-    const holding = resultsAreStale || source.get(urlIndex) === undefined
+    const targetUnloaded = source.get(urlIndex) === undefined
+    const holding = resultsAreStale || targetUnloaded
+    // …and the one case the hold can never end by itself: the chunk behind the
+    // target FAILED, terminally (see ResultsSource.errorAt — react-query has
+    // spent its retries and nothing re-arms it). The loading frame below would
+    // then pulse forever, which is a lie about what is happening and offers no
+    // way out, so the panel says so and renders a Retry instead. Read through
+    // the source every render rather than tracked: an error is query state,
+    // not a row set, and the source arrives as a fresh prop whenever that state
+    // moves (MultiSearchView observes the chunk queries). Always false in pages
+    // mode, where a failed search is the SearchErrorToast's business.
+    const targetErrored = targetUnloaded && source.errorAt(urlIndex)
     const [heldIndex, setHeldIndex] = useState(urlIndex)
     if (!holding && heldIndex !== urlIndex) {
         setHeldIndex(urlIndex)
@@ -218,6 +231,15 @@ export function ImageGallery({
     const index = holding
         ? Math.max(0, Math.min(heldIndex, count - 1))
         : urlIndex
+
+    // Which branch this gallery is: the large image (the player world, and the
+    // only place this feature exists) or the pinboard. Named HERE, above its
+    // first reader, because both background fetches below — the position warm
+    // and the ahead-of-turn prefetch — have to stand down on exactly the
+    // condition the JSX renders the board on.
+    const pinboard = useGalleryPinBoardLayout()[0]
+    const hidePinBoard = useGalleryHidePinBoard()[0]
+    const showsLargeImage = pinboard.length === 0 || hidePinBoard
 
     // Keep the rows around the position warm. Keyed by the dependency rule —
     // the position, the rows identity and the count as three separate deps,
@@ -227,10 +249,16 @@ export function ImageGallery({
     // whenever anything this body reads through it could have. A no-op in
     // pages mode (ensureRange is empty there), and cheap to re-run: an
     // unchanged chunk set returns the previous state.
+    //
+    // Gated on the large-image branch for the same reason the ahead-of-turn
+    // prefetch below is: the pinboard must not acquire a background fetch it
+    // has no use for — it is an arrangement, not a sequence, and nothing in it
+    // reads the rows around `gi`.
     useEffect(() => {
+        if (!showsLargeImage) return
         source.ensureRange(urlIndex - GALLERY_WARM_RADIUS, urlIndex + GALLERY_WARM_RADIUS)
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [urlIndex, rowsIdentity, count])
+    }, [showsLargeImage, urlIndex, rowsIdentity, count])
 
     // ---- Auto-advance (docs/video-end-action-design.md §3) ---------------
     //
@@ -257,31 +285,31 @@ export function ImageGallery({
     // render). The supersession token covers the verbs the GALLERY owns; this
     // covers every writer it does not: a PageSelect click, browser Back or
     // Forward, a query edit with instant search on, a page-size commit. And
-    // the ROWS are compared, because the page number cannot catch all of them
+    // the QUERY is compared, because the page number cannot catch all of them
     // — a query edit can leave `page` and `gi` numerically unchanged while
-    // swapping the entire row set, and a bookmark patch rewrites the results
-    // object under a page that never moved. Any move of `rowsIdentity` means
-    // something moved under the turn (in pages mode that value is the results
-    // array itself, so this is the identity comparison it has always been).
-    // Cancelling a turn that was in fact still legitimate just ends the chain,
-    // which is the honest outcome: nothing rearms it but a real playback
-    // reaching a real end, and the user is right there having just navigated.
+    // swapping the entire row set. Any move of `queryIdentity` means the
+    // coordinates this turn computed a target in have stopped meaning what
+    // they meant. Cancelling a turn that was in fact still legitimate just
+    // ends the chain, which is the honest outcome: nothing rearms it but a
+    // real playback reaching a real end, and the user is right there having
+    // just navigated.
     //
-    // Scroll mode adds one nuance and no exception. `rowsIdentity` also moves
-    // on pure MEMBERSHIP churn — a chunk joining or leaving the observed
-    // window with no row anyone can see having changed (see
-    // ResultsSource.rowsIdentity). The chain's own lookahead cannot trip this:
-    // `fetchItem` is non-observing by contract, precisely so an advance is
-    // never cancelled by the fetch it is waiting on. Churn from ANOTHER
-    // `ensureRange` caller is theoretically possible, but the grid is
-    // unmounted while the gallery is open, the gallery's own warm effect is
-    // keyed on `gi`, which stands still for the length of an await, and the
-    // thumbnail strip's warm follows its rendered range, which moves only when
-    // `gi` does or when the user drags it. So a spurious cancel is rare, and
-    // fail-safe when it happens: the chain simply ends where it stands.
-    const turnGatesRef = useRef({ page, qIndex, rowsIdentity, resultsAreStale, queryEnabled })
+    // `queryIdentity` and NOT `rowsIdentity`, which is the one asymmetry
+    // between the two modes' gates — and only in name. In pages mode the two
+    // are the same value (the results array), so this is byte for byte the
+    // items-identity gate the page turn has always had, bookmark patches
+    // included. In scroll mode `rowsIdentity` additionally moves on every
+    // chunk that lands and on pure MEMBERSHIP churn — a chunk joining or
+    // leaving the observed window with no row anyone can see having changed
+    // (see ResultsSource.rowsIdentity) — and a warm landing three screens away
+    // is not a reason to abandon a chain the user is watching. That churn now
+    // never reaches this gate at all. What is given up is the bookmark-patch
+    // cancellation in scroll mode, and it costs nothing: the landing's
+    // correctness comes from the rows the chain itself fetched, and real user
+    // navigation is caught by the `qIndex` and `page` gates beside this one.
+    const turnGatesRef = useRef({ page, qIndex, queryIdentity, resultsAreStale, queryEnabled })
     useEffect(() => {
-        turnGatesRef.current = { page, qIndex, rowsIdentity, resultsAreStale, queryEnabled }
+        turnGatesRef.current = { page, qIndex, queryIdentity, resultsAreStale, queryEnabled }
     })
     // Did a video actually finish playing on THIS row set? An auto page turn
     // requires it (§"Broken videos"): error skips chain freely within the
@@ -315,11 +343,21 @@ export function ImageGallery({
     // re-armed on every rows change, or keyed by chunk, a run of images longer
     // than one chunk would warm chunk after chunk behind a single playing
     // video — while the continuation below can only ever consume ONE. One warm
-    // per playing video is exactly the bound the chain itself has. A stale
-    // entry (the same file becoming current again later under a different
-    // search) costs one missed prefetch, and the turn's own fetch is its
-    // retry — the design's own accepted fallback for every cold case.
-    const warmedAheadRef = useRef<string | null>(null)
+    // per playing video is exactly the bound the chain itself has.
+    //
+    // The boundary index the warm was fired FOR is recorded alongside, and
+    // that is what keeps the guard from becoming PERMANENT suppression: a sha
+    // alone stays matched after the warmed rows have gone away (evicted past
+    // their gcTime, or dropped by a committed query change), and the same
+    // video becoming current again would then never re-warm anything.
+    // Suppress only while the warm still has something to show for it — the
+    // boundary it was meant to fill is readable — and otherwise warm again
+    // and re-record. The boundary, not the chunk start: chunk starts can be
+    // answered by the page-1 fallback rows, which would vouch for an evicted
+    // chunk forever. The bound survives intact: within one playing video the
+    // warmed rows are readable from the moment they land, so this can still
+    // only fire once for it.
+    const warmedAheadRef = useRef<{ sha: string; stopped: number } | null>(null)
     // The in-flight page turn, as the useCommitPageSize supersession pattern:
     // a unique object captured before the fetch and re-checked after it. The
     // await is a window the user can act in — arrows, closing the gallery, a
@@ -454,7 +492,6 @@ export function ImageGallery({
             ? galleryItem
             : selectedItem ? selectedItem : galleryItem
     const dateString = currentItem ? getLocale(new Date(currentItem.last_modified)) : null
-    const pinboard = useGalleryPinBoardLayout()[0]
 
     // The gallery's own share verb, for the header Download button and the
     // Ctrl+C accelerator. The button surface renders its own ShareButton.
@@ -483,14 +520,6 @@ export function ImageGallery({
             window.removeEventListener('keydown', handleKeyDown);
         };
     }, []);
-
-    const hidePinBoard = useGalleryHidePinBoard()[0]
-    // Which branch this gallery is: the large image (the player world, and the
-    // only place this feature exists) or the pinboard. Named because the
-    // prefetch effect below has to stand down on exactly the condition the
-    // JSX renders the board on — pins are an arrangement, not a sequence, and
-    // nothing about the end action may reach them.
-    const showsLargeImage = pinboard.length === 0 || hidePinBoard
 
     // Ctrl/Cmd+C fires the current gallery item's adaptive share verb (§0.12).
     // Its own listener: the main gallery key handler bails on ctrlKey by
@@ -558,7 +587,7 @@ export function ImageGallery({
         // The state this turn was decided against, to compare the post-await
         // one with. Captured from the render scope, which is the last commit's
         // — the same commit turnGatesRef holds at this point.
-        const from = { page, qIndex, rowsIdentity }
+        const from = { page, qIndex, queryIdentity }
         let rows: SearchResult[]
         try {
             // Cache first — the ahead-of-turn prefetch below should already
@@ -584,14 +613,15 @@ export function ImageGallery({
         // a cold fetch (a PageSelect click, Back/Forward, a query edit under
         // instant search, a page-size commit) leaves it untouched, and a turn
         // that then wrote its batch would silently overwrite the user's
-        // navigation. So: nothing may have moved. The rows are compared too,
+        // navigation. So: nothing may have moved. The query is compared too,
         // which is what catches the case no page number can — a query whose
-        // new rows land under the same page and the same index.
+        // new rows land under the same page and the same index. (In pages mode
+        // `queryIdentity` IS the results array, so this is unchanged.)
         const gates = turnGatesRef.current
         if (
             gates.page !== from.page
             || gates.qIndex !== from.qIndex
-            || gates.rowsIdentity !== from.rowsIdentity
+            || gates.queryIdentity !== from.queryIdentity
             || gates.resultsAreStale
             || !gates.queryEnabled
         ) {
@@ -678,7 +708,7 @@ export function ImageGallery({
     const advanceIntoUnloaded = async (target: number, isFullscreen: () => boolean) => {
         const token = {}
         turnTokenRef.current = token
-        const from = { page, qIndex, rowsIdentity }
+        const from = { page, qIndex, queryIdentity }
         let landed: SearchResult | undefined
         try {
             // A failure ends the chain: the video stays parked and nothing is
@@ -699,14 +729,15 @@ export function ImageGallery({
         }
         // Everything the token does not cover — a PageSelect click, a scrubber
         // jump, Back/Forward, a query edit under instant search, a page-size
-        // commit. `fetchItem` is non-observing by contract, so the chain's own
-        // fetch cannot move `rowsIdentity` and trip this gate (see turnGatesRef
-        // for the membership-churn nuance and why a spurious cancel is safe).
+        // commit. `queryIdentity` is what makes that list the WHOLE list here:
+        // it moves only when the committed search does, so neither the chain's
+        // own fetch (non-observing by contract) nor any warm landing elsewhere
+        // in the set can end a chain the user is watching (see turnGatesRef).
         const gates = turnGatesRef.current
         if (
             gates.page !== from.page
             || gates.qIndex !== from.qIndex
-            || gates.rowsIdentity !== from.rowsIdentity
+            || gates.queryIdentity !== from.queryIdentity
             || gates.resultsAreStale
             || !gates.queryEnabled
         ) {
@@ -734,10 +765,14 @@ export function ImageGallery({
             return
         }
         const start = block?.start ?? target
+        // Bounded by `count` as well as by the block: a cached chunk can
+        // outlive the set it came from (the result set shrank after the count
+        // query answered), and scanning its stale tail past `count` would land
+        // the chain on an index the gallery then clamps away from.
         const k = scanLoadedForward(
             () => block,
             target,
-            start + rows.length,
+            Math.min(count, start + rows.length),
             isPlayableVideo,
         ).match
         // Read at DECISION time, not at fire time: the user can enter or leave
@@ -889,14 +924,29 @@ export function ImageGallery({
             //
             // This DOES move `rowsIdentity` when the chunk joins the observed
             // set, unlike the page prefetch below (which only populates the
-            // query cache). Harmless by timing: the warm fires while a video
-            // is still playing and the advance chain arms only when that video
-            // ENDS, so there is never a pending advance for the churn to
-            // cancel. See warmedAheadRef for why the guard is keyed on the
-            // playing item rather than on the chunk it warms.
-            if (warmedAheadRef.current === current.sha256) return
-            warmedAheadRef.current = current.sha256
+            // query cache). Harmless because that churn no longer reaches any
+            // gate: the supersession comparand is `queryIdentity`, which a
+            // chunk landing does not move (see turnGatesRef). The timing is
+            // favourable too — the warm fires while a video is still playing
+            // and the chain arms only when it ENDS — but nothing now rests on
+            // that argument holding for every ordering, which is what the
+            // comment here used to claim.
+            //
+            // See warmedAheadRef for why the guard is keyed on the playing
+            // item AND on what the warm produced. The probe is the BOUNDARY
+            // index the scan stopped at, not the chunk start: `getBlock` on a
+            // chunk start can be answered by the page-1 fallback rows (chunk 0
+            // is exactly where a fresh session's first warm lands), which
+            // would report an evicted chunk as still readable forever. The
+            // boundary was unloaded when the warm fired, so only the warm's
+            // own rows can make it readable — and after eviction it goes
+            // unreadable again, which is the re-arm.
             const start = chunkStartOf(scan.stopped, SCROLL_CHUNK_SIZE)
+            const warmed = warmedAheadRef.current
+            if (warmed
+                && warmed.sha === current.sha256
+                && source.getBlock(warmed.stopped) !== undefined) return
+            warmedAheadRef.current = { sha: current.sha256, stopped: scan.stopped }
             source.ensureRange(start, start + SCROLL_CHUNK_SIZE - 1)
             return
         }
@@ -1020,7 +1070,20 @@ export function ImageGallery({
                     </Button>
                 </div>
             </div>}
-            {showsLargeImage ? (currentItem ? <GalleryImageLarge
+            {/* The error branch OUTRANKS the held item: `currentItem` falls
+                back to the last displayed selection, so behind it the error
+                frame would only ever fire on a truly cold open — the narrow
+                half. Mid-session, a terminally-failed chunk under a held
+                picture is the URL naming an item that cannot load while the
+                panel shows a different one; the honest render is the error.
+                It cannot interrupt playback: `targetErrored` implies
+                `holding`, under which the gallery was already refusing to
+                advance. */}
+            {showsLargeImage ? (targetErrored ? <GalleryImageError
+                thumbnailsOpen={thumbnailsOpen}
+                showPagination={paginationVisible ?? totalPages > 1}
+                onRetry={() => source.retryRange(urlIndex, urlIndex)}
+            /> : currentItem ? <GalleryImageLarge
                 item={currentItem}
                 prevImage={prevImage}
                 nextImage={nextImage}
@@ -1035,7 +1098,10 @@ export function ImageGallery({
                 thumbnailsOpen={thumbnailsOpen}
                 showPagination={paginationVisible ?? totalPages > 1}
             />}
-            {!fs && thumbnailsOpen ? <VirtualGalleryHorizontalScroll source={source} /> : null}
+            {/* `count`, not `source.count`: the strip must span the same extent
+                the gallery clamps `gi` against, or a deep `gi` would resolve
+                against an extent that is still growing — see `count` above. */}
+            {!fs && thumbnailsOpen ? <VirtualGalleryHorizontalScroll source={source} count={count} /> : null}
         </div>
     )
 }
@@ -1066,6 +1132,38 @@ function GalleryImageLoading({ thumbnailsOpen, showPagination }: {
             galleryPanelHeight(showPagination, thumbnailsOpen),
         )}>
             <div className="absolute inset-2 animate-pulse rounded bg-muted" />
+        </div>
+    )
+}
+
+// The same frame, for the one state the loading one cannot recover from: the
+// chunk behind `gi` failed and react-query has stopped trying (see
+// ResultsSource.errorAt). Same geometry as GalleryImageLoading and
+// GalleryImageLarge — a panel that resizes when a request fails would move the
+// header and the strip under the user — and the same wording register as the
+// search error toast, which is what says the same thing about the main query.
+//
+// The retry is the whole reason this exists: nothing else in the app can
+// restart a terminally-errored chunk.
+function GalleryImageError({ thumbnailsOpen, showPagination, onRetry }: {
+    thumbnailsOpen: boolean
+    showPagination: boolean
+    onRetry: () => void
+}) {
+    return (
+        <div className={cn(
+            "relative grow flex flex-col justify-center items-center gap-3 overflow-hidden",
+            galleryPanelHeight(showPagination, thumbnailsOpen),
+        )}>
+            <p className="px-4 text-center text-sm text-muted-foreground">
+                Couldn&apos;t load this range of results
+            </p>
+            {/* Neutral, not a destructive-red button: nothing is being
+                destroyed and the panel is already the error surface. Same
+                outline variant every other secondary action in the app uses. */}
+            <Button variant="outline" size="sm" onClick={onRetry}>
+                Retry
+            </Button>
         </div>
     )
 }

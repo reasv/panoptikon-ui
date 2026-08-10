@@ -25,26 +25,39 @@ import type { ResultsSource } from '@/lib/searchHooks'
 // two chunks (see ResultsSource.ensureRange).
 const STRIP_WARM_MARGIN = 32
 
+// Where a gallery index lands in a strip of `count` cards. One expression, two
+// readers — the scroll-into-view target and each card's own selected test —
+// because a card that disagrees with the scroll would highlight one item while
+// the strip centres another.
+function clampToCount(index: number | null, count: number): number {
+    return Math.max(0, Math.min(index || 0, count - 1))
+}
+
 export function VirtualGalleryHorizontalScroll({
     source,
+    count,
 }: {
     /**
      * The same rows the gallery reads: the page's array in pages mode, a
      * sparse window over the whole result set in scroll mode. The strip spans
-     * `source.count` either way — the whole set, not the loaded part of it, so
-     * its geometry (a fixed 256px per card, which is exact) never rescales as
-     * chunks land — and renders a skeleton card wherever a row is not loaded
-     * yet.
+     * the whole set, not the loaded part of it, so its geometry (a fixed 256px
+     * per card, which is exact) never rescales as chunks land — and renders a
+     * skeleton card wherever a row is not loaded yet.
      */
     source: ResultsSource
+    /**
+     * The navigable extent, taken from the GALLERY rather than read off
+     * `source.count` here. The two differ while the count query is still in
+     * flight: the source's answer is then the loaded extent, and the gallery's
+     * is that extent widened to include the position the URL names (see its
+     * `countSettled` handling). Resolving `gi` against the narrower one would
+     * put the strip's selected card somewhere else entirely — two surfaces
+     * disagreeing about how far the set reaches is a wrong item on one of them.
+     */
+    count: number
 }) {
     "use no memo"
     const parentRef = useRef<HTMLDivElement>(null)
-    // Per the ResultsSource dependency rule, the source object itself never
-    // appears in a dep list (it is minted per render) — `count` does, and the
-    // rows change signal this file needs turns out to be narrower than
-    // `rowsIdentity`: see `fileAtTarget` below.
-    const count = source.count
 
     const virtualizer = useVirtualizer({
         count,
@@ -84,7 +97,18 @@ export function VirtualGalleryHorizontalScroll({
     //     it was undefined until then) the file at the index changes from
     //     nothing to something, which is exactly when the strip should centre
     //     itself for the first time.
-    const stripTarget = count > 0 ? (qIndex || 0) % count : 0
+    //
+    // Narrowing the trigger from `items` to these three is an intentional
+    // PAGES-MODE delta as well: a rows change that leaves the same file at
+    // `gi` — a bookmark patch rewriting the results object — no longer snaps a
+    // strip the user has scrolled away back to the current item.
+    //
+    // CLAMPED, never wrapped, exactly as the gallery clamps `gi`: past the end
+    // of the set is not an address, and the modulo this used to be would map a
+    // deep `gi` onto an unrelated card near the front while the count is still
+    // in flight. Clamping holds it at the strip's loading edge instead, which
+    // is where the item will be once the extent catches up.
+    const stripTarget = count > 0 ? clampToCount(qIndex, count) : 0
     const fileAtTarget = source.get(stripTarget)?.file_id
     // Keep the selected thumbnail in view as the gallery index moves — the
     // ← / → keys of the gallery keyboard scope (GalleryImageLarge), the
@@ -197,7 +221,13 @@ function VirtualHorizontalScrollElement({
     style: React.CSSProperties
 }) {
     const [qIndex, setIndex] = useGalleryIndex()
-    const isSelected = useMemo(() => ownIndex === ((qIndex || 0) % nItems), [qIndex, nItems, ownIndex])
+    // The same mapping the strip scrolls to (see stripTarget): clamped, not
+    // wrapped, or the ring would land on a different card than the one the
+    // strip centres.
+    const isSelected = useMemo(
+        () => nItems > 0 && ownIndex === clampToCount(qIndex, nItems),
+        [qIndex, nItems, ownIndex]
+    )
     const [dbs] = useSelectedDBs()
     const setSelected = useItemSelection((state) => state.setItem)
     const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256)

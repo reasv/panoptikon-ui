@@ -475,6 +475,17 @@ export function useFetchPageRows() {
  * object (both mint one per render), while `rowsIdentity` tracks the observed
  * row set (see its own doc below).
  *
+ * `queryIdentity` is the OTHER half of that rule and answers a different
+ * question: "did the search these indices index into change". It is the
+ * SUPERSESSION-GATE comparand and belongs in nothing else — never in an effect
+ * dep list, where it would silently stop that effect re-running on rows it is
+ * there to react to. Both values are compared with `!==` and read for nothing
+ * else (hence `unknown` on both).
+ *
+ * `errorAt` is a READ-THROUGH, tracked by neither: it reports live query state
+ * (see its own doc), so it must be called during render and never cached,
+ * memoized or folded into an identity token.
+ *
  * `count` is NOT part of it. It is a plain value that changes on its own
  * schedule — the pre-count fallback growing into the real count is the normal
  * case — so anything whose sizing depends on it must list `count` as its own
@@ -531,6 +542,38 @@ export interface ResultsSource {
    */
   fetchItem(index: number): Promise<SearchResult | undefined>
   /**
+   * Is the chunk covering a global index in TERMINAL failure — errored, not
+   * fetching, no data? Distinguishes the two indistinguishable halves of
+   * `get(index) === undefined`: "in flight or not asked for" (wait) and "this
+   * request failed and nothing further is coming" (say so, and offer a way
+   * out).
+   *
+   * The affordance is needed because the failure really is terminal.
+   * react-query burns its three retries and then STOPS; nothing re-arms an
+   * errored query except a window-focus or reconnect refetch, neither of which
+   * a user staring at a stuck skeleton can be asked to produce. Without this a
+   * failed chunk is a pulsing loading frame forever.
+   *
+   * READ-THROUGH, deliberately outside `rowsIdentity`: it reports the live
+   * query state, which is not a row set and must not move a rows token. The
+   * render path that makes it work is the ordinary one — the chunk queries are
+   * observed by `useQueries` in MultiSearchView, so a query entering the error
+   * state notifies that observer, MultiSearchView re-renders, mints a fresh
+   * source, and passes it down as a prop. Consumers therefore get a new answer
+   * by re-rendering, exactly as they do for `get`. Do not cache it.
+   */
+  errorAt(index: number): boolean
+  /**
+   * Restart every terminally-errored chunk covering an item range, and make
+   * sure those chunks are wanted. The manual counterpart to `errorAt`: the
+   * only thing in the app that can un-stick a failed chunk.
+   *
+   * Fine to call with `(i, i)` for a single index — the unit is the chunk
+   * either way, so retrying one item retries the range that item's request
+   * covers, which is exactly what the caller means by "load this again".
+   */
+  retryRange(start: number, end: number): void
+  /**
    * A value-comparable token that changes when the OBSERVED row set changes —
    * either in MEMBERSHIP (a chunk joining or leaving the wanted window) or in
    * CONTENT (a row array reference actually replaced). Guaranteed stable
@@ -543,10 +586,9 @@ export interface ResultsSource {
    *
    * Membership churn is real churn to this token: once the observed set is at
    * its cap, every seam crossing evicts one chunk and admits another, moving
-   * the token with no row anyone can see having changed. A supersession gate
-   * built on this comparison must tolerate that — compare only the chunks
-   * present in both snapshots, or accept the (rare, harmless) spurious
-   * cancellation.
+   * the token with no row anyone can see having changed. That is why this is
+   * NOT the supersession comparand — `queryIdentity` below is — and why a
+   * consumer that cancels work when the rows move must use that one instead.
    *
    * Compare with `!==` and nothing else: the two implementations return
    * different kinds of value — the array itself in pages mode, a derived
@@ -557,11 +599,32 @@ export interface ResultsSource {
    * Deliberately NOT a timestamp or a fetch counter. Structural sharing is
    * what makes a reference the honest answer to "did the rows move?", while
    * `dataUpdatedAt` would say yes on every background refetch — and the pages
-   * -mode twin would say no to the same event. The comparison this feeds is
-   * the gallery's pending-advance cancellation, so the two modes disagreeing
-   * is precisely the bug this abstraction exists to prevent.
+   * -mode twin would say no to the same event. What this feeds is every dep
+   * list that must re-run when anything renderable changed, so the two modes
+   * disagreeing is precisely the bug this abstraction exists to prevent.
    */
   rowsIdentity: unknown
+  /**
+   * The identity of the UNDERLYING QUERY — not of the observed window over it.
+   * It moves when, and only when, the search these indices index into changes:
+   * the committed request hash in scroll mode, the page's rows array in pages
+   * mode.
+   *
+   * THE SUPERSESSION-GATE COMPARAND. `rowsIdentity` answers "did anything I
+   * might render change" (the right question for effect and render deps);
+   * this answers "did the coordinates I computed a target in stop meaning what
+   * they meant" (the right question for a gate that cancels in-flight work).
+   * Conflating them is what makes a scroll-mode advance chain cancellable by a
+   * chunk landing three screens away, in a window the chain owns.
+   *
+   * In pages mode the two are the same value, byte for byte — the results
+   * array — so a pages-mode gate written on this is the items-identity gate it
+   * has always been, unchanged.
+   *
+   * Compare with `!==` and nothing else, same as `rowsIdentity` and for the
+   * same reason: a string on one side, an array reference on the other.
+   */
+  queryIdentity: unknown
 }
 
 /**
@@ -830,10 +893,51 @@ export function useChunkedResults({
   )
 
   const loaded = new Map<number, SearchResult[]>()
+  // Chunks whose query has given up: errored, nothing in flight, no data to
+  // fall back on. react-query has already spent its retries by then, so this
+  // set only grows again on an explicit `retryRange` (or a focus/reconnect
+  // refetch) — see `ResultsSource.errorAt`.
+  const erroredChunks = new Set<number>()
   wantedChunks.forEach((chunkIndex, i) => {
-    const rows = chunkQueries[i]?.data?.results
+    const query = chunkQueries[i]
+    const rows = query?.data?.results
     if (rows) loaded.set(chunkIndex, rows as SearchResult[])
+    else if (query?.isError && !query.isFetching && query.data === undefined) {
+      erroredChunks.add(chunkIndex)
+    }
   })
+  /**
+   * Restart the failed chunks in a range. `resetQueries` rather than
+   * `refetchQueries`, for one reason: reset returns the query to its initial
+   * state — stored error cleared — before refetching for its active
+   * observers, so even a refetch that gets SKIPPED (a query that meanwhile
+   * lost its observers) leaves the chunk in a clean idle state a fresh
+   * observer will fetch, never parked on a terminal error. (The visible
+   * error→skeleton transition does not depend on this choice — `errorAt`'s
+   * `!isFetching` clause already suppresses the error frame for any
+   * in-flight attempt.)
+   *
+   * `ensureRange` is what covers the lost-observer case concretely: a chunk
+   * evicted from the observed set has no observer for a reset to wake, so it
+   * is re-wanted here and fetched by the `useQueries` entry that appears on
+   * the next render. Idempotent for a chunk that is already wanted.
+   *
+   * Not memoized, deliberately: it is a click handler's verb, never an
+   * effect's or a scroll frame's, and reading the live error set is worth more
+   * than a stable identity nothing is allowed to depend on anyway.
+   */
+  const retryRange = (start: number, end: number) => {
+    let reset = false
+    for (const chunkIndex of chunkRangeFor(start, end, SCROLL_CHUNK_SIZE)) {
+      if (!erroredChunks.has(chunkIndex)) continue
+      reset = true
+      void queryClient.resetQueries({
+        queryKey: ["post", "/api/search/pql", buildChunkRequest(parts, chunkIndex)],
+        exact: true,
+      })
+    }
+    if (reset) ensureRange(start, end)
+  }
   let extent = fallbackLive ? fallbackRows.length : 0
   for (const [chunkIndex, rows] of loaded) {
     // Empty rows contribute NOTHING, not their chunk's start offset: a chunk
@@ -891,7 +995,18 @@ export function useChunkedResults({
     getBlock: blockAt,
     ensureRange,
     fetchItem,
+    // Read straight off the live query state each render — never memoized,
+    // never folded into an identity token (see ResultsSource.errorAt).
+    errorAt: (index: number) =>
+      index >= 0 && erroredChunks.has(chunkIndexOf(index, SCROLL_CHUNK_SIZE)),
+    retryRange,
     rowsIdentity,
+    // The committed request hash: it moves when the SEARCH moves and at no
+    // other time — not when a chunk lands, not when the observed window slides
+    // (see ResultsSource.queryIdentity). `partsKey` is hashed from chunk 0's
+    // request, so it is page/page_size-independent by construction and a
+    // scroll-mode `page_size` relabel does not move it either.
+    queryIdentity: partsKey,
   }
 }
 
@@ -917,7 +1032,18 @@ export function arrayResultsSource(results: SearchResult[]): ResultsSource {
         : undefined,
     ensureRange: () => {},
     fetchItem: async (index: number) => results[index],
+    // Constantly false, and there is nothing missing behind it: the page's
+    // rows are either in hand (the array) or the main query failed, in which
+    // case SearchPage's own SearchErrorToast is already saying so — a second,
+    // in-panel error affordance for the same failure would be the one that is
+    // wrong. Retrying is likewise the main query's business, hence the no-op.
+    errorAt: () => false,
+    retryRange: () => {},
     rowsIdentity: results,
+    // The same value as `rowsIdentity` here, which is the point: a
+    // supersession gate written on `queryIdentity` is byte-for-byte the
+    // items-identity comparison pages mode has always made.
+    queryIdentity: results,
   }
 }
 
