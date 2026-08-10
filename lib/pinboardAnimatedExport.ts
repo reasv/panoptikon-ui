@@ -71,7 +71,9 @@ type ItemMetadataResponse = components["schemas"]["ItemMetadataResponse"]
 /** Ceiling for the in-progress toast; it is dismissed on every real outcome. */
 const PROGRESS_TOAST_MS = 10 * 60 * 1000
 const RECEIPT_TOAST_MS = 5000
-const ERROR_TOAST_MS = 7000
+// Long enough to actually read an ffmpeg stderr tail, and Radix pauses the
+// timer while the pointer is over the toast (which copying requires anyway).
+const ERROR_TOAST_MS = 30000
 
 /**
  * The width every animated save asks for, read as the OUTPUT's width.
@@ -208,8 +210,18 @@ export async function exportAnimatedComposition(
     progress.dismiss()
     toast({ title, description, duration })
   }
-  const fail = (detail: string) =>
-    finish("Animated save failed", detail, ERROR_TOAST_MS)
+  // `copyText` buys the failure toast the wrap-and-scroll body and the copy
+  // button: an ffmpeg stderr tail is unreadable clipped and useless
+  // untranscribable.
+  const fail = (detail: string) => {
+    progress.dismiss()
+    toast({
+      title: "Animated save failed",
+      description: detail,
+      duration: ERROR_TOAST_MS,
+      copyText: detail,
+    })
+  }
 
   try {
     const built = await build()

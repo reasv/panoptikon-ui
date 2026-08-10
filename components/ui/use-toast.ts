@@ -13,6 +13,14 @@ type ToasterToast = ToastProps & {
   title?: React.ReactNode
   description?: React.ReactNode
   action?: ToastActionElement
+  /**
+   * Machine-ish text the reader may need verbatim (an ffmpeg stderr tail, a
+   * server error detail). The Toaster renders a copy button for it and gives
+   * the description scroll-and-wrap treatment — selecting text inside a toast
+   * is a losing fight against Radix's swipe-to-dismiss, so copying is a
+   * button, not a selection.
+   */
+  copyText?: string
 }
 
 const actionTypes = {
