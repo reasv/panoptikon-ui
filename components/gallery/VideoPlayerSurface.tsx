@@ -1,12 +1,14 @@
 import React from "react"
 import {
     Brackets,
+    ChevronDown,
     Download,
     EllipsisVertical,
     Maximize,
     Minimize,
     Pause,
     Play,
+    Scissors,
     TvMinimalPlay,
     Volume1,
     Volume2,
@@ -15,6 +17,8 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TrimRange } from "@/lib/pinboardCrop"
+import { type ClipRequest, clipRows, exportClip, useClipBusy } from "@/lib/videoClip"
+import { useVideoPresets } from "@/lib/useVideoPresets"
 import {
     PLAYBACK_RATES,
     setOutroSkipEnabled,
@@ -101,7 +105,11 @@ export function playerSizeForWidth(width: number): VideoPlayerSize {
     return "mini"
 }
 
-type HoldKey = "pointer" | "gesture" | "menu"
+// "download" is the download control's own menu, and it is a separate key
+// from "menu" on purpose: that control is mounted by the HOST as a sibling of
+// the surface, so both would be writing one boolean from two effects in one
+// commit and the loser's close would clear the winner's hold.
+type HoldKey = "pointer" | "gesture" | "menu" | "download"
 
 export interface VideoPlayerSurfaceController {
     // Fade state of the whole surface
@@ -150,6 +158,7 @@ export function useVideoPlayerSurface({
         pointer: false,
         gesture: false,
         menu: false,
+        download: false,
     })
     const setHold = React.useCallback((key: HoldKey, value: boolean) => {
         setHolds((prev) => (prev[key] === value ? prev : { ...prev, [key]: value }))
@@ -186,7 +195,7 @@ export function useVideoPlayerSurface({
     // nothing. A paused one shows its state only while the pointer is on it:
     // an absolute hold would let one hover permanently pin every pin whose
     // autoplay the browser blocked.
-    const holdOpen = holds.pointer || holds.gesture || holds.menu
+    const holdOpen = holds.pointer || holds.gesture || holds.menu || holds.download
     const { visible, containerProps, show } = useIdleHide({
         enabled: active,
         holdOpen,
@@ -232,6 +241,20 @@ function useDismissOnOutside(
     }, [open, close, ref])
 }
 
+// 20px glyph + p-1 per side = a 28px hit box, and 28px IS the button row's
+// height — the pin footprint clamp in globals.css reserves the surface's band
+// from it. Changing either number changes that clamp.
+//
+// A const rather than SurfaceButton's private business because the download
+// control's primary half must be an <a download> (the attribute is an
+// anchor's), and a row-mate that did not wear this exact look would read as a
+// different control.
+const SURFACE_BUTTON_CLASS =
+    "flex shrink-0 cursor-pointer items-center justify-center rounded p-1 text-white/90"
+    + " transition-colors hover:bg-white/15 hover:text-white"
+    + " focus-visible:ring-1 focus-visible:ring-white/80 focus-visible:outline-none"
+    + " drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]"
+
 function SurfaceButton({
     title,
     onClick,
@@ -249,9 +272,6 @@ function SurfaceButton({
     className?: string
     children: React.ReactNode
 }) {
-    // 20px glyph + p-1 per side = a 28px hit box, and 28px IS the button
-    // row's height — the pin footprint clamp in globals.css reserves the
-    // surface's band from it. Changing either number changes that clamp.
     return (
         <button
             type="button"
@@ -260,10 +280,7 @@ function SurfaceButton({
             aria-pressed={pressed ?? active}
             onClick={onClick}
             className={cn(
-                "flex shrink-0 cursor-pointer items-center justify-center rounded p-1 text-white/90",
-                "transition-colors hover:bg-white/15 hover:text-white",
-                "focus-visible:ring-1 focus-visible:ring-white/80 focus-visible:outline-none",
-                "drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]",
+                SURFACE_BUTTON_CLASS,
                 active && "bg-white/20 text-white",
                 className,
             )}
@@ -319,18 +336,31 @@ function MenuItem({
     label,
     icon,
     onClick,
+    disabled,
+    title,
 }: {
     label: string
     icon: React.ReactNode
     onClick: () => void
+    // Only for a row whose verb is genuinely in flight (a clip export already
+    // running for this item). NOT for a row that is merely unavailable —
+    // those are hidden, per the house rule.
+    disabled?: boolean
+    // Overrides the tooltip, for a row that has something to say beyond its
+    // own label (why it is disabled)
+    title?: string
 }) {
     return (
         <button
             type="button"
             role="menuitem"
-            title={label}
+            title={title ?? label}
             onClick={onClick}
-            className={MENU_ITEM_CLASS}
+            disabled={disabled}
+            className={cn(
+                MENU_ITEM_CLASS,
+                disabled && "cursor-default text-white/40 hover:bg-transparent hover:text-white/40",
+            )}
         >
             {icon}
             {label}
@@ -1000,6 +1030,184 @@ export function VideoPlayerSurface({
                     onInteractingChange={setGesture}
                     className="relative h-7"
                 />
+            </div>
+        </div>
+    )
+}
+
+/**
+ * What the download control needs to offer a clip of the item under it. Null
+ * on a host that has no item data yet — which drops the chevron and leaves
+ * the plain download button, the control's whole pre-transcode behaviour.
+ */
+export type VideoClipTarget = {
+    /** The FULL hash: the pinboard's own records carry a 10-char prefix. */
+    sha256: string
+    dbs: { index_db: string | null; user_data_db: string | null }
+    /**
+     * `clipRequestFor(trim, effectiveTrim, outroGoverns)` — computed by the
+     * host, which is the only place all three inputs exist. Null means the
+     * player is showing the whole file (or a freeze-frame trim, which is the
+     * same thing for export purposes), so the rows offer a re-encode.
+     */
+    request: ClipRequest | null
+}
+
+/**
+ * The picture's top-right download verb: a split button whose primary half is
+ * the original file and whose chevron opens the transcode rows
+ * (docs/video-transcoding-implementation.md §3 U3).
+ *
+ * A SIBLING of the surface rather than part of it. The surface owns the
+ * bottom band; this owns a corner, and hosts anchor it to the displayed
+ * picture the way they anchor the native-controls escape kebab — inside the
+ * fullscreen element, so it survives element fullscreen, and non-portalled
+ * for the same reason every popover here is.
+ *
+ * The chevron is HIDDEN, never disabled, when there is nothing behind it: no
+ * capability, no clip presets in this policy's table, no resolved item, or a
+ * surface too narrow to spend the width on. What is left is exactly the
+ * one-click download the app had before any of this.
+ */
+export function VideoDownloadControl({
+    controller,
+    download,
+    clip,
+    size = "full",
+    className,
+}: {
+    controller: VideoPlayerSurfaceController
+    // The original file: a same-origin URL and the name to save it under.
+    // This is the ONE name the client still derives (§3 U6) — every transcode
+    // row takes the server's `ArtifactRef.filename` instead.
+    download: { url: string; filename: string }
+    clip: VideoClipTarget | null
+    size?: VideoPlayerSize
+    className?: string
+}) {
+    const { visible, setHold } = controller
+    const [open, setOpen] = React.useState(false)
+    const rootRef = React.useRef<HTMLDivElement>(null)
+    const close = React.useCallback(() => setOpen(false), [])
+    useDismissOnOutside(open, close, rootRef)
+
+    const { presets } = useVideoPresets("clip")
+    const busy = useClipBusy(clip?.sha256)
+    // The mini tier's picture is barely wider than this control; the kebab's
+    // own "Download original" row is what serves it, and the host keeps that
+    // row at every tier precisely so this one may vanish.
+    const canClip = clip != null && presets.length > 0 && size !== "mini"
+    const trimmed = clip?.request != null
+
+    // Click-open, so it must survive a pointer that wanders off the surface —
+    // and it holds under its own key, because the surface's kebab is a second
+    // writer on "menu" (see HoldKey).
+    React.useEffect(() => {
+        setHold("download", open)
+    }, [open, setHold])
+    // The control can unmount mid-hover or with its menu open (the video
+    // closes, the host switches to native controls); a hold left standing
+    // would pin the next surface open forever.
+    React.useEffect(() => () => {
+        setHold("download", false)
+        setHold("pointer", false)
+    }, [setHold])
+    // Nothing behind the chevron any more (the item went away, the policy
+    // changed) must not leave an open menu of rows that no longer exist.
+    React.useEffect(() => {
+        if (!canClip) setOpen(false)
+    }, [canClip])
+
+    return (
+        <div
+            ref={rootRef}
+            className={cn(
+                "absolute top-2 right-2 select-none",
+                // An open menu outranks whatever the host parks below it, like
+                // the surface's own popovers
+                open ? "z-30" : "z-20",
+                "transition-opacity",
+                visible
+                    ? "pointer-events-auto opacity-100 duration-[120ms]"
+                    : "pointer-events-none opacity-0 duration-300",
+                className,
+            )}
+            // Hosts wrap the video in click-to-navigate halves and grid drag
+            // handles, and a synthesized click still bubbles after the pointer
+            // handlers stopped propagating
+            onPointerEnter={() => setHold("pointer", true)}
+            onPointerLeave={() => setHold("pointer", false)}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+        >
+            <div className="relative flex items-center gap-px">
+                <a
+                    title="Download the original file"
+                    aria-label="Download the original file"
+                    href={download.url}
+                    download={download.filename}
+                    // Links are draggable by default, and the pinboard's drop
+                    // path reads any text/plain payload as a sha256 — dragging
+                    // this onto the board would mint an unresolvable pin
+                    draggable={false}
+                    className={cn(SURFACE_BUTTON_CLASS, "bg-black/50 hover:bg-black/70")}
+                >
+                    <Download className="size-[20px]" />
+                </a>
+                {canClip && (
+                    <SurfaceButton
+                        title="Other download formats"
+                        active={open}
+                        onClick={() => setOpen((v) => !v)}
+                        className="bg-black/50 p-0.5 hover:bg-black/70"
+                    >
+                        <ChevronDown className="size-[20px]" />
+                    </SurfaceButton>
+                )}
+                {open && canClip && clip && (
+                    <SurfacePopover placement="below" role="menu" className="min-w-44">
+                        {/* The file itself first: it is the row the primary
+                            button already is, spelled out so the menu is a
+                            complete answer to "download this" rather than a
+                            list of the alternatives. */}
+                        <MenuItemLink
+                            label="Original file"
+                            icon={<Download className="size-3.5" />}
+                            href={download.url}
+                            download={download.filename}
+                            onClick={close}
+                        />
+                        <div aria-hidden className="my-1 h-px bg-white/15" />
+                        {/* Buttons, never links: these rows START WORK. The
+                            bytes do not exist yet, so there is no href to give
+                            them, and a link's "save link as" would hand the
+                            user a 404 from the artifact route (which never
+                            starts a job — design §0.2). */}
+                        {clipRows(presets, trimmed).map(({ preset, label }) => (
+                            <MenuItem
+                                key={preset.id}
+                                label={label}
+                                icon={<Scissors className="size-3.5" />}
+                                disabled={busy}
+                                title={busy
+                                    ? "Another export of this item is still running"
+                                    : undefined}
+                                onClick={() => {
+                                    close()
+                                    void exportClip({
+                                        sha256: clip.sha256,
+                                        preset,
+                                        request: clip.request,
+                                        rowLabel: label,
+                                        dbs: clip.dbs,
+                                    })
+                                }}
+                            />
+                        ))}
+                    </SurfacePopover>
+                )}
             </div>
         </div>
     )

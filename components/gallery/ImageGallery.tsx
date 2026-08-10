@@ -28,8 +28,9 @@ import { useSearchLoading } from '@/lib/state/zust'
 import { MediaControls } from './PlayButton'
 import React from 'react'
 import { PLAYBACK_RATES, useOutroSkipEnabled, useVideoPlayerState } from '@/lib/videoPlayerState'
-import { NativeControlsEscape, PLAYER_SIZE_FULL_WIDTH, playerSizeForWidth, useVideoPlayerSurface, VideoPlayerSurface } from './VideoPlayerSurface'
-import { effectiveVideoTrim, outroCutPoint, outroProbeEligible, trimWithBound, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
+import { NativeControlsEscape, PLAYER_SIZE_FULL_WIDTH, playerSizeForWidth, useVideoPlayerSurface, VideoDownloadControl, VideoPlayerSurface } from './VideoPlayerSurface'
+import { effectiveVideoTrim, outroCutPoint, outroProbeEligible, outroSkipGoverns, trimWithBound, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
+import { clipRequestFor } from '@/lib/videoClip'
 import { useVideoEndProbe } from '@/lib/videoEndProbe'
 import { noteVideoPlaybackError, shouldDowngradeOnError, useVideoPlayability } from '@/lib/videoPlayability'
 import { useVideoPlayback } from '@/lib/videoTranscode'
@@ -657,6 +658,15 @@ export function GalleryImageLarge(
     )
     const effectiveTrim = effectiveVideoTrim(trim, outroCut, outroSkip)
     useVideoTrim({ videoRef, trim: effectiveTrim, active: showVideo })
+    // What a clip export of this item would ask for, computed HERE because
+    // this is the only place all three inputs exist together. `cut: "outro"`
+    // whenever the outro default is what ends playback — the server re-derives
+    // that boundary in the file's own timeline (see clipRequestFor).
+    const clipRequest = clipRequestFor(
+        trim,
+        effectiveTrim,
+        outroSkipGoverns(trim, outroCut, outroSkip),
+    )
 
     // The gallery's keyboard scope (docs/video-player-ui-design.md). Mounted
     // with the large image, so it is live exactly while the gallery owns the
@@ -984,6 +994,38 @@ export function GalleryImageLarge(
                                     size={surfaceBox ? playerSizeForWidth(surfaceWidth) : "full"}
                                 />
                             </div>}
+                        {/* The download verb, anchored to the PICTURE's
+                            top-right exactly like the S2 escape kebab above —
+                            a sibling of the surface, not part of it, and
+                            inside the fullscreen host so it survives element
+                            fullscreen. Only in S1: with native controls up the
+                            escape kebab owns that corner, and the kebab's own
+                            "Download original" row is what serves both that
+                            state and the mini tier. */}
+                        {!videoState.showControls && (
+                            <div
+                                className={cn(
+                                    "pointer-events-none absolute",
+                                    !pictureBox && "inset-0",
+                                )}
+                                style={pictureBox ?? undefined}
+                            >
+                                <VideoDownloadControl
+                                    controller={player}
+                                    download={{
+                                        url: fileURL,
+                                        filename: downloadFileName(
+                                            item.path, item.sha256, item.type),
+                                    }}
+                                    clip={{
+                                        sha256: item.sha256,
+                                        dbs,
+                                        request: clipRequest,
+                                    }}
+                                    size={surfaceBox ? playerSizeForWidth(surfaceWidth) : "full"}
+                                />
+                            </div>
+                        )}
                     </div>
                     :
                     <a

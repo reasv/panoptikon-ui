@@ -109,9 +109,36 @@ check(
   shape(
     stateFromSubmit({
       outcome: "hit",
-      artifact: { key: "k", url: "/api/video/artifact?key=k" },
+      artifact: {
+        key: "k",
+        url: "/api/video/artifact?key=k",
+        filename: "holiday-clip.mp4",
+      },
     })
-  ) === shape({ state: "done", artifactUrl: "/api/video/artifact?key=k" })
+  ) ===
+    shape({
+      state: "done",
+      artifactUrl: "/api/video/artifact?key=k",
+      filename: "holiday-clip.mp4",
+    })
+)
+// The download name is the SERVER's (ArtifactRef.filename), on both the hit
+// and the done event: the URL is the `key=` form, and a key knows neither the
+// source's path nor whether the request was trimmed. Playback never reads it;
+// lib/videoClip.ts hangs it on an <a download>.
+check(
+  "the server's download name rides on the done event too",
+  stateFromEvent({
+    state: "done",
+    artifact: { key: "k", url: "/u", filename: "holiday-clip.mp4" },
+  }).filename === "holiday-clip.mp4"
+)
+check(
+  "a missing name is null, never a failure — only the URL is load-bearing",
+  stateFromEvent({ state: "done", artifact: { key: "k", url: "/u" } })
+    .filename === null &&
+    stateFromEvent({ state: "done", artifact: { key: "k", url: "/u" } })
+      .state === "done"
 )
 check(
   "outcome=created reads the embedded job snapshot",

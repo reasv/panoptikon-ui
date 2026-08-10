@@ -1539,7 +1539,7 @@ export interface paths {
         put?: never;
         /**
          * Create or join a transcode job
-         * @description Resolves the item, validates the preset and trim bounds, and either answers from the artifact cache (200, `outcome: "hit"`) or creates/joins a job (202). `cut` is reserved for the server-side outro cut and is rejected for now.
+         * @description Resolves the item, validates the preset and trim bounds, and either answers from the artifact cache (200, `outcome: "hit"`) or creates/joins a job (202). `cut: "outro"` ends the clip at the item's detected outro boundary: it excludes `end_cs`, composes with `start_cs`, and is resolved to explicit centiseconds here, so it shares its cache entry with the identical explicit trim. An item with no detected outro — including one whose index database has `detect_outros` off — is a 404.
          */
         post: operations["video_transcode"];
         delete?: never;
@@ -1561,6 +1561,22 @@ export interface components {
         };
         /** @description A finished artifact, as every client-facing shape refers to it. */
         ArtifactRef: {
+            /**
+             * @description The name a download should be saved under, computed server-side from
+             *     the request that produced the artifact (implementation plan §3 S3).
+             *
+             *     It rides here because [`Self::url`] is the `key=` form, and that form
+             *     cannot name a download: a key knows the source hash and the settings,
+             *     never the file's path or whether the request was trimmed. The client
+             *     hangs this on its `<a download>` (the §0.4 precedent — naming inputs
+             *     belong to the server, so clients keep no lookup tables).
+             *
+             *     A *joined* job answers with the first submitter's name. The bytes are
+             *     identical by construction (the key covers the source hash), so the most
+             *     this can cost is the stem of one of several files with the same
+             *     content.
+             */
+            filename: string;
             /** @description Cache key; also the artifact's ETag and its `?key=` query value. */
             key: string;
             mime_type: string;
@@ -4060,9 +4076,12 @@ export interface components {
         };
         TranscodeRequest: {
             /**
-             * @description Reserved for the server-side outro cut (`"outro"`), which arrives with
-             *     clip export. Rejected until then rather than ignored: a client that
-             *     sent it and got a full-length file would have no way to notice.
+             * @description `"outro"` to end the clip at this item's detected outro boundary,
+             *     resolved server-side. Excludes `end_cs` (the two are the same bound
+             *     asked for two ways), composes with `start_cs`, and is a 404 when the
+             *     item has no detected outro or the index database has detection off.
+             *     Any other value is rejected rather than ignored: a client that sent one
+             *     and got a full-length file would have no way to notice.
              */
             cut?: string | null;
             /**
@@ -6916,6 +6935,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Unknown preset, or trim bounds that name a freeze frame rather than a clip (the resolvable form validates exactly as the POST does) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     get_transcode_cache: {
@@ -7146,8 +7172,15 @@ export interface operations {
                     "application/json": components["schemas"]["TranscodeSubmitResponse"];
                 };
             };
-            /** @description No such item, or no readable file for it */
+            /** @description No such item, no readable file for it, or no detected outro */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown preset, an unusable trim window (bounds that name a freeze frame rather than a clip, a start bound past the end of the item, or a start bound at or past the resolved outro cut), or an unknown/conflicting `cut` */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

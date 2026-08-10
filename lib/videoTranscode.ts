@@ -31,7 +31,16 @@ export type TranscodeState =
   | { state: "queued"; position: number }
   /** 0..1, or null when the source has no recorded duration to divide by. */
   | { state: "running"; progress: number | null }
-  | { state: "done"; artifactUrl: string }
+  /**
+   * `filename` is the SERVER's name for the finished bytes
+   * (`ArtifactRef.filename`, implementation plan §3 S3), carried so the clip
+   * export can hang it on an `<a download>` without deriving one: the URL is
+   * the `key=` form, and a key knows neither the source's path nor whether
+   * the request was trimmed. Null when the server sent none — an older
+   * gateway, or a payload the defensive parse below could not read. The
+   * PLAYBACK path never reads it; it mounts the URL and nothing else.
+   */
+  | { state: "done"; artifactUrl: string; filename: string | null }
   /**
    * `sticky` separates the two failures that used to wear one shape.
    *
@@ -139,7 +148,14 @@ export function stateFromEvent(payload: unknown): TranscodeState | null {
       if (typeof url !== "string" || !url) {
         return retryableFailure("The finished rendition has no URL")
       }
-      return { state: "done", artifactUrl: url }
+      // A MISSING name is not a failure: the bytes are there, and the clip
+      // export has its own fallback. Only the URL is load-bearing.
+      const filename = artifact ? field<ArtifactRef>(artifact, "filename") : null
+      return {
+        state: "done",
+        artifactUrl: url,
+        filename: typeof filename === "string" && filename ? filename : null,
+      }
     }
     case JOB_STATE.failed: {
       const error = field<FailedEvent>(event, "error")
@@ -169,7 +185,14 @@ export function stateFromSubmit(payload: unknown): TranscodeState {
   if (field<SubmitResponse>(body, "outcome") === "hit") {
     const artifact = asRecord(field<SubmitResponse>(body, "artifact"))
     const url = artifact ? field<ArtifactRef>(artifact, "url") : null
-    if (typeof url === "string" && url) return { state: "done", artifactUrl: url }
+    const filename = artifact ? field<ArtifactRef>(artifact, "filename") : null
+    if (typeof url === "string" && url) {
+      return {
+        state: "done",
+        artifactUrl: url,
+        filename: typeof filename === "string" && filename ? filename : null,
+      }
+    }
     return retryableFailure("The cached rendition has no URL")
   }
   // `known_failure` arrives as a job already born failed, so it needs no
@@ -251,6 +274,39 @@ export function getTranscodeState(key: string): TranscodeState {
   return states.get(key) ?? IDLE
 }
 
+// ---- the seam lib/videoClip.ts drives -----------------------------------
+//
+// The clip export runs the SAME exchange as playback — POST, follow, done —
+// against a DIFFERENT key: its jobs carry trim bounds, and the store key
+// above deliberately does not (`sha:preset` is the whole point of the
+// playback dedup). Rather than grow this store a second key vocabulary, the
+// three verbs a follower needs are exported and `videoClip.ts` mints its own
+// keys with a third segment (see `clipStoreKey` there). Keys are opaque
+// strings to everything below, so the two namespaces cannot collide as long
+// as one of them always carries that extra segment.
+//
+// Nothing here is a second store: one map, one listener table, one SSE
+// implementation with one poll fallback.
+
+/** Write one state for an arbitrary key (the `requesting` seed, a refusal). */
+export function setTranscodeState(key: string, next: TranscodeState) {
+  setState(key, next)
+}
+
+/** Subscribe to one key. Returns the unsubscribe. */
+export function subscribeTranscodeKey(key: string, onChange: () => void): () => void {
+  return subscribeKey(key, onChange)
+}
+
+/**
+ * Follow a job onto `key`: SSE while it gets through, the snapshot poller
+ * when it does not. Terminal states land in the store, so a caller waits by
+ * subscribing rather than by being called back.
+ */
+export function followTranscodeJob(key: string, jobId: string) {
+  followJob(key, jobId)
+}
+
 /**
  * Apply one snapshot to a key. Returns the state it produced, or null when the
  * payload was unusable — and ignores ANYTHING that arrives after a terminal
@@ -323,7 +379,13 @@ export function clearArtifactRetry(key: string) {
   artifactRetries.delete(key)
 }
 
-function errorDetail(error: unknown, fallback: string): string {
+/**
+ * The `detail` string every `ApiError` body carries, or `fallback`. Exported
+ * because the clip export shows it verbatim: the 422s the trim bounds can
+ * earn ("start_cs is at or past the outro cut…") are written to be read by
+ * the person who dragged the marker.
+ */
+export function errorDetail(error: unknown, fallback: string): string {
   const detail = asRecord(error)?.detail
   return typeof detail === "string" && detail ? detail : fallback
 }

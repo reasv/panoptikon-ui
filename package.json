@@ -15,7 +15,8 @@
     "test:trimparam": "node --experimental-strip-types scripts/trimparam.test.mjs",
     "test:outroskip": "node --experimental-strip-types scripts/outroskip.test.mjs",
     "test:playability": "node --experimental-strip-types scripts/playability.test.mjs",
-    "test:transcode": "node --experimental-strip-types scripts/transcode.test.mjs"
+    "test:transcode": "node --experimental-strip-types scripts/transcode.test.mjs",
+    "test:cliprequest": "node --experimental-strip-types scripts/clipRequest.test.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.1.2",

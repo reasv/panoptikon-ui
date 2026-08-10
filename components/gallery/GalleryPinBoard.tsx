@@ -26,7 +26,7 @@ import { MediaControls } from './PlayButton'
 import React from 'react'
 import { useOutroSkipEnabled, useVideoPlayerState } from '@/lib/videoPlayerState'
 import { CropRect, PinLock, PinOrientation, TrimRange, clampCrop, composeCrops, isEmptyTrim, isIdentityOrientation, packHField, parseHField } from '@/lib/pinboardCrop'
-import { effectiveVideoTrim, outroCutPoint, outroProbeEligible, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
+import { effectiveVideoTrim, outroCutPoint, outroProbeEligible, outroSkipGoverns, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
 import { useVideoEndProbe } from '@/lib/videoEndProbe'
 import { noteVideoPlaybackError, shouldDowngradeOnError, useVideoPlayability } from '@/lib/videoPlayability'
 import { useVideoPlayback } from '@/lib/videoTranscode'
@@ -3159,7 +3159,16 @@ function PinBoardPin({
         probedVideoEnd,
     )
     const effectiveTrim = effectiveVideoTrim(trim, outroCut, outroSkip)
+    // Whether the outro default is what ends playback here. The context menu's
+    // clip rows turn this into `cut: "outro"` rather than sending the client's
+    // own cut point (see lib/videoClip's clipRequestFor).
+    const outroGoverns = outroSkipGoverns(trim, outroCut, outroSkip)
     useVideoTrim({ videoRef, trim: effectiveTrim, active: showVideo })
+    // The FULL hash and the item's type, for the menu's clip rows: the board's
+    // records carry only a 10-char prefix, and only a video has a clip.
+    const clipItem = data?.item
+        ? { sha256: data.item.sha256, mime: data.item.type }
+        : null
     // Native controls stand the whole player world down (only the escape
     // kebab remains), so the controller is inactive there too. Crop mode
     // stands it down as well: the surface would sit on the crop area's
@@ -3326,6 +3335,9 @@ function PinBoardPin({
                         onClearCrop={() => onCropChange(null)}
                         trim={trim}
                         onTrimChange={onTrimChange}
+                        effectiveTrim={effectiveTrim}
+                        outroGoverns={outroGoverns}
+                        clipItem={clipItem}
                         // The set-at-playhead loop verbs read the element
                         // directly, and only exist while there is a playhead
                         // to read (they are the trim UI for pins too narrow
