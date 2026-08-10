@@ -293,6 +293,26 @@ export function setTranscodeState(key: string, next: TranscodeState) {
   setState(key, next)
 }
 
+/**
+ * Drop a key from the store entirely.
+ *
+ * For keys that are MINTED rather than derived: a composition is followed
+ * under `compose:<jobId>`, and a job id is a fresh UUID every time, so its
+ * entry can never be reused and would otherwise sit in the map for the life of
+ * the tab — one per animated save. The playback and clip keys are
+ * content-addressed (`sha:preset[:window]`), which is exactly why they are
+ * kept: their whole purpose is to be found again.
+ *
+ * Called only once the terminal state has been CONSUMED (the download fired,
+ * the receipt shown). Listeners are notified so anything still subscribed sees
+ * `idle` rather than a stale verdict.
+ */
+export function forgetTranscodeState(key: string) {
+  states.delete(key)
+  const bucket = listeners.get(key)
+  if (bucket) for (const listener of bucket) listener()
+}
+
 /** Subscribe to one key. Returns the unsubscribe. */
 export function subscribeTranscodeKey(key: string, onChange: () => void): () => void {
   return subscribeKey(key, onChange)

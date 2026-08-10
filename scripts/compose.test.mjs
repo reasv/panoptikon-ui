@@ -17,10 +17,14 @@ const {
   STILLS_ONLY_TARGET_SECONDS,
   buildCompositionDoc,
   buildItemCompositionDoc,
+  clipPinDrawToCanvas,
   composeClampFactor,
   composeRequestedSeconds,
   composeRows,
+  composeTargetCs,
+  estimateLoopBytes,
   longestSpanSeconds,
+  naturalSize,
   normalizeComposeBackground,
   resolveItemTime,
 } = await import("../lib/pinboardCompose.ts")
@@ -202,18 +206,24 @@ function solveAt(width, only) {
       item.dest.y === Math.round(draw.dest.top / 2) * 2,
     `${shape(item.dest)} vs left=${draw.dest.left} top=${draw.dest.top}`
   )
+  // Nothing on this board is cut by the canvas edge (the pins sit well inside
+  // it — asserted, not assumed), so the sizes are the compositor's rounded and
+  // NOT clamped. Re-deriving the clamp here would be circular: it would agree
+  // with the builder whatever the builder did, which is exactly how a squashed
+  // straddler went unnoticed. The clipped case is its own block below.
   check(
-    "…and the SIZES are left alone (scale honours them; overlay does not honour odd offsets)",
-    item.dest.w === Math.min(Math.round(draw.dest.width), doc.width - item.dest.x) &&
-      item.dest.h === Math.min(Math.round(draw.dest.height), doc.height - item.dest.y),
-    `${shape(item.dest)} vs ${draw.dest.width}x${draw.dest.height}`
+    "the fixture's pins really are inside the canvas",
+    draw.dest.left >= 0 &&
+      draw.dest.top >= 0 &&
+      draw.dest.left + draw.dest.width <= doc.width &&
+      draw.dest.top + draw.dest.height <= doc.height,
+    `${shape(draw.dest)} in ${doc.width}x${doc.height}`
   )
   check(
-    "the destination sizes are allowed to be odd",
-    doc.body.items.some((i) => i.dest.w % 2 === 1 || i.dest.h % 2 === 1) ||
-      // Not every fixture lands on an odd size; the rule is that nothing
-      // rounds them, which the assertion above already pins.
-      true
+    "…so the SIZES are left alone (scale honours them; overlay does not honour odd offsets)",
+    item.dest.w === Math.round(draw.dest.width) &&
+      item.dest.h === Math.round(draw.dest.height),
+    `${shape(item.dest)} vs ${draw.dest.width}x${draw.dest.height}`
   )
   check(
     "every destination rect is inside the canvas",
@@ -240,6 +250,211 @@ function solveAt(width, only) {
     "an unoriented pin sends the identity transform",
     shape(doc.body.items[1].transform) === shape({ quarter_turns: 0, flip_h: false })
   )
+}
+
+// ---- the canvas edge cuts the SOURCE too --------------------------------
+//
+// A pin the visible-extent fold crosses gets a SHORTER destination rectangle,
+// and `scale` obeys whatever rectangle it is handed: sending the whole frame
+// with a half-height dest squashes the picture, where the canvas mosaic draws
+// the top half at its own aspect. So the source has to shrink by the same
+// fraction — on whichever source axis and side the pin's orientation sends the
+// display's BOTTOM edge to.
+//
+// The expected side per quarter turn is written out by hand below, from the
+// rotation itself (display = source turned `q` quarters CLOCKWISE, so the
+// display's bottom row is the source's left column for q=3, its right column
+// for q=1, and so on). Deriving it from `sourceRect` instead would assert only
+// that the builder calls the function it calls.
+
+{
+  const near = (a, b) => Math.abs(a - b) <= 2
+  const CLIP_CROP = { x: 0.1, y: 0.1, w: 0.8, h: 0.8 }
+  const VIS_ROWS = 40
+  // foldRows(V2_GRID, 410) === 40, i.e. the fill line lands at 405 px.
+  const FOLD_BOARD_H = 410
+
+  // An image pin at the top (so the capture box starts at the board origin and
+  // the canvas is a full screenful tall) and a TALL video pin whose bottom half
+  // hangs past the fill line.
+  const clipRecords = (q) => [
+    IMAGE_SHA, "0", "0", "20", "12",
+    VIDEO_SHA, "24", "30", "20",
+    packHField(20, {
+      crop: CLIP_CROP,
+      autoCrop: null,
+      trim: { start: 1.5, end: 8.5 },
+      lock: null,
+      orient: q === 0 ? null : { quarterTurns: q, flipped: false },
+    }),
+  ]
+
+  for (const q of [0, 1, 2, 3]) {
+    const records = clipRecords(q)
+    const doc = await built({
+      layout: ["v2", ...records],
+      boardHeight: FOLD_BOARD_H,
+      extent: "visible",
+    })
+    const geo = mosaicGeometry({
+      records,
+      grid: effectiveGrid(G, 1),
+      layoutWidth: BOARD_W,
+      seamless: false,
+      extent: "visible",
+      visibleRows: VIS_ROWS,
+    }).geometry
+    const p = geo.placements[1]
+    const meta = META[VIDEO_SHA]
+    const draw = resolvePinDraw(p, meta.width, meta.height, {
+      left: p.left - geo.cropLeft,
+      top: p.top - geo.cropTop,
+      width: p.width,
+      height: p.height,
+    })
+    // Whole-frame source pixels, the rect a builder with no clip would send.
+    const full = {
+      x: Math.floor(draw.src.x * meta.width),
+      y: Math.floor(draw.src.y * meta.height),
+      w: Math.round(draw.src.w * meta.width),
+      h: Math.round(draw.src.h * meta.height),
+    }
+    const kept = (doc.height - draw.dest.top) / draw.dest.height
+    const item = doc.body.items[1]
+    const src = item.src
+
+    check(
+      `q=${q}: the fixture pin really is cut by the bottom edge`,
+      draw.dest.top < doc.height &&
+        draw.dest.top + draw.dest.height > doc.height &&
+        kept > 0.2 &&
+        kept < 0.9,
+      `dest ${draw.dest.top}..${draw.dest.top + draw.dest.height}, canvas ${doc.height}, kept ${kept}`
+    )
+    check(
+      `q=${q}: the destination is the visible remainder, not the whole cell`,
+      near(item.dest.h, doc.height - draw.dest.top) &&
+        item.dest.y + item.dest.h <= doc.height,
+      `${shape(item.dest)} of ${doc.width}x${doc.height}`
+    )
+    const want =
+      q === 0
+        ? // display bottom = source bottom
+          { axis: "h", size: near(src.h, full.h * kept), origin: src.y === full.y, other: src.x === full.x && src.w === full.w }
+        : q === 1
+          ? // a clockwise quarter turn puts the source's RIGHT column along the
+            // display's bottom
+            { axis: "w", size: near(src.w, full.w * kept), origin: src.x === full.x, other: src.y === full.y && src.h === full.h }
+          : q === 2
+            ? // half turn: the display's bottom is the source's TOP
+              { axis: "h", size: near(src.h, full.h * kept), origin: src.y > full.y && near(src.y + src.h, full.y + full.h), other: src.x === full.x && src.w === full.w }
+            : // three quarters: the display's bottom is the source's LEFT
+              { axis: "w", size: near(src.w, full.w * kept), origin: src.x > full.x && near(src.x + src.w, full.x + full.w), other: src.y === full.y && src.h === full.h }
+    check(
+      `q=${q}: the source shrinks on the ${want.axis} axis, by the fraction the canvas kept`,
+      want.size && want.origin && want.other,
+      `${shape(src)} vs full ${shape(full)} kept ${kept}`
+    )
+    check(
+      `q=${q}: the source rect stays inside the frame`,
+      src.x >= 0 &&
+        src.y >= 0 &&
+        src.x + src.w <= meta.width &&
+        src.y + src.h <= meta.height,
+      shape(src)
+    )
+  }
+
+  // The unclipped identity: a pin the edge does not touch keeps the rect
+  // `resolvePinDraw` gave it, to the pixel.
+  {
+    const dest = { left: 10, top: 20, width: 100, height: 50 }
+    const clipped = clipPinDrawToCanvas({
+      dest,
+      crop: CLIP_CROP,
+      orient: { quarterTurns: 1, flipped: false },
+      canvasW: 400,
+      canvasH: 400,
+    })
+    check(
+      "a pin inside the canvas is not clipped at all",
+      near(clipped.dest.left, 10) &&
+        near(clipped.dest.width, 100) &&
+        near(clipped.src.w, 0.8) &&
+        near(clipped.src.h, 0.8),
+      shape(clipped)
+    )
+  }
+
+  // The phantom sliver: two pixels of a scaled-down picture is not a picture,
+  // and the canvas mosaic draws nothing meaningful there either.
+  check(
+    "a pin the edge leaves a sliver of is skipped rather than composed",
+    clipPinDrawToCanvas({
+      dest: { left: 10, top: 98, width: 100, height: 100 },
+      crop: null,
+      orient: null,
+      canvasW: 200,
+      canvasH: 100,
+    }) === null &&
+      clipPinDrawToCanvas({
+        dest: { left: 199, top: 10, width: 100, height: 100 },
+        crop: null,
+        orient: null,
+        canvasW: 200,
+        canvasH: 200,
+      }) === null
+  )
+  check(
+    "…and one with three pixels left is kept",
+    clipPinDrawToCanvas({
+      dest: { left: 10, top: 97, width: 100, height: 100 },
+      crop: null,
+      orient: null,
+      canvasW: 200,
+      canvasH: 100,
+    }) !== null
+  )
+  check(
+    "a pin entirely past the edge is skipped too",
+    clipPinDrawToCanvas({
+      dest: { left: 10, top: 220, width: 100, height: 100 },
+      crop: null,
+      orient: null,
+      canvasW: 200,
+      canvasH: 200,
+    }) === null
+  )
+
+  // …end to end: a pin whose picture begins below the cut is named in the
+  // receipt rather than silently dropped or squashed into a stripe.
+  {
+    const records = [
+      IMAGE_SHA, "0", "0", "20", "12",
+      VIDEO_SHA, "24", "38", "20",
+      // A very wide crop letterboxes the picture down the middle of the cell,
+      // which puts its top edge past the fill line.
+      packHField(20, {
+        crop: { x: 0.1, y: 0.4, w: 0.8, h: 0.2 },
+        autoCrop: null,
+        trim: { start: 1.5, end: 8.5 },
+        lock: null,
+        orient: null,
+      }),
+    ]
+    const doc = await built({
+      layout: ["v2", ...records],
+      boardHeight: FOLD_BOARD_H,
+      extent: "visible",
+    })
+    check(
+      "a pin the cut leaves nothing of is skipped and reported",
+      doc.body.items.length === 1 &&
+        doc.body.items[0].sha256 === IMAGE_FULL &&
+        shape(doc.skipped) === shape([VIDEO_SHA]),
+      `${shape(doc.body.items.map((i) => i.sha256))} skipped ${shape(doc.skipped)}`
+    )
+  }
 }
 
 // ---- time: the C7 resolution table -------------------------------------
@@ -559,9 +774,24 @@ function solveAt(width, only) {
       composeRows(presets, { requestedSeconds: 20, limits: LIMITS }).map((r) => r.preset.id)
     ) === shape(["mosaic-mp4"])
   )
+  // The VIDEO containers are capped too — by a much larger number, but the
+  // server clamps against it the same silent way, so the row goes with it.
   check(
-    "an unknown limit hides it too — a row that always 422s is worse than no row",
-    composeRows(presets, { requestedSeconds: 7, limits: null }).length === 1
+    "an mp4/webm row is hidden past max_output_seconds",
+    composeRows(presets, { requestedSeconds: 61, limits: LIMITS }).length === 0 &&
+      composeRows(presets, { requestedSeconds: 60, limits: LIMITS }).map((r) => r.preset.id)[0] ===
+        "mosaic-mp4"
+  )
+  check(
+    "…and a length CAP under the limit brings it back",
+    composeRows(presets, {
+      requestedSeconds: composeRequestedSeconds({ mode: "cap", seconds: 10 }, 900),
+      limits: LIMITS,
+    }).length === 2
+  )
+  check(
+    "an unknown limit hides every row — one that always truncates is worse than none",
+    composeRows(presets, { requestedSeconds: 7, limits: null }).length === 0
   )
   check(
     "rows label themselves with the preset's own name",
@@ -571,6 +801,185 @@ function solveAt(width, only) {
   check(
     "an empty preset table yields no rows at all",
     composeRows([], { requestedSeconds: 7, limits: LIMITS }).length === 0
+  )
+}
+
+// ---- the loop-memory pre-solve ------------------------------------------
+//
+// `compose.rs`'s `check_loop_memory`, mirrored so a board that would 422 comes
+// back as a smaller mosaic instead. Every item shorter than the output is held
+// open by a loop filter buffering its whole segment at DESTINATION resolution.
+
+{
+  const px = (w, h) => ({ x: 0, y: 0, w, h })
+  check(
+    "the longest span buffers nothing — it plays straight through",
+    estimateLoopBytes(
+      [{ dest: px(100, 100), time: { kind: "span", start_cs: 0, end_cs: 500 } }],
+      30,
+      500
+    ) === 0
+  )
+  check(
+    "a shorter span buffers ceil(span * fps) frames at 3/2 bytes a pixel",
+    estimateLoopBytes(
+      [{ dest: px(100, 100), time: { kind: "span", start_cs: 0, end_cs: 250 } }],
+      30,
+      500
+    ) === 75 * 100 * 100 * 1.5,
+    `${estimateLoopBytes([{ dest: px(100, 100), time: { kind: "span", start_cs: 0, end_cs: 250 } }], 30, 500)}`
+  )
+  check(
+    "a still and an image hold exactly one frame each",
+    estimateLoopBytes(
+      [
+        { dest: px(100, 100), time: { kind: "still", at_cs: 0 } },
+        { dest: px(100, 100), time: { kind: "image" } },
+      ],
+      30,
+      500
+    ) === 2 * 100 * 100 * 1.5
+  )
+  check(
+    "the target length is the longest span, capped by the container's own limit",
+    composeTargetCs({ mode: "longest_loop_once" }, [{ kind: "span", start_cs: 0, end_cs: 700 }], "mp4", LIMITS) === 700 &&
+      composeTargetCs({ mode: "cap", seconds: 900 }, [], "mp4", LIMITS) === 6000 &&
+      composeTargetCs({ mode: "cap", seconds: 900 }, [], "webp", LIMITS) === 1500 &&
+      composeTargetCs({ mode: "longest_loop_once" }, [{ kind: "image" }], "mp4", LIMITS) ===
+        STILLS_ONLY_TARGET_SECONDS * 100
+  )
+
+  // Twelve half-size video pins, all looping under a thirty-second cap: at the
+  // width asked for they buffer well over the 512 MB budget, so the builder
+  // re-solves smaller instead of posting a document the server refuses.
+  const LOOP_SHA = "cccccccccc"
+  const LOOP_FULL = "cccccccccc".repeat(6) + "1234"
+  const LOOP_META = {
+    sha256: LOOP_FULL,
+    type: "video/mp4",
+    width: 1000,
+    height: 1000,
+    duration: 30,
+  }
+  const loopBoard = (spanSeconds) => {
+    const records = []
+    for (let i = 0; i < 12; i++) {
+      records.push(
+        LOOP_SHA,
+        String((i % 4) * 27),
+        String(Math.floor(i / 4) * 50),
+        "27",
+        packHField(50, {
+          crop: null,
+          autoCrop: null,
+          trim: { start: 0, end: spanSeconds },
+          lock: null,
+          orient: null,
+        })
+      )
+    }
+    return records
+  }
+  const loopOpts = (spanSeconds) => ({
+    layout: ["v2", ...loopBoard(spanSeconds)],
+    boardWidth: 2000,
+    boardHeight: 4000,
+    targetWidth: 2000,
+    length: { mode: "cap", seconds: 30 },
+    getMeta: async () => LOOP_META,
+    probe: () => ({ playing: true, muted: true, duration: 30, width: null, height: null }),
+  })
+  const budget = LIMITS.max_mosaic_loop_mb * 1024 * 1024
+  const bytesOf = (doc) =>
+    estimateLoopBytes(
+      doc.body.items,
+      doc.body.fps,
+      composeTargetCs(
+        doc.body.output.length,
+        doc.body.items.map((i) => i.time),
+        "mp4",
+        LIMITS
+      )
+    )
+
+  const short = await built(loopOpts(3))
+  check(
+    "a composition inside the budget is left at the width it asked for",
+    short.clampedWidth === null && bytesOf(short) <= budget,
+    `${short.width}x${short.height}, ${Math.round(bytesOf(short) / 1024 / 1024)} MB`
+  )
+  const long = await built(loopOpts(5))
+  check(
+    "…and one over it is re-solved smaller until it fits",
+    long.clampedWidth !== null && bytesOf(long) <= budget,
+    `${long.width}x${long.height} clamped=${long.clampedWidth}, ${Math.round(bytesOf(long) / 1024 / 1024)} MB`
+  )
+  check(
+    "…which is a SMALLER canvas of the same twelve pins, not fewer pins",
+    long.width < short.width &&
+      long.body.items.length === 12 &&
+      long.skipped.length === 0,
+    `${long.width} vs ${short.width}, ${long.body.items.length} items`
+  )
+  // The invariant, at a budget no ordinary mosaic could meet: a document is
+  // NEVER handed back over the limit. Refusing is allowed (the canvas floor is
+  // reached first for absurd budgets); posting one the server would turn away
+  // is not.
+  const tinyLimits = { ...LIMITS, max_mosaic_loop_mb: 1 }
+  const hopeless = await build({ ...loopOpts(5), limits: tinyLimits })
+  check(
+    "no budget ever yields a document over it",
+    hopeless.ok === false ||
+      estimateLoopBytes(
+        hopeless.doc.body.items,
+        hopeless.doc.body.fps,
+        composeTargetCs(
+          hopeless.doc.body.output.length,
+          hopeless.doc.body.items.map((i) => i.time),
+          "mp4",
+          tinyLimits
+        )
+      ) <= 1024 * 1024,
+    hopeless.ok ? `${hopeless.doc.width}x${hopeless.doc.height}` : hopeless.detail
+  )
+}
+
+// ---- natural dimensions: the element's, when it is mounted --------------
+
+{
+  check(
+    "a mounted element's naturals win over the index's record",
+    shape(naturalSize({ width: 1920, height: 1080 }, { width: 1080, height: 1920 })) ===
+      shape({ width: 1080, height: 1920 })
+  )
+  check(
+    "…and are taken as a PAIR, never mixed with the index's",
+    shape(naturalSize({ width: 1920, height: 1080 }, { width: 1080, height: null })) ===
+      shape({ width: 1920, height: 1080 })
+  )
+  check(
+    "an unmounted pin falls back to the index",
+    shape(naturalSize({ width: 800, height: 600 }, null)) === shape({ width: 800, height: 600 })
+  )
+  check(
+    "and neither source is no size at all",
+    naturalSize({ width: null, height: null }, { width: 0, height: 0 }) === null
+  )
+  // End to end: the same board, one pin mounted at the OTHER aspect (a rotated
+  // video, which a browser reports already rotated). The document is written
+  // in the element's pixels, which is where the server's compositor reads.
+  const doc = await built({
+    probe: (key) =>
+      key.endsWith(VIDEO_SHA)
+        ? { ...PLAYING, width: 1080, height: 1920 }
+        : null,
+  })
+  check(
+    "the document's source rect is in the ELEMENT's pixels",
+    doc.body.items[0].src.w === 864 &&
+      doc.body.items[0].src.h === 1536 &&
+      doc.body.items[0].src.x + doc.body.items[0].src.w <= 1080,
+    shape(doc.body.items[0].src)
   )
 }
 

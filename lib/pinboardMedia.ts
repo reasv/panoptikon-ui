@@ -80,6 +80,19 @@ export interface PinVideoState {
   muted: boolean
   /** The element's own duration in seconds, when it is a finite number. */
   duration: number | null
+  /**
+   * The element's NATURAL pixel size (`videoWidth`/`videoHeight`), null until
+   * it has metadata.
+   *
+   * The same numbers `findPinVideoFrame` hands the canvas compositor, carried
+   * so the composition document can be written in them too. A browser reports
+   * a rotated video already rotated and a non-square-pixel one already
+   * corrected, where the index records the container's coded dimensions — and
+   * the server's compositor assumes the browser's reading, so a document built
+   * on the index's would place a rect the canvas mosaic never drew.
+   */
+  width: number | null
+  height: number | null
 }
 
 /**
@@ -94,6 +107,9 @@ export interface VideoStateProbe {
   readyState: number
   muted: boolean
   duration: number
+  /** Optional: an element with no metadata yet reports 0 for both. */
+  videoWidth?: number
+  videoHeight?: number
 }
 
 /**
@@ -109,6 +125,8 @@ export interface VideoStateProbe {
 export function videoStateOf(video: VideoStateProbe | null): PinVideoState | null {
   if (!video) return null
   const duration = video.duration
+  const natural = (value: number | undefined) =>
+    typeof value === "number" && isFinite(value) && value > 0 ? value : null
   return {
     playing:
       !video.paused && !video.ended && video.readyState >= HAVE_CURRENT_DATA,
@@ -117,6 +135,8 @@ export function videoStateOf(video: VideoStateProbe | null): PinVideoState | nul
       typeof duration === "number" && isFinite(duration) && duration > 0
         ? duration
         : null,
+    width: natural(video.videoWidth),
+    height: natural(video.videoHeight),
   }
 }
 

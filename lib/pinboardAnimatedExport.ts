@@ -34,10 +34,12 @@ import {
 } from "@/lib/state/pinboardMosaicPrefs"
 import { useVideoComposeEnabled } from "@/lib/useClientConfig"
 import { useVideoPresets } from "@/lib/useVideoPresets"
+import { createMenuGuard } from "@/lib/menuGuard"
 import {
   POLL_TIMEOUT_MS,
   errorDetail,
   followTranscodeJob,
+  forgetTranscodeState,
   isTerminalState,
   jobIdFromSubmit,
   setTranscodeState,
@@ -51,8 +53,9 @@ import { abandonJob, awaitTerminal, raceDeadline } from "@/lib/videoClip"
 // video or animated image instead.
 //
 // Structurally `useMosaicExport`'s twin — one export at a time through the same
-// `exportGuard`, one progress toast, one download, one receipt — with the
-// composite happening on the other side of a job: build the document
+// `exportGuard` (handed over to a narrower guard of its own once the job is the
+// server's, see `composeGuard`), one progress toast, one download, one receipt
+// — with the composite happening on the other side of a job: build the document
 // (lib/pinboardCompose.ts), POST it, follow the job through the SAME store and
 // SSE machinery the clip export uses, download the artifact.
 //
@@ -82,9 +85,34 @@ const ERROR_TOAST_MS = 7000
  */
 const TARGET_WIDTH = 4096
 
-/** True while any export — canvas or composition — is in flight. */
+/**
+ * The JOB half of an animated save, as a guard of its own.
+ *
+ * `exportGuard` is the app's single re-entrancy flag for work that runs HERE —
+ * a full-resolution canvas, a twelve-pin metadata resolve, a document being
+ * POSTed — and holding it for the whole of a composition would freeze every
+ * export surface in the app behind a render that runs on the SERVER and can
+ * legitimately take minutes. There is nothing in this tab to protect during
+ * that wait.
+ *
+ * What is still worth preventing is a second COMPOSITION: they are the
+ * heaviest thing the pool takes, and two of them from one board is the same
+ * accident a double-click is. So the guard is handed over at the moment the
+ * POST is accepted — narrow, module-scoped for the reason lib/menuGuard.ts
+ * documents, and consulted by the animated rows alone.
+ */
+const composeGuard = createMenuGuard()
+
+/** True while a composition job this tab started is still running. */
+export function useComposeBusy(): boolean {
+  return composeGuard.useBusy()
+}
+
+/** True while any export — canvas, item or composition — is in flight. */
 export function useAnimatedExporting(): boolean {
-  return useExporting()
+  const exporting = useExporting()
+  const composing = useComposeBusy()
+  return exporting || composing
 }
 
 /** The one-line description the progress toast carries while a job runs. */
@@ -139,19 +167,32 @@ export interface AnimatedExportRequest {
 /**
  * Build, POST, follow, download, report.
  *
- * The guard is taken BEFORE the document is built (a second click during a
+ * TWO guards, held over two different stretches. `exportGuard` — the app-wide
+ * one — is taken BEFORE the document is built (a second click during a
  * twelve-pin metadata resolve is the same accident as one during an encode)
- * and released in a `finally` that the deadline race cannot outlive — the
- * reason `awaitTerminal` hands back its `cancel` and `raceDeadline` clears its
- * timer: a wait with no deadline would hold this guard, and with it every
- * export surface in the app, for the life of the tab.
+ * and released the moment the POST is answered: everything it protects has
+ * happened by then, and the rest of this function is a wait on a server. From
+ * there `composeGuard` takes over, which only the animated rows consult (see
+ * above). Both are cleared in a `finally` the deadline race cannot outlive —
+ * the reason `awaitTerminal` hands back its `cancel` and `raceDeadline` clears
+ * its timer: a wait with no deadline would hold a guard for the life of the
+ * tab.
  */
 export async function exportAnimatedComposition(
   options: AnimatedExportRequest
 ): Promise<void> {
   const { preset, rowLabel, build, dbs } = options
-  if (exportGuard.busy) return
+  if (exportGuard.busy || composeGuard.busy) return
   exportGuard.set(true)
+  let holding = true
+  const release = () => {
+    if (!holding) return
+    holding = false
+    exportGuard.set(false)
+  }
+  // The store entry this job is followed under, once there is one — dropped in
+  // the finally, since a job id is a UUID and its key can never be reused.
+  let storeKey: string | null = null
 
   const progress = toast({
     title: `Preparing ${rowLabel}…`,
@@ -199,7 +240,12 @@ export async function exportAnimatedComposition(
         fail("The server sent no job id")
         return
       }
+      // The document is on the server's books: hand the app-wide guard back
+      // and hold only the composition one for the wait.
+      composeGuard.set(true)
+      release()
       const key = composeStoreKey(jobId)
+      storeKey = key
       setTranscodeState(key, state)
       followTranscodeJob(key, jobId)
       const wait = awaitTerminal(key, (next) => step(composeProgressText(next)))
@@ -230,7 +276,11 @@ export async function exportAnimatedComposition(
   } catch {
     fail("The composition request failed")
   } finally {
-    exportGuard.set(false)
+    release()
+    composeGuard.set(false)
+    // The verdict has been consumed (downloaded, or said out loud in a toast),
+    // and nothing can ask for this job again — the next save mints a new id.
+    if (storeKey) forgetTranscodeState(storeKey)
   }
 }
 
@@ -238,14 +288,17 @@ export async function exportAnimatedComposition(
  * What actually landed. Skipped pins are NAMED (as a count — the shas mean
  * nothing to a reader) rather than silently dropped: a mosaic quietly missing
  * two items looks like a bug in the arrangement.
+ *
+ * Two causes wear one word, because the fix is the same either way: a pin
+ * whose metadata never arrived, and one the capture edge cut down to a sliver.
  */
 function receipt(doc: CompositionDoc, filename: string): string {
   const parts = [`${doc.width}×${doc.height}`, `${doc.body.items.length} items`]
   if (doc.skipped.length > 0) {
     parts.push(
       doc.skipped.length === 1
-        ? "1 pin omitted (details unavailable)"
-        : `${doc.skipped.length} pins omitted (details unavailable)`
+        ? "1 pin omitted (unavailable, or cut off)"
+        : `${doc.skipped.length} pins omitted (unavailable, or cut off)`
     )
   }
   return `${filename} — ${parts.join(", ")}`
@@ -361,10 +414,14 @@ export function useComposeScope(
   )
 
   const metas = placements.map((p) => cachedItemMeta(queryClient, dbs, p.sha256))
-  const known = metas.some((meta) => meta != null)
-  const hasVideo = known
-    ? metas.some((meta) => (meta?.type ?? "").startsWith("video/"))
-    : anyPinPlayable(placements)
+  // Either signal alone is enough, and neither is checked first: the cache is
+  // partial by nature (a board whose first pin resolved and whose video pin has
+  // not would read as "no video" if a single cache hit were taken as the whole
+  // answer), and the DOM marker is a POSITIVE fact — a mounted player is a
+  // video whatever the cache knows about it.
+  const hasVideo =
+    metas.some((meta) => (meta?.type ?? "").startsWith("video/")) ||
+    anyPinPlayable(placements)
 
   const times = placements.map((placement, i) => {
     const meta = metas[i]
@@ -431,7 +488,9 @@ export function useAnimatedMosaicExport(
   const enabled = useVideoComposeEnabled()
   const { presets, limits } = useVideoPresets("mosaic")
   const getMeta = useItemMetaLoader(dbs)
-  const busy = useExporting()
+  // Both guards: a canvas export in this tab, or a composition already
+  // rendering on the server (see composeGuard).
+  const busy = useExporting() || useComposeBusy()
   const scope = useComposeScope(keys, length)
 
   const save = (preset: ComposePreset & { ext: string }, label: string) => {
@@ -491,7 +550,9 @@ export function useAnimatedItemExport(key: string | null): AnimatedRowSet {
   const { presets, limits } = useVideoPresets("mosaic")
   const queryClient = useQueryClient()
   const getMeta = useItemMetaLoader(dbs)
-  const busy = useExporting()
+  // Both guards: a canvas export in this tab, or a composition already
+  // rendering on the server (see composeGuard).
+  const busy = useExporting() || useComposeBusy()
 
   const boardWidth = measuredWidth()
   const parsed = parseBoard(layout)
