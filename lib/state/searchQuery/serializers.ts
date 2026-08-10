@@ -1,7 +1,6 @@
 import { createSerializer } from "nuqs/server"
 import * as def from "nuqs/server"
 import {
-  OrderArgsType,
   orderParamsKeyMap,
   tagFiltersKeyMap,
   fileFiltersKeyMap,
@@ -22,7 +21,7 @@ import {
   rrfKeyMapSemanticAudio,
 } from "./searchQueryKeyMaps"
 import { createScopedSerializer } from "../nuqsScopedWrappers/scopedSerializer"
-import { ReadonlyURLSearchParams } from "next/navigation"
+import type { ReadonlyURLSearchParams } from "next/navigation"
 import { GRID_SCROLL_ANCHOR_KEY } from "../gridScroll"
 
 export const serializers = {
@@ -95,6 +94,47 @@ export const getSearchPageURL = (
   queryParams.delete(GRID_SCROLL_ANCHOR_KEY)
   return serializers.orderArgs(queryParams, {
     page: newPage,
+  })
+}
+
+// The grid scroll anchor on its own, for the links below. The parser has to
+// be the one lib/state/gridScroll.ts uses for the same key, or a link and the
+// hook that reads it back would disagree about the param they share.
+const scrollAnchorSerializer = createSerializer({
+  [GRID_SCROLL_ANCHOR_KEY]: def.parseAsInteger,
+})
+
+/**
+ * A virtual page's link in scroll mode: the same destination
+ * `getSearchPageURL` builds, addressed as a position instead of a page.
+ *
+ * Virtual page N covers items `[(N-1)*k, N*k)` with k = `page_size`, so its
+ * link is `top = (N-1)*k` and no `page` at all — scroll mode's whole defence
+ * against two live position params is that `page` never exists there, and a
+ * middle-clicked page link must not be the one URL that reintroduces it.
+ *
+ * `top` is REMOVED rather than written as 0 for the first page: the codec's
+ * convention is "absent while the top row is visible", so writing an explicit
+ * zero would put a parameter in every fresh link that means what blank
+ * already means.
+ *
+ * k comes in as an argument — this is a pure serializer, and the caller is
+ * the one holding the page-size state. `k < 1` is "no pagination": one
+ * unbounded virtual page, hence the top of the set.
+ */
+export const getScrollPositionURL = (
+  base: ReadonlyURLSearchParams | URLSearchParams,
+  newPage: number,
+  pageSize: number
+) => {
+  const queryParams = new URLSearchParams(base)
+  // The literal key `orderParamsKeyMap` addresses (see getSearchPageURL's
+  // `{ page }` above): dropped outright, not set to 1, so the URL says
+  // "position, not pagination".
+  queryParams.delete("page")
+  const anchor = pageSize >= 1 ? Math.max(newPage - 1, 0) * pageSize : 0
+  return scrollAnchorSerializer(queryParams, {
+    [GRID_SCROLL_ANCHOR_KEY]: anchor > 0 ? anchor : null,
   })
 }
 

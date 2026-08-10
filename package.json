@@ -19,7 +19,8 @@
     "test:transcode": "node --experimental-strip-types scripts/transcode.test.mjs",
     "test:cliprequest": "node --experimental-strip-types scripts/clipRequest.test.mjs",
     "test:compose": "node --experimental-strip-types scripts/compose.test.mjs",
-    "test:fileshare": "node --experimental-strip-types scripts/fileshare.test.mjs"
+    "test:fileshare": "node --experimental-strip-types scripts/fileshare.test.mjs",
+    "test:scrollmode": "node --experimental-strip-types scripts/scrollmode.test.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.1.2",

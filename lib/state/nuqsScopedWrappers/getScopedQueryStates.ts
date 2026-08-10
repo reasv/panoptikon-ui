@@ -1,4 +1,4 @@
-import { UseQueryStatesKeysMap } from "nuqs"
+import type { UseQueryStatesKeysMap } from "nuqs"
 
 export function getScopedUrlKeys<KeyMap extends UseQueryStatesKeysMap>(
   keyMap: KeyMap,
