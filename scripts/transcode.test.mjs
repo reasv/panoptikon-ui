@@ -120,6 +120,17 @@ check(
       state: "done",
       artifactUrl: "/api/video/artifact?key=k",
       filename: "holiday-clip.mp4",
+      // The deliverable half of the same ArtifactRef — what "Copy, don't
+      // download" hands to the clipboard. Pinned in full by
+      // scripts/artifactShare.test.mjs; here only so this shape stays honest.
+      artifact: {
+        key: "k",
+        url: "/api/video/artifact?key=k",
+        filename: "holiday-clip.mp4",
+        size: null,
+        sha256: null,
+        path: null,
+      },
     })
 )
 // The download name is the SERVER's (ArtifactRef.filename), on both the hit

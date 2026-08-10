@@ -6,6 +6,10 @@ import type { Playability } from "@/lib/videoPlayability"
 // Type-only for a second reason: `@/lib/panoptikon` is a .d.ts, so a VALUE
 // import of it would be a runtime module the node test scripts cannot resolve.
 import type { components } from "@/lib/panoptikon"
+// Relative, not aliased, and pure by construction on the other side (no React,
+// no browser globals) — so a node test script that imports this module for its
+// parsers pulls the deliverable shape in with it.
+import type { DeliverableArtifact } from "./artifactShareMeta"
 
 // The playback half of the transcode surface (docs/video-transcoding-design.md
 // §2 and §8): ask the server for a playable rendition of one item, follow the
@@ -39,8 +43,21 @@ export type TranscodeState =
    * the request was trimmed. Null when the server sent none — an older
    * gateway, or a payload the defensive parse below could not read. The
    * PLAYBACK path never reads it; it mounts the URL and nothing else.
+   *
+   * `artifact` is the SAME answer in the shape a delivery needs (the key the
+   * server-side clipboard copy addresses, the hash and size the Relay verifies
+   * against, the host path it maps). Null when the payload carried no usable
+   * `ArtifactRef` — an older gateway, or one the defensive parse could not
+   * read — which is why `artifactUrl` and `filename` remain first-class
+   * alongside it: the download path must keep working with no artifact object
+   * at all.
    */
-  | { state: "done"; artifactUrl: string; filename: string | null }
+  | {
+      state: "done"
+      artifactUrl: string
+      filename: string | null
+      artifact: DeliverableArtifact | null
+    }
   /**
    * `sticky` separates the two failures that used to wear one shape.
    *
@@ -116,6 +133,48 @@ function field<T>(record: Record<string, unknown>, key: keyof T & string): unkno
   return record[key]
 }
 
+/** A wire field as a non-empty string, or null. The parse's one narrowing. */
+function text(value: unknown): string | null {
+  return typeof value === "string" && value ? value : null
+}
+
+/**
+ * The finished artifact in the shape a DELIVERY needs, off the same
+ * defensively-parsed record the `done` state is built from. Both parse sites
+ * (the job event and the `hit` submit response) carry an identical
+ * `ArtifactRef`, so both read it through here.
+ *
+ * `key` is what makes the object exist: the server-side clipboard copy
+ * addresses an artifact by key and by nothing else, so a payload without one
+ * is not deliverable however much else it carried — null, and the caller's
+ * download path (which needs only the URL) takes over. Everything else
+ * degrades to null field by field: an absent `sha256` or `path` disqualifies
+ * the relay leg (see `relayEligibleArtifact`) rather than failing it, and an
+ * absent size is left null rather than coerced to 0, which is a legitimate
+ * value.
+ *
+ * `url` is passed in already validated — the caller has to prove it is a
+ * usable string before there is a `done` state at all, and reading the field
+ * twice could only produce two different answers.
+ */
+function deliverableArtifact(
+  artifact: Record<string, unknown> | null,
+  url: string,
+): DeliverableArtifact | null {
+  if (!artifact) return null
+  const key = text(field<ArtifactRef>(artifact, "key"))
+  if (!key) return null
+  const size = field<ArtifactRef>(artifact, "size_bytes")
+  return {
+    key,
+    url,
+    filename: text(field<ArtifactRef>(artifact, "filename")),
+    size: typeof size === "number" && isFinite(size) && size >= 0 ? size : null,
+    sha256: text(field<ArtifactRef>(artifact, "sha256")),
+    path: text(field<ArtifactRef>(artifact, "path")),
+  }
+}
+
 /** One snapshot (SSE event or polled body) as a state, or null if unusable. */
 export function stateFromEvent(payload: unknown): TranscodeState | null {
   const event = asRecord(payload)
@@ -155,6 +214,7 @@ export function stateFromEvent(payload: unknown): TranscodeState | null {
         state: "done",
         artifactUrl: url,
         filename: typeof filename === "string" && filename ? filename : null,
+        artifact: deliverableArtifact(artifact, url),
       }
     }
     case JOB_STATE.failed: {
@@ -191,6 +251,7 @@ export function stateFromSubmit(payload: unknown): TranscodeState {
         state: "done",
         artifactUrl: url,
         filename: typeof filename === "string" && filename ? filename : null,
+        artifact: deliverableArtifact(artifact, url),
       }
     }
     return retryableFailure("The cached rendition has no URL")
