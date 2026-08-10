@@ -87,8 +87,11 @@ export interface ComposeItemMeta {
   duration?: number | null
 }
 
-/** The animated-image container, the one with a length cap on it. */
-const ANIMATED_CONTAINER: Container = "webp"
+/** The animated-image containers, the ones with a length cap on them. */
+const ANIMATED_CONTAINERS: ReadonlySet<Container> = new Set(["webp", "avif"])
+
+const isAnimatedContainer = (container: Container): boolean =>
+  ANIMATED_CONTAINERS.has(container)
 
 /**
  * Fallback composition limits, for the window between a menu opening and the
@@ -251,10 +254,9 @@ function composeRowFits(
   requestedSeconds: number,
   limits: TranscodeLimits | null
 ): boolean {
-  const limit =
-    preset.container === ANIMATED_CONTAINER
-      ? limits?.max_animated_image_seconds
-      : limits?.max_output_seconds
+  const limit = isAnimatedContainer(preset.container)
+    ? limits?.max_animated_image_seconds
+    : limits?.max_output_seconds
   if (limit == null) return false
   return requestedSeconds <= limit
 }
@@ -311,7 +313,7 @@ export function composeTargetCs(
       : Math.round((longestSpanSeconds(times) ?? STILLS_ONLY_TARGET_SECONDS) * 100)
   const capCs = Math.max(
     1,
-    Math.round((container === ANIMATED_CONTAINER ? maxAnimated : maxOutput) * 100)
+    Math.round((isAnimatedContainer(container) ? maxAnimated : maxOutput) * 100)
   )
   return Math.min(Math.max(requested, 1), capCs)
 }
@@ -713,7 +715,7 @@ export async function buildCompositionDoc(
   }
 
   const bounds = canvasBounds(limits, preset)
-  const carriesAudio = preset.container !== ANIMATED_CONTAINER
+  const carriesAudio = !isAnimatedContainer(preset.container)
   // Resolved ONCE per sha across every pass below: the clamp loops re-solve
   // the geometry, never the item table, and a lookup is a request.
   const metas = new Map<string, ComposeItemMeta | null>()
@@ -931,7 +933,7 @@ export function buildItemCompositionDoc(
     cell: { left: 0, top: 0, width: canvasW, height: canvasH },
     canvasW,
     canvasH,
-    carriesAudio: preset.container !== ANIMATED_CONTAINER,
+    carriesAudio: !isAnimatedContainer(preset.container),
   })
   if (!item) {
     return refuse(

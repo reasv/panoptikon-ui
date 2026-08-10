@@ -46,7 +46,9 @@ import {
 /** Ceiling for the in-progress toast; it is dismissed on every real outcome. */
 const PROGRESS_TOAST_MS = 10 * 60 * 1000
 const RECEIPT_TOAST_MS = 4000
-const ERROR_TOAST_MS = 6000
+// Long enough to actually read an ffmpeg stderr tail, and Radix pauses the
+// timer while the pointer is over the toast (which copying requires anyway).
+const ERROR_TOAST_MS = 30000
 
 // ---- the request (pure) -------------------------------------------------
 
@@ -183,21 +185,24 @@ export function clipStoreKey(
  * profile carries its own, and inventing one for it would both hide the name
  * its author chose and collide with these.
  *
- * All three of them, and the wording is chosen by CONTAINER rather than by id
- * — an mp4/webm row is a video ("Clip", "Re-encode"), a webp row is an
- * animated image and says so. The earlier set named two of the three, which
- * meant the shipped `webp-anim` fell through to the untouched server label:
- * one row in the menu that never learned whether it was about to encode a trim
- * or the whole file, next to two that did.
+ * All of them, and the wording is chosen by CONTAINER rather than by id
+ * — an mp4/webm row is a video ("Clip", "Re-encode"), a webp/avif row is an
+ * animated image and says so. The earlier set named two of the three then
+ * shipping, which meant `webp-anim` fell through to the untouched server
+ * label: one row in the menu that never learned whether it was about to
+ * encode a trim or the whole file, next to two that did.
  */
-const BUILTIN_CLIP_PRESETS = new Set(["clip", "clip-fast", "webp-anim"])
+const BUILTIN_CLIP_PRESETS = new Set(["clip", "clip-fast", "webp-anim", "avif-anim"])
 
 type TranscodePreset = components["schemas"]["TranscodePresetInfo"]
 type PresetRow = Pick<TranscodePreset, "id" | "label" | "channel" | "container">
 type TranscodeLimits = components["schemas"]["TranscodeLimits"]
 
-/** The animated-image container, the one the server puts a length cap on. */
-const ANIMATED_CONTAINER: TranscodePreset["container"] = "webp"
+/** The animated-image containers, the ones the server puts a length cap on. */
+const ANIMATED_CONTAINERS: ReadonlySet<TranscodePreset["container"]> = new Set([
+  "webp",
+  "avif",
+])
 
 /**
  * What one clip row says. `trimmed` is whether `clipRequestFor` returned a
@@ -207,10 +212,11 @@ const ANIMATED_CONTAINER: TranscodePreset["container"] = "webp"
  */
 export function clipRowLabel(preset: PresetRow, trimmed: boolean): string {
   if (!BUILTIN_CLIP_PRESETS.has(preset.id)) return preset.label
-  if (preset.container === ANIMATED_CONTAINER) {
-    // No channel split: one animated-image preset ships, and "fast" is not a
-    // choice the user is being offered between two rows here.
-    return trimmed ? "Animated WebP (trimmed)" : "Animated WebP"
+  if (ANIMATED_CONTAINERS.has(preset.container)) {
+    // No channel split: one animated-image preset ships per container, and
+    // "fast" is not a choice the user is being offered between two rows here.
+    const name = preset.container === "avif" ? "Animated AVIF" : "Animated WebP"
+    return trimmed ? `${name} (trimmed)` : name
   }
   const fast = preset.channel === "fast"
   if (trimmed) return fast ? "Clip (trimmed, fast)" : "Clip (trimmed)"
@@ -260,7 +266,7 @@ function clipRowFits(
   windowSeconds: number | null,
   limits: TranscodeLimits | null,
 ): boolean {
-  if (preset.container !== ANIMATED_CONTAINER) return true
+  if (!ANIMATED_CONTAINERS.has(preset.container)) return true
   const limit = limits?.max_animated_image_seconds
   if (limit == null || windowSeconds == null) return false
   return windowSeconds <= limit
@@ -579,8 +585,18 @@ export async function exportClip(options: {
     progress.dismiss()
     toast({ title, description, duration })
   }
-  const fail = (detail: string) =>
-    finish("Clip export failed", detail, ERROR_TOAST_MS)
+  // `copyText` buys the failure toast the wrap-and-scroll body and the copy
+  // button: an ffmpeg stderr tail is unreadable clipped and useless
+  // untranscribable.
+  const fail = (detail: string) => {
+    progress.dismiss()
+    toast({
+      title: "Clip export failed",
+      description: detail,
+      duration: ERROR_TOAST_MS,
+      copyText: detail,
+    })
+  }
 
   try {
     const { data, error } = await fetchClient.POST("/api/video/transcode", {

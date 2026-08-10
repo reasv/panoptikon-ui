@@ -223,6 +223,7 @@ check(
 const CLIP = { id: "clip", label: "Clip (quality)", channel: "quality", container: "mp4" }
 const CLIP_FAST = { id: "clip-fast", label: "Clip (fast)", channel: "fast", container: "mp4" }
 const WEBP = { id: "webp-anim", label: "Animated WebP", channel: "fast", container: "webp" }
+const AVIF = { id: "avif-anim", label: "Animated AVIF", channel: "fast", container: "avif" }
 const CUSTOM = {
   id: "my-profile",
   label: "Instagram 1080",
@@ -253,10 +254,12 @@ check(
 // signal as the others — it used to fall through to the server's untouched
 // label, the one row in the menu that never said which of the two it was.
 check(
-  "the animated-image row is labelled by its container, with the same signal",
+  "the animated-image rows are labelled by their container, with the same signal",
   clipRowLabel(WEBP, true) === "Animated WebP (trimmed)" &&
-    clipRowLabel(WEBP, false) === "Animated WebP",
-  `${clipRowLabel(WEBP, true)} / ${clipRowLabel(WEBP, false)}`
+    clipRowLabel(WEBP, false) === "Animated WebP" &&
+    clipRowLabel(AVIF, true) === "Animated AVIF (trimmed)" &&
+    clipRowLabel(AVIF, false) === "Animated AVIF",
+  `${clipRowLabel(WEBP, true)} / ${clipRowLabel(AVIF, true)}`
 )
 check(
   "clipRows preserves the server's order and pairs each label with its preset",
@@ -290,7 +293,7 @@ check(
 // hidden row rather than as a disabled one — and only the webp row is touched,
 // since a long mp4 is exactly what a whole-file re-encode is for.
 
-const ALL = [CLIP, CLIP_FAST, WEBP]
+const ALL = [CLIP, CLIP_FAST, WEBP, AVIF]
 check(
   "the window is the trim when there is one, the item's duration when there is not",
   clipWindowSeconds({ start_cs: 100, end_cs: 600 }, 600) === 5 &&
@@ -308,10 +311,10 @@ check(
   "a trim inside the cap offers every row",
   shape(
     rowIds(clipRows(ALL, { request: { end_cs: 500 }, duration: 600, limits: LIMITS }))
-  ) === shape(["clip", "clip-fast", "webp-anim"])
+  ) === shape(["clip", "clip-fast", "webp-anim", "avif-anim"])
 )
 check(
-  "a trim past it drops the animated row and keeps the video ones",
+  "a trim past it drops both animated rows and keeps the video ones",
   shape(
     rowIds(clipRows(ALL, {
       request: { start_cs: 0, end_cs: 3500 },
@@ -328,7 +331,9 @@ check(
 check(
   "the cap is inclusive at its edge, like the server's own comparison",
   rowIds(clipRows(ALL, { request: { end_cs: 3000 }, duration: 600, limits: LIMITS }))
-    .includes("webp-anim")
+    .includes("webp-anim") &&
+    rowIds(clipRows(ALL, { request: { end_cs: 3000 }, duration: 600, limits: LIMITS }))
+      .includes("avif-anim")
 )
 check(
   "an untrimmed export measures the ITEM: short offers it, long does not",
