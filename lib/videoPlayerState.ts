@@ -229,9 +229,25 @@ function writeStoredVolume(value: StoredVolume) {
 
 export function useVideoPlayerState({
   videoRef,
+  element,
   persistVolume = false,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>
+  /**
+   * The mounted element, as STATE rather than a ref read.
+   *
+   * `showVideo` is not when the <video> appears any more. A needs-transcode
+   * item flips it on the play press and then mounts nothing until the job
+   * finishes — minutes later, with no state change this hook can see. The
+   * effects below keyed on `showVideo` alone therefore ran once against a null
+   * ref and never again, and the element arrived at volume 1.0 and 1x speed
+   * whatever the user had set. The in-session downgrade path (a `playable`
+   * item that errors and becomes a transcode) has the same shape.
+   *
+   * Optional: call sites that mount their element synchronously with
+   * `showVideo` keep working unchanged through `videoRef`.
+   */
+  element?: HTMLVideoElement | null
   persistVolume?: boolean
 }) {
   const [showVideo, setShowVideo] = React.useState(false)
@@ -240,24 +256,32 @@ export function useVideoPlayerState({
   const [showControls, setShowControls] = React.useState(false)
   const [volume, setVolumeState] = React.useState(1)
   // volume isn't a React prop on <video>, so re-apply it whenever the
-  // element (re)mounts (showVideo toggles remount it)
+  // element (re)mounts (showVideo toggles remount it, and `element` catches
+  // the mounts that happen without it)
   React.useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.volume = volume
+    // Resolved inside the effect, never during render — a ref read while
+    // rendering is the one thing the React Compiler forbids outright.
+    const el = element ?? videoRef.current
+    if (el) {
+      el.volume = volume
     }
-  }, [volume, showVideo, videoRef])
+  }, [volume, showVideo, element, videoRef])
   // Speed is situational, so it is never stored — but it must outlive the
   // ELEMENT: the gallery's <video> is keyed by item and remounts mid-
   // navigation (a fresh ref identity), and showVideo remounts it too. Both
   // hand back an element at the default 1x that React state disagrees with.
   const [playbackRate, setPlaybackRateState] = React.useState(1)
   React.useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.playbackRate = playbackRate
+    const el = element ?? videoRef.current
+    if (el) {
+      el.playbackRate = playbackRate
     }
-  }, [playbackRate, showVideo, videoRef])
+  }, [playbackRate, showVideo, element, videoRef])
   // Stored preference is applied once per mount (never during render: a
-  // localStorage read there would desync server and client markup)
+  // localStorage read there would desync server and client markup). Not keyed
+  // on `element`: it seeds the STATE the effect above then applies, and
+  // re-reading storage on a late mount would undo a volume the user changed
+  // while waiting.
   React.useEffect(() => {
     if (!persistVolume) return
     const stored = readStoredVolume()

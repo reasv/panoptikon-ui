@@ -22,3 +22,19 @@ export const useClientConfig = () => {
     queryFn: fetchClientConfig,
   })
 }
+
+// Whether this policy lets the client ask for a transcode. STRICT true: while
+// the config is still in flight the answer is "no", so a loading page never
+// offers a play button whose press would fire a 403-able POST. The cost is
+// that an unplayable item's play affordance appears a moment late — which is
+// exactly what the pre-transcode build showed for its whole lifetime.
+export const useVideoTranscodeEnabled = (): boolean =>
+  useClientConfig().data?.videoTranscodeEnabled === true
+
+// Whether this policy lets the client ask for a COMPOSITION (the animated
+// pinboard save). Strict true for the same reason, and deliberately a
+// different capability from the one above: the two routes are separately
+// rule-able, and a policy that grants clips but not mosaics must hide exactly
+// the rows that post to /api/video/compose.
+export const useVideoComposeEnabled = (): boolean =>
+  useClientConfig().data?.videoComposeEnabled === true

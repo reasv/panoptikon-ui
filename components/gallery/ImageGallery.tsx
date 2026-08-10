@@ -30,21 +30,47 @@ import { useSearchLoading } from '@/lib/state/zust'
 import { MediaControls } from './PlayButton'
 import React from 'react'
 import { PLAYBACK_RATES, setGalleryEndAction, useGalleryEndAction, useOutroSkipEnabled, useVideoPlayerState } from '@/lib/videoPlayerState'
-import { GALLERY_SURFACE_FLOOR, NativeControlsEscape, playerSizeForWidth, useVideoPlayerSurface, VideoPlayerSurface } from './VideoPlayerSurface'
-import { effectiveVideoTrim, outroCutPoint, outroProbeEligible, trimWithBound, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
+import { GALLERY_SURFACE_FLOOR, NativeControlsEscape, playerSizeForWidth, useVideoPlayerSurface, VideoDownloadControl, VideoPlayerSurface } from './VideoPlayerSurface'
+import { effectiveVideoTrim, outroCutPoint, outroProbeEligible, outroSkipGoverns, trimWithBound, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
+import { clipRequestFor } from '@/lib/videoClip'
 import { useVideoEndProbe } from '@/lib/videoEndProbe'
+import { noteVideoPlaybackError, shouldDowngradeOnError, useVideoPlayability, videoPlayability } from '@/lib/videoPlayability'
+import { useVideoPlayback } from '@/lib/videoTranscode'
+import { useVideoTranscodeEnabled } from '@/lib/useClientConfig'
 import { isEmptyTrim, TrimRange } from '@/lib/pinboardCrop'
 import { trimForSha } from '@/lib/galleryTrim'
 
-// What the gallery counts as a video: exactly what its <video> element is
-// allowed to load, and therefore exactly what the auto-advance chain may move
-// to (docs/video-end-action-design.md §3). Everything else — images,
-// animations, containers the browser will not play — is "not a video" here,
-// which is precisely what makes an unattended chain safe. ONE predicate for
-// the player gate and the advance scan: two copies of this list would let the
-// gallery advance onto something it then refuses to play.
-function isPlayableVideo(type: string | null | undefined): boolean {
-    return type === "video/mp4" || type === "video/webm"
+// What the auto-advance chain may move to (docs/video-end-action-design.md
+// §3): exactly the items this browser will play UNATTENDED, right now, with
+// no further gesture. Everything else — images, animations, containers the
+// browser will not decode — is "not a video" here, which is precisely what
+// makes an unattended chain safe.
+//
+// This used to be the `video/mp4 || video/webm` mime guess, shared verbatim
+// with the player's own gate. The playability tri-state
+// (lib/videoPlayability.ts) split that one question into two, and the two
+// answers are no longer the same predicate:
+//
+//   - the PLAYER GATE is `playability !== "unsupported"` — it includes
+//     `needs-transcode`, whose play affordance STARTS A JOB;
+//   - the ADVANCE SCAN is the `playable` rung alone, because a job is only
+//     ever started by a deliberate press (a GET never starts one). Landing
+//     the chain on a needs-transcode item would mount nothing, fire no
+//     `ended`, and stall the binge — the exact failure the mime guess was
+//     written to avoid.
+//
+// The scan's set is therefore a strict SUBSET of the player's, which is the
+// safe direction: the chain can never advance onto something the gallery then
+// refuses to play. It also picks up items the mime guess wrongly skipped (an
+// h264 `.mov` plays natively and now takes part in the chain).
+//
+// `transcodeEnabled` is deliberately hardcoded false: it only ever chooses
+// between `needs-transcode` and `unsupported`, and neither is `playable`, so
+// the flag cannot change this answer. That keeps the predicate a plain
+// function callable from the fetch continuation and the prefetch effect
+// without threading the client config through them.
+function isPlayableVideo(item: SearchResult | null | undefined): boolean {
+    return videoPlayability(item, { transcodeEnabled: false }) === "playable"
 }
 
 // Eviction horizon for the next page's rows, far above react-query's 5-minute
@@ -390,7 +416,7 @@ export function ImageGallery({
             turnTokenRef.current = null
             return
         }
-        const k = rows.findIndex((row) => isPlayableVideo(row.type))
+        const k = rows.findIndex((row) => isPlayableVideo(row))
         // Read at DECISION time, not at fire time: the user can enter or leave
         // fullscreen during the fetch, and a boolean captured before it gets
         // both directions wrong — an exit would end a chain the windowed rules
@@ -460,7 +486,7 @@ export function ImageGallery({
         // played, not that it advanced. Error skips never set it.
         if (playback) playedThisPageRef.current = true
         for (let i = index + 1; i < items.length; i++) {
-            if (isPlayableVideo(items[i].type)) {
+            if (isPlayableVideo(items[i])) {
                 // The arrow-key path minus the history entry: the element is
                 // keyed by sha, showVideo survives navigation, and autoPlay
                 // starts the next video.
@@ -494,9 +520,9 @@ export function ImageGallery({
         if (mode !== "advance" || resultsAreStale || !queryEnabled) return
         if (page >= totalPages) return
         const current = items[index]
-        if (!current || !isPlayableVideo(current.type)) return
+        if (!current || !isPlayableVideo(current)) return
         for (let i = index + 1; i < items.length; i++) {
-            if (isPlayableVideo(items[i].type)) return
+            if (isPlayableVideo(items[i])) return
         }
         const key = `${page}:${current.sha256}`
         if (prefetchedForRef.current === key) return
@@ -746,7 +772,18 @@ export function GalleryImageLarge(
 
     const searchLoading = useSearchLoading(state => state.loading)
 
-    const isPlayable = isPlayableVideo(item.type)
+    // The playability tri-state (lib/videoPlayability.ts) replaces the
+    // mp4-or-webm mime guess this used to be: `unsupported` is the only
+    // verdict with no play affordance, and `needs-transcode` mounts the
+    // server's rendition instead of the file.
+    //
+    // The PLAYER's gate, deliberately wider than the advance chain's
+    // `isPlayableVideo` above — see that comment for why the two predicates
+    // parted company (a needs-transcode item has a play button, but only a
+    // deliberate press may start its job, so the chain may not land on one).
+    const transcodeEnabled = useVideoTranscodeEnabled()
+    const playability = useVideoPlayability(item, transcodeEnabled)
+    const isPlayable = playability !== "unsupported"
     // ONE REF OBJECT PER ITEM. The <video> is keyed by sha and remounts on
     // gallery navigation (a bare src swap fires `emptied`, not `pause`), and
     // every player hook binds its listeners once per ref IDENTITY — deps are
@@ -770,8 +807,37 @@ export function GalleryImageLarge(
         setVideoSlot({ sha: item.sha256, ref: { current: null } })
     }
     const videoRef = videoSlot.ref
-    const videoState = useVideoPlayerState({ videoRef, persistVolume: true })
-    const showVideo = isPlayable && videoState.showVideo
+    // The element as STATE alongside the ref. A needs-transcode item mounts
+    // its <video> long after showVideo flips (when the job finishes), and the
+    // volume/speed effects key on `showVideo` — without this they would run
+    // once against a null ref and the rendition would arrive at full volume,
+    // 1x. Memoised, because an inline ref callback is a new function every
+    // render and React would detach/reattach (null, then the element) on each
+    // one; the identity changes only with the per-item ref slot, which is
+    // exactly when a fresh element mounts anyway.
+    const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null)
+    const attachVideo = React.useCallback((el: HTMLVideoElement | null) => {
+        videoRef.current = el
+        setVideoEl(el)
+    }, [videoRef])
+    const videoState = useVideoPlayerState({
+        videoRef,
+        element: videoEl,
+        persistVolume: true,
+    })
+    // The bytes the element actually mounts: the original file when the
+    // browser can decode it, the finished artifact once a needs-transcode
+    // item's job is done, and null until then — which is what keeps a play
+    // press from loading a file this browser would render as a black frame.
+    // The download row and the drag-out below deliberately keep `fileURL`.
+    const playback = useVideoPlayback({
+        sha256: item.sha256,
+        playability,
+        fileURL,
+        dbs,
+    })
+    const playbackURL = playback.url
+    const showVideo = isPlayable && videoState.showVideo && playbackURL != null
     // The wrapper holding the <video> AND the surface: the player's pointer
     // container (useIdleHide requires containment, or the controls vanish
     // under the pointer on the way to them) and its fullscreen target, so
@@ -943,13 +1009,17 @@ export function GalleryImageLarge(
     // (lib/videoEndProbe.ts). Its own offscreen element — never this one, no
     // visible video is seeked by it — so it is gated on the item's
     // eligibility and the preference, NOT on showVideo: the answer should be
-    // there before the first frame plays. `fileURL` is the same URL the
-    // <video> below loads, so the probe hits the browser cache the player
-    // will use.
+    // there before the first frame plays. The EFFECTIVE playback URL, not
+    // `fileURL`: the probe's whole contract is that it measures the bytes the
+    // player mounts, and a transcoded rendition has its own timeline. It is
+    // therefore also gated on there being a URL at all — an item still
+    // waiting on its encode has nothing to measure, and the probe cache stays
+    // keyed by the original sha either way.
     const probedVideoEnd = useVideoEndProbe(
-        fileURL,
+        playbackURL,
         item.sha256,
-        outroSkip && outroProbeEligible(item.content_end_ms, item.duration),
+        playbackURL != null
+        && outroSkip && outroProbeEligible(item.content_end_ms, item.duration),
     )
     const outroCut = outroCutPoint(
         item.content_end_ms,
@@ -1044,6 +1114,20 @@ export function GalleryImageLarge(
         return () => video.removeEventListener("play", onPlay)
     }, [mode, showVideo, videoRef])
 
+    // What a clip export of this item would ask for, computed HERE because
+    // this is the only place all three inputs exist together. `cut: "outro"`
+    // whenever the outro default is what ends playback — the server re-derives
+    // that boundary in the file's own timeline (see clipRequestFor).
+    //
+    // Independent of the end action above: what the export encodes is the
+    // RANGE, and the range is the same whether that end then loops, parks or
+    // advances.
+    const clipRequest = clipRequestFor(
+        trim,
+        effectiveTrim,
+        outroSkipGoverns(trim, outroCut, outroSkip),
+    )
+
     // The gallery's keyboard scope (docs/video-player-ui-design.md). Mounted
     // with the large image, so it is live exactly while the gallery owns the
     // screen and never while the pinboard branch replaces it. Arrows always
@@ -1099,6 +1183,10 @@ export function GalleryImageLarge(
                 )) return
                 if (e.shiftKey) return
                 e.preventDefault()
+                // Same verb as the S0 button: on a needs-transcode item the
+                // press is what asks for the rendition (a job is never
+                // started by anything but a deliberate play).
+                playback.start()
                 videoState.setPlaying(video ? video.paused : true)
                 player.show()
                 return
@@ -1189,7 +1277,7 @@ export function GalleryImageLarge(
         }
         window.addEventListener("keydown", onKey)
         return () => window.removeEventListener("keydown", onKey)
-    }, [isPlayable, showVideo, playerActive, prevImage, nextImage, videoState, player, trim, videoRef, setGalleryTrim, item.sha256])
+    }, [isPlayable, showVideo, playerActive, prevImage, nextImage, videoState, player, trim, videoRef, setGalleryTrim, item.sha256, playback])
 
     const handleDragStart = (event: React.DragEvent<HTMLImageElement>): void => {
         if (!fileURL) return;
@@ -1239,7 +1327,7 @@ export function GalleryImageLarge(
                             // `emptied`, not `pause`) — see videoRef above,
                             // which re-binds the hooks that listen to it.
                             key={item.sha256}
-                            ref={videoRef}
+                            ref={attachVideo}
                             autoPlay
                             // With a trim set, looping is useVideoTrim's job so
                             // it restarts from the trim start rather than 0.
@@ -1264,7 +1352,36 @@ export function GalleryImageLarge(
                                 "rounded object-contain max-h-full max-w-full h-full",
                                 videoIsPlayZone && "cursor-default",
                             )}
-                            src={fileURL}
+                            src={playbackURL ?? undefined}
+                            // Two unrelated failures wear the same event.
+                            //
+                            // An ARTIFACT that will not load is the job's
+                            // problem, never evidence about the source: the
+                            // global disk cache can evict it between `done`
+                            // and this fetch, and one automatic re-POST
+                            // recovers it (see useVideoPlayback).
+                            //
+                            // A failing SOURCE is the representative-profile
+                            // recovery (docs/video-transcoding-design.md §6):
+                            // a codec string can answer `probably` for a
+                            // stream this decoder cannot actually handle, and
+                            // the element is the only thing that knows. But
+                            // ONLY when it says DECODE — a dropped connection
+                            // must not take a perfectly playable codec away
+                            // for the rest of the session.
+                            onError={(e) => {
+                                if (playback.isArtifact) {
+                                    playback.noteArtifactError()
+                                    return
+                                }
+                                if (playability === "playable"
+                                    && shouldDowngradeOnError(e.currentTarget.error)) {
+                                    noteVideoPlaybackError(item.sha256)
+                                }
+                            }}
+                            // The artifact played, so the one automatic
+                            // recovery above is re-armed for next time
+                            onPlaying={playback.notePlaying}
                             // The element's own dimensions are the display
                             // ones (a rotated video reports them rotated), and
                             // they outrank both the thumbnail's and the item's
@@ -1348,6 +1465,42 @@ export function GalleryImageLarge(
                                     size={surfaceBox ? playerSizeForWidth(surfaceWidth) : "full"}
                                 />
                             </div>}
+                        {/* The download verb, anchored to the PICTURE's
+                            top-right exactly like the S2 escape kebab above —
+                            a sibling of the surface, not part of it, and
+                            inside the fullscreen host so it survives element
+                            fullscreen. Only in S1: with native controls up the
+                            escape kebab owns that corner, and the kebab's own
+                            "Download original" row is what serves both that
+                            state and the mini tier. */}
+                        {!videoState.showControls && (
+                            <div
+                                className={cn(
+                                    "pointer-events-none absolute",
+                                    !pictureBox && "inset-0",
+                                )}
+                                style={pictureBox ?? undefined}
+                            >
+                                <VideoDownloadControl
+                                    controller={player}
+                                    download={{
+                                        url: fileURL,
+                                        filename: downloadFileName(
+                                            item.path, item.sha256, item.type),
+                                    }}
+                                    clip={{
+                                        sha256: item.sha256,
+                                        dbs,
+                                        request: clipRequest,
+                                        // What an untrimmed row would encode:
+                                        // the animated-image row is offered
+                                        // only inside the server's cap
+                                        duration: item.duration,
+                                    }}
+                                    size={surfaceBox ? playerSizeForWidth(surfaceWidth) : "full"}
+                                />
+                            </div>
+                        )}
                     </div>
                     :
                     <a
@@ -1410,9 +1563,16 @@ export function GalleryImageLarge(
                     <MediaControls
                         isPlaying={false}
                         setPlaying={(playing) => {
+                            // The one place a playback transcode is ever
+                            // started: a deliberate press. Harmless on a
+                            // playable item (start() is a no-op there) and
+                            // deduplicated per sha:preset, so a second press
+                            // while the job runs joins instead of re-POSTing.
+                            playback.start()
                             videoState.setPlaying(playing)
                             player.show()
                         }}
+                        progress={playback.badge}
                         playButtonClassName="pointer-events-auto left-2 bottom-2"
                     />
                 </div>

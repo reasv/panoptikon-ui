@@ -33,8 +33,8 @@
 // Type-only imports are spelled out: node's --experimental-strip-types
 // (how scripts/mosaic.test.mjs exercises this module) cannot erase a type
 // hiding in a value import list.
-import type { CropRect, PinOrientation } from "./pinboardCrop"
-import { composeCrops, orientedSize, parseHField } from "./pinboardCrop"
+import type { CropRect, PinOrientation, TrimRange } from "./pinboardCrop"
+import { composeCrops, orientedSize, parseHField, sourceRect } from "./pinboardCrop"
 import type { GridParams } from "./pinboardGrid"
 import { rowStep } from "./pinboardGrid"
 
@@ -49,6 +49,134 @@ export interface PinPlacement {
   height: number
   crop: ReturnType<typeof composeCrops>
   orient: PinOrientation | null
+  /**
+   * The pin's playback trim, carried straight off the h field.
+   *
+   * Nothing that DRAWS a pin reads it — a canvas composite has only the frame
+   * the element is showing. It is here for the composition document
+   * (lib/pinboardCompose.ts), whose items carry time as well as geometry, and
+   * it rides on the placement rather than being re-parsed there so the two
+   * cannot disagree about which record a trim belongs to.
+   */
+  trim: TrimRange | null
+}
+
+/**
+ * Where a pin's picture sits inside its box, and where the whole (uncropped)
+ * media element would sit behind it. Container-local pixels throughout;
+ * `vis*` is the visible (cropped) region, `img*` the full element.
+ */
+export interface RestGeometry {
+  visL: number
+  visT: number
+  visW: number
+  visH: number
+  imgL: number
+  imgT: number
+  imgW: number
+  imgH: number
+}
+
+/**
+ * Fit the crop region into the container ("contain" semantics: the crop rect
+ * is treated as the source image, letterboxing on aspect mismatch).
+ *
+ * The exact framing CropView renders at rest — it lived there until the
+ * composition builder needed it, and a builder that cannot be loaded outside a
+ * browser is a builder whose numbers cannot be asserted against the
+ * compositor's. CropView re-exports it for its existing consumers, so this
+ * move is a relocation and nothing else: every caller runs the same arithmetic
+ * on the same inputs.
+ */
+export function computeRestGeometry(
+  W: number,
+  H: number,
+  c: CropRect,
+  nw: number,
+  nh: number
+): RestGeometry {
+  const cropPxW = c.w * nw
+  const cropPxH = c.h * nh
+  const scale = Math.min(W / cropPxW, H / cropPxH)
+  const visW = cropPxW * scale
+  const visH = cropPxH * scale
+  const visL = (W - visW) / 2
+  const visT = (H - visH) / 2
+  return {
+    visL,
+    visT,
+    visW,
+    visH,
+    imgL: visL - c.x * nw * scale,
+    imgT: visT - c.y * nh * scale,
+    imgW: nw * scale,
+    imgH: nh * scale,
+  }
+}
+
+/** A rectangle in whatever pixel space its producer names. */
+export interface DrawRect {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+/**
+ * What a pin draws: which part of the SOURCE, onto which part of the canvas.
+ *
+ * `src` is normalized (fractions of the source's own pixels, before its
+ * display orientation — multiply by the natural dimensions to get pixels);
+ * `dest` is the contain-fitted picture rect inside the cell, in the same
+ * coordinates the cell was given. The ORIENTATION is deliberately not applied
+ * to either: a canvas applies it as a transform (pinboardPreview's
+ * `orientDraw`) and ffmpeg as a filter, and baking it into a rectangle here
+ * would make one of them wrong.
+ *
+ * Null when the natural dimensions are unusable — metadata that has not
+ * arrived, or a source that decoded to nothing.
+ */
+export interface PinDraw {
+  src: CropRect
+  dest: DrawRect
+}
+
+/**
+ * The four lines every compositor runs before it draws a pin, in one place.
+ *
+ * `cell` is the rect to fit into; it defaults to the placement's own board
+ * rect, which is what a caller working in board coordinates wants. The two
+ * canvas compositors pass a translated (and, for the preview, scaled) rect
+ * instead, because the pin's box on their canvas is not its box on the board.
+ */
+export function resolvePinDraw(
+  placement: Pick<PinPlacement, "crop" | "orient" | "left" | "top" | "width" | "height">,
+  naturalWidth: number,
+  naturalHeight: number,
+  cell?: DrawRect
+): PinDraw | null {
+  if (!(naturalWidth > 0) || !(naturalHeight > 0)) return null
+  const box = cell ?? {
+    left: placement.left,
+    top: placement.top,
+    width: placement.width,
+    height: placement.height,
+  }
+  const c = placement.crop ?? { x: 0, y: 0, w: 1, h: 1 }
+  // Crops are stored in DISPLAY space, so the fit runs on the ORIENTED
+  // dimensions — exactly as CropView computes it — while the source rect has
+  // to be mapped back to source space for anything reading source pixels.
+  const [ow, oh] = orientedSize(naturalWidth, naturalHeight, placement.orient)
+  const geo = computeRestGeometry(box.width, box.height, c, ow, oh)
+  return {
+    src: sourceRect(c, placement.orient),
+    dest: {
+      left: box.left + geo.visL,
+      top: box.top + geo.visT,
+      width: geo.visW,
+      height: geo.visH,
+    },
+  }
 }
 
 /** Width of one grid column at a given board width (padded lattice). */
@@ -117,7 +245,7 @@ export function parsePlacements(
     if (sha256 === "__preview") continue
     const key = `${i}-${sha256}`
     if (only && !only.has(key)) continue
-    const { h, crop, autoCrop, orient } = parseHField(hField)
+    const { h, crop, autoCrop, orient, trim } = parseHField(hField)
     placements.push({
       key,
       sha256,
@@ -132,6 +260,7 @@ export function parsePlacements(
       ),
       crop: composeCrops(crop, autoCrop),
       orient,
+      trim,
     })
   }
   return placements
@@ -246,11 +375,19 @@ export type ClampedSolveResult =
  * passes are slack; the loop is only ever left by a solve that FIT, and a
  * run that exhausts its passes still oversized reports "too-large" rather
  * than handing back a geometry no canvas can hold.
+ *
+ * `clamp` is the bound being solved against, and it is a parameter because
+ * there are two of them: the BROWSER's canvas limits for an export that has
+ * to allocate one, and the SERVER's composition limits for a document that
+ * has to be admitted (lib/pinboardCompose.ts — canvas side, canvas area and
+ * the chosen preset's own height cap). Same loop, same exit rule, same
+ * "re-solve, never allocate" guarantee; only the ceiling differs.
  */
 export function solveWithinCanvasLimits(
   targetWidth: number,
   solveAt: (width: number) => MosaicGeometryResult,
-  passes = 4
+  passes = 4,
+  clamp: (width: number, height: number) => number = canvasClampFactor
 ): ClampedSolveResult {
   let width = Math.max(1, Math.round(targetWidth))
   let clampedWidth: number | null = null
@@ -258,7 +395,7 @@ export function solveWithinCanvasLimits(
     const solved = solveAt(width)
     if (!solved.ok) return solved
     const { width: w, height: h } = solved.geometry
-    const factor = canvasClampFactor(w, h)
+    const factor = clamp(w, h)
     if (factor >= 1) {
       return { ok: true, geometry: solved.geometry, layoutWidth: width, clampedWidth }
     }

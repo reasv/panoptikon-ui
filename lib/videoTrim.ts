@@ -4,6 +4,17 @@ import React from "react"
 // leaves a plain one to fail at runtime against a type-only export.
 import type { TrimRange } from "./pinboardCrop"
 
+// Nothing here needs to know whether the element is playing the original file
+// or a transcoded artifact (docs/video-transcoding-design.md §8). Every rule
+// below is expressed against the ELEMENT and its own metadata — duration,
+// currentTime, the crossing budget — never against the container's stored
+// timestamps, so a rendition is just another element. The guards are if
+// anything safer on one: a re-encode has clean timestamps (no edit list, no
+// audio priming), which is exactly the browser-vs-ffprobe drift the midpoint
+// heuristic and the end probe exist to absorb. The `vt` param, the pinboard
+// `h` field and the probe cache all stay keyed by the ORIGINAL item sha, so a
+// trim survives the switch to an artifact and back.
+
 // Two trim points closer than this (seconds) behave as a freeze frame.
 // EXPORTED because it is a contract, not an internal detail: anything that
 // COMPOSES a range (the outro default below) has to keep clear of the band

@@ -17,10 +17,9 @@
 // stored thumbnail; picking a frame without playing it needs the server.
 
 import { CropRect, PinOrientation, orientedSize } from "@/lib/pinboardCrop"
-import { itemOutputSize } from "@/lib/pinboardGeometry"
+import { computeRestGeometry, itemOutputSize } from "@/lib/pinboardGeometry"
 import { loadPinSource } from "@/lib/pinboardMedia"
 import { canvasToBlob, drawPin } from "@/lib/pinboardPreview"
-import { computeRestGeometry } from "@/components/gallery/CropView"
 
 export const ITEM_JPEG_QUALITY = 0.92
 
@@ -118,7 +117,9 @@ export async function composeItemImage(
   // a card.
   drawPin(
     ctx,
-    { key, sha256, left: 0, top: 0, width: size.width, height: size.height, crop, orient },
+    // No trim: this export draws one frame off a canvas, and the field only
+    // means anything to the composition document.
+    { key, sha256, left: 0, top: 0, width: size.width, height: size.height, crop, orient, trim: null },
     src,
     0,
     0,

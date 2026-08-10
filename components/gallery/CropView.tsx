@@ -2,6 +2,13 @@
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { CropRect, FULL_CROP, MIN_CROP_FRAC, PinOrientation, clampCrop, isIdentityOrientation, orientedSize, sourceRect } from '@/lib/pinboardCrop'
+import { computeRestGeometry } from '@/lib/pinboardGeometry'
+// The rest-mode fit now lives in the pure geometry module, where the
+// composition builder (and the node scripts that assert its numbers) can
+// reach it without pulling a React component in. Re-exported from here
+// because this is where every existing consumer imports it from, and because
+// this component is still its primary reader.
+export { computeRestGeometry } from '@/lib/pinboardGeometry'
 
 // Crop-mode model: the box (card interior) IS the window. The image is a
 // free transform (uniform scale + offset) behind it; the crop committed at
@@ -13,49 +20,6 @@ interface Transform {
     // Image top-left relative to the container, px
     x: number
     y: number
-}
-
-interface Geometry {
-    // All in container-local pixels.
-    // vis* is the visible (cropped) region, img* the full media element.
-    visL: number
-    visT: number
-    visW: number
-    visH: number
-    imgL: number
-    imgT: number
-    imgW: number
-    imgH: number
-}
-
-// Fit the crop region into the container ("contain" semantics: the crop
-// rect is treated as the source image, letterboxing on aspect mismatch).
-// Exported for the pinboard preview compositor, which must place each pin
-// exactly as rest-mode rendering does.
-export function computeRestGeometry(
-    W: number,
-    H: number,
-    c: CropRect,
-    nw: number,
-    nh: number,
-): Geometry {
-    const cropPxW = c.w * nw
-    const cropPxH = c.h * nh
-    const scale = Math.min(W / cropPxW, H / cropPxH)
-    const visW = cropPxW * scale
-    const visH = cropPxH * scale
-    const visL = (W - visW) / 2
-    const visT = (H - visH) / 2
-    return {
-        visL,
-        visT,
-        visW,
-        visH,
-        imgL: visL - c.x * nw * scale,
-        imgT: visT - c.y * nh * scale,
-        imgW: nw * scale,
-        imgH: nh * scale,
-    }
 }
 
 // Constrain the image between its two flush-against-the-window positions

@@ -13,6 +13,83 @@ import { usePinSelection } from "@/lib/state/pinboardSelection";
 import { usePinboardCarry } from "@/lib/state/pinboardCarry";
 import { SelectionExportSubmenu } from "./PinboardExportMenu";
 import { trimWithBound } from "@/lib/videoTrim";
+import { clipRequestFor, clipRows, exportClip, useClipBusy } from "@/lib/videoClip";
+import { useVideoPresets } from "@/lib/useVideoPresets";
+
+/**
+ * What a pin needs to offer a clip of itself. Null until the item query
+ * resolves — the board's own records carry only a 10-char sha prefix, and the
+ * transcode POST is given the FULL hash so a pin and the gallery share one
+ * job and the server never has to disambiguate a prefix.
+ *
+ * Deliberately no `path`: the plan's U6 (a client-side transcode file name)
+ * was superseded by S3 — the server computes the download name and sends it
+ * on `ArtifactRef.filename` — so the pin has no use for the item's path.
+ */
+export type PinClipItem = {
+    sha256: string
+    /** The item's mime type; only `video/*` has anything to clip. */
+    mime: string | null | undefined
+    /**
+     * The item's recorded duration, in seconds. What an UNTRIMMED row would
+     * encode, which is how the animated-image rows know whether they are
+     * within the server's length cap (see lib/videoClip's `clipRows`).
+     */
+    duration: number | null | undefined
+}
+
+/**
+ * The clip rows of a pin's context menu. Radix `ContextMenuItem`s driven by
+ * the same engine as the player surface's own menu — one `clipRequestFor`,
+ * one `exportClip`, one per-item busy guard, so a pin and the gallery cannot
+ * start two encodes of one clip.
+ *
+ * Its own component because it needs hooks (the presets query and the busy
+ * subscription) and the menu around it is a plain render.
+ */
+function ClipExportItems({
+    item,
+    request,
+    dbs,
+}: {
+    item: PinClipItem | null
+    request: ReturnType<typeof clipRequestFor>
+    dbs: { index_db: string | null; user_data_db: string | null }
+}) {
+    // The capability lives inside the hook (a policy without it never fetches,
+    // so the list stays empty) — which is also what makes "no rows" the answer
+    // for a restricted profile, per the hide-don't-disable rule. The limits
+    // ride in the same envelope, and the length cap they carry is what decides
+    // whether an animated-image row is offered at all.
+    const { presets, limits } = useVideoPresets("clip")
+    const busy = useClipBusy(item?.sha256)
+    if (!item || !item.mime?.startsWith("video/")) return null
+    const rows = clipRows(presets, { request, duration: item.duration, limits })
+    if (rows.length === 0) return null
+    return (
+        <>
+            {rows.map(({ preset, label }) => (
+                <ContextMenuItem
+                    key={preset.id}
+                    disabled={busy}
+                    // `onSelect`, not `onClick`: Radix gates the selection
+                    // event on `disabled` but the DOM click still fires on a
+                    // disabled item, so an onClick row would start a second
+                    // export of the item the busy guard is greying it out for.
+                    onSelect={() => void exportClip({
+                        sha256: item.sha256,
+                        preset,
+                        request,
+                        rowLabel: label,
+                        dbs,
+                    })}
+                >
+                    {label}
+                </ContextMenuItem>
+            ))}
+        </>
+    )
+}
 
 export function PinBoardCtx({
     layoutKey,
@@ -33,6 +110,9 @@ export function PinBoardCtx({
     onClearCrop,
     trim,
     onTrimChange,
+    effectiveTrim,
+    outroGoverns,
+    clipItem,
     videoRef,
     videoLoaded,
     onDuplicate,
@@ -85,6 +165,16 @@ export function PinBoardCtx({
     onClearCrop: () => void,
     trim: TrimRange | null,
     onTrimChange: (trim: TrimRange | null) => void,
+    // The trim the PLAYER enforces (the user's, with the outro cut standing in
+    // for an absent end bound) and whether that default is what currently ends
+    // playback. Both are the pin's own already-computed values, threaded in
+    // rather than recomputed, so an exported clip can never end somewhere the
+    // pin did not play to.
+    effectiveTrim: TrimRange | null,
+    outroGoverns: boolean,
+    // This pin's item, once its query resolves; null until then, and the clip
+    // rows simply do not exist meanwhile
+    clipItem: PinClipItem | null,
     // The pin's <video>, for the set-at-playhead loop verbs; videoLoaded is
     // whether it exists (a playhead to read), which the menu cannot learn
     // from a ref during render
@@ -455,6 +545,14 @@ export function PinBoardCtx({
             {trim?.start != null && trim?.end != null && <ContextMenuItem onClick={() => onTrimChange(null)}>
                 Clear Loop Range
             </ContextMenuItem>}
+            {/* Clip export, right after the verbs that DEFINE the window it
+                exports: the loop range above is the clip, and an outro-skipping
+                pin with no user trim exports the cut the server re-derives. */}
+            <ClipExportItems
+                item={clipItem}
+                request={clipRequestFor(trim, effectiveTrim, outroGoverns)}
+                dbs={dbs}
+            />
             {/* Resizing is the one thing a lock legitimately forbids —
                 greyed instead of silently ignoring the clicks */}
             <ContextMenuSub>

@@ -24,7 +24,11 @@ import {
 } from "@/lib/state/gallery"
 import { useSelectedDBs } from "@/lib/state/database"
 import { getFileURL, prettyPrintBytes } from "@/lib/utils"
-import { LosslessMenuItem } from "./PinboardMosaicMenu"
+import {
+    AnimatedItemRows,
+    AnimatedMosaicRows,
+    LosslessMenuItem,
+} from "./PinboardMosaicMenu"
 import type { MenuKit } from "./PinboardGlobalMenu"
 
 // Saving the SELECTION as an image, from the selection toolbar and from a
@@ -325,6 +329,14 @@ export function SelectionExportMenuItems({
                     {`${w} px Wide`}
                 </Item>
             ))}
+            {/* The animated twin of whichever export this menu is: a mosaic of
+                the selection, or — for a single pin that is PLAYING — the item
+                itself as a video, cropped and oriented exactly as the board
+                shows it. A stopped pin has no animated row: its frozen frame
+                is a still image, and the rows above already save it. */}
+            {one
+                ? <AnimatedItemRows kit={kit} itemKey={keys[0] ?? null} />
+                : <AnimatedMosaicRows kit={kit} keys={keys} />}
             <Separator />
             {/* Seamless is a mosaic's business only — one item has no
                 gutters to close. It only closes the GUTTERS at that: an

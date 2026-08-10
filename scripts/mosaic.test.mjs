@@ -23,6 +23,7 @@ const {
   foldRows,
   itemOutputSize,
   mosaicGeometry,
+  resolvePinDraw,
   solveWithinCanvasLimits,
 } = await import("../lib/pinboardGeometry.ts")
 const { V2_GRID, effectiveGrid, rowStep } = await import("../lib/pinboardGrid.ts")
@@ -476,6 +477,84 @@ check("canvasClampFactor is 1 for an ordinary canvas", canvasClampFactor(3840, 8
     "a failing probe propagates instead of guessing a width",
     fitLayoutWidthToOutput(1920, () => ({ ok: false, failure: "no-pins" }))
       .failure === "no-pins"
+  )
+}
+
+// ---- resolvePinDraw: the four lines every compositor runs ---------------
+//
+// Extracted from the canvas compositor so the preview, the mosaic and the
+// composition document all place a pin identically (§4 C5), which means it is
+// now the ONE place a crop, an orientation and a contain fit meet. Both cases
+// below are computed by hand rather than re-derived from the module, so a
+// change to any of the three has to be a deliberate one.
+
+{
+  // A quarter turn CLOCKWISE: crops are stored in DISPLAY space, so the fit
+  // runs on the swapped (2000x4000) dimensions and the source rect is the
+  // display rect unwound — the map `sourceRect` implements.
+  //
+  //   display region: 0.5*2000 x 0.4*4000 = 1000 x 1600
+  //   contain in 600x400: scale = min(0.6, 0.25) = 0.25 -> 250 x 400
+  //   letterboxed at the SIDES: visL = (600-250)/2 = 175, visT = 0
+  //   source rect: ccw of the crop = {0.1, 0.25, 0.4, 0.5}
+  //                = 400,500 1600x1000 px of the 4000x2000 source
+  const crop = { x: 0.25, y: 0.1, w: 0.5, h: 0.4 }
+  const cell = { left: 100, top: 50, width: 600, height: 400 }
+  const turned = resolvePinDraw(
+    { crop, orient: { quarterTurns: 1, flipped: false }, left: 0, top: 0, width: 0, height: 0 },
+    4000,
+    2000,
+    cell
+  )
+  check(
+    "a turned pin's destination is the contain fit of its DISPLAY crop",
+    eq(turned.dest.left, 275) &&
+      eq(turned.dest.top, 50) &&
+      eq(turned.dest.width, 250) &&
+      eq(turned.dest.height, 400),
+    JSON.stringify(turned.dest)
+  )
+  check(
+    "…and its source rect is that crop unwound into source pixels",
+    eq(turned.src.x * 4000, 400) &&
+      eq(turned.src.y * 2000, 500) &&
+      eq(turned.src.w * 4000, 1600) &&
+      eq(turned.src.h * 2000, 1000),
+    JSON.stringify(turned.src)
+  )
+  // A MIRROR, same crop: no axis swap, so the fit letterboxes top and bottom
+  // instead, and the source rect is the crop reflected about x = 1/2.
+  //
+  //   display region: 0.5*4000 x 0.4*2000 = 2000 x 800
+  //   contain in 600x400: scale = min(0.3, 0.5) = 0.3 -> 600 x 240
+  //   visL = 0, visT = (400-240)/2 = 80
+  //   source rect: {1-0.25-0.5, 0.1, 0.5, 0.4} = 1000,200 2000x800 px
+  const mirrored = resolvePinDraw(
+    { crop, orient: { quarterTurns: 0, flipped: true }, left: 0, top: 0, width: 0, height: 0 },
+    4000,
+    2000,
+    cell
+  )
+  check(
+    "a mirrored pin letterboxes on the other axis",
+    eq(mirrored.dest.left, 100) &&
+      eq(mirrored.dest.top, 130) &&
+      eq(mirrored.dest.width, 600) &&
+      eq(mirrored.dest.height, 240),
+    JSON.stringify(mirrored.dest)
+  )
+  check(
+    "…and its source rect is the crop reflected, not the crop",
+    eq(mirrored.src.x * 4000, 1000) &&
+      eq(mirrored.src.y * 2000, 200) &&
+      eq(mirrored.src.w * 4000, 2000) &&
+      eq(mirrored.src.h * 2000, 800),
+    JSON.stringify(mirrored.src)
+  )
+  check(
+    "unusable natural dimensions yield no draw at all",
+    resolvePinDraw({ crop, orient: null, left: 0, top: 0, width: 0, height: 0 }, 0, 2000, cell) ===
+      null
   )
 }
 

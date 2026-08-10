@@ -28,7 +28,11 @@
 // Every source is same-origin (the /api paths the app already serves
 // through), so nothing here taints the canvas and toBlob keeps working.
 
-import { PinSource, imageSource, loadImage } from "@/lib/pinboardPreview"
+// Type-only where it is a type: node's --experimental-strip-types (the state
+// rules below are asserted from scripts/compose.test.mjs) cannot erase a type
+// hiding in a value import list.
+import type { PinSource } from "@/lib/pinboardPreview"
+import { imageSource, loadImage } from "@/lib/pinboardPreview"
 import { getFileURL } from "@/lib/utils"
 
 type Dbs = { index_db: string | null; user_data_db: string | null }
@@ -54,6 +58,101 @@ export function findPinVideoFrame(key: string): PinSource | null {
   if (!video || video.readyState < HAVE_CURRENT_DATA) return null
   if (!(video.videoWidth > 0) || !(video.videoHeight > 0)) return null
   return { source: video, width: video.videoWidth, height: video.videoHeight }
+}
+
+/**
+ * What a pin's video element is DOING, as the composition document needs to
+ * know it: is it playing (so the item composes as a span), and is it muted (so
+ * its audio is mixed in or not).
+ *
+ * `duration` rides along because this probe is the only place it can be read
+ * for an element whose item metadata has no recorded length — a span needs an
+ * end bound, and the server refuses one without it. The metadata's duration
+ * wins where both exist; this is the fallback, not the authority.
+ *
+ * No playhead position is ever read. The composition sends what the pin is
+ * SET UP to show (its trim, its play state), never where it happens to be a
+ * moment after the click — a document keyed on a moving number would mint a
+ * fresh artifact for every export of an unchanged board.
+ */
+export interface PinVideoState {
+  playing: boolean
+  muted: boolean
+  /** The element's own duration in seconds, when it is a finite number. */
+  duration: number | null
+  /**
+   * The element's NATURAL pixel size (`videoWidth`/`videoHeight`), null until
+   * it has metadata.
+   *
+   * The same numbers `findPinVideoFrame` hands the canvas compositor, carried
+   * so the composition document can be written in them too. A browser reports
+   * a rotated video already rotated and a non-square-pixel one already
+   * corrected, where the index records the container's coded dimensions — and
+   * the server's compositor assumes the browser's reading, so a document built
+   * on the index's would place a rect the canvas mosaic never drew.
+   */
+  width: number | null
+  height: number | null
+}
+
+/**
+ * The subset of an `HTMLVideoElement` the state rules read. Structural on
+ * purpose: the resolution table below is pure, so it can be asserted against a
+ * plain object in a node script (scripts/compose.test.mjs) rather than only
+ * against a browser.
+ */
+export interface VideoStateProbe {
+  paused: boolean
+  ended: boolean
+  readyState: number
+  muted: boolean
+  duration: number
+  /** Optional: an element with no metadata yet reports 0 for both. */
+  videoWidth?: number
+  videoHeight?: number
+}
+
+/**
+ * One element's state, or null when there is no element to read.
+ *
+ * PLAYING is `!paused && !ended && readyState >= HAVE_CURRENT_DATA`: the same
+ * three conditions `findPinVideoFrame` implies for a drawable frame, spelled
+ * out because "the user sees this moving" is exactly what makes an item a span
+ * rather than a frozen frame. A paused element is a still even when it is
+ * perfectly decoded, and an ENDED one is a still too — its picture is the last
+ * frame, not a clip about to run.
+ */
+export function videoStateOf(video: VideoStateProbe | null): PinVideoState | null {
+  if (!video) return null
+  const duration = video.duration
+  const natural = (value: number | undefined) =>
+    typeof value === "number" && isFinite(value) && value > 0 ? value : null
+  return {
+    playing:
+      !video.paused && !video.ended && video.readyState >= HAVE_CURRENT_DATA,
+    muted: !!video.muted,
+    duration:
+      typeof duration === "number" && isFinite(duration) && duration > 0
+        ? duration
+        : null,
+    width: natural(video.videoWidth),
+    height: natural(video.videoHeight),
+  }
+}
+
+/**
+ * The state of the <video> a pin is rendering, or null when it is rendering
+ * none (an image pin, an unmounted board, a video the user never started).
+ *
+ * Probed from the DOM for the reason `findPinVideoFrame` documents: the export
+ * surfaces are menus that outlive any particular pin's React tree.
+ */
+export function probePinVideoState(key: string): PinVideoState | null {
+  if (typeof document === "undefined") return null
+  const video = document.querySelector<HTMLVideoElement>(
+    `[data-pin-key="${CSS.escape(key)}"] video`
+  )
+  return videoStateOf(video)
 }
 
 export interface PinSourceRequest {

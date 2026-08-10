@@ -20,6 +20,8 @@ export interface ClientConfig {
   desktopShellAvailable: boolean
   relayEnabled: boolean
   pinboardSearchEnabled: boolean
+  videoTranscodeEnabled: boolean
+  videoComposeEnabled: boolean
 }
 
 // [policies.client] keys are free-form; these are the by-convention keys the
@@ -58,6 +60,21 @@ export function deriveClientConfig(response: ClientConfigResponse): ClientConfig
     // a write (POST /api/pinboards), so a read-only-boards policy would lose
     // the Library tab even though both of its requests would succeed.
     pinboardSearchEnabled: capabilities.pinboard_search !== false,
+    // Probed off POST /api/video/transcode, so this is "may this client ask
+    // for a new encode", not "may it play one" — a policy that serves cached
+    // artifacts but denies conversions still reports false here. The
+    // playability ladder (lib/videoPlayability.ts) uses it to decide whether
+    // an unplayable file gets a play affordance at all; it never suppresses
+    // NATIVE playability, so a browser that decodes the file itself is
+    // unaffected by a policy that forbids transcoding.
+    videoTranscodeEnabled: capabilities.video_transcode !== false,
+    // Probed off POST /api/video/compose, which is a SEPARATE route from the
+    // single-file transcode and separately rule-able: composing N inputs is
+    // strictly heavier work, so a policy may well allow clips and deny
+    // mosaics. The animated pinboard rows gate on this one and never on
+    // `video_transcode` — they post here, and a client that read the other
+    // capability would offer rows whose press 403s.
+    videoComposeEnabled: capabilities.video_compose !== false,
   }
 }
 
