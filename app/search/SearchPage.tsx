@@ -30,7 +30,9 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { usePinboardURLLoader } from '@/lib/pinboardLinks'
 import { usePinboardAssociatedOnly } from '@/lib/state/pinboardLibraryPrefs'
 import { ImageSimilarityHeader } from '@/components/ImageSimilarityHeader'
-import { mintSeed, useOrderBy, usePageSize, useQueryOptions, useRandomSeed, useSearchPageRaw, useStampRandomSeed } from "@/lib/state/searchQuery/clientHooks"
+import { mintSeed, useOrderBy, usePageSize, usePageSizeRaw, useQueryOptions, useRandomSeed, useSearchPageRaw, useStampRandomSeed } from "@/lib/state/searchQuery/clientHooks"
+import { SESSION_PARAM_KEYS, creationStamp, effectiveCreationDefaults } from "@/lib/searchDefaults"
+import { ViewModeToggle } from "@/components/ViewModeToggle"
 import { getScrollPositionURL } from "@/lib/state/searchQuery/serializers"
 import { overscanItemsFor, topRowHighlightItem, virtualPageAnchor, virtualPageOf } from "@/lib/scrollMode"
 import { useSearchParams, type ReadonlyURLSearchParams } from "next/navigation"
@@ -127,7 +129,10 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     const [qIndex, setIndex] = useGalleryIndex()
     const results = data?.results || []
     const [sidebarOpen, setSideBarOpen] = useSideBarOpen()
-    const [viewMode] = useViewMode()
+    // The setter is used once, by the creation-defaults stamp far below —
+    // taken from this same hook call rather than a second one, so there is one
+    // subscription to `vm` on this component.
+    const [viewMode, setViewMode] = useViewMode()
     const scrollMode = viewMode === "scroll"
     // The sparse window over the WHOLE result set that scroll mode reads rows
     // from. Mounted in both modes because hooks are unconditional; `enabled`
@@ -330,10 +335,25 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     // anchor back to the top of a page it just left.
     const urlParams = useSearchParams()
     const setPageRaw = useSearchPageRaw()[1]
-    // Read on the first render, consumed once by the effect below. `useRef`'s
+    // Read on the first render, consumed once by the effects below. `useRef`'s
     // initial value is only taken on that first render, so this is the URL the
     // component mounted with no matter how often it re-renders.
-    const mountURL = useRef({ params: urlParams, scrollMode, page, k })
+    //
+    // `freshSession` — no presentation or position parameter at all — is what
+    // makes the two mount-time URL corrections below MUTUALLY EXCLUSIVE by
+    // construction rather than by coincidence: one runs only when it is true,
+    // the other only when it is false, both read it from this one snapshot, so
+    // no load can ever reach both writers. (They are exclusive by content too
+    // — normalization needs `vm` AND `page` present, which is not a fresh
+    // session — but that is an argument a reader has to reconstruct, and the
+    // two effects write the same parameters.)
+    const mountURL = useRef({
+        params: urlParams,
+        scrollMode,
+        page,
+        k,
+        freshSession: !SESSION_PARAM_KEYS.some((key) => urlParams.has(key)),
+    })
     const normalizedScrollURL = useRef(false)
     useEffect(() => {
         // Empty deps already make this once-per-mount; the ref covers the
@@ -341,6 +361,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
         if (normalizedScrollURL.current) return
         normalizedScrollURL.current = true
         const mounted = mountURL.current
+        if (mounted.freshSession) return
         if (!mounted.scrollMode || !mounted.params.has("page")) return
         const replace = { history: "replace" as const }
         if (!mounted.params.has(GRID_SCROLL_ANCHOR_KEY)) {
@@ -350,6 +371,54 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
         setPageRaw(null, replace)
         // The setters churn identity per render and every value read here is a
         // mount-time snapshot, so there is nothing honest to depend on.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
+    // The creation-defaults layer: a load carrying NO presentation or position
+    // parameter is a new search session, and the user's saved presentation is
+    // stamped into it as explicit parameters — once, here, and never again for
+    // the life of the session (docs/search-scroll-mode-design.md §7, the
+    // lib/pinboardDefaults.ts pattern). Everything that makes this correct is
+    // in lib/searchDefaults.ts; what is left here is the lifecycle.
+    //
+    // The complement of the normalization effect's guard, off the same
+    // snapshot — see `freshSession` above. A URL with any of those parameters
+    // is a bookmark, a share or a navigation and already carries its own
+    // presentation, so this touches nothing; a fresh URL cannot be the
+    // `vm=scroll&page=N` shape the other effect exists to correct.
+    //
+    // "replace", unlike the pinboard stamp's push: there is no sibling
+    // navigation to fold into, and the entry this rewrites is the one the user
+    // just arrived on — a Back that returned to the unstamped URL would only
+    // stamp it again. Both writes in one tick, so nuqs coalesces them into a
+    // single URL update.
+    //
+    // With the shipped creation defaults equal to the codec defaults, a user
+    // who has saved nothing produces an EMPTY stamp and no write at all: the
+    // paged experience is byte-identical to what it was before this existed
+    // (asserted in scripts/scrollmode.test.mjs).
+    const setPageSizeRaw = usePageSizeRaw()[1]
+    const stampedDefaults = useRef(false)
+    useEffect(() => {
+        if (stampedDefaults.current) return
+        stampedDefaults.current = true
+        if (!mountURL.current.freshSession) return
+        // Belt to that brace, and it can only ever SUPPRESS a stamp: the
+        // snapshot above is React's view of the URL on the first render, while
+        // this is the browser's own, read at the only moment the two could
+        // have diverged. Stamping over a URL that turns out to carry a
+        // presentation is the one failure mode here that loses something the
+        // user asked for (a shared `?page=3` opening on page 1), and the
+        // design's rule for every ambiguous case is that conservative is
+        // correct.
+        const liveParams = new URLSearchParams(window.location.search)
+        if (SESSION_PARAM_KEYS.some((key) => liveParams.has(key))) return
+        const stamp = creationStamp(effectiveCreationDefaults())
+        const replace = { history: "replace" as const }
+        if (stamp.vm !== undefined) setViewMode(stamp.vm, replace)
+        if (stamp.page_size !== undefined) setPageSizeRaw(stamp.page_size, replace)
+        // Mount-only, exactly like the normalization effect above: the
+        // decision is taken from the snapshot, and the setters churn identity.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
@@ -724,7 +793,16 @@ export function GridPanel({
                 {/* col-start-3: the tabs cell above is conditional, so
                     without an explicit track this would slide into the
                     center when no board exists */}
-                <div className="col-start-3 flex justify-end">
+                <div className="col-start-3 flex justify-end items-center">
+                    {/* Before the library button: the mode switch is about
+                        the results this panel is showing, so it sits nearer
+                        the middle of the band than the button that opens a
+                        dialog over it. Rendered on every tab, like its
+                        neighbour — the tabs decide what is on screen now,
+                        the toggle decides how the Results tab presents, and
+                        having it appear and disappear with the tab would
+                        make it the one header control that moves. */}
+                    <ViewModeToggle />
                     <PinboardLibraryButton />
                 </div>
             </div>}

@@ -34,6 +34,18 @@ const { SCROLL_CHUNK_SIZE, buildChunkRequest, buildResultsRequest } =
 const { getScrollPositionURL, getSearchPageURL } = await import(
   "../lib/state/searchQuery/serializers.ts"
 )
+// The storage-free half of the creation-defaults layer: resolution, the
+// stamp derived from it, and the allowlist. loadUserDefaults and its two
+// siblings are the only parts that touch localStorage, and they have no
+// logic worth asserting — so they are deliberately not imported here.
+const {
+  SEARCH_DEFAULTABLE_KEYS,
+  SEARCH_DEFAULTABLE_PARAMS,
+  SESSION_PARAM_KEYS,
+  creationStamp,
+  effectiveCreationDefaultsFrom,
+  sanitizeSearchDefaults,
+} = await import("../lib/searchDefaults.ts")
 
 let all = true
 function check(name, ok, detail = "") {
@@ -856,6 +868,157 @@ const isVideo = (row) => row === "v"
   // an out-of-range start must never be mistaken for one.
   check("a scan past the end of the set reports the end of the set",
     scanLoadedForward(pageBlocks(["v"]), 5, 1, isVideo).stopped === 1)
+}
+
+// ---- creation defaults -------------------------------------------------
+//
+// The layer that stamps a user's saved presentation into a brand-new search
+// session (docs/search-scroll-mode-design.md §7, lib/searchDefaults.ts).
+
+{
+  // THE property this release turns on: nothing changes for anybody. With
+  // the shipped creation defaults equal to the codec defaults, a user who
+  // has saved nothing resolves to the codec values and therefore stamps an
+  // EMPTY set — a fresh search URL stays exactly as blank as it was before
+  // this layer existed. If this ever fails, every paged user's URLs grew a
+  // parameter overnight.
+  const stamp = creationStamp(effectiveCreationDefaultsFrom({}))
+  check(
+    "no saved defaults stamps nothing at all",
+    Object.keys(stamp).length === 0,
+    shape(stamp)
+  )
+  // …which is the same statement as this one, and both are worth having:
+  // the one above can be broken by the stamp derivation, this one by the
+  // registry.
+  for (const key of SEARCH_DEFAULTABLE_KEYS) {
+    const param = SEARCH_DEFAULTABLE_PARAMS[key]
+    check(
+      `${key} ships with its creation default equal to its codec default`,
+      param.creationDefault === param.codecDefault,
+      `${shape(param.creationDefault)} vs ${shape(param.codecDefault)}`
+    )
+  }
+}
+
+{
+  // A saved default that differs from the codec default is what a stamp is
+  // FOR, and only the differing parameter is written: stamping a value the
+  // absent parameter already means would add noise to every URL of the
+  // session (and nuqs would strip `vm=pages` on the next write anyway).
+  const scrollOnly = creationStamp(effectiveCreationDefaultsFrom({ vm: "scroll" }))
+  check(
+    "a saved scroll default stamps vm and nothing else",
+    scrollOnly.vm === "scroll" && scrollOnly.page_size === undefined,
+    shape(scrollOnly)
+  )
+  const sized = creationStamp(effectiveCreationDefaultsFrom({ page_size: 40 }))
+  check(
+    "a saved page size stamps page_size and nothing else",
+    sized.page_size === 40 && sized.vm === undefined,
+    shape(sized)
+  )
+  const both = creationStamp(
+    effectiveCreationDefaultsFrom({ vm: "scroll", page_size: 40 })
+  )
+  check(
+    "both saved, both stamped",
+    both.vm === "scroll" && both.page_size === 40,
+    shape(both)
+  )
+  // Saving the built-in values explicitly is not the same gesture as saving
+  // nothing — the payload exists — but it must produce the same URLs.
+  const asShipped = creationStamp(
+    effectiveCreationDefaultsFrom({ vm: "pages", page_size: 10 })
+  )
+  check(
+    "saving the built-in values stamps nothing",
+    Object.keys(asShipped).length === 0,
+    shape(asShipped)
+  )
+}
+
+{
+  // Partial payloads: a user who saved defaults before a key existed must
+  // resolve the missing one to its creation default rather than undefined —
+  // an undefined reaching the stamp would write "undefined" into a URL.
+  const resolved = effectiveCreationDefaultsFrom({ vm: "scroll" })
+  check(
+    "an absent key resolves to its creation default",
+    resolved.page_size === SEARCH_DEFAULTABLE_PARAMS.page_size.creationDefault,
+    shape(resolved)
+  )
+}
+
+{
+  // The allowlist. Stale or hand-edited localStorage is the input here, and
+  // its whole output ends up in URLs, so anything not exactly in domain is
+  // dropped rather than coerced.
+  check(
+    "junk keys never survive",
+    shape(sanitizeSearchDefaults({ vm: "scroll", page: 3, tag: "x", gi: 7 }))
+      === shape({ vm: "scroll" })
+  )
+  check(
+    "vm must be one of the two enum members",
+    shape(sanitizeSearchDefaults({ vm: "Scroll" })) === shape({})
+      && shape(sanitizeSearchDefaults({ vm: "" })) === shape({})
+      && shape(sanitizeSearchDefaults({ vm: true })) === shape({})
+  )
+  check(
+    "a non-object payload is no defaults at all",
+    shape(sanitizeSearchDefaults(null)) === shape({})
+      && shape(sanitizeSearchDefaults("scroll")) === shape({})
+      && shape(sanitizeSearchDefaults(undefined)) === shape({})
+      && shape(sanitizeSearchDefaults([])) === shape({})
+  )
+  check(
+    "page_size is floored to an integer",
+    sanitizeSearchDefaults({ page_size: 12.7 }).page_size === 12
+  )
+  check(
+    "page_size is clamped into the control's own range",
+    sanitizeSearchDefaults({ page_size: 99999 }).page_size === 10000
+      && sanitizeSearchDefaults({ page_size: 0 }).page_size === undefined
+      && sanitizeSearchDefaults({ page_size: -5 }).page_size === undefined
+  )
+  check(
+    "a non-numeric page size is dropped, not parsed",
+    sanitizeSearchDefaults({ page_size: "40" }).page_size === undefined
+      && sanitizeSearchDefaults({ page_size: NaN }).page_size === undefined
+      && sanitizeSearchDefaults({ page_size: Infinity }).page_size === undefined
+  )
+}
+
+{
+  // The presence check that decides whether a load creates a session. Every
+  // defaultable key must be in it — a parameter that can be stamped but does
+  // not block stamping would be overwritten on the very next load of a URL
+  // carrying it.
+  for (const key of SEARCH_DEFAULTABLE_KEYS) {
+    check(
+      `${key} blocks stamping when it is already in the URL`,
+      SESSION_PARAM_KEYS.includes(key)
+    )
+  }
+  // The position parameters belong to a session that is already under way,
+  // and `page` is the legacy paginated link the design refuses to convert.
+  check(
+    "the position parameters block stamping too",
+    ["page", "top", "gi"].every((key) => SESSION_PARAM_KEYS.includes(key))
+  )
+  // Filters deliberately do NOT block it: a shared filter link gets the
+  // recipient's presentation over an identical result set (design §7).
+  const params = new URLSearchParams("tag.pos_match_all=cat&at.query=hello")
+  check(
+    "a filter-only URL is still a fresh session",
+    !SESSION_PARAM_KEYS.some((key) => params.has(key))
+  )
+  const bookmarked = new URLSearchParams("tag.pos_match_all=cat&page=3")
+  check(
+    "a filter URL carrying a page is not",
+    SESSION_PARAM_KEYS.some((key) => bookmarked.has(key))
+  )
 }
 
 console.log(all ? "\nALL PASS" : "\nFAILURES")
