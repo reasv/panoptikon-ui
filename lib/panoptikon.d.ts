@@ -1029,6 +1029,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/open/clipboard/{sha256}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Copy a file to the host system's clipboard
+         * @description Place an OS-native reference to the file on the clipboard of the machine running the server, so that pasting it into a file manager, a chat client or an upload form attaches the original file.
+         *     Only the path travels; the file's contents are never read.
+         *     The write targets the *server's* clipboard, so this is only useful when the server and the browser share a machine (or when a custom open.clipboard_command forwards it elsewhere).
+         *     This is a potentially dangerous operation, as a custom command can execute arbitrary code.
+         */
+        post: operations["copy_file_to_clipboard_on_host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/open/file/{sha256}": {
         parameters: {
             query?: never;
@@ -6193,6 +6216,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScanFailuresResponse"];
+                };
+            };
+        };
+    };
+    copy_file_to_clipboard_on_host: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+                path?: string;
+            };
+            header?: never;
+            path: {
+                sha256: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description File copied to the host clipboard */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenResponse"];
                 };
             };
         };

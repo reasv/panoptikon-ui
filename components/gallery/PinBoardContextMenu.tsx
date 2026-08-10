@@ -6,6 +6,7 @@ import type { PinboardBoardApi } from "@/lib/state/pinboardBoardApi";
 import { CropRect, PinLock, PinOrientation, TrimRange, isIdentityOrientation } from "@/lib/pinboardCrop";
 import { GridParams } from "@/lib/pinboardGrid";
 import { useFileOpenActions } from "@/hooks/fileOpen";
+import { useFileShare } from "@/hooks/fileShare";
 import { REGION_PRESETS, usePinboardLayoutActions } from "@/hooks/pinboardLayout";
 import { RegionIcon } from "./RegionIcon";
 import { useToast } from "@/components/ui/use-toast";
@@ -223,6 +224,7 @@ export function PinBoardCtx({
     // The pinboard stores the 10-char sha256 prefix; the open/folder endpoints
     // accept a prefix as the sha256 id, same as the pin's own item lookup.
     const { openFile, showInFolder, disableBackendOpen, relayEnabled } = useFileOpenActions({ sha256 })
+    const share = useFileShare({ sha256 })
     // In restricted mode the File actions degrade to things this pin already
     // offers: Open File becomes a new browser tab (== "Open in New Tab" below)
     // and Show in Folder becomes the FindButton the pin already renders. Only
@@ -313,12 +315,21 @@ export function PinBoardCtx({
     return (
         <ContextMenuContent>
             <ContextMenuItem onClick={() => openURL()}>Open in New Tab</ContextMenuItem>
+            {/* Saving the original file is a pure client-side capability that
+                the backend-open policy has no bearing on, so it sits OUTSIDE
+                the File submenu's gate — a restricted remote server would
+                otherwise lose the pinboard's download affordance while the
+                grid card's own share button still offers it. */}
+            <ContextMenuItem disabled={share.busy} onClick={() => void share.download()}>Download original</ContextMenuItem>
             {showFileMenu && (
                 <ContextMenuSub>
                     <ContextMenuSubTrigger inset>File</ContextMenuSubTrigger>
                     <ContextMenuSubContent className="w-48">
                         <ContextMenuItem onClick={openFile}>Open File</ContextMenuItem>
                         <ContextMenuItem onClick={showInFolder}>Show File in Folder</ContextMenuItem>
+                        {share.primaryVerb === "copy" && (
+                            <ContextMenuItem disabled={share.busy} onClick={() => void share.execute()}>Copy file</ContextMenuItem>
+                        )}
                     </ContextMenuSubContent>
                 </ContextMenuSub>
             )}

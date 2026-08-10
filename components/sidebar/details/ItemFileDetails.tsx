@@ -3,7 +3,7 @@ import { FilterContainer } from "../base/FilterContainer";
 import { components } from "@/lib/panoptikon";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons";
-import { getFileURL, getLocale, prettyPrintBytes, prettyPrintVideoDuration } from "@/lib/utils";
+import { downloadFileName, getFileURL, getLocale, prettyPrintBytes, prettyPrintVideoDuration } from "@/lib/utils";
 import { useSelectedDBs } from "@/lib/state/database";
 import { FindButton } from "@/components/gallery/FindButton";
 import { useClientConfig } from "@/lib/useClientConfig";
@@ -55,7 +55,9 @@ function ItemFileDetailsInternal({
                 <FilePathComponent path={item.path} />
             </div>
             <p className="text-xs text-gray-500 mt-2">
-                <a href={getFileURL(dbs, "file", "sha256", item.sha256)} target="_blank">Download Original File ({sizeString})</a>
+                {/* A real download (same-origin `download` attribute is
+                    authoritative for the filename), not an open-in-tab. */}
+                <a href={getFileURL(dbs, "file", "sha256", item.sha256)} download={downloadFileName(item.path, item.sha256)}>Download Original File ({sizeString})</a>
             </p>
             <p className="text-xs text-gray-500 mt-2">
                 Type: {item.type} {resolutionString && `(${resolutionString})`} {durationString && `(${durationString})`}

@@ -1,6 +1,6 @@
 "use client"
 import Image from 'next/image'
-import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder } from "@/components/imageButtons"
+import { BookmarkBtn, FilePathComponent, OpenFile, OpenFolder, ShareButton } from "@/components/imageButtons"
 import { memo, useCallback, useMemo } from "react";
 import { cn, getFileURL, getLocale } from "@/lib/utils";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
@@ -111,6 +111,7 @@ export const SearchResultImage = memo(function SearchResultImage({
                 <BookmarkBtn sha256={result.sha256} bookmarked={result.bookmarked} />
                 <OpenFile sha256={result.sha256} path={result.path} />
                 <OpenFolder sha256={result.sha256} path={result.path} />
+                <ShareButton sha256={result.sha256} path={result.path} />
                 <OpenDetailsButton item={result} variantButton />
                 <PinButton sha256={result.sha256} />
             </div>
