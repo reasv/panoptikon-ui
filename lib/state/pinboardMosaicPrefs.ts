@@ -20,6 +20,20 @@ import { persistLocalStorage } from "./store"
  */
 export type PinboardMosaicExtent = "visible" | "full"
 
+/**
+ * How long an ANIMATED save runs. "longest" plays the longest clip on the
+ * board exactly once and loops everything shorter to fill; a number is a hard
+ * cap in seconds, whatever the items are.
+ *
+ * Stored as this small union rather than as the wire's `ComposeLength` object:
+ * a persisted preference outlives the schema it was written under, and a
+ * rehydrated object with a stale `mode` string would reach the server as a
+ * document it cannot parse. The conversion is one function
+ * (`composeLengthOf`), which is also where an unrecognised stored value falls
+ * back to the default.
+ */
+export type PinboardMosaicLength = "longest" | 5 | 15 | 30
+
 interface PinboardMosaicPrefsState {
   /** Tile on the step lattice: no gutters, no padding, square corners. */
   seamless: boolean
@@ -35,6 +49,9 @@ interface PinboardMosaicPrefsState {
    */
   lossless: boolean
   setLossless: (lossless: boolean) => void
+  /** Length policy for the animated save (see PinboardMosaicLength). */
+  animatedLength: PinboardMosaicLength
+  setAnimatedLength: (length: PinboardMosaicLength) => void
 }
 
 const pinboardMosaicPrefsStorage = {
@@ -53,6 +70,9 @@ export const usePinboardMosaicPrefs = create(
       setExtent: (extent: PinboardMosaicExtent) => set({ extent }),
       lossless: false,
       setLossless: (lossless: boolean) => set({ lossless }),
+      animatedLength: "longest",
+      setAnimatedLength: (animatedLength: PinboardMosaicLength) =>
+        set({ animatedLength }),
     }),
     pinboardMosaicPrefsStorage
   )
@@ -92,4 +112,29 @@ export const usePinboardMosaicExtent = (): [
   const stored = usePinboardMosaicPrefs((state) => state.extent)
   const setExtent = usePinboardMosaicPrefs((state) => state.setExtent)
   return [useMirroredPreference(stored, "visible"), setExtent]
+}
+
+/** The stored preference as the wire's length policy. */
+export function composeLengthOf(
+  length: PinboardMosaicLength
+): { mode: "longest_loop_once" } | { mode: "cap"; seconds: number } {
+  return typeof length === "number" && length > 0
+    ? { mode: "cap", seconds: length }
+    : { mode: "longest_loop_once" }
+}
+
+/**
+ * The animated save's length policy, already in wire form: every consumer
+ * wants the document's shape, and converting at each of them is how the two
+ * spellings drift apart.
+ */
+export const usePinboardMosaicLength = (): [
+  ReturnType<typeof composeLengthOf>,
+  PinboardMosaicLength,
+  (next: PinboardMosaicLength) => void,
+] => {
+  const stored = usePinboardMosaicPrefs((state) => state.animatedLength)
+  const setLength = usePinboardMosaicPrefs((state) => state.setAnimatedLength)
+  const value = useMirroredPreference(stored, "longest" as PinboardMosaicLength)
+  return [composeLengthOf(value), value, setLength]
 }

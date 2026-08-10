@@ -1,6 +1,9 @@
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { components, paths } from "./panoptikon"
+// Type-only: `./panoptikon` is a .d.ts, so a VALUE import of it is a runtime
+// module the node test scripts cannot resolve (the same rule
+// lib/videoTranscode.ts documents).
+import type { components, paths } from "./panoptikon"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))

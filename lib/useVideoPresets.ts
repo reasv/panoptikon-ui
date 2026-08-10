@@ -1,5 +1,8 @@
 import { $api } from "@/lib/api"
-import { useVideoTranscodeEnabled } from "@/lib/useClientConfig"
+import {
+  useVideoComposeEnabled,
+  useVideoTranscodeEnabled,
+} from "@/lib/useClientConfig"
 import type { components } from "@/lib/panoptikon"
 
 // `GET /api/video/presets`, the one table every transcode surface builds its
@@ -45,19 +48,29 @@ export type VideoPresets = {
  * moment late, which is exactly what a menu that does not exist yet looks
  * like.
  *
+ * WHICH capability depends on the surface, because the two surfaces post to
+ * two separately rule-able routes: `playback` and `clip` act through
+ * `/api/video/transcode`, `mosaic` through `/api/video/compose`. A policy that
+ * allows compositions but denies single-file re-encodes must still get its
+ * mosaic rows — and a policy that allows clips but denies mosaics must not get
+ * them — so the row list is gated per surface while the presets REQUEST (a
+ * plain GET, and one table for both) fires as soon as either is allowed.
+ *
  * `staleTime: Infinity`: the table changes only when the server's config
  * does, and that means a restart. One fetch per session, shared by every
  * player surface and every pin menu through the query cache.
  */
 export function useVideoPresets(surface: TranscodeSurface): VideoPresets {
-  const enabled = useVideoTranscodeEnabled()
+  const transcodeEnabled = useVideoTranscodeEnabled()
+  const composeEnabled = useVideoComposeEnabled()
+  const enabled = surface === "mosaic" ? composeEnabled : transcodeEnabled
   const query = $api.useQuery(
     "get",
     "/api/video/presets",
     {},
-    { enabled, staleTime: Infinity },
+    { enabled: transcodeEnabled || composeEnabled, staleTime: Infinity },
   )
-  const all = query.data?.presets
+  const all = enabled ? query.data?.presets : undefined
   return {
     presets: all ? all.filter((preset) => preset.surfaces.includes(surface)) : [],
     limits: query.data?.limits ?? null,

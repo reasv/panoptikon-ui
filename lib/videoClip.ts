@@ -388,8 +388,12 @@ function fallbackFileName(sha256: string, ext: string): string {
  * that knows the job id to cancel), and a wait that gave up must take its
  * listener with it — the store outlives this call, and a subscription left
  * behind would keep calling `onUpdate` into a toast that is already gone.
+ *
+ * Exported for the pinboard's animated save (lib/pinboardAnimatedExport.ts),
+ * which follows a COMPOSE job through the same store: one wait, one deadline
+ * pattern, one place where a leaked subscription could be fixed.
  */
-function awaitTerminal(
+export function awaitTerminal(
   key: string,
   onUpdate: (state: TranscodeState) => void,
 ): { promise: Promise<TranscodeState>; cancel: () => void } {
@@ -442,8 +446,10 @@ export function raceDeadline<T>(
  * a job that outlives its own limit); this is the polite half — an abandoned
  * export should not go on holding an encoder slot for ten more minutes just
  * because this tab gave up on hearing about it.
+ *
+ * Shared with the composition export, whose jobs are heavier still.
  */
-function abandonJob(jobId: string) {
+export function abandonJob(jobId: string) {
   void fetchClient
     .DELETE("/api/video/jobs/{job_id}", { params: { path: { job_id: jobId } } })
     .catch(() => {})

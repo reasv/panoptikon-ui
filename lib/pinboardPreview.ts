@@ -28,15 +28,14 @@
 // (pinboardMosaic.ts) is the same compositor at a chosen width, and the
 // two must not be able to drift into two different pictures of one board.
 
-import {
-  PinOrientation,
-  isIdentityOrientation,
-  orientedSize,
-  sourceRect,
-} from "@/lib/pinboardCrop"
+// The type is imported separately: node's --experimental-strip-types (how the
+// test scripts load this module's siblings) cannot erase a type hiding in a
+// value import list.
+import type { PinOrientation } from "@/lib/pinboardCrop"
+import { isIdentityOrientation } from "@/lib/pinboardCrop"
 import { effectiveGrid, gridScale, parseBoard } from "@/lib/pinboardGrid"
-import { PinPlacement, parsePlacements } from "@/lib/pinboardGeometry"
-import { computeRestGeometry } from "@/components/gallery/CropView"
+import type { PinPlacement } from "@/lib/pinboardGeometry"
+import { parsePlacements, resolvePinDraw } from "@/lib/pinboardGeometry"
 import { getFileURL } from "@/lib/utils"
 
 // Output width of the composited preview in pixels. One constant, tunable
@@ -143,21 +142,26 @@ export function drawPin(
   if (img) {
     const nw = img.width
     const nh = img.height
-    if (nw > 0 && nh > 0) {
-      const c = p.crop ?? { x: 0, y: 0, w: 1, h: 1 }
-      // Crops are stored in display space, so the fit runs on the
-      // ORIENTED dimensions — exactly as CropView computes it — while
-      // drawImage's source rect has to be mapped back to source space.
-      const [ow, oh] = orientedSize(nw, nh, p.orient)
-      const geo = computeRestGeometry(cellW, cellH, c, ow, oh)
-      const s = sourceRect(c, p.orient)
+    // Which part of the source lands in which part of the cell: the same
+    // answer the composition document is built from (lib/pinboardGeometry's
+    // resolvePinDraw), so a server-rendered mosaic and this canvas cannot
+    // frame one pin two ways. A source with no intrinsic size resolves to
+    // null and draws nothing, which is what the preview has always done.
+    const draw = resolvePinDraw(p, nw, nh, {
+      left: cellLeft,
+      top: cellTop,
+      width: cellW,
+      height: cellH,
+    })
+    if (draw) {
+      const s = draw.src
       ctx.save()
       const [dx, dy, dw, dh] = orientDraw(
         ctx,
-        cellLeft + geo.visL,
-        cellTop + geo.visT,
-        geo.visW,
-        geo.visH,
+        draw.dest.left,
+        draw.dest.top,
+        draw.dest.width,
+        draw.dest.height,
         p.orient
       )
       ctx.drawImage(

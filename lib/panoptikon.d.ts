@@ -1464,6 +1464,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/video/compose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create or join a composition job
+         * @description Renders a composition document — a canvas, a frame rate, an output length policy and a list of placed items — into one animated artifact. A sibling of `/api/video/transcode` rather than a variant of it: a composition is addressed by the hash of its document, not by an item, and is strictly heavier work, so a policy can allow one and deny the other. The response envelope, the jobs/SSE routes and the artifact route are identical to the single-file path; a single-item save is simply a composition with one item.
+         */
+        post: operations["video_compose"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/video/jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -1628,6 +1648,19 @@ export interface components {
         CancelResponse: {
             detail: string;
         };
+        Canvas: {
+            /**
+             * @description `#RRGGBB`, `#RRGGBBAA` or the `0x` spelling of either. Normalized
+             *     before it reaches a filtergraph, which is not decoration: the value is
+             *     interpolated into a filter argument, where an unvalidated string could
+             *     spell further filters.
+             */
+            background?: string;
+            /** Format: int64 */
+            h: number;
+            /** Format: int64 */
+            w: number;
+        };
         /**
          * @description Which encoder family a preset draws from: `Quality` is software x264 at a
          *     decent CRF, `Fast` is the validated hardware encoder when there is one
@@ -1669,6 +1702,16 @@ export interface components {
             /** @description POST /api/search/pql */
             search: boolean;
             /**
+             * @description POST /api/video/compose
+             *
+             *     Separate from `video_transcode` because the two are separately
+             *     rule-able and mean different work: a composition is strictly heavier
+             *     (N decoders and their loop buffers at once, holding the pool), so a
+             *     policy may allow single-file clips while denying mosaics. The client's
+             *     animated-mosaic controls gate on this one.
+             */
+            video_compose: boolean;
+            /**
              * @description POST /api/video/transcode
              *
              *     The write probe of the video surface: a policy may serve already
@@ -1705,6 +1748,46 @@ export interface components {
         CompiledQuery: {
             params: unknown[];
             sql: string;
+        };
+        ComposeItem: {
+            /**
+             * @description Whether this item's audio is mixed in. The client sets it to
+             *     `playing && !muted`; it is forced off for a still, an image, or a
+             *     container that carries no audio at all.
+             */
+            audio?: boolean;
+            dest: components["schemas"]["Rect"];
+            /** @description Item content hash; resolved against the request's index database. */
+            sha256: string;
+            src: components["schemas"]["Rect"];
+            time: components["schemas"]["ItemTime"];
+            transform?: components["schemas"]["Transform"];
+        };
+        /** @description How long the output runs. */
+        ComposeLength: {
+            /** @enum {string} */
+            mode: "longest_loop_once";
+        } | {
+            /** @enum {string} */
+            mode: "cap";
+            /** Format: double */
+            seconds: number;
+        };
+        ComposeOutput: {
+            length: components["schemas"]["ComposeLength"];
+            /** @description Preset id from `GET /api/video/presets`. */
+            preset: string;
+        };
+        /** @description The composition document as it arrives. */
+        ComposeRequest: {
+            canvas: components["schemas"]["Canvas"];
+            /**
+             * Format: int32
+             * @description Output frame rate, 1-60, then capped by the preset.
+             */
+            fps: number;
+            items: components["schemas"]["ComposeItem"][];
+            output: components["schemas"]["ComposeOutput"];
         };
         /**
          * @description Output container. Fixes the file extension, the MIME type the artifact is
@@ -2312,6 +2395,27 @@ export interface components {
             video_tracks: number | null;
             /** Format: int64 */
             width: number | null;
+        };
+        /**
+         * @description What an item is showing. Replaces the design's separate "playing" and
+         *     "muted" flags (§0.5): a span *is* playing, a still and an image are
+         *     stopped, so no combination of fields can contradict another.
+         */
+        ItemTime: {
+            /** Format: int64 */
+            end_cs: number;
+            /** @enum {string} */
+            kind: "span";
+            /** Format: int64 */
+            start_cs: number;
+        } | {
+            /** Format: int64 */
+            at_cs: number;
+            /** @enum {string} */
+            kind: "still";
+        } | {
+            /** @enum {string} */
+            kind: "image";
         };
         Items: {
             sha256: string[];
@@ -3145,6 +3249,21 @@ export interface components {
             /** @description Bounded, process-local outcomes for jobs that recently left the queue. */
             outcomes: components["schemas"]["JobOutcomeModel"][];
             queue: components["schemas"]["JobModel"][];
+        };
+        /**
+         * @description A rectangle. Source rectangles are in the source's own pixels *before* its
+         *     display orientation is applied; destination rectangles are in output pixels
+         *     on the canvas.
+         */
+        Rect: {
+            /** Format: int64 */
+            h: number;
+            /** Format: int64 */
+            w: number;
+            /** Format: int64 */
+            x: number;
+            /** Format: int64 */
+            y: number;
         };
         RenamePinboardRequest: {
             name?: string | null;
@@ -4050,16 +4169,29 @@ export interface components {
         };
         /**
          * @description Composition limits, carried alongside the presets so a client builder
-         *     clamps against live config instead of mirrored constants.
+         *     clamps against what this server enforces instead of mirrored constants.
+         *
+         *     Deliberately *not* only the config values: the canvas and frame-rate bounds
+         *     are code constants (`compose.rs`), and a client that has to guess them is in
+         *     exactly the position this envelope exists to prevent. Where a limit comes
+         *     from is the server's business; that the client has the number is the point.
          */
         TranscodeLimits: {
             /** Format: int64 */
             max_animated_image_seconds: number;
+            /** Format: int64 */
+            max_canvas_area: number;
+            /** Format: int64 */
+            max_canvas_side: number;
+            /** Format: int32 */
+            max_compose_fps: number;
             max_mosaic_inputs: number;
             /** Format: int64 */
             max_mosaic_loop_mb: number;
             /** Format: int64 */
             max_output_seconds: number;
+            /** Format: int64 */
+            min_canvas_side: number;
         };
         TranscodePresetInfo: {
             channel: components["schemas"]["Channel"];
@@ -4068,6 +4200,19 @@ export interface components {
             ext: string;
             id: string;
             label: string;
+            /**
+             * Format: int64
+             * @description Cap on output height in pixels; `null` keeps the source height.
+             *
+             *     Carried because it is a *rejection*: a composition whose canvas is
+             *     taller than this is refused outright (`canvas_over_preset_height`)
+             *     rather than rescaled, so a client that cannot see the number can only
+             *     discover it by having a document turned away. Its `fps_max` twin is
+             *     deliberately **not** here, for the same reason inverted: an over-cap
+             *     frame rate is silently capped, never refused, so there is nothing a
+             *     client could do with it but mirror a value that changes nothing.
+             */
+            max_height?: number | null;
             surfaces: components["schemas"]["Surface"][];
         };
         TranscodePresetsResponse: {
@@ -4105,6 +4250,19 @@ export interface components {
             job?: null | components["schemas"]["TranscodeJobSnapshot"];
             /** @description `hit` | `created` | `joined` | `known_failure`. */
             outcome: string;
+        };
+        /**
+         * @description The display transform of the dihedral group of order 8: `flip_h` applied
+         *     after `quarter_turns` clockwise rotations. The same decomposition the
+         *     pinboard stores per pin, passed through verbatim.
+         */
+        Transform: {
+            flip_h?: boolean;
+            /**
+             * Format: int32
+             * @description 0-3 clockwise quarter turns.
+             */
+            quarter_turns?: number;
         };
         /**
          * @description A replacement preview image for an existing version. Same field semantics
@@ -7025,6 +7183,58 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TranscodeCacheStats"];
                 };
+            };
+        };
+    };
+    video_compose: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComposeRequest"];
+            };
+        };
+        responses: {
+            /** @description The composition was already cached */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscodeSubmitResponse"];
+                };
+            };
+            /** @description A job was created or joined */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscodeSubmitResponse"];
+                };
+            };
+            /** @description An item is not in this database, or has no readable file */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown preset, or a document the composition limits refuse: too many items, a canvas that is odd/too large/taller than the preset renders, a destination rectangle outside the canvas or at an odd position, a span whose end is not after its start, a still frozen at or past its item's recorded length, an unusable frame rate or length cap, or loop buffers over `max_mosaic_loop_mb` (the message carries the estimate) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -10,9 +10,16 @@ import { findBoardElement, findBoardViewport } from "@/lib/pinboardPreview"
 import { downloadBlob, sanitizeFilePart, timestampStamp } from "@/lib/download"
 import { exportGuard, useExporting } from "@/lib/pinboardExportGuard"
 import {
+    useAnimatedItemExport,
+    useAnimatedMosaicExport,
+    type AnimatedRowSet,
+} from "@/lib/pinboardAnimatedExport"
+import {
     usePinboardExportLossless,
     usePinboardMosaicExtent,
+    usePinboardMosaicLength,
     usePinboardMosaicSeamless,
+    type PinboardMosaicLength,
 } from "@/lib/state/pinboardMosaicPrefs"
 import { prettyPrintBytes } from "@/lib/utils"
 import type { MenuKit } from "./PinboardGlobalMenu"
@@ -151,6 +158,104 @@ export function useMosaicExport(boardName?: string | null) {
     return { save, busy }
 }
 
+// The length policies an animated save is offered, in menu order. "Longest
+// clip plays once" is the default and the only one that needs no number: it
+// takes the longest span on the board and loops everything shorter to fill it,
+// so the result is exactly one pass of the longest thing on screen.
+const LENGTH_ROWS: {
+    value: PinboardMosaicLength
+    label: string
+    title: string
+}[] = [
+    {
+        value: "longest",
+        label: "Longest Clip Plays Once",
+        title: "The longest playing clip runs exactly once; everything shorter"
+            + " loops to fill. A board with nothing playing renders one second.",
+    },
+    { value: 5, label: "Cap at 5 Seconds", title: "Stop after 5 seconds, whatever is playing" },
+    { value: 15, label: "Cap at 15 Seconds", title: "Stop after 15 seconds, whatever is playing" },
+    { value: 30, label: "Cap at 30 Seconds", title: "Stop after 30 seconds, whatever is playing" },
+]
+
+/**
+ * The animated rows: one per mosaic preset the policy offers, plus the length
+ * policy they share.
+ *
+ * A submenu rather than a flat section because the length rows belong WITH the
+ * presets (they decide what those presets encode) and because the presets are
+ * named for this menu already ("MP4", "WebM", "Animated WebP") — a flat
+ * section would need a header row the menu kit has no component for.
+ *
+ * Renders NOTHING when the gate fails — no capability, no video pin in scope,
+ * no preset within the animated-image length cap. Hide, never disable: a
+ * disabled row explaining a policy the user cannot change is worse than a menu
+ * that simply does not offer what this server will not do.
+ */
+function AnimatedRows({ kit, set }: { kit: MenuKit; set: AnimatedRowSet }) {
+    const [, length, setLength] = usePinboardMosaicLength()
+    const { Item, CheckboxItem, Separator, Sub, SubTrigger, SubContent } = kit
+    if (!set.visible || set.rows.length === 0) return null
+    return (
+        <Sub>
+            <SubTrigger>Save Animated</SubTrigger>
+            <SubContent className="w-56">
+                {set.rows.map(({ preset, label }) => (
+                    <Item
+                        key={preset.id}
+                        disabled={set.busy}
+                        onClick={() => set.save(preset, label)}
+                    >
+                        {label}
+                    </Item>
+                ))}
+                <Separator />
+                {/* Radio rows drawn with the kit's checkboxes, exactly like the
+                    extent pair above: clicking the checked one keeps it, so the
+                    choice can never be emptied. */}
+                {LENGTH_ROWS.map((row) => (
+                    <CheckboxItem
+                        key={String(row.value)}
+                        checked={length === row.value}
+                        title={row.title}
+                        onCheckedChange={() => setLength(row.value)}
+                    >
+                        {row.label}
+                    </CheckboxItem>
+                ))}
+            </SubContent>
+        </Sub>
+    )
+}
+
+/**
+ * The animated rows for a board, or for a selection of one (`keys`).
+ * Its own component because the hook behind it must not run in surfaces that
+ * never render the rows.
+ */
+export function AnimatedMosaicRows({
+    kit,
+    keys,
+}: {
+    kit: MenuKit
+    keys?: readonly string[] | null
+}) {
+    const set = useAnimatedMosaicExport(keys ?? null)
+    return <AnimatedRows kit={kit} set={set} />
+}
+
+/** The animated rows for ONE pin: the item itself, as a video. */
+export function AnimatedItemRows({
+    kit,
+    itemKey,
+}: {
+    kit: MenuKit
+    itemKey: string | null
+}) {
+    const set = useAnimatedItemExport(itemKey)
+    return <AnimatedRows kit={kit} set={set} />
+}
+
 /**
  * The format toggle, shared by every export surface so the wording of what
  * PNG actually buys can't drift between them. `composite` is true for the
@@ -212,6 +317,10 @@ export function MosaicMenuItems({
                     {`${w} px Wide`}
                 </Item>
             ))}
+            {/* The server-rendered twin of the rows above: the same board, the
+                same extent and seams, moving. Absent unless this policy allows
+                compositions and something on the board is a video. */}
+            <AnimatedMosaicRows kit={kit} />
             <Separator />
             {/* Radio pair, drawn with the kit's checkbox rows (Radix's
                 radio items aren't in the shared kit, and the check mark
