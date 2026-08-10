@@ -44,6 +44,7 @@ const {
   SESSION_PARAM_KEYS,
   creationStamp,
   effectiveCreationDefaultsFrom,
+  isFreshSession,
   sanitizeSearchDefaults,
 } = await import("../lib/searchDefaults.ts")
 
@@ -876,29 +877,36 @@ const isVideo = (row) => row === "v"
 // session (docs/search-scroll-mode-design.md §7, lib/searchDefaults.ts).
 
 {
-  // THE property this release turns on: nothing changes for anybody. With
-  // the shipped creation defaults equal to the codec defaults, a user who
-  // has saved nothing resolves to the codec values and therefore stamps an
-  // EMPTY set — a fresh search URL stays exactly as blank as it was before
-  // this layer existed. If this ever fails, every paged user's URLs grew a
-  // parameter overnight.
-  const stamp = creationStamp(effectiveCreationDefaultsFrom({}))
+  // THE property, stated so it survives any future change of a creation
+  // default: with nothing saved, the stamp is exactly the keys whose
+  // creation default differs from the codec default — no more (a stamped
+  // codec value is noise in every URL of the session) and no less (a
+  // differing default that never reaches the URL is a default that does
+  // nothing). As shipped both sides are empty, which is the same statement
+  // as "a user who saved nothing gets byte-identical URLs to the ones they
+  // got before this layer existed".
+  const stamped = Object.keys(creationStamp(effectiveCreationDefaultsFrom({})))
+    .sort()
+  const differing = SEARCH_DEFAULTABLE_KEYS
+    .filter((key) => SEARCH_DEFAULTABLE_PARAMS[key].creationDefault
+      !== SEARCH_DEFAULTABLE_PARAMS[key].codecDefault)
+    .sort()
   check(
-    "no saved defaults stamps nothing at all",
-    Object.keys(stamp).length === 0,
-    shape(stamp)
+    "with nothing saved, the stamp is exactly the keys whose creation default differs from the codec default",
+    shape(stamped) === shape(differing),
+    `${shape(stamped)} vs ${shape(differing)}`
   )
-  // …which is the same statement as this one, and both are worth having:
-  // the one above can be broken by the stamp derivation, this one by the
-  // registry.
-  for (const key of SEARCH_DEFAULTABLE_KEYS) {
-    const param = SEARCH_DEFAULTABLE_PARAMS[key]
-    check(
-      `${key} ships with its creation default equal to its codec default`,
-      param.creationDefault === param.codecDefault,
-      `${shape(param.creationDefault)} vs ${shape(param.codecDefault)}`
-    )
-  }
+  // The single line this release's rollout decision is written on. Flipping
+  // vm's creation default to "scroll" (design §7) means deleting this line
+  // and nothing else in this file — the property above already covers the
+  // flipped state. It cannot rewrite anybody's URLs either way: creation
+  // defaults only touch sessions created after the flip, and the codec
+  // default stays "pages" forever.
+  check(
+    "vm ships opt-in this release (delete this line with the creation-default flip; design §7 rollout)",
+    SEARCH_DEFAULTABLE_PARAMS.vm.creationDefault === "pages",
+    shape(SEARCH_DEFAULTABLE_PARAMS.vm.creationDefault)
+  )
 }
 
 {
@@ -1007,17 +1015,39 @@ const isVideo = (row) => row === "v"
     "the position parameters block stamping too",
     ["page", "top", "gi"].every((key) => SESSION_PARAM_KEYS.includes(key))
   )
-  // Filters deliberately do NOT block it: a shared filter link gets the
+  // The predicate itself, on real URLSearchParams — the same function both
+  // call sites in app/search/SearchPage.tsx use (the mount snapshot and the
+  // live window.location.search re-check).
+  //
+  // Filters deliberately do NOT block a stamp: a shared filter link gets the
   // recipient's presentation over an identical result set (design §7).
-  const params = new URLSearchParams("tag.pos_match_all=cat&at.query=hello")
+  check(
+    "an empty URL is a fresh session",
+    isFreshSession(new URLSearchParams(""))
+  )
   check(
     "a filter-only URL is still a fresh session",
-    !SESSION_PARAM_KEYS.some((key) => params.has(key))
+    isFreshSession(new URLSearchParams("tag.pos_match_all=cat&at.query=hello"))
   )
-  const bookmarked = new URLSearchParams("tag.pos_match_all=cat&page=3")
   check(
     "a filter URL carrying a page is not",
-    SESSION_PARAM_KEYS.some((key) => bookmarked.has(key))
+    !isFreshSession(new URLSearchParams("tag.pos_match_all=cat&page=3"))
+  )
+  // PRESENCE, never value. A zero is a parameter something wrote — `page=0`
+  // survives from a hand-edited or generated link, `top=0` is the top of the
+  // set in scroll mode, `gi=0` is the gallery open on the first item — and
+  // each of them states a presentation the stamp must not overwrite.
+  check(
+    "?page=0 is present, so not a fresh session",
+    !isFreshSession(new URLSearchParams("page=0"))
+  )
+  check(
+    "?top=0 is present, so not a fresh session",
+    !isFreshSession(new URLSearchParams("top=0"))
+  )
+  check(
+    "?gi=0 is present, so not a fresh session",
+    !isFreshSession(new URLSearchParams("gi=0"))
   )
 }
 

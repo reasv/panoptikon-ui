@@ -564,6 +564,10 @@ export function PinboardLibraryButton() {
             <Button
                 variant="ghost"
                 size="icon"
+                // shrink-0: in the search header this sits in a flex cluster
+                // beside the mode toggle, and a squeezed icon button squashes
+                // its glyph instead of letting the cluster overflow
+                className="shrink-0"
                 title="Pinboard library"
                 aria-label="Pinboard library"
                 onClick={() => setOpen(true)}

@@ -31,7 +31,7 @@ import { usePinboardURLLoader } from '@/lib/pinboardLinks'
 import { usePinboardAssociatedOnly } from '@/lib/state/pinboardLibraryPrefs'
 import { ImageSimilarityHeader } from '@/components/ImageSimilarityHeader'
 import { mintSeed, useOrderBy, usePageSize, usePageSizeRaw, useQueryOptions, useRandomSeed, useSearchPageRaw, useStampRandomSeed } from "@/lib/state/searchQuery/clientHooks"
-import { SESSION_PARAM_KEYS, creationStamp, effectiveCreationDefaults } from "@/lib/searchDefaults"
+import { creationStamp, effectiveCreationDefaults, isFreshSession } from "@/lib/searchDefaults"
 import { ViewModeToggle } from "@/components/ViewModeToggle"
 import { getScrollPositionURL } from "@/lib/state/searchQuery/serializers"
 import { overscanItemsFor, topRowHighlightItem, virtualPageAnchor, virtualPageOf } from "@/lib/scrollMode"
@@ -352,7 +352,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
         scrollMode,
         page,
         k,
-        freshSession: !SESSION_PARAM_KEYS.some((key) => urlParams.has(key)),
+        freshSession: isFreshSession(urlParams),
     })
     const normalizedScrollURL = useRef(false)
     useEffect(() => {
@@ -411,8 +411,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
         // user asked for (a shared `?page=3` opening on page 1), and the
         // design's rule for every ambiguous case is that conservative is
         // correct.
-        const liveParams = new URLSearchParams(window.location.search)
-        if (SESSION_PARAM_KEYS.some((key) => liveParams.has(key))) return
+        if (!isFreshSession(new URLSearchParams(window.location.search))) return
         const stamp = creationStamp(effectiveCreationDefaults())
         const replace = { history: "replace" as const }
         if (stamp.vm !== undefined) setViewMode(stamp.vm, replace)

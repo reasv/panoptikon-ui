@@ -21,6 +21,19 @@
 // the codec default simply stamps nothing — blank already means that, which
 // is why a user who has saved nothing gets byte-identical URLs to the ones
 // they got before this layer existed.
+//
+// What the registry below actually covers, exactly: the resolution
+// (effectiveCreationDefaultsFrom), the stamp derived from it (creationStamp)
+// and the defaults-saved toast (describeStoredDefaults) all iterate
+// SEARCH_DEFAULTABLE_KEYS, so a key added there is resolved, stamped and
+// named with no further edits. Two things are NOT derived and must be
+// updated by hand: SESSION_PARAM_KEYS below (a stampable key that does not
+// block stamping would be overwritten on the next load of a URL carrying it
+// — scripts/scrollmode.test.mjs asserts the containment), and the
+// per-setter dispatch in the stamping effect (app/search/SearchPage.tsx),
+// where each key needs its own nuqs setter call. That dispatch is
+// irreducibly manual: the setters are hooks, one per parameter, and this
+// module is deliberately import-free.
 
 import type { ViewMode } from "./state/gallery"
 
@@ -66,9 +79,22 @@ export const SEARCH_DEFAULTABLE_PARAMS: {
   page_size: { codecDefault: 10, creationDefault: 10, label: "Page Size" },
 }
 
-// The parameter names for the defaults-saved toast, in registry order.
-export function searchDefaultableLabels(): string[] {
-  return SEARCH_DEFAULTABLE_KEYS.map((key) => SEARCH_DEFAULTABLE_PARAMS[key].label)
+/**
+ * The defaults-saved toast's subject: every key that was actually STORED,
+ * named and shown with the value that was stored for it — "Browsing Mode:
+ * scroll, Page Size: 100", in registry order.
+ *
+ * Built from saveUserDefaults' return value rather than from the gesture,
+ * because sanitizeSearchDefaults can drop or clamp what the user tried to
+ * save (a `?page_size=0` view means "no LIMIT" and stores no page size at
+ * all; a hand-typed 20000 stores as 10000). A toast that named the gesture
+ * would promise a default that no future session will ever get.
+ */
+export function describeStoredDefaults(stored: SearchUserDefaults): string {
+  return SEARCH_DEFAULTABLE_KEYS
+    .filter((key) => stored[key] !== undefined)
+    .map((key) => `${SEARCH_DEFAULTABLE_PARAMS[key].label}: ${stored[key]}`)
+    .join(", ")
 }
 
 const STORAGE_KEY = "searchUserDefaults"
@@ -116,16 +142,23 @@ export function loadUserDefaults(): SearchUserDefaults {
   }
 }
 
-export function saveUserDefaults(values: ResolvedSearchDefaults): void {
-  if (typeof window === "undefined") return
+/**
+ * Saves, and returns WHAT WAS SAVED: the sanitized record, which is not
+ * always what was passed in (see describeStoredDefaults). The caller's toast
+ * is built from this return value, so the sentence the user reads is the
+ * stored reality rather than the gesture they made.
+ */
+export function saveUserDefaults(
+  values: ResolvedSearchDefaults
+): SearchUserDefaults {
+  const stored = sanitizeSearchDefaults(values)
+  if (typeof window === "undefined") return stored
   try {
-    window.localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(sanitizeSearchDefaults(values))
-    )
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(stored))
   } catch {
     // Storage full or blocked: defaults just don't persist
   }
+  return stored
 }
 
 export function clearUserDefaults(): void {
@@ -172,11 +205,14 @@ export function creationStamp(
   resolved: ResolvedSearchDefaults
 ): SearchUserDefaults {
   const stamp: SearchUserDefaults = {}
-  if (resolved.vm !== SEARCH_DEFAULTABLE_PARAMS.vm.codecDefault) {
-    stamp.vm = resolved.vm
-  }
-  if (resolved.page_size !== SEARCH_DEFAULTABLE_PARAMS.page_size.codecDefault) {
-    stamp.page_size = resolved.page_size
+  for (const key of SEARCH_DEFAULTABLE_KEYS) {
+    if (resolved[key] !== SEARCH_DEFAULTABLE_PARAMS[key].codecDefault) {
+      // `key` is a union here, so TypeScript computes the write type of
+      // stamp[key] as the intersection of the two property types and cannot
+      // see that both sides land on the same K. One localized cast, over an
+      // assignment whose correctness the loop's own types establish.
+      stamp[key] = resolved[key] as never
+    }
   }
   return stamp
 }
@@ -199,3 +235,21 @@ export function creationStamp(
  * modules that own the keys drag in nuqs and React.
  */
 export const SESSION_PARAM_KEYS = ["vm", "page", "page_size", "top", "gi"]
+
+/**
+ * Whether a load creates a search session — the one predicate both callers
+ * in app/search/SearchPage.tsx use (the mount-time snapshot and the live
+ * `window.location.search` re-check just before stamping).
+ *
+ * PRESENCE, never value: `?page=0` and `?top=0` are parameters the URL
+ * carries, so they are not a fresh session and they block stamping, exactly
+ * like `?page=3`. Anything that reasoned about the value would have to
+ * decide what a zero means, and every such URL was written by something —
+ * a share, a Back, a mode switch — that already stated its presentation.
+ *
+ * Typed structurally so both a URLSearchParams and Next's read-only
+ * ReadonlyURLSearchParams satisfy it without this module importing either.
+ */
+export function isFreshSession(params: { has(key: string): boolean }): boolean {
+  return !SESSION_PARAM_KEYS.some((key) => params.has(key))
+}

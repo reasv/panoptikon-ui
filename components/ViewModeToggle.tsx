@@ -15,8 +15,8 @@ import { useCommitViewMode } from "@/lib/searchHooks"
 import { usePageSize } from "@/lib/state/searchQuery/clientHooks"
 import {
     clearUserDefaults,
+    describeStoredDefaults,
     saveUserDefaults,
-    searchDefaultableLabels,
 } from "@/lib/searchDefaults"
 
 /**
@@ -50,6 +50,11 @@ export function ViewModeToggle() {
             <Button
                 variant="ghost"
                 size="icon"
+                // shrink-0: this cluster shares the header row with the
+                // pinboard tabs, and a squeezed icon button squashes its
+                // glyph rather than moving. Overflow is the honest failure
+                // mode on a narrow viewport.
+                className="shrink-0"
                 title={scrollMode
                     ? "Switch to paged browsing"
                     : "Switch to scroll browsing"}
@@ -62,7 +67,12 @@ export function ViewModeToggle() {
                     ? <InfiniteScroll className="h-5 w-5" />
                     : <Files className="h-5 w-5" />}
             </Button>
-            <DropdownMenu>
+            {/* modal={false}: modal mode puts pointer-events:none on the
+                body while the menu is open, so the press that dismisses it
+                hit-tests to <html> instead of the control underneath — the
+                dismissing press must land on the control it aimed at (same
+                reason as the pinboard toolbar's menus). */}
+            <DropdownMenu modal={false}>
                 {/* A narrow caret rather than a second icon button: it is an
                     appendage of the toggle, not a peer of it, and the width
                     of a full icon button here would push the header's right
@@ -93,14 +103,23 @@ export function ViewModeToggle() {
                         session. */}
                     <DropdownMenuItem
                         onClick={() => {
-                            saveUserDefaults({ vm: viewMode, page_size: pageSize })
+                            // The toast names what was STORED, not what was
+                            // clicked: saveUserDefaults sanitizes, and a
+                            // view at page_size=0 ("no LIMIT") or a
+                            // hand-typed 20000 stores something other than
+                            // the current view. Derived from the registry,
+                            // so a parameter added there is named here too.
+                            const stored = saveUserDefaults({
+                                vm: viewMode,
+                                page_size: pageSize,
+                            })
+                            const summary = describeStoredDefaults(stored)
                             toast({
-                                // Named from the registry, so a parameter
-                                // added there can't quietly go unmentioned
-                                // here.
-                                description: "New searches will start with this"
-                                    + ` view's current ${searchDefaultableLabels()
-                                        .join(" and ")} settings.`,
+                                description: summary
+                                    ? `New searches will start with ${summary}.`
+                                    : "Nothing in this view could be saved as a"
+                                    + " default, so new searches keep the app's"
+                                    + " built-in settings.",
                                 title: "Search Defaults Saved",
                                 duration: 4000,
                             })
