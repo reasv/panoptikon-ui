@@ -315,12 +315,29 @@ export function ImageGallery({
         };
     }, []);
 
+    const hidePinBoard = useGalleryHidePinBoard()[0]
+    // Which branch this gallery is: the large image (the player world, and the
+    // only place this feature exists) or the pinboard. Named because the
+    // prefetch effect below has to stand down on exactly the condition the
+    // JSX renders the board on — pins are an arrangement, not a sequence, and
+    // nothing about the end action may reach them.
+    const showsLargeImage = pinboard.length === 0 || hidePinBoard
+
     // Ctrl/Cmd+C fires the current gallery item's adaptive share verb (§0.12).
-    // Its own listener: the main gallery key handler bails on ctrlKey by design.
-    // Guards mirror that handler (no inputs, no open Radix layer) plus one it
-    // lacks — never hijack an active text selection, so normal copy still works.
+    // Its own listener: the main gallery key handler bails on ctrlKey by
+    // design. That handler is mounted INSIDE the large-image subtree, so it is
+    // dead whenever the pinboard replaces it; this one lives at the top level
+    // and needs the same scoping by hand (§4.4d) — without it a Ctrl+C aimed
+    // at a marquee-selected set of pins would copy items[index], an item that
+    // is not even on screen, at the cost of a full relay upload. The remaining
+    // guards mirror the main handler (no inputs, no open Radix layer) plus one
+    // it lacks — never hijack an active text selection, so normal copy still
+    // works. Copying a pinboard selection is deferred, not implemented here.
+    const showsLargeImageRef = useRef(showsLargeImage)
+    showsLargeImageRef.current = showsLargeImage
     useEffect(() => {
         const onCopyKey = (event: KeyboardEvent) => {
+            if (!showsLargeImageRef.current) return
             if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
             if (event.key !== "c" && event.key !== "C") return
             // A held Ctrl/Cmd+C must fire once, not one relay action (and one
@@ -336,18 +353,11 @@ export function ImageGallery({
             const selection = window.getSelection()
             if (selection && selection.isCollapsed === false) return
             event.preventDefault()
-            galleryShareRef.current.execute()
+            void galleryShareRef.current.execute()
         }
         window.addEventListener("keydown", onCopyKey)
         return () => window.removeEventListener("keydown", onCopyKey)
     }, []);
-    const hidePinBoard = useGalleryHidePinBoard()[0]
-    // Which branch this gallery is: the large image (the player world, and the
-    // only place this feature exists) or the pinboard. Named because the
-    // prefetch effect below has to stand down on exactly the condition the
-    // JSX renders the board on — pins are an arrangement, not a sequence, and
-    // nothing about the end action may reach them.
-    const showsLargeImage = pinboard.length === 0 || hidePinBoard
 
     const fetchPageRows = useFetchPageRows()
     const prefetchPageState = usePrefetchPageState()
@@ -555,7 +565,7 @@ export function ImageGallery({
                     <BookmarkBtn sha256={currentItem.sha256} bookmarked={currentItem.bookmarked} buttonVariant />
                     <OpenFile sha256={currentItem.sha256} path={currentItem.path} buttonVariant />
                     <OpenFolder sha256={currentItem.sha256} path={currentItem.path} buttonVariant />
-                    <ShareButton sha256={currentItem.sha256} path={currentItem.path} buttonVariant />
+                    <ShareButton sha256={currentItem.sha256} path={currentItem.path} buttonVariant shortcut="Ctrl+C" />
                     <Link
                         href={prevImageLink}
                         onClick={onClickPrevImage}
@@ -592,7 +602,8 @@ export function ImageGallery({
                         Download still lives in ShareButton's right-click
                         alternates. */}
                     {galleryShare.primaryVerb === "copy" && <Button
-                        onClick={() => galleryShare.download()}
+                        onClick={() => void galleryShare.download()}
+                        disabled={galleryShare.busy}
                         variant="ghost"
                         size="icon"
                         title="Download file"

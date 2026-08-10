@@ -4,7 +4,7 @@ import { $api } from "@/lib/api"
 import { useBookmarkNs, } from "@/lib/state/zust"
 import { useQueryClient } from "@tanstack/react-query"
 import { useToast } from "@/components/ui/use-toast"
-import { File, FolderOpen, BookmarkPlus, BookmarkX, Cable, ClipboardCopy, Download } from "lucide-react"
+import { File, FolderOpen, BookmarkPlus, BookmarkX, Cable, ClipboardCopy, Download, LoaderCircle } from "lucide-react"
 import { Button } from "./ui/button"
 import { Toggle } from "./ui/toggle"
 import { cn } from "@/lib/utils"
@@ -377,41 +377,55 @@ export const OpenFolder = (
 // track the active verb. Right-click reveals the non-primary verb and, when a
 // Relay is detected but unpaired, a doorway into pairing.
 export const ShareButton = (
-    { sha256, path, buttonVariant }: {
+    { sha256, path, buttonVariant, shortcut }: {
         sha256: string
         path?: string
         buttonVariant?: boolean
+        // Keyboard accelerator to name in the tooltip, where one exists for
+        // this surface (the gallery's Ctrl+C — otherwise undiscoverable).
+        shortcut?: string
     }
 ) => {
     const share = useFileShare({ sha256, path })
     const [menuOpen, setMenuOpen] = useState(false)
     const isCopy = share.primaryVerb === "copy"
-    const title = isCopy ? "Copy file to clipboard" : "Download file"
-    const Icon = isCopy ? ClipboardCopy : Download
+    const verb = isCopy ? "Copy file to clipboard" : "Download file"
+    // A copy can spend minutes materializing a multi-GB file; the button says
+    // so and refuses a second click, which would start a whole second transfer.
+    const title = share.busy
+        ? (isCopy ? "Copying…" : "Downloading…")
+        : shortcut && isCopy ? `${verb} (${shortcut})` : verb
+    const Icon = share.busy ? LoaderCircle : isCopy ? ClipboardCopy : Download
 
     const trigger = buttonVariant
         ? <Button
             title={title}
             aria-label={title}
-            onClick={() => share.execute()}
+            aria-busy={share.busy}
+            disabled={share.busy}
+            onClick={() => void share.execute()}
             variant="ghost"
             size="icon"
         >
-            <Icon className="w-4 h-4" />
+            <Icon className={cn("w-4 h-4", share.busy && "animate-spin")} />
         </Button>
         : <button
-            onClick={() => share.execute()}
+            onClick={() => void share.execute()}
             title={title}
             aria-label={title}
+            aria-busy={share.busy}
+            disabled={share.busy}
             // The free slot in the bottom-left overlay row (left-1 / left-12
             // taken by Open File / Open Folder). Same hover/hold-open opacity
-            // dance as its siblings.
+            // dance as its siblings — plus the focus-within clause they lack,
+            // so a keyboard user never tabs onto an invisible control.
             className={cn(
-                "absolute bottom-3 left-[5.5rem] rounded-full bg-white p-2 hover:scale-105 opacity-0 transition-opacity duration-300 group-hover:opacity-100",
+                "absolute bottom-3 left-[5.5rem] rounded-full bg-white p-2 hover:scale-105 opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100",
                 menuOpen && "opacity-100",
+                share.busy && "opacity-100 cursor-progress",
             )}
         >
-            <Icon className="w-6 h-6 text-gray-800" />
+            <Icon className={cn("w-6 h-6 text-gray-800", share.busy && "animate-spin")} />
         </button>
 
     // Copy primary => Download is the alternate. Download primary => there is no
@@ -421,7 +435,7 @@ export const ShareButton = (
     return <ContextMenu onOpenChange={setMenuOpen}>
         <ContextMenuTrigger asChild>{trigger}</ContextMenuTrigger>
         <ContextMenuContent className="min-w-52">
-            {showDownloadAlt && <ContextMenuItem onClick={() => share.download()}>Download</ContextMenuItem>}
+            {showDownloadAlt && <ContextMenuItem disabled={share.busy} onClick={() => void share.download()}>Download</ContextMenuItem>}
             {share.canPair && <ContextMenuItem onClick={() => void share.pairRelay()}>Pair with desktop…</ContextMenuItem>}
         </ContextMenuContent>
     </ContextMenu>

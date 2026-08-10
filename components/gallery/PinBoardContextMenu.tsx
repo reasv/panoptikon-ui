@@ -225,6 +225,12 @@ export function PinBoardCtx({
     return (
         <ContextMenuContent>
             <ContextMenuItem onClick={() => openURL()}>Open in New Tab</ContextMenuItem>
+            {/* Saving the original file is a pure client-side capability that
+                the backend-open policy has no bearing on, so it sits OUTSIDE
+                the File submenu's gate — a restricted remote server would
+                otherwise lose the pinboard's download affordance while the
+                grid card's own share button still offers it. */}
+            <ContextMenuItem disabled={share.busy} onClick={() => void share.download()}>Download original</ContextMenuItem>
             {showFileMenu && (
                 <ContextMenuSub>
                     <ContextMenuSubTrigger inset>File</ContextMenuSubTrigger>
@@ -232,9 +238,8 @@ export function PinBoardCtx({
                         <ContextMenuItem onClick={openFile}>Open File</ContextMenuItem>
                         <ContextMenuItem onClick={showInFolder}>Show File in Folder</ContextMenuItem>
                         {share.primaryVerb === "copy" && (
-                            <ContextMenuItem onClick={() => share.execute()}>Copy file</ContextMenuItem>
+                            <ContextMenuItem disabled={share.busy} onClick={() => void share.execute()}>Copy file</ContextMenuItem>
                         )}
-                        <ContextMenuItem onClick={() => share.download()}>Download original</ContextMenuItem>
                     </ContextMenuSubContent>
                 </ContextMenuSub>
             )}

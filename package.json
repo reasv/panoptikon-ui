@@ -14,7 +14,8 @@
     "test:mosaic": "node --experimental-strip-types scripts/mosaic.test.mjs",
     "test:trimparam": "node --experimental-strip-types scripts/trimparam.test.mjs",
     "test:outroskip": "node --experimental-strip-types scripts/outroskip.test.mjs",
-    "test:endaction": "node --experimental-strip-types scripts/endaction.test.mjs"
+    "test:endaction": "node --experimental-strip-types scripts/endaction.test.mjs",
+    "test:fileshare": "node --experimental-strip-types scripts/fileshare.test.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.1.2",
