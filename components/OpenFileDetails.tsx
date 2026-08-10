@@ -56,7 +56,7 @@ export function OpenDetailsButton({
                 onClick={() => onClick()}
                 title={!itemDetailsOpen ? "Open in Data View" : "Close Data View"}
                 aria-label={!itemDetailsOpen ? "Open in Data View" : "Close Data View"}
-                className="hover:scale-105 absolute bottom-2 right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                className="hover:scale-105 absolute bottom-2 right-2 bg-white rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
                 size="icon"
             >
                 {itemDetailsOpen ? <Book className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}

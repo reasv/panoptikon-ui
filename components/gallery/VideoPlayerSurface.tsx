@@ -2,10 +2,13 @@ import React from "react"
 import {
     ArrowRightToLine,
     Brackets,
+    Check,
     ChevronDown,
+    ClipboardCopy,
     Download,
     EllipsisVertical,
     ListVideo,
+    LoaderCircle,
     Maximize,
     Minimize,
     Pause,
@@ -21,7 +24,11 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TrimRange } from "@/lib/pinboardCrop"
-import { type ClipRequest, clipRows, exportClip, useClipBusy } from "@/lib/videoClip"
+import { type ClipRequest, clipRows, exportClip, useClipBusy, webVersionRow } from "@/lib/videoClip"
+import { useCopyDelivery } from "@/lib/state/copyDelivery"
+import { useArtifactDelivery } from "@/hooks/artifactShare"
+import { useFileShare } from "@/hooks/fileShare"
+import { PLAYBACK_PRESET, useTranscodeState } from "@/lib/videoTranscode"
 import { useVideoPresets } from "@/lib/useVideoPresets"
 import {
     GALLERY_END_ACTIONS,
@@ -376,6 +383,7 @@ function MenuItem({
     onClick,
     disabled,
     title,
+    checked,
 }: {
     label: string
     icon: React.ReactNode
@@ -387,11 +395,17 @@ function MenuItem({
     // Overrides the tooltip, for a row that has something to say beyond its
     // own label (why it is disabled)
     title?: string
+    // A row that carries STATE rather than firing a one-shot verb: the pair
+    // announces the state to assistive tech, which a plain `menuitem` with a
+    // check drawn in its icon slot cannot. Absent — every existing row —
+    // leaves the markup exactly as it was.
+    checked?: boolean
 }) {
     return (
         <button
             type="button"
-            role="menuitem"
+            role={checked === undefined ? "menuitem" : "menuitemcheckbox"}
+            aria-checked={checked}
             title={title ?? label}
             onClick={onClick}
             disabled={disabled}
@@ -1069,7 +1083,16 @@ export function VideoPlayerSurface({
                             {/* Item verbs before mode verbs: this one acts on
                                 the file, the two below act on the player.
                                 One-shot, so it closes the menu — unlike the
-                                speed strip above it. */}
+                                speed strip above it.
+
+                                Stays a DOWNLOAD in copy mode: the surface is
+                                given a url and a filename and no item identity
+                                at all (no sha256, no clip target — those live
+                                on VideoDownloadControl), and a copy needs the
+                                hash to resolve a path and a size. This is the
+                                mini tier's only file row, and a download that
+                                always works beats a copy this component has no
+                                way to make. */}
                             {download && (
                                 <MenuItemLink
                                     label="Download original"
@@ -1203,10 +1226,55 @@ export function VideoDownloadControl({
         duration: clip?.duration,
         limits,
     })
+    // The already-encoded playable rendition of a needs-transcode item. On
+    // this surface the store reads `done` whenever such an item is showing at
+    // all (the host's showVideo requires the artifact URL), so the row is
+    // there exactly when the menu is — see webVersionRow for the full rule.
+    const { presets: playbackPresets } = useVideoPresets("playback")
+    const playbackState = useTranscodeState(clip?.sha256, PLAYBACK_PRESET)
+    const webRow = clip ? webVersionRow(playbackPresets, playbackState) : null
+
+    // "Copy, don't download" (lib/state/copyDelivery.ts). The store is global,
+    // so this control obeys a toggle flipped in a pin's context menu and vice
+    // versa — which is the whole reason it is a preference rather than a
+    // per-menu flag.
+    const copyInstead = useCopyDelivery((state) => state.copyInstead)
+    const setCopyInstead = useCopyDelivery((state) => state.setCopyInstead)
+    // The transcode rows' delivery seam. NULL means no copy route exists here
+    // (no relay copy feature, and a policy with backend-open disabled, or a
+    // client config still in flight), so `delivery != null` IS the availability
+    // gate — useArtifactDelivery returns null on exactly the useCopyAvailability
+    // answer the toggle would need, and asking that question twice in one
+    // component would only invite the reader to wonder how the two differ.
+    const delivery = useArtifactDelivery()
+    const copyAvailable = delivery != null
+    // The ORIGINAL file's copy verb. Called unconditionally — the hook reads
+    // nothing from `sha256` at render time (it resolves the item lazily, on
+    // invocation), so an empty hash is inert here; `copyMode` requires `clip`,
+    // and `execute` is NEVER invoked outside it.
+    const share = useFileShare({ sha256: clip?.sha256 ?? "", filename: download.filename })
+    // `share.busy` keeps the copy branch alive even if availability drops
+    // mid-transfer (relay unpairs, config invalidates): the spinner and its
+    // disabled state must outlive the gate, or a download link would surface
+    // under the pointer while the copy is still running.
+    const copyMode = (copyInstead && delivery != null && clip != null) || share.busy
+    // Undefined is `exportClip`'s download mode: the presence of a deliverer IS
+    // the mode there, so there is no verb flag to keep in step with this one.
+    // No `delivery.busy` merge on the rows below: `exportClip` awaits the
+    // deliverer INSIDE its per-item guard, so the delivery window is already a
+    // busy window — a second flag could only ever agree with the first.
+    const deliver = copyMode && delivery ? delivery.deliver : undefined
+
     // The mini tier's picture is barely wider than this control; the kebab's
     // own "Download original" row is what serves it, and the host keeps that
     // row at every tier precisely so this one may vanish.
-    const canClip = clip != null && rows.length > 0 && size !== "mini"
+    //
+    // `copyAvailable` joins the row count because the menu is the toggle row's
+    // only home: an item whose policy offers no clip preset would otherwise
+    // have a primary button that copies and nowhere to turn that off.
+    const canClip = clip != null
+        && (rows.length > 0 || webRow != null || copyAvailable)
+        && size !== "mini"
 
     // Click-open, so it must survive a pointer that wanders off the surface —
     // and it holds under its own key, because the surface's kebab is a second
@@ -1251,26 +1319,72 @@ export function VideoDownloadControl({
             onClick={(e) => e.stopPropagation()}
             onDoubleClick={(e) => e.stopPropagation()}
         >
-            <div className="relative flex items-center gap-px">
-                <a
-                    title="Download the original file"
-                    aria-label="Download the original file"
-                    href={download.url}
-                    download={download.filename}
-                    // Links are draggable by default, and the pinboard's drop
-                    // path reads any text/plain payload as a sha256 — dragging
-                    // this onto the board would mint an unresolvable pin
-                    draggable={false}
-                    className={cn(SURFACE_BUTTON_CLASS, "bg-black/50 hover:bg-black/70")}
-                >
-                    <Download className="size-[20px]" />
-                </a>
+            <div className="relative flex items-center">
+                {copyMode ? (
+                    // A <button>, never the <a> below: there is no href for
+                    // "put this file on the clipboard", and an anchor the
+                    // browser could still save (middle-click, "save link as")
+                    // would hand out the very download the mode replaces. The
+                    // glyph is the adaptive share button's own (ClipboardCopy /
+                    // a spinning LoaderCircle — components/imageButtons.tsx), so
+                    // one verb has one picture everywhere.
+                    <button
+                        type="button"
+                        title={share.busy ? "Copying…" : "Copy the original file"}
+                        aria-label={share.busy ? "Copying…" : "Copy the original file"}
+                        aria-busy={share.busy}
+                        // A copy can spend minutes materializing a multi-GB
+                        // file; a second click would start a whole second one.
+                        disabled={share.busy}
+                        onClick={() => void share.execute()}
+                        className={cn(
+                            SURFACE_BUTTON_CLASS,
+                            "bg-black/30 hover:bg-black/50",
+                            canClip && "rounded-r-none",
+                            share.busy
+                            && "cursor-default text-white/40 hover:bg-black/30 hover:text-white/40",
+                        )}
+                    >
+                        {share.busy
+                            ? <LoaderCircle className="size-[20px] animate-spin" />
+                            : <ClipboardCopy className="size-[20px]" />}
+                    </button>
+                ) : (
+                    <a
+                        title="Download the original file"
+                        aria-label="Download the original file"
+                        href={download.url}
+                        download={download.filename}
+                        // Links are draggable by default, and the pinboard's drop
+                        // path reads any text/plain payload as a sha256 — dragging
+                        // this onto the board would mint an unresolvable pin
+                        draggable={false}
+                        className={cn(
+                            SURFACE_BUTTON_CLASS,
+                            // The corner floats over the raw picture with no
+                            // scrim, so a bare glyph vanishes on bright video; a
+                            // light backing, not the bottom row's transparency.
+                            "bg-black/30 hover:bg-black/50",
+                            canClip && "rounded-r-none",
+                        )}
+                    >
+                        <Download className="size-[20px]" />
+                    </a>
+                )}
                 {canClip && (
+                    // The narrower flush half of one split button: same 28px
+                    // height as the primary, joined edge unrounded on both
+                    // sides so the hover highlights meet as halves of a whole.
                     <SurfaceButton
                         title="Other download formats"
                         active={open}
                         onClick={() => setOpen((v) => !v)}
-                        className="bg-black/50 p-0.5 hover:bg-black/70"
+                        className={cn(
+                            "rounded-l-none bg-black/30 px-0.5 hover:bg-black/50",
+                            // className outranks SurfaceButton's active wash,
+                            // so the open state must carry its own lit look
+                            open && "bg-black/50",
+                        )}
                     >
                         <ChevronDown className="size-[20px]" />
                     </SurfaceButton>
@@ -1280,20 +1394,73 @@ export function VideoDownloadControl({
                         {/* The file itself first: it is the row the primary
                             button already is, spelled out so the menu is a
                             complete answer to "download this" rather than a
-                            list of the alternatives. */}
-                        <MenuItemLink
-                            label="Original file"
-                            icon={<Download className="size-3.5" />}
-                            href={download.url}
-                            download={download.filename}
-                            onClick={close}
-                        />
-                        <div aria-hidden className="my-1 h-px bg-white/15" />
+                            list of the alternatives. Which means it follows the
+                            primary into copy mode — the row and the button it
+                            names cannot be two different verbs. */}
+                        {copyMode ? (
+                            <MenuItem
+                                label="Original file"
+                                icon={<ClipboardCopy className="size-3.5" />}
+                                disabled={share.busy}
+                                title={share.busy
+                                    ? "Copying…"
+                                    : "Copy the original file"}
+                                onClick={() => {
+                                    close()
+                                    void share.execute()
+                                }}
+                            />
+                        ) : (
+                            <MenuItemLink
+                                label="Original file"
+                                icon={<Download className="size-3.5" />}
+                                href={download.url}
+                                download={download.filename}
+                                onClick={close}
+                            />
+                        )}
+                        {/* Above the divider with Original: this row too is a
+                            file that already exists (the playback rendition),
+                            not work to be started. A button all the same —
+                            the artifact can be evicted, and the re-POST it
+                            runs through is a hit or a self-heal, never a 404
+                            saved as an .mp4 (see webVersionRow). */}
+                        {webRow && (
+                            <MenuItem
+                                label={webRow.label}
+                                icon={<Download className="size-3.5" />}
+                                disabled={busy}
+                                title={busy
+                                    ? "Another export of this item is still running"
+                                    : "The playable copy this video was encoded into"}
+                                onClick={() => {
+                                    close()
+                                    void exportClip({
+                                        sha256: clip.sha256,
+                                        preset: webRow.preset,
+                                        request: null,
+                                        rowLabel: webRow.label,
+                                        dbs: clip.dbs,
+                                        deliver,
+                                    })
+                                }}
+                            />
+                        )}
+                        {rows.length > 0 && (
+                            <div aria-hidden className="my-1 h-px bg-white/15" />
+                        )}
                         {/* Buttons, never links: these rows START WORK. The
                             bytes do not exist yet, so there is no href to give
                             them, and a link's "save link as" would hand the
                             user a 404 from the artifact route (which never
-                            starts a job — design §0.2). */}
+                            starts a job — design §0.2).
+
+                            Copy mode changes their DELIVERY, never their
+                            identity: same labels, same glyphs, same order. The
+                            row names the rendition it produces; where those
+                            bytes land is the mode's business, and renaming
+                            every row would make one preference look like eight
+                            different ones. */}
                         {rows.map(({ preset, label }) => (
                             <MenuItem
                                 key={preset.id}
@@ -1311,10 +1478,37 @@ export function VideoDownloadControl({
                                         request: clip.request,
                                         rowLabel: label,
                                         dbs: clip.dbs,
+                                        deliver,
                                     })
                                 }}
                             />
                         ))}
+                        {/* The mode switch, last and always — in DOWNLOAD mode
+                            too, since that is where it is turned on. Its own
+                            divider, because it is the only row here that does
+                            not act on the file: everything above produces
+                            bytes, this one decides where they go. */}
+                        {copyAvailable && (
+                            <>
+                                <div aria-hidden className="my-1 h-px bg-white/15" />
+                                <MenuItem
+                                    label="Copy, don't download"
+                                    checked={copyInstead}
+                                    // The slot is reserved either way, so
+                                    // toggling does not shift the label out
+                                    // from under the pointer.
+                                    icon={copyInstead
+                                        ? <Check className="size-3.5" />
+                                        : <span aria-hidden className="size-3.5 shrink-0" />}
+                                    title="Copy files to the clipboard instead of downloading them"
+                                    // Deliberately no close(): this popover
+                                    // closes only when a handler asks it to, and
+                                    // the rows above flipping verb under the
+                                    // cursor IS the toggle's feedback.
+                                    onClick={() => setCopyInstead(!copyInstead)}
+                                />
+                            </>
+                        )}
                     </SurfacePopover>
                 )}
             </div>
@@ -1357,7 +1551,10 @@ export function NativeControlsEscape({
                     title="More"
                     active={open}
                     onClick={() => setOpen((v) => !v)}
-                    className="bg-black/50 hover:bg-black/70"
+                    className={cn(
+                        "bg-black/30 hover:bg-black/50",
+                        open && "bg-black/50",
+                    )}
                 >
                     <EllipsisVertical className="size-[20px]" />
                 </SurfaceButton>

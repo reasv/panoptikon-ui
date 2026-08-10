@@ -22,10 +22,35 @@ import { useRelayPairing } from "@/hooks/fileOpen"
 
 type ShareMeta = { path?: string, filename: string, size?: number, sha256: string }
 
+// Whether a copy-as-file can happen at all here, by route. Factored out of
+// useFileShare because the artifact-side delivery (hooks/artifactShare.ts,
+// "Copy, don't download") asks the identical question about a transcode
+// artifact, and two spellings of this gate would be two policies.
+//
+// Neither answer says anything about a particular FILE — only about the
+// routes available to this browser, this relay and this policy. The per-file
+// eligibility (a full hash, a known size, a non-empty path) is a separate
+// gate each caller applies to its own metadata.
+export function useCopyAvailability(): { canCopyRelay: boolean, canCopyServer: boolean } {
+  const clientConfig = useClientConfig()
+  const relay = useRelay()
+  const disableBackendOpen = clientConfig.data?.disableBackendOpen || false
+  return {
+    canCopyRelay: relay.canCopyFiles,
+    // Backend-open availability is the server-copy gate (design §Resolution
+    // paths: "Desktop-managed local (or backend open actions available)") — the
+    // same admin-controlled policy signal Open/Reveal fall back on, covering the
+    // bare local gateway a desktopManaged check would wrongly exclude. Strict
+    // presence check: while the config is in flight the verb stays Download, so
+    // a restricted policy never flashes a Copy it would then retract.
+    canCopyServer: clientConfig.data !== undefined && !disableBackendOpen,
+  }
+}
+
 // The adaptive share verb (docs/file-sharing-design.md "adaptive share
 // button"). The primary click is Copy where a native path exists (relay paired
-// with the copy feature, or a desktop-managed server whose backend-open is
-// enabled) and Download otherwise. Download is always available as the
+// with the copy feature, or a server whose backend-open actions are enabled)
+// and Download otherwise. Download is always available as the
 // alternate. Copy has no visible effect of its own, so every copy path shows a
 // toast; Download rides the browser's own download UI.
 export function useFileShare({ sha256, path, filename, size }: {
@@ -37,7 +62,6 @@ export function useFileShare({ sha256, path, filename, size }: {
   const query = useSelectedDBs()[0]
   const queryClient = useQueryClient()
   const { toast } = useToast()
-  const clientConfig = useClientConfig()
   const relay = useRelay()
   // Only the pairing affordance for the button's right-click menu — NOT the
   // full useFileOpenActions, whose open/reveal mutations this hook never uses.
@@ -46,11 +70,8 @@ export function useFileShare({ sha256, path, filename, size }: {
   // duplicate mutation pairs (§FIX 11).
   const pairing = useRelayPairing()
   const { mutateAsync: copyOnServer } = $api.useMutation("post", "/api/open/clipboard/{sha256}")
-  const disableBackendOpen = clientConfig.data?.disableBackendOpen || false
-  const desktopManaged = clientConfig.data?.desktopManaged || false
 
-  const canCopyRelay = relay.canCopyFiles
-  const canCopyServer = desktopManaged && !disableBackendOpen
+  const { canCopyRelay, canCopyServer } = useCopyAvailability()
   const primaryVerb: "copy" | "download" = canCopyRelay || canCopyServer ? "copy" : "download"
 
   // One invocation at a time. A relay copy of a multi-GB video spends its

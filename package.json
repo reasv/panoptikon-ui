@@ -20,6 +20,7 @@
     "test:cliprequest": "node --experimental-strip-types scripts/clipRequest.test.mjs",
     "test:compose": "node --experimental-strip-types scripts/compose.test.mjs",
     "test:fileshare": "node --experimental-strip-types scripts/fileshare.test.mjs",
+    "test:artifactshare": "node --experimental-strip-types scripts/artifactShare.test.mjs",
     "test:scrollmode": "node --experimental-strip-types scripts/scrollmode.test.mjs"
   },
   "dependencies": {

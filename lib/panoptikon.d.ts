@@ -1029,6 +1029,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/open/clipboard/artifact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Copy a cached transcode artifact to the host system's clipboard
+         * @description Place an OS-native reference to a finished rendition (a clip, a converted video, a mosaic) on the clipboard of the machine running the server, so that pasting it into a file manager, a chat client or an upload form attaches that file.
+         *     The artifact is stored under its content-addressed `<key>.<ext>` name, which is useless to paste, so the path handed to the clipboard is a hardlinked view of the same bytes under a human file name; it is created on demand and removed with the artifact.
+         *     The write targets the *server's* clipboard, so this is only useful when the server and the browser share a machine (or when a custom open.clipboard_command forwards it elsewhere).
+         *     This is a potentially dangerous operation, as a custom command can execute arbitrary code.
+         */
+        post: operations["copy_artifact_to_clipboard_on_host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/open/clipboard/{sha256}": {
         parameters: {
             query?: never;
@@ -1623,6 +1646,50 @@ export interface components {
             /** @description Cache key; also the artifact's ETag and its `?key=` query value. */
             key: string;
             mime_type: string;
+            /**
+             * @description The absolute path of this artifact's *share view* on the machine
+             *     running this server — `share/<key>/<human name>`, the same path
+             *     `POST /api/open/clipboard/artifact` resolves to for this
+             *     [`Self::filename`].
+             *
+             *     The relay's mapping hint: when server and relay share a filesystem it
+             *     can take the file directly instead of streaming it back over HTTP.
+             *
+             *     **It names the share view, not the raw artifact, and it may not exist
+             *     yet.** The raw file is `<key>.<ext>`, a hash — a relay whose mapping
+             *     resolved *that* would paste a content-addressed name while the toast
+             *     and the server-copy route both promise the human one. Naming the share
+             *     view instead makes both outcomes agree: a path the relay cannot resolve
+             *     (or that has not been materialized) simply degrades to its
+             *     bytes-required branch and the upload carries the same name, while a
+             *     resolvable one lands on the human-named hardlink. The prediction is
+             *     exact — `TranscodeCache::share_target` is deterministic for a given
+             *     (artifact row, name), so a later `materialize_share` with this same
+             *     name creates precisely this path.
+             *
+             *     A deliberate, gated exposure of a server-side path. `ArtifactRef` only
+             *     rides the `POST /api/video/transcode` and `POST /api/video/compose`
+             *     responses and the job snapshot/SSE shapes those two produce, all of
+             *     which sit behind the `video_transcode`/`video_compose` capabilities —
+             *     a policy that grants either is already trusted with starting ffmpeg on
+             *     this host. The one artifact shape a *read-only* profile can reach is
+             *     `GET /api/video/artifact`'s 404 body, whose `job` can never be `Done`:
+             *     the pool frees a key's `by_key` entry in the same actor message that
+             *     publishes the terminal event, so a snapshot found by key is always
+             *     still queued or running.
+             */
+            path: string;
+            /**
+             * @description Lowercase hex sha256 of the artifact's **own** bytes (not the source
+             *     hash the key carries), as computed at publish time.
+             *
+             *     A receiver that was handed the bytes out-of-band — the Desktop relay,
+             *     which uploads an artifact on the browser's behalf — verifies them
+             *     against this. `None` for a row committed before the column existed;
+             *     every consumer must read that as "no integrity claim", never as a
+             *     mismatch.
+             */
+            sha256?: string | null;
             /** Format: int64 */
             size_bytes: number;
             /** @description Ready-to-use URL for `GET /api/video/artifact`. */
@@ -1817,7 +1884,7 @@ export interface components {
          *     served with, and whether an audio stream is possible at all.
          * @enum {string}
          */
-        Container: "mp4" | "webm" | "webp";
+        Container: "mp4" | "webm" | "webp" | "avif";
         ContinuousFilescanConfig: {
             enabled?: boolean;
             included_folders?: string[];
@@ -6216,6 +6283,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScanFailuresResponse"];
+                };
+            };
+        };
+    };
+    copy_artifact_to_clipboard_on_host: {
+        parameters: {
+            query: {
+                /** @description The artifact cache key, exactly as `ArtifactRef.key` carries it. */
+                key: string;
+                /**
+                 * @description The download name the client was handed on `ArtifactRef.filename`.
+                 *
+                 *     Optional: without it the artifact's stored name is used. It is
+                 *     re-sanitized inside `materialize_share` (single path component,
+                 *     length-capped), so a hostile value degrades to a safe name rather
+                 *     than escaping the share directory.
+                 */
+                name?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Artifact copied to the host clipboard */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenResponse"];
+                };
+            };
+            /** @description No cached artifact for this key */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
         };

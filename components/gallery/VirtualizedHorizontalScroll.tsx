@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { useSearchParams } from 'next/navigation'
-import { BookmarkBtn } from "@/components/imageButtons"
+import { BookmarkBtn, FileActionCluster } from "@/components/imageButtons"
 import { ScrollBar } from "@/components/ui/scroll-area"
 import { cn, getFileURL } from "@/lib/utils"
 import { useGalleryIndex, getGalleryOptionsSerializer } from "@/lib/state/gallery"
@@ -209,6 +209,12 @@ export function VirtualGalleryHorizontalScroll({
 // would put the strip's geometry a few pixels out per unloaded card. `bg-muted`
 // rather than the shared Skeleton primitive, whose bg-slate-100 is a
 // light-mode-only value (same call as ResultCellSkeleton's).
+//
+// Deliberately bare of the loaded card's overlay verbs — bookmark, pin, find
+// and the FileActionCluster all address a FILE, and this card has no row to
+// name one: every one of them needs `item.sha256` at least. The cluster in
+// particular would also mount a useFileShare per unloaded card. The verbs
+// appear with the row, which is the same moment the picture does.
 function HorizontalScrollSkeleton({ style }: { style: React.CSSProperties }) {
     return (
         <div
@@ -313,6 +319,9 @@ function VirtualHorizontalScrollElement({
                     id_type='file_id'
                     path={item.path}
                 />
+                {/* The one corner (bottom-right) the pin/bookmark/find trio
+                    leaves free; expands leftward and upward over the image. */}
+                <FileActionCluster sha256={item.sha256} path={item.path} anchor="bottom-right" />
             </figure>
         </div>
     )

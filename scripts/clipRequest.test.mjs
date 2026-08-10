@@ -14,6 +14,7 @@ import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
 const {
+  WEB_VERSION_LABEL,
   clipProgressText,
   clipRequestFor,
   clipRowLabel,
@@ -22,9 +23,10 @@ const {
   clipWindowSeconds,
   isClipBusy,
   raceDeadline,
+  webVersionRow,
 } = await import("../lib/videoClip.ts")
 const { FREEZE_EPS } = await import("../lib/videoTrim.ts")
-const { transcodeKey } = await import("../lib/videoTranscode.ts")
+const { PLAYBACK_PRESET, transcodeKey } = await import("../lib/videoTranscode.ts")
 
 let all = true
 function check(name, ok, detail = "") {
@@ -406,6 +408,56 @@ check(
   "and every pre-job state says the same honest thing",
   clipProgressText({ state: "idle" }) === "Contacting the server" &&
     clipProgressText({ state: "requesting" }) === "Contacting the server"
+)
+
+// ---- the web-version row -------------------------------------------------
+//
+// The already-encoded playable rendition of a needs-transcode item, offered
+// as a download. Its entire gate is "the playback store says done": that
+// state is only ever written by the playback path, and playback jobs are only
+// started for needs-transcode items — so no playability input is needed, and
+// a playable item can never grow the row.
+
+const playbackPreset = { id: PLAYBACK_PRESET, label: "Playback", channel: "fast", container: "mp4" }
+const otherPreset = { id: "my-playback", label: "My playback", channel: "fast", container: "mp4" }
+const doneState = { state: "done", artifactUrl: "/api/video/artifact?key=x", filename: "a.mp4" }
+
+check(
+  "a done playback job with the preset exposed yields the row",
+  (() => {
+    const row = webVersionRow([playbackPreset], doneState)
+    return row !== null && row.preset === playbackPreset && row.label === WEB_VERSION_LABEL
+  })()
+)
+check(
+  "the label names a file, not work",
+  WEB_VERSION_LABEL === "Web version"
+)
+// Every non-done state hides the row: nothing exists to be "already there".
+for (const state of [
+  { state: "idle" },
+  { state: "requesting" },
+  { state: "queued", position: 2 },
+  { state: "running", progress: 0.5 },
+  { state: "failed", error: "no", sticky: true },
+  { state: "failed", error: "no", sticky: false },
+]) {
+  check(
+    `no row while the playback job is ${state.state}${"sticky" in state ? ` (sticky=${state.sticky})` : ""}`,
+    webVersionRow([playbackPreset], state) === null
+  )
+}
+// The preset must be the PLAYBACK preset by id — the one the playback path
+// actually encoded with — not merely any preset tagged for the playback
+// surface. A policy that withholds it hides the row (hide, never disable).
+check(
+  "no row when the policy withholds the playback preset",
+  webVersionRow([], doneState) === null &&
+    webVersionRow([otherPreset], doneState) === null
+)
+check(
+  "the row finds the playback preset among others by id",
+  webVersionRow([otherPreset, playbackPreset], doneState)?.preset === playbackPreset
 )
 
 // ---- the wait's deadline ------------------------------------------------

@@ -3,6 +3,7 @@ import { fetchClient } from "@/lib/api"
 import { downloadURL } from "@/lib/download"
 import { FREEZE_EPS } from "@/lib/videoTrim"
 import {
+  PLAYBACK_PRESET,
   POLL_TIMEOUT_MS,
   errorDetail,
   followTranscodeJob,
@@ -20,6 +21,13 @@ import { toast } from "@/components/ui/use-toast"
 // import of either is a runtime module the node test scripts cannot resolve.
 import type { components } from "@/lib/panoptikon"
 import type { TrimRange } from "@/lib/pinboardCrop"
+// Relative and pure on the other side, so the node scripts that import this
+// module for its request math pull these in without a shim.
+import {
+  artifactDeliveryMode,
+  fallbackFileName,
+  type DeliverableArtifact,
+} from "./artifactShareMeta"
 
 // Clip export (docs/video-transcoding-implementation.md §3 U2): ask the server
 // for a rendition of one item — optionally trimmed — follow the job, and hand
@@ -291,6 +299,51 @@ export function clipRows<T extends PresetRow>(
     .map((preset) => ({ preset, label: clipRowLabel(preset, trimmed) }))
 }
 
+/**
+ * The label of the web-version row. Deliberately no work-language ("fast",
+ * "re-encode"): the row exists only while the bytes already do, so it names a
+ * file, not a job.
+ */
+export const WEB_VERSION_LABEL = "Web version"
+
+/**
+ * The "Web version" row: the playable rendition the PLAYBACK path already
+ * encoded, offered as a download next to "Original file". For a
+ * needs-transcode item the original is by definition unplayable on the web,
+ * and the clip rows would re-encode from scratch under a different cache key —
+ * while a fast h264 mp4 of this very file sits in the artifact cache.
+ *
+ * Gated on the playback store reading `done`, which is the whole rule:
+ *
+ * - `done` is written ONLY by the playback path (`sha:preset` keys; the clip
+ *   export keys always carry a third segment), and playback jobs are only ever
+ *   started for needs-transcode items — so a playable item can never grow this
+ *   row, and no separate playability input is needed.
+ * - In the gallery the download menu only mounts once a needs-transcode item's
+ *   rendition exists (`showVideo` requires the artifact URL), so there the row
+ *   is present exactly when the menu is.
+ * - A pin's context menu can open before the pin ever played; the row simply
+ *   is not there yet, rather than turning into a "start an encode" row wearing
+ *   an "already there" label.
+ *
+ * `presets` is the policy-filtered playback-surface list: a policy that
+ * withholds the playback preset hides the row, per hide-don't-disable.
+ *
+ * The row runs through `exportClip` with `request: null` rather than linking
+ * the stored artifact URL directly: the artifact lives in a global LRU, and a
+ * direct `<a download>` to an evicted entry saves a 404 body as an `.mp4`. The
+ * re-POST is a cache hit (instant, the near-certain case) or a fast fresh
+ * job, and either way the server's own filename rides back on the answer.
+ */
+export function webVersionRow<T extends PresetRow>(
+  presets: T[],
+  playbackState: TranscodeState,
+): { preset: T; label: string } | null {
+  if (playbackState.state !== "done") return null
+  const preset = presets.find((preset) => preset.id === PLAYBACK_PRESET)
+  return preset ? { preset, label: WEB_VERSION_LABEL } : null
+}
+
 /** The one-line description the progress toast carries while a job runs. */
 export function clipProgressText(state: TranscodeState): string {
   switch (state.state) {
@@ -363,17 +416,11 @@ export function useClipBusy(sha256: string | null | undefined): boolean {
 
 // ---- the export ---------------------------------------------------------
 
-/**
- * The name to save the bytes under when the server sent none. Only reachable
- * against a gateway older than the `ArtifactRef.filename` field, or a payload
- * the defensive parse could not read — never in normal operation, which is
- * why it does not try to be a good name. The extension matters (the
- * `download` attribute IS the filename, and an extensionless one lands as a
- * file nothing will open); the stem only has to be unambiguous.
- */
-function fallbackFileName(sha256: string, ext: string): string {
-  return `${sha256.slice(0, 10)}-clip.${ext}`
-}
+// `fallbackFileName` — the name to save the bytes under when the server sent
+// none — now lives in lib/artifactShareMeta.ts, imported above: the delivery
+// path needs the identical name for the identical reason (a download that
+// substitutes for a copy it could not make), and one spelling of it is what
+// keeps the two from drifting.
 
 /**
  * Wait for a key to reach a terminal state, reporting every step on the way.
@@ -456,7 +503,9 @@ export function abandonJob(jobId: string) {
 }
 
 /**
- * Export one clip: POST, follow, download, receipt.
+ * Export one clip: POST, follow, then DELIVER — save the bytes as a file, or
+ * hand them to `deliver` (the "Copy, don't download" mode, whose deliverer is
+ * hooks/artifactShare.ts's `useArtifactDelivery`).
  *
  * ALWAYS RE-POSTS, unlike the playback path's `startTranscode`, which caches
  * its verdict for the session. The two dedup rules answer different
@@ -466,6 +515,27 @@ export function abandonJob(jobId: string) {
  * evicted them since. A re-POST is a cache lookup when they are still there
  * and a fresh job when they are not — which is exactly the difference the
  * user wants papered over. The per-item guard is what makes "always" safe.
+ *
+ * THE DELIVERY SEAM. Everything up to the terminal state is identical in both
+ * modes — one pipeline, one busy guard, one set of error toasts — because the
+ * job is the same job; only what happens to the finished artifact differs.
+ * Two rules make that split clean:
+ *
+ *   1. THE RECEIPT BELONGS TO THE DELIVERER. A download's receipt names a
+ *      file that landed in Downloads; a copy's names a clipboard, and a copy
+ *      that fell back to a download says so instead. Only the deliverer knows
+ *      which of those happened (its relay leg can silently become a download
+ *      mid-flight), so this function dismisses its progress toast and shows
+ *      nothing more. Two receipts for one press would be the alternative.
+ *   2. `deliver` NEVER THROWS and never rejects — it owns its own failures —
+ *      so there is no error handling around it here, and the per-item busy
+ *      guard stays held until it resolves (the `await` is inside the try, the
+ *      release is in the finally). A user cannot start a second export while
+ *      a multi-GB relay upload of the first is still running.
+ *
+ * A `done` state whose `artifact` could not be parsed (an older gateway) has
+ * no key to copy BY, so it falls back to the download — announced, since the
+ * row that was pressed said Copy.
  */
 export async function exportClip(options: {
   sha256: string
@@ -476,8 +546,14 @@ export async function exportClip(options: {
   /** The row's own label, so the toasts name what was pressed. */
   rowLabel: string
   dbs: { index_db: string | null; user_data_db: string | null }
+  /**
+   * Copy mode. Absent (the default) saves the bytes as a file; present, the
+   * finished artifact goes here instead — see the seam above. There is no
+   * separate verb flag: the presence of a deliverer IS the mode.
+   */
+  deliver?: (artifact: DeliverableArtifact) => Promise<void>
 }): Promise<void> {
-  const { sha256, preset, request, rowLabel, dbs } = options
+  const { sha256, preset, request, rowLabel, dbs, deliver } = options
   if (isClipBusy(sha256)) return
   setBusy(sha256, true)
 
@@ -557,6 +633,16 @@ export async function exportClip(options: {
       fail("The transcode did not finish")
       return
     }
+    if (artifactDeliveryMode(state.artifact, deliver != null) === "deliver") {
+      // The progress toast goes FIRST: the deliverer opens its own (a relay
+      // copy has a materializing leg and an upload of its own to report), and
+      // two live progress toasts for one press would stack.
+      progress.dismiss()
+      // Non-null by the mode above; `deliver` and `state.artifact` are exactly
+      // what it tested.
+      await deliver!(state.artifact!)
+      return
+    }
     // The SERVER's name, never a derived one (implementation plan §3 U6, as
     // superseded by S3): the artifact URL is the `key=` form, and a key knows
     // neither the source's path nor whether the request was trimmed, so the
@@ -564,8 +650,20 @@ export async function exportClip(options: {
     const filename = state.filename ?? fallbackFileName(sha256, preset.ext)
     downloadURL(state.artifactUrl, filename)
     // The receipt names what actually landed: a whole-file re-encode is a
-    // video, not a clip, and the row that started it said so too.
-    finish(request ? "Clip saved" : "Video saved", filename, RECEIPT_TOAST_MS)
+    // video, not a clip, and the row that started it said so too. In copy mode
+    // this line is only reachable with an unaddressable artifact, where the
+    // receipt's job is to announce the substitution instead (§FIX 6: a
+    // materially different outcome is said out loud, never swapped in
+    // silently).
+    finish(
+      deliver
+        ? "Can't copy this file — downloading instead"
+        : request
+          ? "Clip saved"
+          : "Video saved",
+      filename,
+      RECEIPT_TOAST_MS,
+    )
   } catch {
     fail("The transcode request failed")
   } finally {

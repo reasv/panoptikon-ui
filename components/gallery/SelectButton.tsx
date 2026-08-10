@@ -47,7 +47,7 @@ export function SelectButton({
         title={
             isSelected ? "This image is selected" : "Select this image"
         }
-        className={"hover:scale-105 absolute top-2 right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"}
+        className={"hover:scale-105 absolute top-2 right-2 bg-white rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"}
         onClick={handlePinClick}
     >
         {isSelected ? (

@@ -1,5 +1,5 @@
 "use client"
-import { useState, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { $api } from "@/lib/api"
 import { useBookmarkNs, } from "@/lib/state/zust"
 import { useQueryClient } from "@tanstack/react-query"
@@ -13,9 +13,10 @@ import { updateBookmarkStatusInSearchCache } from "@/lib/bookmarkSearchCache"
 import { useAlwaysShowBookmarkBtn } from "@/lib/state/alwaysShowBookmarks"
 import { FindButton } from "./gallery/FindButton"
 import { FileBookmarksSetter } from "./sidebar/details/FileBookmarks"
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuRadioGroup, ContextMenuRadioItem, ContextMenuTrigger } from "./ui/context-menu"
+import { ContextMenu, ContextMenuContent, ContextMenuLabel, ContextMenuRadioGroup, ContextMenuRadioItem, ContextMenuTrigger } from "./ui/context-menu"
 import { useFileOpenActions } from "@/hooks/fileOpen"
 import { useFileShare } from "@/hooks/fileShare"
+import { useLastFileAction, type FileActionVerb } from "@/lib/state/fileActionDefault"
 
 export function RelayTargetSelector({
     actions,
@@ -221,7 +222,7 @@ function BookmarksButtonElement({
                     `Remove from current bookmark group (${namespace})`
                     : `Add to current bookmark group (${namespace})`
             }
-            className={cn("hover:scale-105 absolute top-2 right-2 bg-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300",
+            className={cn("hover:scale-105 absolute top-2 right-2 bg-white rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300",
                 (alwaysShow && isBookmarked) ? 'opacity-100' : 'opacity-0'
             )}
             onClick={handleBookmarkClick}
@@ -253,10 +254,14 @@ function BookmarksButtonElement({
 }
 
 export const OpenFile = (
-    { sha256, path, buttonVariant }: {
+    { sha256, path, buttonVariant, overlayClassName, onUsed }: {
         sha256: string
         path?: string
         buttonVariant?: boolean
+        // Cluster-controlled slot position + visibility, replacing the default
+        // overlay anchor when this button rides in a FileActionCluster.
+        overlayClassName?: string
+        onUsed?: () => void
     }
 ) => {
     const actions = useFileOpenActions({ sha256, path })
@@ -268,10 +273,14 @@ export const OpenFile = (
     return <FileActionTargetMenu
         actions={actions}
         existingLabel={disableBackendOpen ? "Browser" : "Panoptikon server host"}
-    >{menuOpen => <span className={cn(
+    >{menuOpen => <span
+        onClickCapture={onUsed}
+        className={cn(
             "relative inline-flex group/file-action",
-            !buttonVariant && "absolute bottom-3 left-1 opacity-0 transition-opacity duration-300 group-hover:opacity-100",
-            !buttonVariant && menuOpen && "opacity-100",
+            !buttonVariant && (overlayClassName ?? "absolute bottom-3 left-1 opacity-0 transition-opacity duration-300 group-hover:opacity-100"),
+            // pointer-events-auto so an open target menu keeps its (possibly
+            // collapsed-away) trigger interactive until it closes.
+            !buttonVariant && menuOpen && "opacity-100 pointer-events-auto",
         )}>
             {buttonVariant ?
                 <Button
@@ -288,7 +297,7 @@ export const OpenFile = (
                 <button
                     onClick={() => handleClick()}
                     title={buttonTitle}
-                    className="rounded-full bg-white p-2 hover:scale-105"
+                    className="rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-2 hover:scale-105"
                 >
                     <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -307,11 +316,15 @@ export const OpenFolder = (
     {
         sha256,
         path,
-        buttonVariant
+        buttonVariant,
+        overlayClassName,
+        onUsed
     }: {
         sha256: string
         path?: string
         buttonVariant?: boolean
+        overlayClassName?: string
+        onUsed?: () => void
     }
 ) => {
     const actions = useFileOpenActions({ sha256, path })
@@ -319,10 +332,12 @@ export const OpenFolder = (
     const handleClick = showInFolder
     if (disableBackendOpen && !(actions.relayPaired && actions.actionTarget === "relay")) {
         return <FileActionTargetMenu actions={actions} existingLabel="Panoptikon search">
-            {menuOpen => <span className={cn(
+            {menuOpen => <span
+            onClickCapture={onUsed}
+            className={cn(
             "relative inline-flex group/file-action",
-            !buttonVariant && "absolute bottom-3 left-12 opacity-0 transition-opacity duration-300 group-hover:opacity-100",
-            !buttonVariant && menuOpen && "opacity-100",
+            !buttonVariant && (overlayClassName ?? "absolute bottom-3 left-12 opacity-0 transition-opacity duration-300 group-hover:opacity-100"),
+            !buttonVariant && menuOpen && "opacity-100 pointer-events-auto",
         )}>
             <FindButton
                 id={sha256}
@@ -336,10 +351,12 @@ export const OpenFolder = (
         </FileActionTargetMenu>
     }
     return <FileActionTargetMenu actions={actions} existingLabel="Panoptikon server host">
-        {menuOpen => <span className={cn(
+        {menuOpen => <span
+        onClickCapture={onUsed}
+        className={cn(
         "relative inline-flex group/file-action",
-        !buttonVariant && "absolute bottom-3 left-12 opacity-0 transition-opacity duration-300 group-hover:opacity-100",
-        !buttonVariant && menuOpen && "opacity-100",
+        !buttonVariant && (overlayClassName ?? "absolute bottom-3 left-12 opacity-0 transition-opacity duration-300 group-hover:opacity-100"),
+        !buttonVariant && menuOpen && "opacity-100 pointer-events-auto",
     )}>
         {buttonVariant ?
             <Button
@@ -356,7 +373,7 @@ export const OpenFolder = (
             <button
                 title="Show file in folder"
                 onClick={() => handleClick()}
-                className="rounded-full bg-white p-2 hover:scale-105"
+                className="rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-2 hover:scale-105"
             >
                 <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -372,22 +389,23 @@ export const OpenFolder = (
     </FileActionTargetMenu>
 }
 
-// The adaptive share button (docs/file-sharing-design.md). Primary click is
-// Copy where a native path exists, Download otherwise — the icon and tooltip
-// track the active verb. Right-click reveals the non-primary verb and, when a
-// Relay is detected but unpaired, a doorway into pairing.
+// The adaptive share button for header surfaces (docs/file-sharing-design.md).
+// Click is Copy where a native path exists, Download otherwise — the icon and
+// tooltip track the active verb. The grid overlay's equivalent is
+// FileActionCluster, where Copy and Download are separate buttons; this one
+// deliberately has no context menu (the old right-click Download alternate
+// left the trigger focused on close, holding the overlay visible — and the
+// header already shows a dedicated Download control).
 export const ShareButton = (
-    { sha256, path, buttonVariant, shortcut }: {
+    { sha256, path, shortcut }: {
         sha256: string
         path?: string
-        buttonVariant?: boolean
         // Keyboard accelerator to name in the tooltip, where one exists for
         // this surface (the gallery's Ctrl+C — otherwise undiscoverable).
         shortcut?: string
     }
 ) => {
     const share = useFileShare({ sha256, path })
-    const [menuOpen, setMenuOpen] = useState(false)
     const isCopy = share.primaryVerb === "copy"
     const verb = isCopy ? "Copy file to clipboard" : "Download file"
     // A copy can spend minutes materializing a multi-GB file; the button says
@@ -396,49 +414,133 @@ export const ShareButton = (
         ? (isCopy ? "Copying…" : "Downloading…")
         : shortcut && isCopy ? `${verb} (${shortcut})` : verb
     const Icon = share.busy ? LoaderCircle : isCopy ? ClipboardCopy : Download
+    return <Button
+        title={title}
+        aria-label={title}
+        aria-busy={share.busy}
+        disabled={share.busy}
+        onClick={() => void share.execute()}
+        variant="ghost"
+        size="icon"
+    >
+        <Icon className={cn("w-4 h-4", share.busy && "animate-spin")} />
+    </Button>
+}
 
-    const trigger = buttonVariant
-        ? <Button
+// Slot geometry of the 2x2 file action corner, in order [corner, above,
+// beside, diagonal]. Buttons are 2.5rem circles and every gap is 0.25rem;
+// each anchor matches the button inset convention of the surface it serves
+// (the search grid's bottom-left, the gallery filmstrip's bottom-right).
+const CLUSTER_SLOTS = {
+    "bottom-left": [
+        "absolute bottom-3 left-1",
+        "absolute bottom-14 left-1",
+        "absolute bottom-3 left-12",
+        "absolute bottom-14 left-12",
+    ],
+    "bottom-right": [
+        "absolute bottom-2 right-2",
+        "absolute bottom-13 right-2",
+        "absolute bottom-2 right-13",
+        "absolute bottom-13 right-13",
+    ],
+} as const
+
+// The grid card's file actions, collapsed to ONE button: the last-used verb
+// (persisted). Hovering it — or tabbing into the cluster — expands the other
+// verbs into the 2x2 corner square, alternates above/beside and the last one
+// diagonal. Copy participates only where useFileShare resolves a native copy
+// path; without one the set is three and the diagonal slot stays empty (a
+// remembered Copy corner degrades to Download, like the old adaptive button).
+export const FileActionCluster = ({ sha256, path, anchor = "bottom-left" }: {
+    sha256: string
+    path?: string
+    anchor?: keyof typeof CLUSTER_SLOTS
+}) => {
+    const share = useFileShare({ sha256, path })
+    const lastVerb = useLastFileAction((state) => state.verb)
+    const setLastVerb = useLastFileAction((state) => state.setVerb)
+    const [expanded, setExpanded] = useState(false)
+    // Which share verb is mid-flight: only that button spins, and it stays
+    // pinned visible for a copy that spends minutes materializing.
+    const [busyVerb, setBusyVerb] = useState<"copy" | "download" | null>(null)
+    const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+    useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current) }, [])
+    const open = () => {
+        if (closeTimer.current) clearTimeout(closeTimer.current)
+        setExpanded(true)
+    }
+    // The grace period is what makes hover-on-hover workable: crossing the
+    // 0.25rem gap between buttons fires a mouseout that must not collapse the
+    // square mid-crossing.
+    const scheduleClose = () => {
+        if (closeTimer.current) clearTimeout(closeTimer.current)
+        closeTimer.current = setTimeout(() => setExpanded(false), 150)
+    }
+
+    const slots = CLUSTER_SLOTS[anchor]
+    const canCopy = share.primaryVerb === "copy"
+    const verbs: FileActionVerb[] = canCopy ? ["copy", "open", "folder", "download"] : ["open", "folder", "download"]
+    const corner: FileActionVerb = verbs.includes(lastVerb) ? lastVerb : "download"
+    const slotOf: Partial<Record<FileActionVerb, string>> = { [corner]: slots[0] }
+    verbs.filter((verb) => verb !== corner).forEach((verb, i) => { slotOf[verb] = slots[i + 1] })
+
+    // The corner keeps the classic card-hover fade; the expansion slots are
+    // hidden AND click-transparent until the cluster opens, so an invisible
+    // button can never intercept a click meant for the image under it.
+    const position = (verb: FileActionVerb) =>
+        verb === corner
+            ? cn(slotOf[verb], "opacity-0 transition-opacity duration-300 group-hover:opacity-100", expanded && "opacity-100")
+            : cn(slotOf[verb], "transition-opacity duration-300", expanded ? "opacity-100" : "opacity-0 pointer-events-none")
+
+    const runShare = async (verb: "copy" | "download") => {
+        setLastVerb(verb)
+        setBusyVerb(verb)
+        try {
+            if (verb === "copy") await share.execute()
+            else await share.download()
+        } finally {
+            setBusyVerb(null)
+        }
+    }
+    const shareSlot = (verb: "copy" | "download") => {
+        const busy = busyVerb === verb
+        const title = busy
+            ? (verb === "copy" ? "Copying…" : "Downloading…")
+            : verb === "copy" ? "Copy file to clipboard" : "Download file"
+        const Icon = busy ? LoaderCircle : verb === "copy" ? ClipboardCopy : Download
+        return <button
+            onClick={() => void runShare(verb)}
             title={title}
             aria-label={title}
-            aria-busy={share.busy}
+            aria-busy={busy}
             disabled={share.busy}
-            onClick={() => void share.execute()}
-            variant="ghost"
-            size="icon"
-        >
-            <Icon className={cn("w-4 h-4", share.busy && "animate-spin")} />
-        </Button>
-        : <button
-            onClick={() => void share.execute()}
-            title={title}
-            aria-label={title}
-            aria-busy={share.busy}
-            disabled={share.busy}
-            // The free slot in the bottom-left overlay row (left-1 / left-12
-            // taken by Open File / Open Folder). Same hover/hold-open opacity
-            // dance as its siblings — plus the focus-within clause they lack,
-            // so a keyboard user never tabs onto an invisible control.
             className={cn(
-                "absolute bottom-3 left-[5.5rem] rounded-full bg-white p-2 hover:scale-105 opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100",
-                menuOpen && "opacity-100",
-                share.busy && "opacity-100 cursor-progress",
+                "rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-2 hover:scale-105",
+                position(verb),
+                busy && "opacity-100 pointer-events-auto cursor-progress",
             )}
         >
-            <Icon className={cn("w-6 h-6 text-gray-800", share.busy && "animate-spin")} />
+            <Icon className={cn("w-6 h-6 text-gray-800", busy && "animate-spin")} />
         </button>
+    }
 
-    // Copy primary => Download is the alternate. Download primary => there is no
-    // native copy to offer; the only alternate is pairing, when a Relay is there.
-    const showDownloadAlt = isCopy
-    if (!showDownloadAlt && !share.canPair) return trigger
-    return <ContextMenu onOpenChange={setMenuOpen}>
-        <ContextMenuTrigger asChild>{trigger}</ContextMenuTrigger>
-        <ContextMenuContent className="min-w-52">
-            {showDownloadAlt && <ContextMenuItem disabled={share.busy} onClick={() => void share.download()}>Download</ContextMenuItem>}
-            {share.canPair && <ContextMenuItem onClick={() => void share.pairRelay()}>Pair with desktop…</ContextMenuItem>}
-        </ContextMenuContent>
-    </ContextMenu>
+    return <div
+        className="contents"
+        onMouseOver={open}
+        onMouseOut={scheduleClose}
+        // Keyboard-only expansion, gated on :focus-visible. Radix returns
+        // focus to a trigger when its context menu closes, but mouse-made
+        // focus is not :focus-visible — so the cluster cannot get stuck open
+        // the way the old group-focus-within share button did.
+        onFocus={(event) => { if ((event.target as HTMLElement).matches?.(":focus-visible")) open() }}
+        onBlur={(event) => { if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) scheduleClose() }}
+    >
+        {canCopy && shareSlot("copy")}
+        {shareSlot("download")}
+        <OpenFile sha256={sha256} path={path} overlayClassName={position("open")} onUsed={() => setLastVerb("open")} />
+        <OpenFolder sha256={sha256} path={path} overlayClassName={position("folder")} onUsed={() => setLastVerb("folder")} />
+    </div>
 }
 
 // Copy a path (or any text) to the clipboard with a confirmation toast.

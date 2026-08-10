@@ -1026,7 +1026,7 @@ export function ImageGallery({
                         <BookmarkBtn sha256={currentItem.sha256} bookmarked={currentItem.bookmarked} buttonVariant />
                         <OpenFile sha256={currentItem.sha256} path={currentItem.path} buttonVariant />
                         <OpenFolder sha256={currentItem.sha256} path={currentItem.path} buttonVariant />
-                        <ShareButton sha256={currentItem.sha256} path={currentItem.path} buttonVariant shortcut="Ctrl+C" />
+                        <ShareButton sha256={currentItem.sha256} path={currentItem.path} shortcut="Ctrl+C" />
                     </> : <>
                         <ChromeSkeleton />
                         <ChromeSkeleton />
@@ -2173,10 +2173,10 @@ export function GalleryImageLarge(
                 )}
             </div>
             {/* S0 only: the play button is the last overlay verb ("become a
-                player"), and it sits bottom-LEFT so the cursor is already on
-                the player row's play/pause the moment S1 comes up. Once the
-                video is loaded the surface owns mute, close and the native
-                toggle, so MediaControls stands down entirely. */}
+                player"), large and centered on the picture like every video
+                site's poster affordance. Once the video is loaded the surface
+                owns mute, close and the native toggle, so MediaControls
+                stands down entirely. */}
             {isPlayable && !showVideo && (
                 // Anchored to the thumbnail's rendered corner, not the
                 // panel's, so the button sits ON the picture. The box is
@@ -2201,7 +2201,8 @@ export function GalleryImageLarge(
                             player.show()
                         }}
                         progress={playback.badge}
-                        playButtonClassName="pointer-events-auto left-2 bottom-2"
+                        size="large"
+                        playButtonClassName="pointer-events-auto left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
                     />
                 </div>
             )}
