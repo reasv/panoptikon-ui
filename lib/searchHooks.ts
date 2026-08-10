@@ -643,6 +643,38 @@ const NO_FALLBACK_ROWS: SearchResult[] = []
 const NO_WANTED_CHUNKS: number[] = []
 
 /**
+ * What the store throttles instead of the live committed query while it is
+ * DISABLED — a pages-mode-only session, an invalid query, a maximized board.
+ * `useThrottledValue` compares by JSON content, so parking it on a two-key
+ * constant is what turns that per-render stringify of the whole search into
+ * nothing.
+ *
+ * NEVER built into a request: `parts` below falls back to the committed query
+ * for the window the throttle can still be holding this, so no request body,
+ * cache key or hash is ever derived from it. It exists to be cheap to
+ * serialize and to be recognized by reference, and for nothing else.
+ */
+const NO_CHUNK_QUERY: SearchRequestParts = {
+  searchQuery: {},
+  dbs: { index_db: null, user_data_db: null },
+  bookmarkNs: "",
+  partitionBy: null,
+}
+
+/**
+ * The `partsKey` of a disabled store. A key nothing can be fetched under, and
+ * distinct from every real hash by construction (hashes are JSON), so the
+ * first ENABLED render sees `wanted.key !== partsKey` and rebuilds the whole
+ * observed set from scratch rather than inheriting a window collected under
+ * it.
+ */
+const NO_PARTS_KEY = "disabled"
+
+/** The empty row/error sets a disabled store answers with, allocated once. */
+const NO_LOADED_CHUNKS: Map<number, SearchResult[]> = new Map()
+const NO_ERRORED_CHUNKS: Set<number> = new Set()
+
+/**
  * A stable number per row-array *reference*, minted on first sight. The
  * building block of `rowsIdentity` in the chunk store: composing these ids
  * into a string turns "did any of these arrays move?" into a value
@@ -743,12 +775,35 @@ export function useChunkedResults({
   // to MAX_WANTED_CHUNKS requests for a search the user is still typing. The
   // whole parts object is throttled as one unit, so the four fields stay
   // frozen together on the way through here too.
-  const throttledQuery = useThrottledValue(committedQuery, throttleMs)
+  //
+  // DISABLED means parked on a constant (see NO_CHUNK_QUERY): every hook below
+  // still runs — they are hooks — but a pages-mode-only session must not pay a
+  // JSON serialization of the whole search on every render of the search page
+  // for a store it never reads. Everything else in this body that costs
+  // anything is gated the same way, so that session pays ~nothing per render.
+  const throttledQuery = useThrottledValue(
+    enabled ? committedQuery : NO_CHUNK_QUERY,
+    throttleMs
+  )
   // `throttledQuery` is state that only moves when its content does, so
   // `parts` (and everything keyed on it below) sits still between committed
   // searches without anyone having to lie about a dependency.
+  //
+  // The constant must never reach a request, and the throttle can still be
+  // HOLDING it for one throttle window after `enabled` goes true (it
+  // propagates from an effect, and a recent propagation delays that by up to
+  // `throttleMs`). The committed query stands in for that window, which is
+  // both safe and free of the throttle's purpose: building a chunk request
+  // from the committed query is this hook's whole invariant, and the throttle
+  // exists to coalesce keystrokes — not something a mode switch, an s_enable
+  // toggle or a board restore can be. Keeping the real value here while
+  // disabled is also what lets `get` keep answering from the react-query cache
+  // (blockAt below): rows that are in memory must not blank out because
+  // searching was momentarily switched off.
   const parts: SearchRequestParts =
-    throttleMs > 0 ? throttledQuery : committedQuery
+    throttleMs > 0 && enabled && throttledQuery !== NO_CHUNK_QUERY
+      ? throttledQuery
+      : committedQuery
   const fallbackRows =
     fallbackResults.length > 0 ? fallbackResults : NO_FALLBACK_ROWS
   // Off entirely while the main query's rows belong to a search the user has
@@ -760,7 +815,14 @@ export function useChunkedResults({
   // construction — a scroll-mode `page_size` relabel, which every chunk
   // request overrides anyway, therefore cannot tear down the wanted set, and
   // this key can never drift from the chunk keys it stands for.
-  const partsKey = hashKey([buildChunkRequest(parts, 0)])
+  //
+  // Gated on `enabled` for the same reason as the throttle above — building
+  // and hashing a request body is the other per-render cost a store nobody
+  // reads must not pay. The placeholder invalidates the whole observed set by
+  // construction (see NO_PARTS_KEY), which is exactly right: the first enabled
+  // render rebuilds the wanted window from the consumers' own `ensureRange`
+  // rather than inheriting one.
+  const partsKey = enabled ? hashKey([buildChunkRequest(parts, 0)]) : NO_PARTS_KEY
   // The observed chunk set, oldest request first — a plain array rather than
   // a Set because the order IS the eviction order — tagged with the query it
   // was collected for. Reading it back through that tag is what stops a query
@@ -803,18 +865,26 @@ export function useChunkedResults({
   // Chunks with no data yet are left out deliberately: merely *wanting* a
   // chunk must not read as "the rows changed" to a gallery that cancels a
   // pending advance when they do.
-  const rowsIdentity =
-    partsKey +
-    "|" +
-    wantedChunks
-      .map((chunkIndex, i) => {
-        const rows = chunkQueries[i]?.data?.results as SearchResult[] | undefined
-        return rows ? `${chunkIndex}:${idOf(rows)}` : ""
-      })
-      .filter(Boolean)
-      .join(",") +
-    "|" +
-    (fallbackLive ? idOf(fallbackRows) : "")
+  //
+  // Disabled, it is the placeholder key and nothing else: a store with no
+  // observed chunks has no row set to describe, and composing one per render
+  // is work a pages-mode-only session would do forever. It moves exactly once
+  // when the store is enabled, which is the change consumers need to see.
+  const rowsIdentity = !enabled
+    ? partsKey
+    : partsKey +
+      "|" +
+      wantedChunks
+        .map((chunkIndex, i) => {
+          const rows = chunkQueries[i]?.data?.results as
+            | SearchResult[]
+            | undefined
+          return rows ? `${chunkIndex}:${idOf(rows)}` : ""
+        })
+        .filter(Boolean)
+        .join(",") +
+      "|" +
+      (fallbackLive ? idOf(fallbackRows) : "")
 
   // Stable across renders, but NOT across a committed-query change: the
   // identity moves with `partsKey` on purpose, so a range effect that lists
@@ -892,20 +962,25 @@ export function useChunkedResults({
     [parts, queryClient]
   )
 
-  const loaded = new Map<number, SearchResult[]>()
+  // The two per-render allocations, skipped entirely while disabled: with no
+  // observed chunks there is nothing to sort into them, and a store nobody
+  // reads should not mint a Map and a Set per render of the search page.
+  const loaded = enabled ? new Map<number, SearchResult[]>() : NO_LOADED_CHUNKS
   // Chunks whose query has given up: errored, nothing in flight, no data to
   // fall back on. react-query has already spent its retries by then, so this
   // set only grows again on an explicit `retryRange` (or a focus/reconnect
   // refetch) — see `ResultsSource.errorAt`.
-  const erroredChunks = new Set<number>()
-  wantedChunks.forEach((chunkIndex, i) => {
-    const query = chunkQueries[i]
-    const rows = query?.data?.results
-    if (rows) loaded.set(chunkIndex, rows as SearchResult[])
-    else if (query?.isError && !query.isFetching && query.data === undefined) {
-      erroredChunks.add(chunkIndex)
-    }
-  })
+  const erroredChunks = enabled ? new Set<number>() : NO_ERRORED_CHUNKS
+  if (enabled) {
+    wantedChunks.forEach((chunkIndex, i) => {
+      const query = chunkQueries[i]
+      const rows = query?.data?.results
+      if (rows) loaded.set(chunkIndex, rows as SearchResult[])
+      else if (query?.isError && !query.isFetching && query.data === undefined) {
+        erroredChunks.add(chunkIndex)
+      }
+    })
+  }
   /**
    * Restart the failed chunks in a range. `resetQueries` rather than
    * `refetchQueries`, for one reason: reset returns the query to its initial
@@ -1119,6 +1194,20 @@ export function useCommitViewMode() {
       }
       // `gi` becomes global too, so the gallery and the grid keep naming
       // positions the same way in each mode.
+      //
+      // CURRENTLY UNREACHABLE, and worth stating because the branch looks
+      // live: the only caller of this hook is the header ViewModeToggle, which
+      // is rendered by the grid panel — so switching mode with the gallery
+      // open is not a thing the UI can express, and `galleryOpen` is false
+      // here every time. Anything that DOES make it reachable (a toggle inside
+      // the gallery header, a keyboard shortcut) has to seed the gallery's
+      // HELD index as well as `gi`: the gallery mounts against page-1 rows
+      // until the chunk covering the new global index lands, `resultsAreStale`
+      // clears the moment the main query settles, and the held index is still
+      // the page-local one it was minted with — so the selection push
+      // publishes a page-1 row and the selection→index effect in SearchPage
+      // then rewrites `gi` to wherever that row sits. Writing the URL is only
+      // half of this switch; the surface's own held position is the other.
       if (galleryOpen && global !== galleryIndex) {
         writes.push(setGalleryIndex(global, replace))
       }

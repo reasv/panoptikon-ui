@@ -73,6 +73,229 @@ export function SearchPageContent({ initialQuery, isRestrictedMode }:
     )
 }
 
+// ---- The three mount/URL effects MultiSearchView used to own inline.
+//
+// Extracted for ONE mechanical reason: each of them suppresses
+// `react-hooks/exhaustive-deps`, and that suppression makes the React Compiler
+// skip the whole enclosing function — per function, not per effect. Inline,
+// the three of them cost MultiSearchView (the search page's largest component)
+// its memoization entirely. As their own hooks the skip lands on a hook that
+// does nothing but run its effect, and MultiSearchView compiles again. Each
+// takes exactly the values its body reads; nothing else moved.
+
+/**
+ * The highlighted virtual page: MultiSearchView's own state, plus the effect
+ * that seeds it from the URL anchor.
+ *
+ * The LIVE value comes from the grid, which is the only place it can be
+ * computed correctly: the highlight is derived from the top visible ROW (see
+ * topRowHighlightItem), and rows exist only inside the virtualizer.
+ *
+ * What is derived HERE — from the URL anchor, as `floor(top / k) + 1` — is a
+ * placeholder for the window before the grid's first scroll event: first paint
+ * of a deep link, back/forward, a scrubber jump. (A page-size relabel moves
+ * nothing and produces no scroll, so it is not in that list — the grid reports
+ * that one directly; see below and ResultGrid's [pageSize] effect.) It is
+ * deliberately the plainer expression, because a URL anchor is an item and
+ * needs no row geometry to place; and it is deliberately not authoritative,
+ * because it cannot see the columns. Every one of those positions reaches the
+ * grid as a scroll (the restore's programmatic one included), and that scroll's
+ * own event replaces this value with the row-derived one.
+ */
+function useDerivedVirtualPage({ scrollMode, scrollAnchor, k, galleryOpen }: {
+    scrollMode: boolean,
+    scrollAnchor: number | null,
+    k: number,
+    /** `gi !== null`: the gallery is mounted and the grid is NOT. */
+    galleryOpen: boolean,
+}) {
+    const [derivedPage, setDerivedPage] = useState(() => virtualPageOf(scrollAnchor ?? 0, k))
+    // …which is why `scrollAnchor` is deliberately NOT a trigger WHILE THE GRID
+    // IS MOUNTED, only a value read when something else fires. The grid WRITES
+    // that anchor on every scroll stop, and it writes the first item of the top
+    // row while the highlight speaks for that row's last item — so re-deriving
+    // on a self-write would pull the bar back by a page 350ms after the user
+    // stopped scrolling, which is the very lattice flip topRowHighlightItem
+    // exists to remove. An anchor arriving from anywhere else (back/forward, a
+    // scrubber jump, a query reset) moves the grid, and the resulting scroll
+    // reports the correct number itself.
+    //
+    // WITH THE GALLERY OPEN that reasoning inverts, and the anchor becomes the
+    // only trigger there is: the grid is unmounted, so it can neither perform
+    // the scroll-stop rewrite the exclusion protects against nor report a
+    // number of its own — while the gallery's manual navigation (arrows,
+    // filmstrip, the advance chain) writes the anchor alongside `gi` on every
+    // step. That anchor IS the position, item for item, so `virtualPageOf` on
+    // it is exact rather than a row-quantized approximation, and the scrubber
+    // under the open gallery tracks a binge across the whole set instead of
+    // freezing on the page the gallery was opened at.
+    //
+    // Neither TRANSITION of `galleryOpen` re-derives, and both exclusions are
+    // load-bearing. Opening is the pullback case above seen from one commit
+    // later: the anchor standing in the URL is the grid's own scroll-stop
+    // write, and adopting it would flip the bar back a page the moment the user
+    // opens an item. Closing needs no run either — the live tracking above has
+    // already put the bar where the gallery left it, and the grid's restore
+    // scroll reports the row-derived number a frame later.
+    //
+    // k is NOT a trigger either, for a reason worth stating because it looks
+    // like one: a page-size relabel does renumber a position that has not
+    // moved, and does produce no scroll to report it — but the number it needs
+    // is the row-derived one, and this expression cannot compute that. The GRID
+    // pushes it instead, from its own [pageSize] effect (see ResultGrid). Both
+    // firing would be worse than either alone: child effects run before parent
+    // ones, so the grid's correct value would land first and this placeholder
+    // would immediately overwrite it — the bar sitting a page low until the
+    // next scroll, which is the bug the grid-side trigger exists to remove.
+    //
+    // The anchor BECOMING NULL is a trigger — the restore effect clears a stale
+    // anchor without scrolling anything (there is nowhere to scroll to), so no
+    // event would ever walk the bar back from the dead page the stale anchor
+    // placed it on. Only the null transition: a non-null self-write is the
+    // scroll-stop pullback case excluded above.
+    const wasGalleryOpen = useRef(galleryOpen)
+    useEffect(() => {
+        const previouslyOpen = wasGalleryOpen.current
+        wasGalleryOpen.current = galleryOpen
+        if (!scrollMode) return
+        if (galleryOpen !== previouslyOpen) return
+        setDerivedPage(virtualPageOf(scrollAnchor ?? 0, k))
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [scrollMode, scrollAnchor === null, galleryOpen, galleryOpen ? scrollAnchor : null])
+    return [derivedPage, setDerivedPage] as const
+}
+
+/**
+ * A hand-made or hand-edited `vm=scroll&page=N` URL, self-healed on load the
+ * way a seedless random URL is (useStampRandomSeed): scroll mode is DEFINED by
+ * having no `page` at all — two live position params is the bug class the mode
+ * avoids — so the page number is re-expressed as the position it names and the
+ * param dropped, in one tick and in "replace" (a correction to a URL that was
+ * never valid, not somewhere to navigate back to).
+ *
+ * Presence is read from `useSearchParams`, not from nuqs: nuqs cannot tell
+ * `page=1` from absent, and `page=1` is exactly the case that must still lose
+ * the param. `top` WINS when both are present — it is the mode's own coordinate
+ * and the more specific one, so a link carrying both is read as a position with
+ * a stale page number attached.
+ *
+ * A MOUNT-TIME decision, taken from a snapshot rather than from a live
+ * subscription, and that is load-bearing rather than tidy. The only URL this
+ * may ever correct is one that ARRIVED in scroll mode carrying a page; a URL
+ * that ENTERS scroll mode later is a mode switch, and a mode switch has already
+ * written the position it means (see useCommitViewMode, which writes `vm`,
+ * `page=null` and `top` in one batch). Re-deciding on a live params read could
+ * observe that batch half-propagated — `vm=scroll` and `page` still present,
+ * `top` not yet — and "correct" the switch's own anchor back to the top of a
+ * page it just left.
+ */
+function useScrollURLNormalization({ urlParams, scrollMode, page, k, setScrollAnchor, setPageRaw }: {
+    urlParams: ReadonlyURLSearchParams,
+    scrollMode: boolean,
+    page: number,
+    k: number,
+    setScrollAnchor: ReturnType<typeof useGridScrollAnchor>[1],
+    setPageRaw: ReturnType<typeof useSearchPageRaw>[1],
+}) {
+    // Read on the first render, consumed once by the effect below. `useRef`'s
+    // initial value is only taken on that first render, so this is the URL the
+    // component mounted with no matter how often it re-renders.
+    //
+    // `freshSession` — no presentation or position parameter at all — is what
+    // makes this correction and the creation-defaults stamp below MUTUALLY
+    // EXCLUSIVE by construction rather than by coincidence: one runs only when
+    // it is true, the other only when it is false, and both take it from
+    // `isFreshSession` over the SAME first-render `urlParams` (the two hooks
+    // are called with one value in one component), so no load can ever reach
+    // both writers. (They are exclusive by content too — normalization needs
+    // `vm` AND `page` present, which is not a fresh session — but that is an
+    // argument a reader has to reconstruct, and the two effects write the same
+    // parameters.)
+    const mountURL = useRef({
+        params: urlParams,
+        scrollMode,
+        page,
+        k,
+        freshSession: isFreshSession(urlParams),
+    })
+    const normalizedScrollURL = useRef(false)
+    useEffect(() => {
+        // Empty deps already make this once-per-mount; the ref covers the
+        // double invocation React's StrictMode adds in development.
+        if (normalizedScrollURL.current) return
+        normalizedScrollURL.current = true
+        const mounted = mountURL.current
+        if (mounted.freshSession) return
+        if (!mounted.scrollMode || !mounted.params.has("page")) return
+        const replace = { history: "replace" as const }
+        if (!mounted.params.has(GRID_SCROLL_ANCHOR_KEY)) {
+            const anchor = virtualPageAnchor(mounted.page, mounted.k)
+            setScrollAnchor(anchor > 0 ? anchor : null, replace)
+        }
+        setPageRaw(null, replace)
+        // The setters churn identity per render and every value read here is a
+        // mount-time snapshot, so there is nothing honest to depend on.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+}
+
+/**
+ * The creation-defaults layer: a load carrying NO presentation or position
+ * parameter is a new search session, and the user's saved presentation is
+ * stamped into it as explicit parameters — once, here, and never again for the
+ * life of the session (docs/search-scroll-mode-design.md §7, the
+ * lib/pinboardDefaults.ts pattern). Everything that makes this correct is in
+ * lib/searchDefaults.ts; what is left here is the lifecycle.
+ *
+ * The complement of the normalization hook's guard, off the same first-render
+ * `urlParams` — see `freshSession` above. A URL with any of those parameters is
+ * a bookmark, a share or a navigation and already carries its own presentation,
+ * so this touches nothing; a fresh URL cannot be the `vm=scroll&page=N` shape
+ * the other effect exists to correct.
+ *
+ * "replace", unlike the pinboard stamp's push: there is no sibling navigation
+ * to fold into, and the entry this rewrites is the one the user just arrived on
+ * — a Back that returned to the unstamped URL would only stamp it again. Both
+ * writes in one tick, so nuqs coalesces them into a single URL update.
+ *
+ * With the shipped creation defaults equal to the codec defaults, a user who
+ * has saved nothing produces an EMPTY stamp and no write at all: the paged
+ * experience is byte-identical to what it was before this existed (asserted in
+ * scripts/scrollmode.test.mjs).
+ */
+function useSearchCreationStamp({ urlParams, setViewMode, setPageSizeRaw }: {
+    urlParams: ReadonlyURLSearchParams,
+    setViewMode: ReturnType<typeof useViewMode>[1],
+    setPageSizeRaw: ReturnType<typeof usePageSizeRaw>[1],
+}) {
+    // The same first-render snapshot discipline as the normalization hook's,
+    // for the same reason: this decision is about the URL the session STARTED
+    // on, and every later value of it is a navigation this must not act on.
+    const freshSession = useRef(isFreshSession(urlParams))
+    const stampedDefaults = useRef(false)
+    useEffect(() => {
+        if (stampedDefaults.current) return
+        stampedDefaults.current = true
+        if (!freshSession.current) return
+        // Belt to that brace, and it can only ever SUPPRESS a stamp: the
+        // snapshot above is React's view of the URL on the first render, while
+        // this is the browser's own, read at the only moment the two could
+        // have diverged. Stamping over a URL that turns out to carry a
+        // presentation is the one failure mode here that loses something the
+        // user asked for (a shared `?page=3` opening on page 1), and the
+        // design's rule for every ambiguous case is that conservative is
+        // correct.
+        if (!isFreshSession(new URLSearchParams(window.location.search))) return
+        const stamp = creationStamp(effectiveCreationDefaults())
+        const replace = { history: "replace" as const }
+        if (stamp.vm !== undefined) setViewMode(stamp.vm, replace)
+        if (stamp.page_size !== undefined) setPageSizeRaw(stamp.page_size, replace)
+        // Mount-only, exactly like the normalization effect above: the
+        // decision is taken from the snapshot, and the setters churn identity.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+}
+
 export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVisible = false }:
     { initialQuery: SearchQueryArgs, isRestrictedMode: boolean, updateRibbonVisible?: boolean }) {
     const { data, error, isError, refetch, isFetching, resultsAreStale, nResults, countIsPlaceholder, page, pageSize, setPage, searchEnabled, getPageURL, committedQuery, queryEnabled } = useSearch({ initialQuery })
@@ -212,6 +435,12 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
         if (scrollMode && page !== 1) {
             return
         }
+        // The same mismatch from the other side: an index deeper than page 1's
+        // rows names an item that CANNOT be in them, so any findIndex hit below
+        // would be a coincidence of file ids across the set, not a remap.
+        if (scrollMode && qIndex !== null && qIndex >= results.length) {
+            return
+        }
         // Clamped, not wrapped, for the same reason as in the gallery: an
         // index past the end means these results are momentarily the wrong
         // ones, and wrapping would compare the selection against an unrelated
@@ -272,164 +501,23 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     // wait on a throttle would be a lag with no reason behind it.
     const k = urlPageSize
     const [scrollAnchor, setScrollAnchor] = useGridScrollAnchor()
-    // The highlighted virtual page. The LIVE value comes from the grid, which
-    // is the only place it can be computed correctly: the highlight is derived
-    // from the top visible ROW (see topRowHighlightItem), and rows exist only
-    // inside the virtualizer.
-    //
-    // What is derived HERE — from the URL anchor, as `floor(top / k) + 1` — is
-    // a placeholder for the window before the grid's first scroll event: first
-    // paint of a deep link, back/forward, a scrubber jump. (A page-size relabel
-    // moves nothing and produces no scroll, so it is not in that list — the
-    // grid reports that one directly; see below and ResultGrid's [pageSize]
-    // effect.) It is deliberately the plainer expression, because a URL anchor
-    // is an item and needs no row geometry to place; and it is deliberately
-    // not authoritative, because it cannot see the columns. Every one of those
-    // positions reaches the grid as a scroll (the restore's programmatic one
-    // included), and that scroll's own event replaces this value with the
-    // row-derived one.
-    const [derivedPage, setDerivedPage] = useState(() => virtualPageOf(scrollAnchor ?? 0, k))
-    // …which is why `scrollAnchor` is deliberately NOT a trigger here, only a
-    // value read when one fires. The grid WRITES that anchor on every scroll
-    // stop, and it writes the first item of the top row while the highlight
-    // speaks for that row's last item — so re-deriving on a self-write would
-    // pull the bar back by a page 350ms after the user stopped scrolling,
-    // which is the very lattice flip topRowHighlightItem exists to remove. An
-    // anchor arriving from anywhere else (back/forward, a scrubber jump, a
-    // query reset) moves the grid, and the resulting scroll reports the
-    // correct number itself.
-    //
-    // k is NOT a trigger either, for a reason worth stating because it looks
-    // like one: a page-size relabel does renumber a position that has not
-    // moved, and does produce no scroll to report it — but the number it needs
-    // is the row-derived one, and this expression cannot compute that. The GRID
-    // pushes it instead, from its own [pageSize] effect (see ResultGrid). Both
-    // firing would be worse than either alone: child effects run before parent
-    // ones, so the grid's correct value would land first and this placeholder
-    // would immediately overwrite it — the bar sitting a page low until the
-    // next scroll, which is the bug the grid-side trigger exists to remove.
-    //
-    // The anchor BECOMING NULL is a trigger — the restore effect clears a stale
-    // anchor without scrolling anything (there is nowhere to scroll to), so no
-    // event would ever walk the bar back from the dead page the stale anchor
-    // placed it on. Only the null transition: a non-null self-write is the
-    // scroll-stop pullback case excluded above.
-    useEffect(() => {
-        if (!scrollMode) return
-        setDerivedPage(virtualPageOf(scrollAnchor ?? 0, k))
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [scrollMode, scrollAnchor === null])
+    // The pagination bar's highlight while the grid has not reported one — and,
+    // with the gallery open, for as long as it stays open (see the hook).
+    const [derivedPage, setDerivedPage] = useDerivedVirtualPage({
+        scrollMode,
+        scrollAnchor,
+        k,
+        galleryOpen: qIndex !== null,
+    })
 
-    // A hand-made or hand-edited `vm=scroll&page=N` URL, self-healed on load
-    // the way a seedless random URL is (useStampRandomSeed): scroll mode is
-    // DEFINED by having no `page` at all — two live position params is the bug
-    // class the mode avoids — so the page number is re-expressed as the
-    // position it names and the param dropped, in one tick and in "replace"
-    // (a correction to a URL that was never valid, not somewhere to navigate
-    // back to).
-    //
-    // Presence is read from `useSearchParams`, not from nuqs: nuqs cannot tell
-    // `page=1` from absent, and `page=1` is exactly the case that must still
-    // lose the param. `top` WINS when both are present — it is the mode's own
-    // coordinate and the more specific one, so a link carrying both is read as
-    // a position with a stale page number attached.
-    //
-    // A MOUNT-TIME decision, taken from a snapshot rather than from a live
-    // subscription, and that is load-bearing rather than tidy. The only URL
-    // this may ever correct is one that ARRIVED in scroll mode carrying a
-    // page; a URL that ENTERS scroll mode later is a mode switch, and a mode
-    // switch has already written the position it means (see useCommitViewMode,
-    // which writes `vm`, `page=null` and `top` in one batch). Re-deciding on a
-    // live params read could observe that batch half-propagated — `vm=scroll`
-    // and `page` still present, `top` not yet — and "correct" the switch's own
-    // anchor back to the top of a page it just left.
+    // The two mount-time URL corrections, mutually exclusive by construction —
+    // see `freshSession` in the first of them. One `useSearchParams` read feeds
+    // both, so they cannot disagree about the URL the session started on.
     const urlParams = useSearchParams()
     const setPageRaw = useSearchPageRaw()[1]
-    // Read on the first render, consumed once by the effects below. `useRef`'s
-    // initial value is only taken on that first render, so this is the URL the
-    // component mounted with no matter how often it re-renders.
-    //
-    // `freshSession` — no presentation or position parameter at all — is what
-    // makes the two mount-time URL corrections below MUTUALLY EXCLUSIVE by
-    // construction rather than by coincidence: one runs only when it is true,
-    // the other only when it is false, both read it from this one snapshot, so
-    // no load can ever reach both writers. (They are exclusive by content too
-    // — normalization needs `vm` AND `page` present, which is not a fresh
-    // session — but that is an argument a reader has to reconstruct, and the
-    // two effects write the same parameters.)
-    const mountURL = useRef({
-        params: urlParams,
-        scrollMode,
-        page,
-        k,
-        freshSession: isFreshSession(urlParams),
-    })
-    const normalizedScrollURL = useRef(false)
-    useEffect(() => {
-        // Empty deps already make this once-per-mount; the ref covers the
-        // double invocation React's StrictMode adds in development.
-        if (normalizedScrollURL.current) return
-        normalizedScrollURL.current = true
-        const mounted = mountURL.current
-        if (mounted.freshSession) return
-        if (!mounted.scrollMode || !mounted.params.has("page")) return
-        const replace = { history: "replace" as const }
-        if (!mounted.params.has(GRID_SCROLL_ANCHOR_KEY)) {
-            const anchor = virtualPageAnchor(mounted.page, mounted.k)
-            setScrollAnchor(anchor > 0 ? anchor : null, replace)
-        }
-        setPageRaw(null, replace)
-        // The setters churn identity per render and every value read here is a
-        // mount-time snapshot, so there is nothing honest to depend on.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
-
-    // The creation-defaults layer: a load carrying NO presentation or position
-    // parameter is a new search session, and the user's saved presentation is
-    // stamped into it as explicit parameters — once, here, and never again for
-    // the life of the session (docs/search-scroll-mode-design.md §7, the
-    // lib/pinboardDefaults.ts pattern). Everything that makes this correct is
-    // in lib/searchDefaults.ts; what is left here is the lifecycle.
-    //
-    // The complement of the normalization effect's guard, off the same
-    // snapshot — see `freshSession` above. A URL with any of those parameters
-    // is a bookmark, a share or a navigation and already carries its own
-    // presentation, so this touches nothing; a fresh URL cannot be the
-    // `vm=scroll&page=N` shape the other effect exists to correct.
-    //
-    // "replace", unlike the pinboard stamp's push: there is no sibling
-    // navigation to fold into, and the entry this rewrites is the one the user
-    // just arrived on — a Back that returned to the unstamped URL would only
-    // stamp it again. Both writes in one tick, so nuqs coalesces them into a
-    // single URL update.
-    //
-    // With the shipped creation defaults equal to the codec defaults, a user
-    // who has saved nothing produces an EMPTY stamp and no write at all: the
-    // paged experience is byte-identical to what it was before this existed
-    // (asserted in scripts/scrollmode.test.mjs).
+    useScrollURLNormalization({ urlParams, scrollMode, page, k, setScrollAnchor, setPageRaw })
     const setPageSizeRaw = usePageSizeRaw()[1]
-    const stampedDefaults = useRef(false)
-    useEffect(() => {
-        if (stampedDefaults.current) return
-        stampedDefaults.current = true
-        if (!mountURL.current.freshSession) return
-        // Belt to that brace, and it can only ever SUPPRESS a stamp: the
-        // snapshot above is React's view of the URL on the first render, while
-        // this is the browser's own, read at the only moment the two could
-        // have diverged. Stamping over a URL that turns out to carry a
-        // presentation is the one failure mode here that loses something the
-        // user asked for (a shared `?page=3` opening on page 1), and the
-        // design's rule for every ambiguous case is that conservative is
-        // correct.
-        if (!isFreshSession(new URLSearchParams(window.location.search))) return
-        const stamp = creationStamp(effectiveCreationDefaults())
-        const replace = { history: "replace" as const }
-        if (stamp.vm !== undefined) setViewMode(stamp.vm, replace)
-        if (stamp.page_size !== undefined) setPageSizeRaw(stamp.page_size, replace)
-        // Mount-only, exactly like the normalization effect above: the
-        // decision is taken from the snapshot, and the setters churn identity.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
+    useSearchCreationStamp({ urlParams, setViewMode, setPageSizeRaw })
 
     // The scrubber's three props. Virtual page N covers items [(N-1)k, Nk), so
     // a click is a position write and rides the grid's existing external-anchor
@@ -1366,6 +1454,13 @@ export function ResultGrid({
     // back/forward entry) as well as the cold load.
     useEffect(() => {
         if (!scroll || columns <= 0) return
+        // Stale rows mean the position has not been reset onto the new query
+        // yet, so both the range and the anchor still describe the OLD one —
+        // warming from them would spend one or two chunk requests at a
+        // position under a search nobody is at. No dep array, so the commit
+        // that clears the flag re-runs this and warming resumes at the reset
+        // position.
+        if (resultsAreStale) return
         const range = virtualizer.range
         const firstItem = range ? range.startIndex * columns : Math.max(scrollAnchor ?? 0, 0)
         const lastItem = range ? range.endIndex * columns + columns - 1 : firstItem

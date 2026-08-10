@@ -15,7 +15,7 @@ import { cn, downloadFileName, fileNameFromPath, getFileURL, getLocale } from "@
 import { itemEquals, OpenDetailsButton } from "@/components/OpenFileDetails"
 import { useFileShare } from "@/hooks/fileShare"
 import { useItemSelection } from "@/lib/state/itemSelection"
-import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail, useGalleryPinBoardLayout, useGalleryFullscreen, useGalleryHidePinBoard, useGalleryTrim } from "@/lib/state/gallery"
+import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail, useGalleryPinBoardLayout, useGalleryFullscreen, useGalleryHidePinBoard, useGalleryTrim, useViewMode } from "@/lib/state/gallery"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -156,6 +156,18 @@ export function ImageGallery({
     queryEnabled: boolean
 }) {
     const [qIndex, setIndex] = useGalleryIndex()
+    // The mode, read from `vm` itself rather than inferred. Everything else in
+    // this component discriminates on `totalPages === 1` (one giant page, so no
+    // page turn is reachable), and that is exactly right for the page-turn
+    // branches — but it is NOT a mode test: a pages-mode search that fits on
+    // one page has `totalPages === 1` too, and the anchor writes below must not
+    // reach it (in pages mode `top` is a within-page index the grid owns, not
+    // the position `gi` names). The advance chain has no explicit test to
+    // borrow either — it separates the two modes by construction, deferring to
+    // the chunk path only when a scan runs off the loaded rows. So the honest
+    // discriminator is the parameter itself, read the same way this component
+    // already reads `gi`, `page`, `page_size` and `top`.
+    const scrollMode = useViewMode()[0] === "scroll"
     const [page] = useSearchPage()
     // The raw `page` setter, and the grid's scroll anchor: the auto page turn
     // writes both itself instead of going through the useSearchPage wrapper —
@@ -382,6 +394,31 @@ export function ImageGallery({
     // page), so `page < totalPages` and `page > 1` are both false and the
     // plain global step is all that remains — which is the correct behavior,
     // because `gi` is already a global index over the whole set.
+    //
+    // MANUAL navigation's position write — the arrows, the click-through halves
+    // of the large image, the ← / → keys and the filmstrip, which all end up
+    // here. In scroll mode the grid's anchor FOLLOWS `gi`, the same rule the
+    // advance chain already states for its own landings ("the anchor follows
+    // the position", and absent while that position is the top of the set): the
+    // grid is unmounted while the gallery is open, so the anchor is the only
+    // record of where the user got to, and without this a binge from item 5000
+    // to item 8000 would put the grid back at 5000 on close — outside the
+    // ensure-visible scan window, so not even the selected item would be found
+    // (design §8). It also gives the pagination bar under the open gallery the
+    // only position signal it can have while the grid is gone (see
+    // useDerivedVirtualPage in SearchPage).
+    //
+    // "replace", like every other position write on this path: stepping is not
+    // navigation to bury the Back button under.
+    //
+    // PAGES MODE writes nothing here. `top` is a within-page index there, kept
+    // by the grid from its own scroll position, and the value of a step within
+    // a page is not it — that mode's `gi` and `top` answer different questions.
+    const navigateTo = (target: number) => {
+        setIndex(target)
+        if (!scrollMode) return
+        setScrollAnchor(target > 0 ? target : null, { history: "replace" })
+    }
     const nextImage = () => {
         cancelPendingAdvance()
         if (index === (count - 1)) {
@@ -392,7 +429,10 @@ export function ImageGallery({
             }
             return
         }
-        setIndex((currentIndex) => getNextIndex(count, currentIndex))
+        // From `qIndex`, exactly as the functional update this replaces read it
+        // — the URL's index, which is not the held one while a chunk is in
+        // flight — so the step itself is unchanged and only the anchor is new.
+        navigateTo(getNextIndex(count, qIndex))
     }
     const prevImage = () => {
         cancelPendingAdvance()
@@ -404,7 +444,7 @@ export function ImageGallery({
             }
             return
         }
-        setIndex((currentIndex) => getPrevIndex(count, currentIndex))
+        navigateTo(getPrevIndex(count, qIndex))
     }
 
     const closeGallery = () => {
@@ -1101,7 +1141,15 @@ export function ImageGallery({
             {/* `count`, not `source.count`: the strip must span the same extent
                 the gallery clamps `gi` against, or a deep `gi` would resolve
                 against an extent that is still growing — see `count` above. */}
-            {!fs && thumbnailsOpen ? <VirtualGalleryHorizontalScroll source={source} count={count} /> : null}
+            {!fs && thumbnailsOpen ? <VirtualGalleryHorizontalScroll
+                source={source}
+                count={count}
+                // A card click is manual navigation like the arrows are, and
+                // has to write the anchor with it — the strip is how a scroll-
+                // mode binge covers ground fast, so it is the path that most
+                // needs the grid to know where it ended up (see navigateTo).
+                onNavigate={navigateTo}
+            /> : null}
         </div>
     )
 }

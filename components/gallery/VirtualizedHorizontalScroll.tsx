@@ -36,6 +36,7 @@ function clampToCount(index: number | null, count: number): number {
 export function VirtualGalleryHorizontalScroll({
     source,
     count,
+    onNavigate,
 }: {
     /**
      * The same rows the gallery reads: the page's array in pages mode, a
@@ -55,6 +56,15 @@ export function VirtualGalleryHorizontalScroll({
      * disagreeing about how far the set reaches is a wrong item on one of them.
      */
     count: number
+    /**
+     * Where a card click sends the gallery. The GALLERY's own position write,
+     * not a bare `setIndex`: in scroll mode it carries the grid's scroll anchor
+     * along with `gi`, which is what makes a strip-driven jump across the set
+     * survive closing the gallery (see `navigateTo` in ImageGallery). The
+     * `href` on each card is unaffected — a real navigation re-mounts against
+     * the URL it names.
+     */
+    onNavigate: (index: number) => void
 }) {
     "use no memo"
     const parentRef = useRef<HTMLDivElement>(null)
@@ -180,6 +190,7 @@ export function VirtualGalleryHorizontalScroll({
                                 ownIndex={virtualItem.index}
                                 nItems={count}
                                 style={style}
+                                onNavigate={onNavigate}
                             />
                         )
                     })}
@@ -214,13 +225,16 @@ function VirtualHorizontalScrollElement({
     ownIndex,
     nItems,
     style,
+    onNavigate,
 }: {
     item: SearchResult
     ownIndex: number
     nItems: number
     style: React.CSSProperties
+    /** The gallery's position write — see the strip's own prop. */
+    onNavigate: (index: number) => void
 }) {
-    const [qIndex, setIndex] = useGalleryIndex()
+    const [qIndex] = useGalleryIndex()
     // The same mapping the strip scrolls to (see stripTarget): clamped, not
     // wrapped, or the ring would land on a different card than the one the
     // strip centres.
@@ -241,7 +255,7 @@ function VirtualHorizontalScrollElement({
 
     const onClick = (e: React.MouseEvent<HTMLAnchorElement, MouseEvent>) => {
         e.preventDefault()
-        setIndex(ownIndex % nItems)
+        onNavigate(ownIndex % nItems)
         setSelected(item)
     }
     const blurDataURL = useMemo(() => item.blurhash ? blurHashToDataURL(item.blurhash) : undefined, [item.blurhash])
