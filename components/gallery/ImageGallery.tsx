@@ -31,7 +31,7 @@ import { PLAYBACK_RATES, useOutroSkipEnabled, useVideoPlayerState } from '@/lib/
 import { NativeControlsEscape, PLAYER_SIZE_FULL_WIDTH, playerSizeForWidth, useVideoPlayerSurface, VideoPlayerSurface } from './VideoPlayerSurface'
 import { effectiveVideoTrim, outroCutPoint, outroProbeEligible, trimWithBound, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
 import { useVideoEndProbe } from '@/lib/videoEndProbe'
-import { noteVideoPlaybackError, useVideoPlayability } from '@/lib/videoPlayability'
+import { noteVideoPlaybackError, shouldDowngradeOnError, useVideoPlayability } from '@/lib/videoPlayability'
 import { useVideoPlayback } from '@/lib/videoTranscode'
 import { useVideoTranscodeEnabled } from '@/lib/useClientConfig'
 import { isEmptyTrim, TrimRange } from '@/lib/pinboardCrop'
@@ -436,7 +436,24 @@ export function GalleryImageLarge(
         setVideoSlot({ sha: item.sha256, ref: { current: null } })
     }
     const videoRef = videoSlot.ref
-    const videoState = useVideoPlayerState({ videoRef, persistVolume: true })
+    // The element as STATE alongside the ref. A needs-transcode item mounts
+    // its <video> long after showVideo flips (when the job finishes), and the
+    // volume/speed effects key on `showVideo` — without this they would run
+    // once against a null ref and the rendition would arrive at full volume,
+    // 1x. Memoised, because an inline ref callback is a new function every
+    // render and React would detach/reattach (null, then the element) on each
+    // one; the identity changes only with the per-item ref slot, which is
+    // exactly when a fresh element mounts anyway.
+    const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null)
+    const attachVideo = React.useCallback((el: HTMLVideoElement | null) => {
+        videoRef.current = el
+        setVideoEl(el)
+    }, [videoRef])
+    const videoState = useVideoPlayerState({
+        videoRef,
+        element: videoEl,
+        persistVolume: true,
+    })
     // The bytes the element actually mounts: the original file when the
     // browser can decode it, the finished artifact once a needs-transcode
     // item's job is done, and null until then — which is what keeps a play
@@ -840,7 +857,7 @@ export function GalleryImageLarge(
                             // `emptied`, not `pause`) — see videoRef above,
                             // which re-binds the hooks that listen to it.
                             key={item.sha256}
-                            ref={videoRef}
+                            ref={attachVideo}
                             autoPlay
                             // With a trim set, looping is useVideoTrim's job so
                             // it restarts from the trim start rather than 0.
@@ -862,19 +879,35 @@ export function GalleryImageLarge(
                                 videoIsPlayZone && "cursor-default",
                             )}
                             src={playbackURL ?? undefined}
-                            // The representative-profile recovery
-                            // (docs/video-transcoding-design.md §6): a codec
-                            // string can answer `probably` for a stream this
-                            // decoder cannot actually handle, and the element
-                            // is the only thing that knows. One error demotes
-                            // the sha to needs-transcode for the session, so
-                            // the black frame becomes a job the user can
-                            // start. Only for a `playable` verdict — an
-                            // artifact that fails to load says nothing about
-                            // the source.
-                            onError={playability === "playable"
-                                ? (() => noteVideoPlaybackError(item.sha256))
-                                : undefined}
+                            // Two unrelated failures wear the same event.
+                            //
+                            // An ARTIFACT that will not load is the job's
+                            // problem, never evidence about the source: the
+                            // global disk cache can evict it between `done`
+                            // and this fetch, and one automatic re-POST
+                            // recovers it (see useVideoPlayback).
+                            //
+                            // A failing SOURCE is the representative-profile
+                            // recovery (docs/video-transcoding-design.md §6):
+                            // a codec string can answer `probably` for a
+                            // stream this decoder cannot actually handle, and
+                            // the element is the only thing that knows. But
+                            // ONLY when it says DECODE — a dropped connection
+                            // must not take a perfectly playable codec away
+                            // for the rest of the session.
+                            onError={(e) => {
+                                if (playback.isArtifact) {
+                                    playback.noteArtifactError()
+                                    return
+                                }
+                                if (playability === "playable"
+                                    && shouldDowngradeOnError(e.currentTarget.error)) {
+                                    noteVideoPlaybackError(item.sha256)
+                                }
+                            }}
+                            // The artifact played, so the one automatic
+                            // recovery above is re-armed for next time
+                            onPlaying={playback.notePlaying}
                             // The element's own dimensions are the display
                             // ones (a rotated video reports them rotated), and
                             // they outrank both the thumbnail's and the item's

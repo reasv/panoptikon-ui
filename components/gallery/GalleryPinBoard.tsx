@@ -28,7 +28,7 @@ import { useOutroSkipEnabled, useVideoPlayerState } from '@/lib/videoPlayerState
 import { CropRect, PinLock, PinOrientation, TrimRange, clampCrop, composeCrops, isEmptyTrim, isIdentityOrientation, packHField, parseHField } from '@/lib/pinboardCrop'
 import { effectiveVideoTrim, outroCutPoint, outroProbeEligible, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
 import { useVideoEndProbe } from '@/lib/videoEndProbe'
-import { noteVideoPlaybackError, useVideoPlayability } from '@/lib/videoPlayability'
+import { noteVideoPlaybackError, shouldDowngradeOnError, useVideoPlayability } from '@/lib/videoPlayability'
 import { useVideoPlayback } from '@/lib/videoTranscode'
 import { useVideoTranscodeEnabled } from '@/lib/useClientConfig'
 import { CropGeometry, CropView } from './CropView'
@@ -3005,7 +3005,21 @@ function PinBoardPin({
     const playability = useVideoPlayability(data?.item, transcodeEnabled)
     const isPlayable = playability !== "unsupported"
     const videoRef = React.useRef<HTMLVideoElement>(null)
-    const videoState = useVideoPlayerState({ videoRef, persistVolume: true })
+    // The element as STATE alongside the ref: a needs-transcode pin mounts its
+    // <video> when the job finishes, long after showVideo flipped, and the
+    // hook's volume/speed effects have no other way to notice. Memoised so the
+    // callback ref keeps one identity — an inline arrow would detach and
+    // reattach the element on every render.
+    const [videoEl, setVideoEl] = React.useState<HTMLVideoElement | null>(null)
+    const attachVideo = React.useCallback((el: HTMLVideoElement | null) => {
+        videoRef.current = el
+        setVideoEl(el)
+    }, [])
+    const videoState = useVideoPlayerState({
+        videoRef,
+        element: videoEl,
+        persistVolume: true,
+    })
     // The pin's content layer: the only element containing BOTH the <video>
     // (which lives inside the .drag-handle layer) and the player surface
     // (which must not). It is the player's pointer container and its
@@ -3217,7 +3231,7 @@ function PinBoardPin({
                                     ghostSrc={showVideo ? undefined : thumbnail}
                                     renderMedia={(style) => showVideo ?
                                         <video
-                                            ref={videoRef}
+                                            ref={attachVideo}
                                             autoPlay
                                             // With a trim set, looping is handled by
                                             // useVideoTrim so it restarts from the
@@ -3234,19 +3248,35 @@ function PinBoardPin({
                                                 e.currentTarget.videoWidth,
                                                 e.currentTarget.videoHeight,
                                             )}
-                                            // The representative-profile
-                                            // recovery: one element error
-                                            // demotes this sha to
-                                            // needs-transcode for the session
-                                            // (docs/video-transcoding-design
-                                            // .md §6). Only for a `playable`
-                                            // verdict — a failing ARTIFACT is
-                                            // the job's problem, not evidence
-                                            // about the source.
-                                            onError={playability === "playable"
-                                                ? (() => noteVideoPlaybackError(
-                                                    data?.item?.sha256 ?? sha256))
-                                                : undefined}
+                                            // A failing ARTIFACT is the job's
+                                            // problem, not evidence about the
+                                            // source: the disk cache can
+                                            // evict it between `done` and
+                                            // this fetch, and one automatic
+                                            // re-POST recovers it. A failing
+                                            // SOURCE is the representative-
+                                            // profile recovery (docs/video-
+                                            // transcoding-design.md §6) —
+                                            // but only on a DECODE error,
+                                            // never on a network one, or a
+                                            // blip would cost this sha its
+                                            // native playback for the
+                                            // session.
+                                            onError={(e) => {
+                                                if (playback.isArtifact) {
+                                                    playback.noteArtifactError()
+                                                    return
+                                                }
+                                                if (playability === "playable"
+                                                    && shouldDowngradeOnError(
+                                                        e.currentTarget.error)) {
+                                                    noteVideoPlaybackError(
+                                                        data?.item?.sha256 ?? sha256)
+                                                }
+                                            }}
+                                            // The artifact played: re-arm the
+                                            // one automatic recovery
+                                            onPlaying={playback.notePlaying}
                                         />
                                         :
                                         <img

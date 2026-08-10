@@ -14,7 +14,9 @@
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
-const { videoPlayability } = await import("../lib/videoPlayability.ts")
+const { shouldDowngradeOnError, videoPlayability } = await import(
+  "../lib/videoPlayability.ts"
+)
 
 let all = true
 function check(name, ok, detail = "") {
@@ -267,7 +269,7 @@ check(
   ) === "playable"
 )
 check(
-  "video_tracks === 0 takes the audio rung, not a short-circuit",
+  "video_tracks === 0 alongside the sentinel changes nothing",
   videoPlayability(
     {
       type: "video/mp4",
@@ -284,6 +286,108 @@ check(
     { type: "video/mp4", video_codec: null, audio_codec: null, video_tracks: 0 },
     on(mainstream)
   ) === "playable"
+)
+// The sentinel is the sole authority, which is only observable when the two
+// DISAGREE: a stale/wrong zero count must not route a real video down the
+// audio-only rung, where the verdict can only be playable or unsupported and
+// the transcode it needs is unreachable.
+check(
+  "a stale video_tracks === 0 never overrides a named video codec",
+  videoPlayability(
+    {
+      type: "video/mp4",
+      video_codec: "hevc",
+      audio_codec: "aac",
+      video_tracks: 0,
+    },
+    on(mainstream)
+  ) === "needs-transcode"
+)
+check(
+  "...and a playable one stays playable through the video rung",
+  videoPlayability(
+    {
+      type: "video/quicktime",
+      video_codec: "h264",
+      audio_codec: "aac",
+      video_tracks: 0,
+    },
+    on(mainstream)
+  ) === "playable"
+)
+
+// ---- audio codecs with several spellings -------------------------------
+//
+// One codec, several names: mp3 is `mp4a.6B` to Safari and plain `mp3` to
+// Chrome/Firefox, and either answer means the track plays.
+
+const mp3AsObjectType = browser(
+  (type) => type === 'video/mp4; codecs="mp4a.6B"'
+)
+const mp3AsBareName = browser((type) => type === 'video/mp4; codecs="mp3"')
+check(
+  "mp3 is playable via the RFC 6381 object type",
+  videoPlayability(
+    { type: "video/mp4", video_codec: "none", audio_codec: "mp3" },
+    on(mp3AsObjectType)
+  ) === "playable"
+)
+check(
+  "mp3 is playable via the bare name too (any candidate is enough)",
+  videoPlayability(
+    { type: "video/mp4", video_codec: "none", audio_codec: "mp3" },
+    on(mp3AsBareName)
+  ) === "playable"
+)
+check(
+  "a browser that accepts neither spelling still vetoes",
+  videoPlayability(
+    { type: "video/mp4", video_codec: "h264", audio_codec: "mp3" },
+    on(browser((type) => type === 'video/mp4; codecs="avc1.42E01E"'))
+  ) === "needs-transcode"
+)
+
+// ---- the in-session downgrade gate -------------------------------------
+//
+// The downgrade is permanent for the session and takes the source away from
+// the player, so only the element's DECODE verdict may trigger it.
+
+check(
+  "a decode error downgrades",
+  shouldDowngradeOnError({ code: 3 }) === true
+)
+check(
+  "an aborted or network error never does",
+  shouldDowngradeOnError({ code: 1 }) === false &&
+    shouldDowngradeOnError({ code: 2 }) === false
+)
+check(
+  "src-not-supported does not either — it cannot be told from a failed fetch",
+  shouldDowngradeOnError({ code: 4 }) === false
+)
+check(
+  "an error event with no MediaError at all is not evidence",
+  shouldDowngradeOnError(null) === false &&
+    shouldDowngradeOnError(undefined) === false
+)
+
+// ---- the hydration gate ------------------------------------------------
+//
+// `canPlayType: null` is how useVideoPlayability renders the FIRST client pass
+// (and how the server renders every pass): an explicit "do not ask the
+// browser", which must reach the legacy mime branch even where a probe exists.
+// Omitting the option entirely still means "use this module's own element".
+
+check(
+  "an explicit null probe forces the legacy mime verdict",
+  videoPlayability(
+    { type: "video/mp4", video_codec: "hevc", audio_codec: "ac3" },
+    { transcodeEnabled: true, canPlayType: null }
+  ) === "playable" &&
+    videoPlayability(
+      { type: "video/quicktime", video_codec: "h264", audio_codec: "aac" },
+      { transcodeEnabled: true, canPlayType: null }
+    ) === "needs-transcode"
 )
 
 // ---- parity with the check this replaces -------------------------------

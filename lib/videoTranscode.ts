@@ -3,6 +3,9 @@ import { fetchClient } from "@/lib/api"
 // Type-only: this module must not pull the playability ladder's runtime in
 // (and vice versa) — the two are composed by the hosts, not by each other.
 import type { Playability } from "@/lib/videoPlayability"
+// Type-only for a second reason: `@/lib/panoptikon` is a .d.ts, so a VALUE
+// import of it would be a runtime module the node test scripts cannot resolve.
+import type { components } from "@/lib/panoptikon"
 
 // The playback half of the transcode surface (docs/video-transcoding-design.md
 // §2 and §8): ask the server for a playable rendition of one item, follow the
@@ -29,9 +32,31 @@ export type TranscodeState =
   /** 0..1, or null when the source has no recorded duration to divide by. */
   | { state: "running"; progress: number | null }
   | { state: "done"; artifactUrl: string }
-  | { state: "failed"; error: string }
+  /**
+   * `sticky` separates the two failures that used to wear one shape.
+   *
+   * STICKY is a VERDICT: the job itself reported `failed`, or the POST came
+   * back `known_failure`. The server negative-caches that (two strikes and it
+   * stops trying), so re-POSTing on every play press is a round trip that buys
+   * the same answer — it is cached for the session and a reload retries.
+   *
+   * NON-STICKY is an ACCIDENT: a refused POST, a dead transport, a poll that
+   * gave up. Nothing was learned about the item, so the next press clears it
+   * and tries again exactly as if the store had never heard of this key.
+   */
+  | { state: "failed"; error: string; sticky: boolean }
 
 const IDLE: TranscodeState = { state: "idle" }
+
+/** The job said no. Cached for the session (see `sticky` above). */
+function stickyFailure(error: string): TranscodeState {
+  return { state: "failed", error, sticky: true }
+}
+
+/** Something between here and the job broke. The next press retries. */
+function retryableFailure(error: string): TranscodeState {
+  return { state: "failed", error, sticky: false }
+}
 
 export function isTerminalState(state: TranscodeState): boolean {
   return state.state === "done" || state.state === "failed"
@@ -45,26 +70,57 @@ export function isTerminalState(state: TranscodeState): boolean {
 // data arrives as text through an EventSource, where the type system is a
 // suggestion.
 
+type JobEvent = components["schemas"]["TranscodeJobEvent"]
+type JobSnapshot = components["schemas"]["TranscodeJobSnapshot"]
+type SubmitResponse = components["schemas"]["TranscodeSubmitResponse"]
+type ArtifactRef = components["schemas"]["ArtifactRef"]
+type QueuedEvent = Extract<JobEvent, { state: "queued" }>
+type RunningEvent = Extract<JobEvent, { state: "running" }>
+type DoneEvent = Extract<JobEvent, { state: "done" }>
+type FailedEvent = Extract<JobEvent, { state: "failed" }>
+
+/**
+ * The variant tags, pinned to the generated schema. Nothing below type-checks
+ * the payload (it is text off a wire), so this `satisfies` is what makes a
+ * server-side rename a tsc error here instead of a silent `null` verdict —
+ * an unparseable event at runtime, which is the failure mode with no symptom.
+ */
+const JOB_STATE = {
+  queued: "queued",
+  running: "running",
+  done: "done",
+  failed: "failed",
+} as const satisfies Record<string, JobEvent["state"]>
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null
     ? (value as Record<string, unknown>)
     : null
 }
 
+/**
+ * Read one field off a defensively-parsed record. The VALUE stays `unknown`
+ * (every caller narrows it), but the NAME is checked against the generated
+ * schema type — the same pinning the tags get above, at each read site.
+ */
+function field<T>(record: Record<string, unknown>, key: keyof T & string): unknown {
+  return record[key]
+}
+
 /** One snapshot (SSE event or polled body) as a state, or null if unusable. */
 export function stateFromEvent(payload: unknown): TranscodeState | null {
   const event = asRecord(payload)
   if (!event) return null
-  switch (event.state) {
-    case "queued": {
-      const position = event.position
+  switch (field<JobEvent>(event, "state")) {
+    case JOB_STATE.queued: {
+      const position = field<QueuedEvent>(event, "position")
       return {
         state: "queued",
         position: typeof position === "number" && position > 0 ? position : 1,
       }
     }
-    case "running": {
-      const progress = event.progress
+    case JOB_STATE.running: {
+      const progress = field<RunningEvent>(event, "progress")
       return {
         state: "running",
         progress:
@@ -73,21 +129,25 @@ export function stateFromEvent(payload: unknown): TranscodeState | null {
             : null,
       }
     }
-    case "done": {
-      const url = asRecord(event.artifact)?.url
+    case JOB_STATE.done: {
+      const artifact = asRecord(field<DoneEvent>(event, "artifact"))
+      const url = artifact ? field<ArtifactRef>(artifact, "url") : null
       // A done event with no artifact URL is a server the client cannot
-      // follow; treat it as a failure rather than a permanent "running".
+      // follow; treat it as a failure rather than a permanent "running". NOT
+      // sticky: the job succeeded, so a re-POST hits the cache and is likelier
+      // to produce a usable envelope than to repeat this one.
       if (typeof url !== "string" || !url) {
-        return { state: "failed", error: "The finished rendition has no URL" }
+        return retryableFailure("The finished rendition has no URL")
       }
       return { state: "done", artifactUrl: url }
     }
-    case "failed": {
-      const error = event.error
-      return {
-        state: "failed",
-        error: typeof error === "string" && error ? error : "The transcode failed",
-      }
+    case JOB_STATE.failed: {
+      const error = field<FailedEvent>(event, "error")
+      // The job's own verdict — the one failure that is cached for the
+      // session, because the server caches it too.
+      return stickyFailure(
+        typeof error === "string" && error ? error : "The transcode failed"
+      )
     }
     default:
       return null
@@ -101,18 +161,31 @@ export function stateFromEvent(payload: unknown): TranscodeState | null {
  */
 export function stateFromSubmit(payload: unknown): TranscodeState {
   const body = asRecord(payload)
-  if (!body) return { state: "failed", error: "The server sent no job" }
-  if (body.outcome === "hit") {
-    const url = asRecord(body.artifact)?.url
+  // Every failure below is NON-sticky: a response this malformed says nothing
+  // about the item, only about the exchange, and pressing play again is the
+  // user asking to re-run exactly that exchange. (`outcome` is a bare string
+  // in the schema, so there is no enum to pin `"hit"` against.)
+  if (!body) return retryableFailure("The server sent no job")
+  if (field<SubmitResponse>(body, "outcome") === "hit") {
+    const artifact = asRecord(field<SubmitResponse>(body, "artifact"))
+    const url = artifact ? field<ArtifactRef>(artifact, "url") : null
     if (typeof url === "string" && url) return { state: "done", artifactUrl: url }
-    return { state: "failed", error: "The cached rendition has no URL" }
+    return retryableFailure("The cached rendition has no URL")
   }
-  return stateFromEvent(body.job) ?? { state: "failed", error: "The server sent no job" }
+  // `known_failure` arrives as a job already born failed, so it needs no
+  // special case — and comes back sticky from stateFromEvent, which is the
+  // whole point of the distinction.
+  return (
+    stateFromEvent(field<SubmitResponse>(body, "job")) ??
+    retryableFailure("The server sent no job")
+  )
 }
 
 /** The job id to follow, when the submit created or joined one. */
 export function jobIdFromSubmit(payload: unknown): string | null {
-  const id = asRecord(asRecord(payload)?.job)?.id
+  const body = asRecord(payload)
+  const job = body ? asRecord(field<SubmitResponse>(body, "job")) : null
+  const id = job ? field<JobSnapshot>(job, "id") : null
   return typeof id === "string" && id ? id : null
 }
 
@@ -143,8 +216,13 @@ export function transcodeBadge(
 
 const states = new Map<string, TranscodeState>()
 const listeners = new Map<string, Set<() => void>>()
+// One automatic re-POST per key for an artifact the element could not load
+// (see `claimArtifactRetry`). Never cleared by a reset — that is what makes it
+// a bound rather than a loop.
+const artifactRetries = new Set<string>()
 
-function keyFor(sha256: string, preset: string): string {
+/** The store key. Content-addressed, never a URL — see the header. */
+export function transcodeKey(sha256: string, preset: string = PLAYBACK_PRESET): string {
   return `${sha256}:${preset}`
 }
 
@@ -168,6 +246,83 @@ function subscribeKey(key: string | null, onChange: () => void): () => void {
   }
 }
 
+/** The current state for a key. Exported for the node tests and the hosts. */
+export function getTranscodeState(key: string): TranscodeState {
+  return states.get(key) ?? IDLE
+}
+
+/**
+ * Apply one snapshot to a key. Returns the state it produced, or null when the
+ * payload was unusable — and ignores ANYTHING that arrives after a terminal
+ * state, which is what keeps a late SSE frame (or a poll tick racing the
+ * stream it just replaced) from reviving a job that is already done.
+ */
+export function applyJobEvent(key: string, payload: unknown): TranscodeState | null {
+  const current = states.get(key)
+  if (current && isTerminalState(current)) return null
+  const next = stateFromEvent(payload)
+  if (!next) return null
+  setState(key, next)
+  return next
+}
+
+/** The SSE form: the same thing, from one frame's `data` text. */
+export function applyJobEventText(key: string, data: string): TranscodeState | null {
+  let payload: unknown
+  try {
+    payload = JSON.parse(data)
+  } catch {
+    // A malformed frame is a dropped sample and nothing else. Never a state
+    // change, and never a reason to tear the stream down.
+    return null
+  }
+  return applyJobEvent(key, payload)
+}
+
+/**
+ * May a press submit for this key? Idle and never-seen obviously yes; a live
+ * job joins instead (dedup per `sha:preset`, which is what stops a pin and the
+ * gallery from encoding the same item twice). A failure depends on WHOSE it
+ * was — see `sticky` on TranscodeState.
+ */
+export function shouldSubmit(current: TranscodeState | undefined): boolean {
+  if (!current || current.state === "idle") return true
+  return current.state === "failed" && !current.sticky
+}
+
+/**
+ * Forget a key's verdict, so the next `startTranscode` re-POSTs. Used by the
+ * evicted-artifact recovery: the state has to pass through idle (which pulls
+ * the URL out from under the element) or the re-`done` would hand the host the
+ * identical `src` string, and an element that already failed on that src never
+ * refetches it.
+ */
+export function resetTranscode(
+  sha256: string | null | undefined,
+  preset: string = PLAYBACK_PRESET
+) {
+  if (!sha256) return
+  setState(transcodeKey(sha256, preset), IDLE)
+}
+
+/**
+ * The single retry marker per key. The artifact lives in a global LRU disk
+ * cache and can be evicted between the job finishing and the element fetching
+ * it, so ONE automatic re-POST (which hits, or starts a fresh job) is worth
+ * spending. Returns true the first time only; the second consecutive artifact
+ * error has to land somewhere that is not another POST.
+ */
+export function claimArtifactRetry(key: string): boolean {
+  if (artifactRetries.has(key)) return false
+  artifactRetries.add(key)
+  return true
+}
+
+/** Re-arm the retry: the element actually played, so the round trip worked. */
+export function clearArtifactRetry(key: string) {
+  artifactRetries.delete(key)
+}
+
 function errorDetail(error: unknown, fallback: string): string {
   const detail = asRecord(error)?.detail
   return typeof detail === "string" && detail ? detail : fallback
@@ -176,12 +331,13 @@ function errorDetail(error: unknown, fallback: string): string {
 /**
  * Ask for (or join) the rendition of one item.
  *
- * Deduplicated per `sha:preset`, and that includes the TERMINAL states: a
- * `failed` verdict is cached for the session because the server negative-
- * caches it too (two strikes and it stops trying), so re-POSTing on every play
- * press would be a loop that costs a round trip to learn the same answer. A
- * reload retries — the store is memory, and the miss is usually a missing
- * mount or a toolchain that has since been fixed.
+ * Deduplicated per `sha:preset`, and that includes the STICKY failure: a
+ * verdict is cached for the session because the server negative-caches it too
+ * (two strikes and it stops trying), so re-POSTing on every play press would
+ * be a loop that costs a round trip to learn the same answer. A reload retries
+ * — the store is memory, and the miss is usually a missing mount or a
+ * toolchain that has since been fixed. A NON-sticky failure is treated exactly
+ * like idle: nothing was learned, so the press means what it says.
  */
 export function startTranscode(options: {
   sha256: string
@@ -189,9 +345,8 @@ export function startTranscode(options: {
   preset?: string
 }) {
   const preset = options.preset ?? PLAYBACK_PRESET
-  const key = keyFor(options.sha256, preset)
-  const current = states.get(key)
-  if (current && current.state !== "idle") return
+  const key = transcodeKey(options.sha256, preset)
+  if (!shouldSubmit(states.get(key))) return
   setState(key, { state: "requesting" })
   void submitJob(key, options.sha256, preset, options.dbs)
 }
@@ -208,10 +363,9 @@ async function submitJob(
       body: { id: sha256, id_type: "sha256", preset },
     })
     if (error || !data) {
-      setState(key, {
-        state: "failed",
-        error: errorDetail(error, "The server refused the transcode"),
-      })
+      // A refused POST is the SERVER declining to answer, not a verdict about
+      // the item: 401/429/503 all land here and all deserve another press.
+      setState(key, retryableFailure(errorDetail(error, "The server refused the transcode")))
       return
     }
     const next = stateFromSubmit(data)
@@ -219,16 +373,44 @@ async function submitJob(
     if (isTerminalState(next)) return
     const jobId = jobIdFromSubmit(data)
     if (!jobId) {
-      setState(key, { state: "failed", error: "The server sent no job id" })
+      setState(key, retryableFailure("The server sent no job id"))
       return
     }
     followJob(key, jobId)
   } catch {
-    setState(key, { state: "failed", error: "The transcode request failed" })
+    setState(key, retryableFailure("The transcode request failed"))
   }
 }
 
 // ---- following one job -------------------------------------------------
+
+/** `EventSource.CLOSED`, by value: the pure decision below runs in node too. */
+const SSE_CLOSED = 2
+/** Reconnects an ordinary blip is allowed before the poller takes over. */
+const SSE_ERROR_BUDGET = 2
+
+/**
+ * What one EventSource `error` means. Pure, so the branch that matters most
+ * (the one that never reconnects) is node-testable.
+ *
+ * A CLOSED readyState is the browser saying it has GIVEN UP: a 403 or 502, a
+ * response that was not `text/event-stream`, a job id the pool has already
+ * aged out. There is no reconnect coming, so waiting for a second error is
+ * waiting forever — that is the whole bug this replaces. CONNECTING is the
+ * ordinary blip an EventSource recovers from by itself, but only for as long
+ * as the budget lasts: a relay buffering `text/event-stream` (design §10)
+ * reconnects cheerfully and delivers nothing, and the poller is the only thing
+ * that gets through it.
+ */
+export function sseErrorDisposition(options: {
+  readyState: number
+  consecutiveErrors: number
+  terminal: boolean
+}): "close" | "reconnect" | "fallback" {
+  if (options.terminal) return "close"
+  if (options.readyState === SSE_CLOSED) return "fallback"
+  return options.consecutiveErrors >= SSE_ERROR_BUDGET ? "fallback" : "reconnect"
+}
 
 function followJob(key: string, jobId: string) {
   const url = `/api/video/jobs/${encodeURIComponent(jobId)}/events`
@@ -237,11 +419,8 @@ function followJob(key: string, jobId: string) {
     return
   }
   const source = new EventSource(url)
-  // Errors are only fatal in pairs. One is the ordinary transport blip an
-  // EventSource reconnects through by itself; a SECOND with no event in
-  // between means the stream is not getting here at all (a relay or proxy
-  // buffering `text/event-stream` is the known case, design §10) and no
-  // number of further reconnects will change that.
+  // Consecutive errors, reset by any frame that gets through: a stream that is
+  // delivering has no budget to spend.
   let errors = 0
   const close = () => {
     try {
@@ -252,42 +431,50 @@ function followJob(key: string, jobId: string) {
   }
   source.onmessage = (event: MessageEvent) => {
     errors = 0
-    let payload: unknown
-    try {
-      payload = JSON.parse(event.data as string)
-    } catch {
-      return
-    }
-    const next = stateFromEvent(payload)
-    if (!next) return
-    setState(key, next)
+    const next = applyJobEventText(key, event.data as string)
     // The server ends the stream after the terminal event. Closing here is
     // not tidiness: an EventSource whose stream ends reconnects forever, and
     // the gateway speaks plain HTTP/1.1, where six connections per origin is
     // the entire budget the grid is already competing for.
-    if (isTerminalState(next)) close()
+    if (next && isTerminalState(next)) close()
   }
   source.onerror = () => {
-    const current = states.get(key)
-    if (current && isTerminalState(current)) {
-      close()
-      return
-    }
     errors += 1
-    if (errors < 2) return
+    const current = states.get(key)
+    const action = sseErrorDisposition({
+      readyState: source.readyState,
+      consecutiveErrors: errors,
+      terminal: current != null && isTerminalState(current),
+    })
+    if (action === "reconnect") return
     close()
-    pollJob(key, jobId)
+    if (action === "fallback") pollJob(key, jobId)
   }
 }
 
 // The SSE fallback: the snapshot endpoint carries the identical envelope, so
 // the only thing that changes is how often it is read.
 const POLL_INTERVAL_MS = 1000
+// ...and for how long. An EventSource held open through a genuinely pending
+// job is by design (the server pushes when there is something to say), but a
+// poll loop is a request per second forever, and a job the pool silently lost
+// would keep one running for the life of the tab.
+const POLL_TIMEOUT_MS = 10 * 60 * 1000
 
 function pollJob(key: string, jobId: string) {
   let stopped = false
+  const deadline = Date.now() + POLL_TIMEOUT_MS
   const tick = async () => {
     if (stopped) return
+    // The stream may have delivered the terminal event before this loop's
+    // timer came round, and a reset (evicted-artifact recovery) means this
+    // loop is following a job nobody is waiting for any more.
+    const current = states.get(key)
+    if (current && isTerminalState(current)) return
+    if (Date.now() >= deadline) {
+      setState(key, retryableFailure("Gave up waiting for the transcode"))
+      return
+    }
     try {
       const { data, error, response } = await fetchClient.GET(
         "/api/video/jobs/{job_id}",
@@ -295,22 +482,17 @@ function pollJob(key: string, jobId: string) {
       )
       if (response.status === 404) {
         // The pool's terminal ring is time-bounded; a job that aged out of it
-        // after we lost the stream is unknowable, not running.
-        setState(key, {
-          state: "failed",
-          error: "The transcode job is no longer available",
-        })
+        // after we lost the stream is unknowable, not failed — the encode may
+        // well have landed in the cache, so another press is worth a hit.
+        setState(key, retryableFailure("The transcode job is no longer available"))
         stopped = true
         return
       }
       if (!error && data) {
-        const next = stateFromEvent(data)
-        if (next) {
-          setState(key, next)
-          if (isTerminalState(next)) {
-            stopped = true
-            return
-          }
+        const next = applyJobEvent(key, data)
+        if (next && isTerminalState(next)) {
+          stopped = true
+          return
         }
       }
     } catch {
@@ -327,7 +509,7 @@ export function useTranscodeState(
   sha256: string | null | undefined,
   preset: string = PLAYBACK_PRESET
 ): TranscodeState {
-  const key = sha256 ? keyFor(sha256, preset) : null
+  const key = sha256 ? transcodeKey(sha256, preset) : null
   const subscribe = React.useCallback(
     (onChange: () => void) => subscribeKey(key, onChange),
     [key]
@@ -360,11 +542,18 @@ export function useVideoPlayback(options: {
   state: TranscodeState
   badge: { text: string; error?: boolean } | null
   start: () => void
+  /** True when `url` is the ARTIFACT rather than the item's own file. */
+  isArtifact: boolean
+  /** The element failed on the artifact: recover it once, then give up. */
+  noteArtifactError: () => void
+  /** The element started playing: re-arm the one automatic recovery. */
+  notePlaying: () => void
 } {
   const { sha256, playability, fileURL, dbs } = options
   const preset = options.preset ?? PLAYBACK_PRESET
   const state = useTranscodeState(sha256, preset)
   const needsTranscode = playability === "needs-transcode"
+  const isArtifact = needsTranscode && state.state === "done"
   const url = needsTranscode
     ? state.state === "done"
       ? state.artifactUrl
@@ -376,10 +565,34 @@ export function useVideoPlayback(options: {
     if (!sha256 || !needsTranscode) return
     startTranscode({ sha256, dbs, preset })
   }, [sha256, needsTranscode, dbs, preset])
+  // An artifact that will not load is almost always one the global disk cache
+  // evicted between `done` and the fetch — the URL is still well-formed, the
+  // bytes are simply gone. Re-POSTing recovers it (a hit if it was re-created,
+  // a fresh job otherwise), so it is done automatically and exactly ONCE per
+  // key; a second consecutive failure is something else entirely and stops
+  // here as a non-sticky failure the user can retry by hand.
+  const noteArtifactError = React.useCallback(() => {
+    if (!sha256 || !needsTranscode) return
+    const key = transcodeKey(sha256, preset)
+    if (getTranscodeState(key).state !== "done") return
+    if (!claimArtifactRetry(key)) {
+      setState(key, retryableFailure("The rendition could not be played"))
+      return
+    }
+    resetTranscode(sha256, preset)
+    startTranscode({ sha256, dbs, preset })
+  }, [sha256, needsTranscode, dbs, preset])
+  const notePlaying = React.useCallback(() => {
+    if (!sha256) return
+    clearArtifactRetry(transcodeKey(sha256, preset))
+  }, [sha256, preset])
   return {
     url,
     state,
     badge: needsTranscode ? transcodeBadge(state) : null,
     start,
+    isArtifact,
+    noteArtifactError,
+    notePlaying,
   }
 }

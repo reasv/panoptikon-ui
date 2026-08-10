@@ -66,14 +66,20 @@ const VIDEO_CODEC_STRINGS: Record<string, string> = {
   // wmv3 (and every other codec) is deliberately absent — see above.
 }
 
-const AUDIO_CODEC_STRINGS: Record<string, string> = {
-  aac: "mp4a.40.2",
-  opus: "opus",
-  vorbis: "vorbis",
-  mp3: "mp4a.6B",
-  ac3: "ac-3",
-  eac3: "ec-3",
-  flac: "flac",
+// Audio takes a LIST per codec, tried in order, because one spelling is not
+// enough for mp3: `mp4a.6B` is the RFC 6381 form (and the one Safari answers
+// for), while Chrome and Firefox answer for the bare `mp3` and shrug at the
+// object-type form in some containers. Any candidate answering
+// probably|maybe is a playable track — the strings are alternative names for
+// one codec, not a set of requirements.
+const AUDIO_CODEC_STRINGS: Record<string, readonly string[]> = {
+  aac: ["mp4a.40.2"],
+  opus: ["opus"],
+  vorbis: ["vorbis"],
+  mp3: ["mp4a.6B", "mp3"],
+  ac3: ["ac-3"],
+  eac3: ["ec-3"],
+  flac: ["flac"],
   // pcm_* is absent: a raw-PCM track in a .mov is the classic audio veto.
 }
 
@@ -102,13 +108,23 @@ export function videoCodecString(codec: string, mime: string): string | null {
   return VIDEO_CODEC_STRINGS[codec] ?? null
 }
 
-export function audioCodecString(codec: string): string | null {
+/** Every spelling this browser might know the codec by, or null if unmapped. */
+export function audioCodecStrings(codec: string): readonly string[] | null {
   return AUDIO_CODEC_STRINGS[codec] ?? null
 }
 
 function accepts(probe: CanPlayType, mime: string, codecs: string): boolean {
   const answer = probe(`${mime}; codecs="${codecs}"`)
   return answer === "probably" || answer === "maybe"
+}
+
+/** One codec, several names: any accepted spelling makes the track playable. */
+function acceptsAny(
+  probe: CanPlayType,
+  mime: string,
+  candidates: readonly string[]
+): boolean {
+  return candidates.some((codecs) => accepts(probe, mime, codecs))
 }
 
 // The pre-codec-column check, kept verbatim as the NULL branch: an item the
@@ -156,13 +172,23 @@ function defaultCanPlayType(): CanPlayType | null {
  */
 export function videoPlayability(
   item: PlayabilityItem | null | undefined,
-  options: { transcodeEnabled: boolean; canPlayType?: CanPlayType | null }
+  options: {
+    transcodeEnabled: boolean
+    /**
+     * ABSENT means "use this module's own element"; an explicit `null` means
+     * "there is no browser to ask" and forces the legacy mime branch. The two
+     * are deliberately different: the hook passes null on the hydration pass,
+     * where a probe exists but must not be consulted.
+     */
+    canPlayType?: CanPlayType | null
+  }
 ): Playability {
   const mime = normalizeMime(item?.type)
   // Not a video item at all: no play affordance, no job, nothing to decide.
   if (!mime.startsWith("video/")) return "unsupported"
 
-  const probe = options.canPlayType ?? defaultCanPlayType()
+  const probe =
+    options.canPlayType === undefined ? defaultCanPlayType() : options.canPlayType
   const videoCodec = normalizeCodec(item?.video_codec)
   if (!probe || videoCodec === null) {
     return legacyMimeVerdict(mime, options.transcodeEnabled)
@@ -174,13 +200,18 @@ export function videoPlayability(
   // video containers (and files whose only "video" stream is cover art) play
   // in a <video> today, and taking their play button away would be a
   // regression dressed up as a fix. So the audio track alone decides, probed
-  // against the real container. `video_tracks === 0` from the item metadata
-  // lands here too rather than short-circuiting: it says the same thing the
-  // sentinel does, and the sentinel is the authority when they disagree.
-  if (videoCodec === CODEC_NONE || item?.video_tracks === 0) {
+  // against the real container.
+  //
+  // The SENTINEL is the sole authority here, `video_tracks` deliberately not:
+  // the two come from different probes and the count is the weaker of them
+  // (cover art is a video stream that counts and decodes to a still, and a
+  // stale or missing count would otherwise route a real video down the
+  // audio-only rung, where the verdict can only be playable or unsupported —
+  // never the transcode it actually needs).
+  if (videoCodec === CODEC_NONE) {
     if (audioCodec === null) return "unsupported"
-    const audio = audioCodecString(audioCodec)
-    if (audio && accepts(probe, mime, audio)) return "playable"
+    const audio = audioCodecStrings(audioCodec)
+    if (audio && acceptsAny(probe, mime, audio)) return "playable"
     // An unmapped or unplayable audio codec with no video stream is not
     // worth a video transcode job — there is no picture to produce.
     return "unsupported"
@@ -196,8 +227,8 @@ export function videoPlayability(
   // never vetoes — the column conflates "no audio stream" with "not probed",
   // so it is not evidence of anything.
   if (audioCodec !== null && audioCodec !== CODEC_NONE) {
-    const audio = audioCodecString(audioCodec)
-    if (!audio || !accepts(probe, mime, audio)) {
+    const audio = audioCodecStrings(audioCodec)
+    if (!audio || !acceptsAny(probe, mime, audio)) {
       return transcodeVerdict(options.transcodeEnabled)
     }
   }
@@ -219,6 +250,45 @@ export function videoPlayability(
 const downgradedShas = new Set<string>()
 const downgradeListeners = new Set<() => void>()
 
+// MediaError codes, by value: the constants live on the MediaError INTERFACE,
+// which is a DOM global this module must stay free of to remain node-testable.
+const MEDIA_ERR_ABORTED = 1
+const MEDIA_ERR_NETWORK = 2
+const MEDIA_ERR_DECODE = 3
+const MEDIA_ERR_SRC_NOT_SUPPORTED = 4
+
+/**
+ * Is this element error evidence about the CODEC? Only a decode failure is.
+ *
+ * The downgrade is permanent for the session and takes the file's own bytes
+ * away from the player, so it must never fire on an accident: ABORTED is the
+ * user navigating away mid-load, NETWORK is a dropped connection to a file
+ * this decoder may well handle, and firing on either would demote a perfectly
+ * playable item on a flaky link.
+ *
+ * SRC_NOT_SUPPORTED is the one that looks tempting and is not usable: the
+ * resource-selection algorithm reports it for "fetched, and unsupported" AND
+ * for "could not be fetched at all" (a 404 on the file URL, a CORS refusal, a
+ * gateway hiccup), and in both cases the element lands on
+ * `networkState === NETWORK_NO_SOURCE`. There is no readable state that
+ * separates them, so it is left alone: an item that genuinely cannot be
+ * decoded gets its play button from the codec probe or not at all.
+ */
+export function shouldDowngradeOnError(
+  error: { code: number } | null | undefined
+): boolean {
+  if (!error) return false
+  switch (error.code) {
+    case MEDIA_ERR_DECODE:
+      return true
+    case MEDIA_ERR_ABORTED:
+    case MEDIA_ERR_NETWORK:
+    case MEDIA_ERR_SRC_NOT_SUPPORTED:
+    default:
+      return false
+  }
+}
+
 /** Wire this to the mounted element's `error` event on a `playable` verdict. */
 export function noteVideoPlaybackError(sha256: string | null | undefined) {
   if (!sha256 || downgradedShas.has(sha256)) return
@@ -237,6 +307,21 @@ function subscribeDowngrades(onChange: () => void): () => void {
   }
 }
 
+// "Is this render allowed to consult the browser?" — false on the server AND
+// on the client's first (hydrating) render, true from the render after it.
+// useSyncExternalStore is what makes that split honest: React uses the server
+// snapshot while hydrating and re-checks the client one immediately after,
+// which is the same mechanism useOutroSkipEnabled relies on. The store never
+// changes, so it never subscribes to anything.
+const subscribeNothing = () => () => {}
+function useHydrated(): boolean {
+  return React.useSyncExternalStore(
+    subscribeNothing,
+    () => true,
+    () => false
+  )
+}
+
 /**
  * The hook both hosts use. `transcodeEnabled` comes from the client config
  * (`useVideoTranscodeEnabled`), passed in rather than read here so this module
@@ -253,7 +338,18 @@ export function useVideoPlayability(
     // The server never mounted an element, so nothing can have failed there
     () => false
   )
-  const verdict = videoPlayability(item, { transcodeEnabled })
+  // The probe is a CLIENT capability, and the server answered without it.
+  // Consulting it on the hydrating render would render different markup than
+  // the HTML being hydrated — an audio-only mp4 (playable here, playable
+  // there, but arrived at through a different branch) and a .mov with the
+  // capability off are the two that actually differed. So the first client
+  // render repeats the server's legacy-mime verdict verbatim and the real
+  // answer lands one render later, which React applies as an ordinary update.
+  const hydrated = useHydrated()
+  const verdict = videoPlayability(item, {
+    transcodeEnabled,
+    canPlayType: hydrated ? undefined : null,
+  })
   // Only a `playable` verdict is ever downgraded: every other one already
   // routes through the transcode, and a failing ARTIFACT is the job's problem,
   // not evidence about the source.
