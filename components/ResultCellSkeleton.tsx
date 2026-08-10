@@ -1,3 +1,5 @@
+import { memo } from "react"
+
 /**
  * A result card's frame with nothing in it yet: what a scroll-mode grid cell
  * renders while the chunk holding its row is in flight
@@ -17,8 +19,13 @@
  * (components/ui/skeleton.tsx), whose `bg-slate-100` is a light-mode-only
  * value: this renders a screenful at a time, so bright blocks over the dark
  * theme would not be a detail.
+ *
+ * Memoized for the same reason SearchResultImage is, and it takes no props so
+ * the memo is total: the grid that renders these is `"use no memo"` (TanStack
+ * Virtual re-renders it by mutating internal state, once a scroll frame), and
+ * a screenful of skeletons is exactly the state a deep-linked load scrolls in.
  */
-export function ResultCellSkeleton() {
+export const ResultCellSkeleton = memo(function ResultCellSkeleton() {
     return (
         <div className="border rounded p-2" aria-hidden="true">
             <div className="overflow-hidden relative w-full pb-full mb-2">
@@ -37,4 +44,4 @@ export function ResultCellSkeleton() {
             </p>
         </div>
     )
-}
+})

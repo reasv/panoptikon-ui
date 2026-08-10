@@ -245,6 +245,21 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     request.page !== liveRequest.page ||
     pageSize !== livePageSize
 
+  // Does `nResults` belong to the query the URL currently names?
+  //
+  // The same question `resultsAreStale` asks about the rows, asked about the
+  // count — and gated the same way, for the same reason: the count query runs
+  // `keepPreviousData` too, so across a re-key `count` is the PREVIOUS search's
+  // answer, and a non-zero count is therefore not proof that the count has
+  // landed. Scroll mode's `countSettled` reads this: a deep anchor clamped
+  // against the wrong extent is recorded as applied and can never be restored.
+  //
+  // Same `queryEnabled || isFetching` guard as above, and for the same reason:
+  // a disabled query swaps to placeholder data on a key change and, with
+  // nothing in flight, stays there forever.
+  const countIsPlaceholder =
+    countQuery.isPlaceholderData && (queryEnabled || countQuery.isFetching)
+
   const nResults = countQuery.data?.count || 0
   return {
     data: {
@@ -265,6 +280,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     committedQuery,
     resultsAreStale,
     nResults,
+    countIsPlaceholder,
     page,
     pageSize,
     setPage: setPagePrefetch,
@@ -485,6 +501,26 @@ export interface ResultsSource {
    * asked for.
    */
   get(index: number): SearchResult | undefined
+  /**
+   * The loaded RUN of rows containing a global index — the array itself plus
+   * the global index of its first element — or `undefined` when nothing
+   * covering that index is loaded (same meaning as `get`'s undefined: "not
+   * loaded", never "end of results").
+   *
+   * The block-scan door, for a caller that must look at many CONSECUTIVE rows
+   * rather than at one. `get` resolves its chunk from scratch on every call,
+   * and for a chunk that has been evicted from the observed set that means
+   * rebuilding and re-hashing a whole request body per index — a few hundred
+   * of them for one ensure-visible pass. Whoever scans a range asks for the
+   * block once and reads the rows in memory.
+   *
+   * The block is an implementation's own unit (a chunk in scroll mode, the
+   * whole page in pages mode), so the caller must treat `start` and
+   * `rows.length` as the only truth about what it covers and never assume a
+   * size. It is a READ of what is loaded now: nothing is fetched, and a block
+   * may be shorter than the lattice it comes from (the last chunk of the set).
+   */
+  getBlock(index: number): { start: number; rows: SearchResult[] } | undefined
   /** Fire-and-forget warm of an item range. Cheap to call per scroll frame. */
   ensureRange(start: number, end: number): void
   /**
@@ -800,8 +836,40 @@ export function useChunkedResults({
   })
   let extent = fallbackLive ? fallbackRows.length : 0
   for (const [chunkIndex, rows] of loaded) {
+    // Empty rows contribute NOTHING, not their chunk's start offset: a chunk
+    // requested past the end of the set answers with an empty page, and
+    // counting `chunkIndex * SCROLL_CHUNK_SIZE` for it would size the scroll
+    // space to a position no result occupies. Only observable before the count
+    // lands — which is exactly the window this extent is the answer for.
+    if (rows.length === 0) continue
     extent = Math.max(extent, chunkIndex * SCROLL_CHUNK_SIZE + rows.length)
   }
+  // ONE lookup behind both readers: `getBlock` is this, `get` is this plus an
+  // offset. Written once so the three places rows can come from — the observed
+  // set, the react-query cache (a chunk pushed out by LRU is still there;
+  // without that read, evicting a chunk the user is looking at would flash
+  // skeletons over rows that are in memory), and the main query's page-1
+  // fallback — can never answer the two differently.
+  const blockAt = (
+    index: number
+  ): { start: number; rows: SearchResult[] } | undefined => {
+    if (index < 0) return undefined
+    const chunkIndex = chunkIndexOf(index, SCROLL_CHUNK_SIZE)
+    const start = chunkIndex * SCROLL_CHUNK_SIZE
+    const rows = loaded.get(chunkIndex)
+    if (rows) return { start, rows }
+    const cached = queryClient.getQueryData<{
+      results?: SearchResult[] | null
+    }>(["post", "/api/search/pql", buildChunkRequest(parts, chunkIndex)])
+    if (cached?.results) return { start, rows: cached.results as SearchResult[] }
+    // The fallback is page 1 of the main query, so its block starts at item 0
+    // and covers only what it holds.
+    if (fallbackLive && index < fallbackRows.length) {
+      return { start: 0, rows: fallbackRows }
+    }
+    return undefined
+  }
+
   // Built fresh every render rather than memoized. `useQueries` rebuilds its
   // result array each time, so any honest memo over this body would recompute
   // anyway — and a memo keyed on `rowsIdentity` alone is the lying-deps token
@@ -817,21 +885,10 @@ export function useChunkedResults({
     // scrollbar that thrashes as chunks come in.
     count: count > 0 ? count : extent,
     get(index: number): SearchResult | undefined {
-      if (index < 0) return undefined
-      const chunkIndex = chunkIndexOf(index, SCROLL_CHUNK_SIZE)
-      const offset = chunkOffsetOf(index, SCROLL_CHUNK_SIZE)
-      const rows = loaded.get(chunkIndex)
-      if (rows) return rows[offset]
-      // A chunk pushed out of the observed set is still in the react-query
-      // cache. Without this read, LRU eviction of a chunk the user is
-      // looking at would flash skeletons over rows that are in memory.
-      const cached = queryClient.getQueryData<{
-        results?: SearchResult[] | null
-      }>(["post", "/api/search/pql", buildChunkRequest(parts, chunkIndex)])
-      if (cached?.results) return (cached.results as SearchResult[])[offset]
-      if (fallbackLive && index < fallbackRows.length) return fallbackRows[index]
-      return undefined
+      const block = blockAt(index)
+      return block ? block.rows[index - block.start] : undefined
     },
+    getBlock: blockAt,
     ensureRange,
     fetchItem,
     rowsIdentity,
@@ -851,6 +908,13 @@ export function arrayResultsSource(results: SearchResult[]): ResultsSource {
   return {
     count: results.length,
     get: (index: number) => results[index],
+    // One block, the whole page — the array a pages-mode scan has always
+    // scanned. `undefined` outside it, so a caller's loop terminates the same
+    // way it does in scroll mode.
+    getBlock: (index: number) =>
+      index >= 0 && index < results.length
+        ? { start: 0, rows: results }
+        : undefined,
     ensureRange: () => {},
     fetchItem: async (index: number) => results[index],
     rowsIdentity: results,

@@ -126,6 +126,40 @@ export function virtualPageAnchor(page: number, pageSize: number): number {
 }
 
 /**
+ * Which ITEM the live page highlight speaks for, given the top visible ROW.
+ *
+ * The URL anchor and the highlight answer two different questions and must not
+ * be computed the same way. `top` records a POSITION — the first item of the
+ * top row, its documented contract (lib/state/gridScroll.ts). The highlight
+ * answers "which virtual page am I looking at", and its input is a row, not an
+ * item: a scrubber click writes an item anchor of exactly `(N-1)*k`, the grid
+ * scrolls the ROW containing it to the top, and that row STARTS at or below
+ * the clicked item. Read back as `startRow * columns` the highlight would
+ * therefore flip to N-1 whenever `columns` does not divide `(N-1)*k`. Taking
+ * the LAST item of the top row instead keeps the whole visible top row on the
+ * page it was clicked from — the first row of page N contains an item of page
+ * N by construction, and its last item is on page N unless the row straddles
+ * a page boundary, in which case the later page is the honest answer anyway.
+ *
+ * `lastRowVisible` is the bottom of the set: scrolling clamps, so once the
+ * final row is on screen no further scroll can move the top row, and the last
+ * virtual pages would be permanently unhighlightable. There the highlight
+ * speaks for the last ITEM instead — at maximum scroll the bar shows the final
+ * page, which is what "I am at the end" has to look like.
+ */
+export function topRowHighlightItem(
+  startRow: number,
+  columns: number,
+  itemCount: number,
+  lastRowVisible: boolean
+): number {
+  const last = Math.max(itemCount - 1, 0)
+  if (lastRowVisible) return last
+  const cols = Math.max(columns, 1)
+  return Math.min(Math.max(startRow, 0) * cols + cols - 1, last)
+}
+
+/**
  * How many items to warm on either side of the visible range: `overscanRows`
  * is the virtualizer's own row overscan, and the doubling is the deliberate
  * margin — the rows the virtualizer renders ahead must already have DATA when

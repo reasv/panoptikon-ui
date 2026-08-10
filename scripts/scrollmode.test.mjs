@@ -23,6 +23,7 @@ const {
   pageStateFromScrollAnchor,
   remapPageAnchor,
   scrollAnchorFromPage,
+  topRowHighlightItem,
   virtualPageAnchor,
   virtualPageOf,
 } = await import("../lib/scrollMode.ts")
@@ -568,6 +569,121 @@ const of = (url) => new URLSearchParams(url)
     "the click's anchor and the link's anchor are the same value",
     Number(linked.get("top")) === virtualPageAnchor(37, 10),
     `${linked.get("top")} vs ${virtualPageAnchor(37, 10)}`
+  )
+}
+
+// ---- the live highlight: rows, not items -------------------------------
+//
+// The scrubber writes an ITEM anchor of (N-1)*k, but the grid can only ever
+// read back a ROW. `topRowHighlightItem` is the bridge, and the property it
+// has to have is that a click on page N leaves the bar highlighting page N.
+
+{
+  // The lattice failure this exists for: k=10, 3 columns. Page 5's anchor is
+  // item 40, which sits at offset 1 of row 13 — so the row STARTS at item 39,
+  // on page 4. Read as `startRow * columns` the bar would flip to 4.
+  const columns = 3
+  const k = 10
+  const itemCount = 10_000
+  const anchor = virtualPageAnchor(5, k)
+  const startRow = Math.floor(anchor / columns)
+  check(
+    "the naive read really does flip the page (the bug being fixed)",
+    virtualPageOf(startRow * columns, k) === 4,
+    `${virtualPageOf(startRow * columns, k)}`
+  )
+  const item = topRowHighlightItem(startRow, columns, itemCount, false)
+  check(
+    "…and the top row's LAST item keeps it on the clicked page",
+    virtualPageOf(item, k) === 5,
+    `item=${item} page=${virtualPageOf(item, k)}`
+  )
+}
+
+{
+  // The same claim swept: for every k/columns pair, clicking page N and
+  // scrolling that anchor's row to the top must highlight N. `columns` values
+  // that share no factor with k are the ones that break the naive read.
+  let ok = true
+  let firstBad = ""
+  const itemCount = 100_000
+  for (const k of [1, 7, 10, 25, 100]) {
+    for (const columns of [1, 2, 3, 4, 5]) {
+      // A row wider than a virtual page spans SEVERAL of them, so no single
+      // page number can be "the" answer for it; that degenerate geometry is
+      // asserted on its own terms below.
+      if (columns > k) continue
+      for (const n of [1, 2, 3, 7, 37, 100]) {
+        const anchor = virtualPageAnchor(n, k)
+        const startRow = Math.floor(anchor / columns)
+        const item = topRowHighlightItem(startRow, columns, itemCount, false)
+        const derived = virtualPageOf(item, k)
+        if (derived !== n) {
+          ok = false
+          if (!firstBad) {
+            firstBad = `k=${k} columns=${columns} n=${n} -> anchor=${anchor} row=${startRow} item=${item} page=${derived}`
+          }
+        }
+      }
+    }
+  }
+  check("a scrubber click to page N highlights page N, at every geometry", ok, firstBad)
+}
+
+{
+  // A row wider than k: it covers `columns / k` virtual pages at once, and the
+  // rule names the LAST one it contains. Stated rather than avoided — this is
+  // page_size = 1 on a multi-column grid, and the bar is then labelling
+  // individual items.
+  check(
+    "a row spanning several virtual pages highlights the last one it covers",
+    virtualPageOf(topRowHighlightItem(0, 4, 1000, false), 1) === 4,
+    `${virtualPageOf(topRowHighlightItem(0, 4, 1000, false), 1)}`
+  )
+}
+
+{
+  // The bottom of the set. Scrolling CLAMPS: the top row can never go past
+  // `rowCount - visibleRows`, so the final virtual pages are unreachable by
+  // the top row at any scroll position — which is what the last-row rule is
+  // for. 95 items over 4 columns is 24 rows and 10 virtual pages at k = 10;
+  // with three rows in view the top row stops at 21.
+  const columns = 4
+  const k = 10
+  const itemCount = 95
+  const rowCount = Math.ceil(itemCount / columns)
+  const maxTopRow = rowCount - 3
+  check(
+    "…so at maximum scroll the top row alone falls short of the last page",
+    virtualPageOf(topRowHighlightItem(maxTopRow, columns, itemCount, false), k) < 10,
+    `${virtualPageOf(topRowHighlightItem(maxTopRow, columns, itemCount, false), k)}`
+  )
+  const item = topRowHighlightItem(maxTopRow, columns, itemCount, true)
+  check(
+    "the last row being visible highlights the last page instead",
+    item === itemCount - 1 && virtualPageOf(item, k) === 10,
+    `item=${item} page=${virtualPageOf(item, k)}`
+  )
+}
+
+{
+  check(
+    "the top of the set is page 1's first row, not an off-by-one into page 2",
+    virtualPageOf(topRowHighlightItem(0, 5, 1000, false), 10) === 1,
+    `${virtualPageOf(topRowHighlightItem(0, 5, 1000, false), 10)}`
+  )
+  check(
+    "a short set never derives past its own last item",
+    topRowHighlightItem(0, 5, 3, false) === 2 &&
+      topRowHighlightItem(4, 5, 3, false) === 2,
+    `${topRowHighlightItem(0, 5, 3, false)} ${topRowHighlightItem(4, 5, 3, false)}`
+  )
+  check(
+    "an empty set and a not-yet-measured layout both degenerate safely",
+    topRowHighlightItem(0, 5, 0, false) === 0 &&
+      topRowHighlightItem(0, 5, 0, true) === 0 &&
+      topRowHighlightItem(3, 0, 1000, false) === 3,
+    `${topRowHighlightItem(0, 5, 0, false)} ${topRowHighlightItem(3, 0, 1000, false)}`
   )
 }
 

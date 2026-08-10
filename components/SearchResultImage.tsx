@@ -23,6 +23,7 @@ export const SearchResultImage = memo(function SearchResultImage({
     onImageClick,
     nItems,
     galleryLink,
+    linkInert,
     overrideURL,
     showLoadingSpinner
 }: {
@@ -35,6 +36,16 @@ export const SearchResultImage = memo(function SearchResultImage({
     onImageClick?: (index?: number) => void
     nItems?: number
     galleryLink?: boolean
+    /**
+     * No `href` at all — the anchor stays (nothing about the layout changes)
+     * but nothing follows it: no middle click, no ctrl-click, no "open in new
+     * tab". For a card that can be SEEN but not navigated to, which is the
+     * scroll grid's phase-1 state beyond the openable bound: without a gallery
+     * URL to mint, the fallback href is the raw file, and following that is a
+     * full-size download nobody asked for. The left click is unaffected — it
+     * is already preventDefault'd and guarded by the caller.
+     */
+    linkInert?: boolean
     overrideURL?: string
     showLoadingSpinner?: boolean
 }) {
@@ -74,7 +85,7 @@ export const SearchResultImage = memo(function SearchResultImage({
                 draggable={true}
             >
                 <a
-                    href={galleryLink ? imageLink : fileUrl}
+                    href={linkInert ? undefined : (galleryLink ? imageLink : fileUrl)}
                     target="_blank"
                     onClick={(e) => {
                         e.preventDefault()

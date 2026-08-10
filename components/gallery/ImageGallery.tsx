@@ -98,12 +98,22 @@ function getPrevIndex(length: number, index?: number | null,) {
 export function ImageGallery({
     items,
     totalPages,
+    paginationVisible,
     setPage,
     resultsAreStale = false,
     queryEnabled,
 }: {
     items: SearchResult[]
     totalPages: number
+    /**
+     * Is the host rendering a pagination bar below this panel? The image panel
+     * sizes itself around it, and `totalPages > 1` is only the right answer
+     * while the bar IS the page count — which it stops being in scroll mode,
+     * where the host passes `totalPages = 1` (one giant page, so no page turn
+     * is reachable) while still showing the bar as a position scrubber.
+     * Absent means "ask totalPages", which is what pages mode does.
+     */
+    paginationVisible?: boolean
     setPage: (page: number) => Promise<void>
     /** These results belong to a different page than the URL names — see useSearch */
     resultsAreStale?: boolean
@@ -657,12 +667,12 @@ export function ImageGallery({
                 prevImage={prevImage}
                 nextImage={nextImage}
                 thumbnailsOpen={thumbnailsOpen}
-                showPagination={totalPages > 1}
+                showPagination={paginationVisible ?? totalPages > 1}
                 advanceToNextVideo={advanceToNextVideo}
                 cancelPendingAdvance={cancelPendingAdvance}
             /> : <PinBoard
                 thumbnailsOpen={thumbnailsOpen}
-                showPagination={totalPages > 1}
+                showPagination={paginationVisible ?? totalPages > 1}
             />}
             {!fs && thumbnailsOpen ? <VirtualGalleryHorizontalScroll items={items} /> : null}
         </div>
