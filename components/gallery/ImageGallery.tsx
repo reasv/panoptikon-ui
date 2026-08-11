@@ -2097,17 +2097,21 @@ export function GalleryImageLarge(
                             top-right exactly like the S2 escape kebab above —
                             a sibling of the surface, not part of it, and
                             inside the fullscreen host so it survives element
-                            fullscreen. Only in S1: with native controls up the
-                            escape kebab owns that corner, and the kebab's own
+                            fullscreen — where it must span the host instead:
+                            pictureBox is measured against the PANEL, and
+                            keeping it while the host spans the screen parks
+                            the button mid-screen (same gate as surfaceBox).
+                            Only in S1: with native controls up the escape
+                            kebab owns that corner, and the kebab's own
                             "Download original" row is what serves both that
                             state and the mini tier. */}
                         {!videoState.showControls && (
                             <div
                                 className={cn(
                                     "pointer-events-none absolute",
-                                    !pictureBox && "inset-0",
+                                    (!pictureBox || player.isFullscreen) && "inset-0",
                                 )}
-                                style={pictureBox ?? undefined}
+                                style={player.isFullscreen ? undefined : pictureBox ?? undefined}
                             >
                                 <VideoDownloadControl
                                     controller={player}
