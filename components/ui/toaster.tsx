@@ -66,12 +66,10 @@ export function Toaster() {
             <div className="grid min-w-0 flex-1 gap-1">
               {title && <ToastTitle>{title}</ToastTitle>}
               {description && (
+                // Wrapping itself lives on the primitive, so every toast gets
+                // it; only the copyable-detail affordances are added here.
                 <ToastDescription
                   className={cn(
-                    // wrap-anywhere over break-words: error text's longest
-                    // tokens (paths, hashes) have no break opportunities at
-                    // all, and break-words alone lets them overflow.
-                    "break-words [overflow-wrap:anywhere]",
                     copyText &&
                       "max-h-40 select-text overflow-y-auto whitespace-pre-wrap"
                   )}
