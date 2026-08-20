@@ -580,6 +580,16 @@ export function PinBoardCtx({
                                 onClick={() => usePinboardCarry.getState().requestHoleTarget()}>
                                 Move to Hole…
                             </ContextMenuItem>
+                            {/* Enters the board's Scale & Move session the
+                                same way (drag the selection box to move the
+                                group, its handles to scale it). Anchors
+                                grey it like the mirrors — every member must
+                                travel; the board toasts on size locks. */}
+                            <ContextMenuItem
+                                disabled={selected.length < 2 || selHasAnchor}
+                                onClick={() => usePinboardCarry.getState().requestTransform()}>
+                                Scale &amp; Move…
+                            </ContextMenuItem>
                             <ContextMenuSeparator />
                             <ContextMenuItem onClick={() => shiftSelection(selected, "left")}>
                                 Shift Left

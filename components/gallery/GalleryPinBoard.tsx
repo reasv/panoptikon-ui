@@ -33,7 +33,7 @@ import { useVideoPlayback } from '@/lib/videoTranscode'
 import { useVideoTranscodeEnabled } from '@/lib/useClientConfig'
 import { CropGeometry, CropView } from './CropView'
 import { NativeControlsEscape, VideoPlayerSurface, playerSizeForWidth, useVideoPlayerSurface } from './VideoPlayerSurface'
-import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, Check, ChevronDown, ChevronsLeft, ChevronsRight, ChevronsUp, Columns3, Crop, Dices, Expand, FlipHorizontal, FlipHorizontal2, FlipVertical, FlipVertical2, FoldHorizontal, GripVertical, ImageDown, LayoutDashboard, ListX, LockOpen, Maximize, RotateCcw, RotateCw, Ruler, Scaling, SquareDashed, Trash2, X, type LucideIcon } from 'lucide-react'
+import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, Check, ChevronDown, ChevronsLeft, ChevronsRight, ChevronsUp, Columns3, Crop, Dices, Expand, FlipHorizontal, FlipHorizontal2, FlipVertical, FlipVertical2, FoldHorizontal, GripVertical, ImageDown, LayoutDashboard, ListX, LockOpen, Maximize, RotateCcw, RotateCw, Ruler, Scaling, Scan, SquareDashed, Trash2, X, type LucideIcon } from 'lucide-react'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -54,6 +54,7 @@ import { GridRect, groupRowsByOverlap } from '@/lib/pinboardPack'
 import { maximalFreeRects, pickRectAt, rectsOverlap } from '@/lib/pinboardHoles'
 import { usePinboardCarry } from '@/lib/state/pinboardCarry'
 import { HoleTargetOverlay } from './HoleTargetOverlay'
+import { PinboardTransformOverlay, TransformPxRect } from './PinboardTransformOverlay'
 import { PinboardBoardApi, usePinboardBoardApi } from '@/lib/state/pinboardBoardApi'
 import { PinboardFullscreenBar } from './PinboardMenu'
 import { SelectionExportMenuItems, selectionExportLabel } from './PinboardExportMenu'
@@ -153,6 +154,16 @@ const SELECTION_VERBS: SelectionVerb[] = [
     {
         id: "hole", label: "Move to Hole", icon: SquareDashed,
         title: "Pick an empty area to move the selection into — click a hole, or drag to carve a spot",
+    },
+    // Modal like Move to Hole: enters the Scale & Move session, a bounding
+    // box around the selection whose interior drags the group and whose
+    // handles scale it (see PinboardTransformOverlay). Anchors grey it for
+    // the mirror rule's reason — every member must travel — and size locks
+    // refuse at entry with a toast, the rotation rule's reason: scaling
+    // resizes every member.
+    {
+        id: "transform", label: "Scale & Move", icon: Scan, min: 2, noAnchors: true,
+        title: "Move and scale the selected items as one group — drag the box to move it, its handles to scale it; Esc or a click outside finishes",
     },
     {
         id: "reflow", label: "Reflow (Keep Proportions)", icon: Scaling, min: 2,
@@ -1077,7 +1088,8 @@ export function PinBoard(
         fillViewport, arrangeSelection, swapItems, autoCropSelection,
         clearAutoCropSelection, growSelection, mirrorSelection, shiftSelection,
         compressSelection,
-        sendSelectionToRegion, sendSelectionToRect, orientSelection,
+        sendSelectionToRegion, sendSelectionToRect, transformSelection,
+        orientSelection,
         changeLayout, fillViewportRows, justifyCurrentRows, autoCropToCells,
         clearAutoCrops, shiftLayout, mirrorLayout, rerollLayout, refitToView,
         reflowKeepProportions, growInPlace, hasLocks, hasAnchors,
@@ -1355,6 +1367,148 @@ export function PinBoard(
             window.removeEventListener("click", onClick)
         }
     }, [carrySha])
+    // ---- Scale & Move session -------------------------------------------
+    // The group-transform modal (see PinboardTransformOverlay): while it
+    // runs, the overlay owns the board's pointer and the selection toolbar
+    // stands down (its automatic anchor hangs exactly where the bbox's top
+    // handles sit). The session is FOR the selection the same way hole
+    // targeting is: any selection change ends it.
+    const [transformOn, setTransformOn] = useState(false)
+    const transformActiveRef = useRef(false)
+    transformActiveRef.current = transformOn
+    // True while a session gesture is in flight: the grid wears the
+    // transition-disable class (globals.css) so the imperative preview
+    // isn't smeared by RGL's 200ms transitions
+    const [transformGesture, setTransformGesture] = useState(false)
+    // Entry checks mirror the other selection verbs' precedents: anchors
+    // grey the verb statically (noAnchors — but the context-menu path
+    // can't grey, so the check re-runs here with the hole verb's toast
+    // strings), size locks refuse with a counting toast the way the
+    // rotations do — a scale resizes every member, which is exactly what
+    // the lock forbids.
+    const enterTransform = () => {
+        if (cropKey !== null || selected.length < 2) return
+        const anchoredCount = selected.filter(k => itemLocks[k] === "anchor").length
+        if (anchoredCount > 0) {
+            toast({
+                title: "Scale & Move",
+                description: anchoredCount === 1
+                    ? "An anchored item is selected — unanchor or deselect it first"
+                    : `${anchoredCount} anchored items are selected — unanchor or deselect them first`,
+                duration: 4000,
+            })
+            return
+        }
+        const sizeLockedCount = selected.filter(k => itemLocks[k] === "size").length
+        if (sizeLockedCount > 0) {
+            toast({
+                title: "Scale & Move",
+                description: sizeLockedCount === 1
+                    ? "A size-locked item is selected — unlock or deselect it first"
+                    : `${sizeLockedCount} size-locked items are selected — unlock or deselect them first`,
+                duration: 4000,
+            })
+            return
+        }
+        setTransformOn(true)
+    }
+    // The context menu requests the session through the carry store, the
+    // same channel as its Move to Hole row (no prop path from the per-pin
+    // popper to this state)
+    const transformRequest = usePinboardCarry(s => s.transformRequest)
+    const transformRequestSeen = useRef(transformRequest)
+    useEffect(() => {
+        if (transformRequest === transformRequestSeen.current) return
+        transformRequestSeen.current = transformRequest
+        enterTransform()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [transformRequest])
+    // The session is FOR the selection: any change to it — including the
+    // prune after a removal — ends the session (every mutator hands the
+    // store a fresh array, so identity is the change signal)
+    useEffect(() => {
+        setTransformOn(false)
+    }, [selected])
+    // Crop mode is its own modal session; the two never overlap
+    useEffect(() => {
+        if (cropKey !== null) setTransformOn(false)
+    }, [cropKey])
+    // The selected items' resting rects in content px — what the overlay
+    // draws its bbox from and restores the preview to
+    const transformItems: TransformPxRect[] | null = useMemo(() => {
+        if (!transformOn || !gridWidth) return null
+        const colW = (gridWidth - 2 * effGrid.padding
+            - (effGrid.columns - 1) * effGrid.margin) / effGrid.columns
+        const unitX = colW + effGrid.margin
+        const stepY = rowStep(effGrid)
+        return layout
+            .filter(l => selectedSet.has(l.i) && !l.i.endsWith("__preview"))
+            .map(l => ({
+                key: l.i,
+                l: effGrid.padding + l.x * unitX,
+                t: effGrid.padding + l.y * stepY,
+                w: l.w * unitX - effGrid.margin,
+                h: l.h * stepY - effGrid.margin,
+            }))
+    }, [transformOn, gridWidth, layout, selectedSet, effGrid])
+    // Snap one released gesture onto the lattice and commit it as a verb
+    // write. Returns false when the snap changes nothing — the overlay
+    // then restores its preview instead of waiting for a write.
+    const commitTransform = (rects: TransformPxRect[], kind: "move" | "scale"): boolean => {
+        const unitX = holeColW + effGrid.margin
+        const stepY = rowStep(effGrid)
+        const pad = effGrid.padding
+        const byKey = new Map(layout.map(l => [l.i, l]))
+        const out: Record<string, GridRect> = {}
+        if (kind === "move") {
+            // One integer delta for the whole group, from any member: the
+            // relative geometry survives the snap exactly
+            const first = rects[0]
+            const cur0 = first && byKey.get(first.key)
+            if (!cur0) return false
+            const members = rects.flatMap(r => byKey.get(r.key) ?? [])
+            let dgx = Math.round((first.l - (pad + cur0.x * unitX)) / unitX)
+            let dgy = Math.round((first.t - (pad + cur0.y * stepY)) / stepY)
+            const minX = Math.min(...members.map(l => l.x))
+            const maxX2 = Math.max(...members.map(l => l.x + l.w))
+            const minY = Math.min(...members.map(l => l.y))
+            dgx = Math.max(-minX, Math.min(dgx, effGrid.columns - maxX2))
+            dgy = Math.max(-minY, dgy)
+            if (dgx === 0 && dgy === 0) return false
+            for (const l of members) {
+                out[l.i] = { x: l.x + dgx, y: l.y + dgy, w: l.w, h: l.h }
+            }
+        } else {
+            // Scale: round each item's EDGES, not its pos+size — two items
+            // sharing a continuous edge keep sharing it after the snap
+            const { minW, minH } = minPinUnits(effGrid, holeColW)
+            let changed = false
+            for (const r of rects) {
+                const l = byKey.get(r.key)
+                if (!l) continue
+                let x = Math.round((r.l - pad) / unitX)
+                let x2 = Math.round((r.l + r.w + effGrid.margin - pad) / unitX)
+                const yRaw = Math.round((r.t - pad) / stepY)
+                const y2 = Math.round((r.t + r.h + effGrid.margin - pad) / stepY)
+                x = Math.max(0, Math.min(x, effGrid.columns - 1))
+                x2 = Math.max(x + 1, Math.min(x2, effGrid.columns))
+                let w = x2 - x
+                if (w < minW) {
+                    // The mutation-time size floor (see minPinUnits); the
+                    // overlay's own clamp keeps this to rounding slack
+                    w = Math.min(minW, effGrid.columns)
+                    x = Math.min(x, effGrid.columns - w)
+                }
+                const y = Math.max(0, yRaw)
+                const h = Math.max(y2 - y, minH, 1)
+                out[l.i] = { x, y, w, h }
+                if (x !== l.x || y !== l.y || w !== l.w || h !== l.h) changed = true
+            }
+            if (!changed) return false
+        }
+        runVerb("Scale & Move", transformSelection(selected, out))
+        return true
+    }
     // ---------------------------------------------------------------------
     // Floating toolbar placement, in CONTENT coordinates (it scrolls with
     // the board, staying glued to the selection). The bar hangs just above
@@ -1772,6 +1926,9 @@ export function PinBoard(
             // While hole targeting is active Esc belongs to it (its own
             // listener cancels the targeting); the selection survives
             if (holeActiveRef.current) return
+            // Same for the Scale & Move session: its overlay's listener
+            // cancels the gesture or ends the session
+            if (transformActiveRef.current) return
             endMarqueeRef.current()
             usePinSelection.getState().clear()
         }
@@ -1805,11 +1962,12 @@ export function PinBoard(
             // A press aimed at a text field is that field's own edit
             const t = e.target as HTMLElement | null
             if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return
-            // Crop mode, hole targeting and a live carry each own the
-            // keyboard while they run (Escape already routes to them
-            // first), and a splice under them would shift the record
-            // offsets they are holding mid-gesture
-            if (cropKey !== null || holeActiveRef.current || carrySha) return
+            // Crop mode, hole targeting, a live carry and the Scale & Move
+            // session each own the keyboard while they run (Escape already
+            // routes to them first), and a splice under them would shift
+            // the record offsets they are holding mid-gesture
+            if (cropKey !== null || holeActiveRef.current || carrySha
+                || transformActiveRef.current) return
             // An open dialog OWNS Delete: the library dialog, the rename
             // dialog and the confirm dialogs (deleting a saved version,
             // say) all sit over the board, and a press aimed at one of
@@ -1845,7 +2003,8 @@ export function PinBoard(
             if (!t || t === document.documentElement || t === document.body) return
             if (t.closest?.(
                 '[data-pin-key], [data-selection-toolbar], [data-scroll-area-scrollbar],'
-                + ' [data-radix-popper-content-wrapper], [role="menu"], [data-hole-overlay]'
+                + ' [data-radix-popper-content-wrapper], [role="menu"], [data-hole-overlay],'
+                + ' [data-transform-overlay]'
             )) return
             usePinSelection.getState().clear()
         }
@@ -2088,7 +2247,7 @@ export function PinBoard(
                         setGestureFreeze((f) => f?.releasing ? null : f)
                     }
                 }}
-                className={`relative grow ${rglSettling ? "rgl-mount-still " : ""}${gestureFreeze ? (gestureFreeze.releasing ? "pinboard-freeze-releasing " : "pinboard-freeze ") : ""}${fs ? "h-[97vh]" : (
+                className={`relative grow ${rglSettling ? "rgl-mount-still " : ""}${transformGesture ? "pinboard-transforming " : ""}${gestureFreeze ? (gestureFreeze.releasing ? "pinboard-freeze-releasing " : "pinboard-freeze ") : ""}${fs ? "h-[97vh]" : (
                     variant === "grid" ?
                         // Grid host: gallery-without-thumbnails sizing, with
                         // the 48px update-ribbon offset the grid view
@@ -2493,7 +2652,33 @@ export function PinBoard(
                         />
                     </div>
                 )}
-                {selected.length > 0 && toolbarPos && (
+                {transformOn && gridWidth > 0 && transformItems
+                    && transformItems.length >= 2 && (
+                        <PinboardTransformOverlay
+                            grid={effGrid}
+                            gridWidth={gridWidth}
+                            // Cover the selection even when it reaches below
+                            // the grid content box (items parked below the
+                            // fold), same envelope logic as the hole overlay
+                            contentHeight={Math.max(gridContentHeight,
+                                Math.max(...transformItems.map(r => r.t + r.h))
+                                + effGrid.padding)}
+                            items={transformItems}
+                            float={float}
+                            gridAreaRef={gridAreaRef}
+                            onGesture={(active) => {
+                                setTransformGesture(active)
+                                // The preview changes item heights like any
+                                // RGL gesture, so it gets the same
+                                // scroll-range freeze and edge autoscroll
+                                if (active) freezeScrollRange()
+                                else releaseScrollFloor()
+                            }}
+                            onCommit={commitTransform}
+                            onExit={() => setTransformOn(false)}
+                        />
+                    )}
+                {selected.length > 0 && toolbarPos && !transformOn && (
                     <SelectionToolbar
                         innerRef={toolbarRef}
                         style={{ left: toolbarPos.x, top: toolbarPos.y }}
@@ -2508,6 +2693,7 @@ export function PinBoard(
                                 case "arrange": runVerb("Arrange", arrangeSelection(selected)); break
                                 case "swap": runVerb("Swap", swapItems(selected[0], selected[1])); break
                                 case "hole": holeVerb ? setHoleVerb(false) : enterHoleTarget(); break
+                                case "transform": enterTransform(); break
                                 case "reflow": runVerb("Reflow", arrangeSelection(selected, true)); break
                                 case "shuffle": runVerb("Shuffle", arrangeSelection(selected, false, true)); break
                                 case "grow": runVerb("Grow to Fill", growSelection(selected)); break

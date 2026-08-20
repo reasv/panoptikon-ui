@@ -209,6 +209,17 @@
   transition: none !important;
 }
 
+/* Scale & Move live preview: while a transform-session gesture is in
+   flight, the overlay drives the selected items' transform/width/height
+   imperatively per pointer frame, and RGL's 200ms transitions would smear
+   every frame of that into the next (same class of problem as the
+   hydration fly-in above). The grid-area wrapper wears this class only
+   for the duration of a gesture, so the release snap and the compactor
+   settle that follow the commit keep their animation. */
+.pinboard-transforming .react-grid-item {
+  transition: none !important;
+}
+
 /* Pinboard gesture floor: while a drag/resize gesture is active the
    board's grid container may not shrink below its gesture-start height
    (a shrinking container shrinks the scroll range, the browser clamps

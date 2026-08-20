@@ -987,6 +987,37 @@ export function usePinboardLayoutActions({
         return null
     }
 
+    // Commit one gesture of the Scale & Move session: the board hands in
+    // the snapped grid rects for the selected items, computed from the
+    // overlay's continuous transform. The rects are trusted geometry — the
+    // session already clamped them into the board and above the minimum
+    // size — so this verb only does what every footprint-changing verb
+    // does on top: resolve the collisions the new footprints create
+    // (resolveGrowth with gravity off; RGL's compactor after the write
+    // with it on) and maintain the auto crops of the items whose cell
+    // size changed. Locks never reach here: the session refuses to open
+    // over anchored or size-locked items.
+    async function transformSelection(
+        keys: string[], rects: Record<string, GridRect>,
+    ): Promise<string | null> {
+        const keySet = new Set(keys)
+        const buildData = await ensureBuildData()
+        if (!buildData) return null
+        let changed = false
+        const newLayout = layout.map(l => {
+            const r = rects[l.i]
+            if (!r || !keySet.has(l.i)) return l
+            if (r.x === l.x && r.y === l.y && r.w === l.w && r.h === l.h) return l
+            changed = true
+            return { ...l, x: r.x, y: r.y, w: r.w, h: r.h }
+        })
+        if (!changed) return null
+        const resolved = resolveGrowth(newLayout, keys)
+        onLayoutChange(resolved,
+            verbAutoCrops(buildData, resolved, keySet, selectionAutoCrop))
+        return null
+    }
+
     // Fit each given item to its current cell — the selection toolbar's
     // crop-now action, fired when its auto-crop toggle turns on
     async function autoCropSelection(keys: string[]) {
@@ -1752,6 +1783,7 @@ export function usePinboardLayoutActions({
         arrangeSelection,
         sendSelectionToRegion,
         sendSelectionToRect,
+        transformSelection,
         autoCropSelection,
         clearAutoCropSelection,
         // Key set for the below-viewport purge. The splice itself is a
