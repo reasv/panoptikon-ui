@@ -2664,7 +2664,6 @@ export function PinBoard(
                                 Math.max(...transformItems.map(r => r.t + r.h))
                                 + effGrid.padding)}
                             items={transformItems}
-                            float={float}
                             gridAreaRef={gridAreaRef}
                             onGesture={(active) => {
                                 setTransformGesture(active)

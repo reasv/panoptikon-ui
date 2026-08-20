@@ -18,6 +18,7 @@ import {
 } from "@/lib/pinboardCrop";
 import { GridParams, minPinUnits, rowStep } from "@/lib/pinboardGrid";
 import { resolveOverlapsDown } from "@/lib/pinboardOverlap";
+import { fastVerticalCompactor } from "react-grid-layout/extras";
 import {
     ArrangedItem,
     GridRect,
@@ -990,13 +991,11 @@ export function usePinboardLayoutActions({
     // Commit one gesture of the Scale & Move session: the board hands in
     // the snapped grid rects for the selected items, computed from the
     // overlay's continuous transform. The rects are trusted geometry — the
-    // session already clamped them into the board and above the minimum
-    // size — so this verb only does what every footprint-changing verb
-    // does on top: resolve the collisions the new footprints create
-    // (resolveGrowth with gravity off; RGL's compactor after the write
-    // with it on) and maintain the auto crops of the items whose cell
-    // size changed. Locks never reach here: the session refuses to open
-    // over anchored or size-locked items.
+    // session already clamped them into the board's columns and above the
+    // snap-proof minimum size — so this verb only resolves the collisions
+    // the new footprints create and maintains the members' auto crops.
+    // Locks never reach here: the session refuses to open over anchored
+    // or size-locked items.
     async function transformSelection(
         keys: string[], rects: Record<string, GridRect>,
     ): Promise<string | null> {
@@ -1012,9 +1011,54 @@ export function usePinboardLayoutActions({
             return { ...l, x: r.x, y: r.y, w: r.w, h: r.h }
         })
         if (!changed) return null
-        const resolved = resolveGrowth(newLayout, keys)
-        onLayoutChange(resolved,
-            verbAutoCrops(buildData, resolved, keySet, selectionAutoCrop))
+        // Collision resolution follows the board's physics. Gravity OFF:
+        // push what the group now overlaps straight down, like every other
+        // footprint-growing verb (resolveGrowth). Gravity ON, two stages:
+        // first the same eviction pass (bystanders the group now overlaps
+        // drop below it), THEN the full skyline settle — because RGL
+        // re-runs its compactor on every layout sync, so whatever this
+        // verb writes is going to be settled, and settling it HERE with
+        // the same compactor makes the write the fixed point the board
+        // will display. Neither stage alone survives contact with RGL:
+        // committing raw rects lets RGL's own pass resolve the overlaps,
+        // and compacting WITHOUT evicting first does the same thing that
+        // pass would — both process items in original-y order, so a
+        // bystander the group grew over settles into the vacated space
+        // before the group's lower members are placed, and those members
+        // then yield to IT: the bystander wedges into the group's span
+        // and the group tears apart ("items rearrange after release").
+        // Evicted first, it starts below the whole group and the settle
+        // lands it at the group's bottom edge instead. Anchors enter both
+        // stages as immovable statics (the layout rows carry their
+        // flags), and no correctBounds pass is needed: the board's snap
+        // already clamped the rects into the columns.
+        const resolved = float
+            ? resolveGrowth(newLayout, keys)
+            : [...fastVerticalCompactor.compact(
+                resolveOverlapsDown(newLayout, keys), grid.columns)]
+        // Auto-crop maintenance: with the selection toolbar's auto-crop
+        // toggle on, re-fit every member to its new cell like the other
+        // selection verbs do. With it off, a member that already carries a
+        // fit-to-cell crop gets that crop RE-FIT rather than dropped: the
+        // gesture-resize rule (drop the stale crop, let the true image
+        // letterbox) reads here as members shrinking in one direction for
+        // no reason, since a group scale barely changes the cell's aspect.
+        // Members that never had an auto crop keep their natural
+        // letterbox, exactly as it looked before the scale.
+        let overrides: Record<string, CropRect | null>
+        if (selectionAutoCrop) {
+            overrides = verbAutoCrops(buildData, resolved, keySet, true)
+        } else {
+            overrides = {}
+            const oldSize = new Map(layout.map(l => [l.i, `${l.w}x${l.h}`]))
+            for (const l of resolved) {
+                if (!keySet.has(l.i) || !autoCrops[l.i]) continue
+                if (oldSize.get(l.i) === `${l.w}x${l.h}`) continue
+                const next = autoCropForCell(buildData, l.i, l.w, l.h)
+                if (next !== undefined) overrides[l.i] = next
+            }
+        }
+        onLayoutChange(resolved, overrides)
         return null
     }
 

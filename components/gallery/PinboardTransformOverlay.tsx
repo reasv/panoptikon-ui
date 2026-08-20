@@ -1,7 +1,7 @@
 'use client'
 import React, { useEffect, useMemo, useRef } from "react"
 import { cn } from "@/lib/utils"
-import { GridParams, MIN_PIN_PX } from "@/lib/pinboardGrid"
+import { GridParams, minPinUnits, rowStep } from "@/lib/pinboardGrid"
 
 // The Scale & Move session: a modal overlay that owns the board's pointer
 // while it runs, drawing one bounding box around the current selection.
@@ -39,12 +39,13 @@ export interface TransformPxRect {
 
 type Handle = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se"
 
+// All eight handles in both gravity modes. The per-item north handles
+// are dropped while gravity is on (GRAVITY_RESIZE_HANDLES) because RGL's
+// resize re-anchors the box to its compacted position mid-gesture and the
+// handle inverts — but this overlay never uses RGL's resize, so that
+// failure cannot happen here. A north-anchored scale simply commits, and
+// gravity settles the result like it settles any other commit.
 const ALL_HANDLES: Handle[] = ["nw", "n", "ne", "w", "e", "sw", "s", "se"]
-// With gravity on, the compactor re-glues the selection's top edge after
-// the commit, so a north-anchored scale would snap right back — the same
-// inversion that drops the per-item north handles (see
-// GRAVITY_RESIZE_HANDLES in GalleryPinBoard). Same physics, same set.
-const GRAVITY_HANDLES: Handle[] = ["w", "e", "sw", "s", "se"]
 
 const HANDLE_CURSOR: Record<Handle, string> = {
     n: "cursor-ns-resize", s: "cursor-ns-resize",
@@ -88,7 +89,6 @@ export function PinboardTransformOverlay({
     gridWidth,
     contentHeight,
     items,
-    float,
     gridAreaRef,
     onGesture,
     onCommit,
@@ -102,7 +102,6 @@ export function PinboardTransformOverlay({
     // The selected items' resting rects in content px, from the board's
     // grid math — this is also what the preview restores to
     items: TransformPxRect[]
-    float: boolean
     gridAreaRef: React.RefObject<HTMLDivElement | null>
     // Gesture start/end: the parent freezes the scroll range (with its
     // autoscroll) and wears the transition-disable class while true
@@ -216,11 +215,24 @@ export function PinboardTransformOverlay({
         const innerR = gridWidth - grid.padding
         const innerT = grid.padding
         // The group scale floor: the gesture stops when the smallest
-        // member hits the minimum pin size. A member already below it
-        // (legacy boards) pins the floor above 1 — the group can then
-        // only grow, which is the honest reading of "already at minimum".
-        const sxMin = Math.max(...rects0.map(r => MIN_PIN_PX / r.w))
-        const syMin = Math.max(...rects0.map(r => MIN_PIN_PX / r.h))
+        // member hits the minimum pin size — measured in grid units with
+        // half a unit of slack, so the commit's minW/minH floor can never
+        // engage. The snap rounds each member's edges independently,
+        // which can cost up to one unit of width; keeping every member at
+        // least minW + 0.5 units wide BEFORE rounding guarantees minW
+        // after it, and a floor that never fires can never grow a member
+        // into its flush neighbour (the "shrink far enough and the board
+        // explodes" failure). A member already below the floor pins it
+        // above 1 — the group can then only grow, which is the honest
+        // reading of "already at minimum".
+        const colW = (gridWidth - 2 * grid.padding
+            - (grid.columns - 1) * grid.margin) / grid.columns
+        const unitX = colW + grid.margin
+        const { minW, minH } = minPinUnits(grid, colW)
+        const floorW = (minW + 0.5) * unitX - grid.margin
+        const floorH = (minH + 0.5) * rowStep(grid) - grid.margin
+        const sxMin = Math.max(...rects0.map(r => floorW / r.w))
+        const syMin = Math.max(...rects0.map(r => floorH / r.h))
         const clamp = (v: number, lo: number, hi: number) =>
             Math.min(Math.max(v, lo), Math.max(lo, hi))
         const g: Gesture = {
@@ -328,7 +340,7 @@ export function PinboardTransformOverlay({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
-    const handles = float ? ALL_HANDLES : GRAVITY_HANDLES
+    const handles = ALL_HANDLES
     return (
         <div
             data-transform-overlay
