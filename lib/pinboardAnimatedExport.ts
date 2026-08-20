@@ -501,8 +501,11 @@ export function useAnimatedMosaicExport(
   const { presets, limits } = useVideoPresets("mosaic")
   const getMeta = useItemMetaLoader(dbs)
   // Both guards: a canvas export in this tab, or a composition already
-  // rendering on the server (see composeGuard).
-  const busy = useExporting() || useComposeBusy()
+  // rendering on the server (see composeGuard). Never `useExporting() ||
+  // useComposeBusy()`: `||` short-circuits the second HOOK call the moment
+  // the first guard trips, which shifts every hook after it and crashes the
+  // re-render the trip itself just forced.
+  const busy = useAnimatedExporting()
   const scope = useComposeScope(keys, length)
 
   const save = (preset: ComposePreset & { ext: string }, label: string) => {
@@ -563,8 +566,11 @@ export function useAnimatedItemExport(key: string | null): AnimatedRowSet {
   const queryClient = useQueryClient()
   const getMeta = useItemMetaLoader(dbs)
   // Both guards: a canvas export in this tab, or a composition already
-  // rendering on the server (see composeGuard).
-  const busy = useExporting() || useComposeBusy()
+  // rendering on the server (see composeGuard). Never `useExporting() ||
+  // useComposeBusy()`: `||` short-circuits the second HOOK call the moment
+  // the first guard trips, which shifts every hook after it and crashes the
+  // re-render the trip itself just forced.
+  const busy = useAnimatedExporting()
 
   const boardWidth = measuredWidth()
   const parsed = parseBoard(layout)
