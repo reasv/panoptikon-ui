@@ -37,6 +37,17 @@ export interface TransformPxRect {
     h: number
 }
 
+// A scale commit's actual transform: the final clamped factors and the
+// handle that anchored them. The board snaps scales from THIS (in lattice
+// space, about the anchor's integer edge), not from the preview's px
+// rects — see commitTransform for why px-edge rounding can't keep flush
+// members flush on shrinks.
+export interface TransformScale {
+    sx: number
+    sy: number
+    handle: string
+}
+
 type Handle = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se"
 
 // All eight handles in both gravity modes. The per-item north handles
@@ -80,6 +91,8 @@ interface Gesture {
     els: Map<string, HTMLElement>
     moved: boolean
     last: TransformPxRect[] | null
+    sx: number
+    sy: number
     onMove: (e: MouseEvent) => void
     onUp: (e: MouseEvent) => void
 }
@@ -106,10 +119,12 @@ export function PinboardTransformOverlay({
     // Gesture start/end: the parent freezes the scroll range (with its
     // autoscroll) and wears the transition-disable class while true
     onGesture: (active: boolean) => void
-    // Commit the released continuous rects. Returns false when the snap
-    // changes nothing — the overlay then restores the resting styles
+    // Commit the released gesture: the continuous rects for a move, plus
+    // the clamped transform itself for a scale. Returns false when the
+    // snap changes nothing — the overlay then restores the resting styles
     // itself instead of waiting for a layout change that never comes.
-    onCommit: (rects: TransformPxRect[], kind: "move" | "scale") => boolean
+    onCommit: (rects: TransformPxRect[], kind: "move" | "scale",
+        scale?: TransformScale) => boolean
     onExit: () => void
 }) {
     const bboxRef = useRef<HTMLDivElement | null>(null)
@@ -215,31 +230,32 @@ export function PinboardTransformOverlay({
         const innerR = gridWidth - grid.padding
         const innerT = grid.padding
         // The group scale floor: the gesture stops when the smallest
-        // member hits the minimum pin size — measured in grid units with
-        // half a unit of slack, so the commit's minW/minH floor can never
-        // engage. The snap rounds each member's edges independently,
-        // which can cost up to one unit of width; keeping every member at
-        // least minW + 0.5 units wide BEFORE rounding guarantees minW
-        // after it, and a floor that never fires can never grow a member
-        // into its flush neighbour (the "shrink far enough and the board
-        // explodes" failure). A member already below the floor pins it
-        // above 1 — the group can then only grow, which is the honest
-        // reading of "already at minimum".
+        // member hits the minimum pin size, measured in grid units with
+        // half a unit of slack so the commit's lattice snap — whose
+        // rounding can cost up to one unit — can never land a member
+        // below minW/minH and trip the mutation floor. CAPPED AT 1: a
+        // member already at (or below) the minimum makes its floor ratio
+        // exceed 1, and an uncapped lower clamp bound would then teleport
+        // ANY inward drag to a growing scale — drag in, group jumps out.
+        // Held at 1, the gesture simply refuses to shrink past the
+        // current size (growing still works), which is the honest
+        // reading of "a member is already at minimum".
         const colW = (gridWidth - 2 * grid.padding
             - (grid.columns - 1) * grid.margin) / grid.columns
         const unitX = colW + grid.margin
+        const stepY = rowStep(grid)
         const { minW, minH } = minPinUnits(grid, colW)
-        const floorW = (minW + 0.5) * unitX - grid.margin
-        const floorH = (minH + 0.5) * rowStep(grid) - grid.margin
-        const sxMin = Math.max(...rects0.map(r => floorW / r.w))
-        const syMin = Math.max(...rects0.map(r => floorH / r.h))
+        const sxMin = Math.min(1, Math.max(
+            ...rects0.map(r => (minW + 0.5) * unitX / (r.w + grid.margin))))
+        const syMin = Math.min(1, Math.max(
+            ...rects0.map(r => (minH + 0.5) * stepY / (r.h + grid.margin))))
         const clamp = (v: number, lo: number, hi: number) =>
             Math.min(Math.max(v, lo), Math.max(lo, hi))
         const g: Gesture = {
             kind,
             startX: e.clientX - areaRect.left,
             startY: e.clientY - areaRect.top,
-            rects0, els, moved: false, last: null,
+            rects0, els, moved: false, last: null, sx: 1, sy: 1,
             onMove: (ev: MouseEvent) => {
                 if (gestureRef.current !== g) return
                 const ar = gridAreaRef.current?.getBoundingClientRect()
@@ -283,6 +299,8 @@ export function PinboardTransformOverlay({
                     } else {
                         sy = clamp(vy / H0, syMin, syMax)
                     }
+                    g.sx = sx
+                    g.sy = sy
                     rects = g.rects0.map(r => ({
                         key: r.key,
                         l: ax + sx * (r.l - ax),
@@ -299,7 +317,10 @@ export function PinboardTransformOverlay({
                 endGesture(g)
                 if (!g.moved || !g.last) return
                 const committed = onCommitRef.current(
-                    g.last, g.kind === "move" ? "move" : "scale")
+                    g.last, g.kind === "move" ? "move" : "scale",
+                    g.kind === "move"
+                        ? undefined
+                        : { sx: g.sx, sy: g.sy, handle: g.kind })
                 if (committed) {
                     // Hold the preview until the committed layout lands
                     pendingRef.current = g.els

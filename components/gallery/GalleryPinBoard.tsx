@@ -54,7 +54,7 @@ import { GridRect, groupRowsByOverlap } from '@/lib/pinboardPack'
 import { maximalFreeRects, pickRectAt, rectsOverlap } from '@/lib/pinboardHoles'
 import { usePinboardCarry } from '@/lib/state/pinboardCarry'
 import { HoleTargetOverlay } from './HoleTargetOverlay'
-import { PinboardTransformOverlay, TransformPxRect } from './PinboardTransformOverlay'
+import { PinboardTransformOverlay, TransformPxRect, TransformScale } from './PinboardTransformOverlay'
 import { PinboardBoardApi, usePinboardBoardApi } from '@/lib/state/pinboardBoardApi'
 import { PinboardFullscreenBar } from './PinboardMenu'
 import { SelectionExportMenuItems, selectionExportLabel } from './PinboardExportMenu'
@@ -1454,7 +1454,8 @@ export function PinBoard(
     // Snap one released gesture onto the lattice and commit it as a verb
     // write. Returns false when the snap changes nothing — the overlay
     // then restores its preview instead of waiting for a write.
-    const commitTransform = (rects: TransformPxRect[], kind: "move" | "scale"): boolean => {
+    const commitTransform = (rects: TransformPxRect[], kind: "move" | "scale",
+        scale?: TransformScale): boolean => {
         const unitX = holeColW + effGrid.margin
         const stepY = rowStep(effGrid)
         const pad = effGrid.padding
@@ -1479,30 +1480,59 @@ export function PinBoard(
                 out[l.i] = { x: l.x + dgx, y: l.y + dgy, w: l.w, h: l.h }
             }
         } else {
-            // Scale: round each item's EDGES, not its pos+size — two items
-            // sharing a continuous edge keep sharing it after the snap
+            // Scale: map each member's INTEGER lattice edges about the
+            // anchor's lattice edge and round. A shared edge is the same
+            // integer on both sides, the map is monotone, and monotone
+            // rounding preserves order — so flush members stay flush
+            // EXACTLY and no scale can round two members into each other.
+            // The previous px-edge snap could: the margins between items
+            // scale with the group while the snap added the unscaled
+            // margin, so on shrinks two flush px edges drifted apart by
+            // the scaled-margin delta and could round one unit INTO the
+            // neighbour, which the eviction pass then "fixed" by dropping
+            // a member below the group (the reported intra-group shuffle).
+            if (!scale) return false
             const { minW, minH } = minPinUnits(effGrid, holeColW)
+            const members = rects.flatMap(r => byKey.get(r.key) ?? [])
+            if (members.length === 0) return false
+            // The anchor edge is a member edge, so both are exact integers
+            const axL = scale.handle.includes("w")
+                ? Math.max(...members.map(l => l.x + l.w))
+                : Math.min(...members.map(l => l.x))
+            const ayL = scale.handle.includes("n")
+                ? Math.max(...members.map(l => l.y + l.h))
+                : Math.min(...members.map(l => l.y))
+            const mapped = members.map(l => ({
+                l,
+                x: Math.round(axL + scale.sx * (l.x - axL)),
+                x2: Math.round(axL + scale.sx * (l.x + l.w - axL)),
+                y: Math.round(ayL + scale.sy * (l.y - ayL)),
+                y2: Math.round(ayL + scale.sy * (l.y + l.h - ayL)),
+            }))
+            // Board bounds as UNIFORM group shifts: a per-item clamp could
+            // fold an edge member onto its neighbour. The overlay's px
+            // clamps keep any excursion to a unit of rounding slack.
+            const dx = -Math.max(0,
+                Math.max(...mapped.map(m => m.x2)) - effGrid.columns)
+            const dy = Math.max(0, -Math.min(...mapped.map(m => m.y)))
             let changed = false
-            for (const r of rects) {
-                const l = byKey.get(r.key)
-                if (!l) continue
-                let x = Math.round((r.l - pad) / unitX)
-                let x2 = Math.round((r.l + r.w + effGrid.margin - pad) / unitX)
-                const yRaw = Math.round((r.t - pad) / stepY)
-                const y2 = Math.round((r.t + r.h + effGrid.margin - pad) / stepY)
-                x = Math.max(0, Math.min(x, effGrid.columns - 1))
-                x2 = Math.max(x + 1, Math.min(x2, effGrid.columns))
-                let w = x2 - x
-                if (w < minW) {
-                    // The mutation-time size floor (see minPinUnits); the
-                    // overlay's own clamp keeps this to rounding slack
-                    w = Math.min(minW, effGrid.columns)
-                    x = Math.min(x, effGrid.columns - w)
-                }
-                const y = Math.max(0, yRaw)
-                const h = Math.max(y2 - y, minH, 1)
-                out[l.i] = { x, y, w, h }
-                if (x !== l.x || y !== l.y || w !== l.w || h !== l.h) changed = true
+            for (const m of mapped) {
+                const x = Math.max(0, m.x + dx)
+                let w = Math.max(1, Math.min(m.x2 + dx, effGrid.columns) - x)
+                const y = m.y + dy
+                let h = Math.max(1, m.y2 + dy - y)
+                // The mutation-time size floor (see minPinUnits), guarded
+                // per axis so a gesture that left an axis alone (or a
+                // legacy sub-minimum member the clamp held at scale 1)
+                // never grows: the scale clamp keeps every SCALED size at
+                // or above the floor already, so a firing floor here is
+                // pure rounding slack.
+                if (w < minW && w < m.l.w) w = Math.min(minW, effGrid.columns)
+                if (h < minH && h < m.l.h) h = minH
+                const fx = Math.min(x, effGrid.columns - w)
+                out[m.l.i] = { x: fx, y, w, h }
+                if (fx !== m.l.x || y !== m.l.y || w !== m.l.w || h !== m.l.h)
+                    changed = true
             }
             if (!changed) return false
         }
