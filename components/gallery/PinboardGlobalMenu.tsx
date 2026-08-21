@@ -154,12 +154,14 @@ export function BoardGlobalMenuItems({
     const [selectionCrop] = useGalleryPinSelectionCrop()
     const [proportional] = useGalleryPinProportional()
     const [allHandles, setAllHandles] = useGalleryPinResizeHandles()
-    // Gravity rides in the layout token rather than in a board flag, so it
-    // comes from the parsed board and is written through the same path.
-    // With no records there is no token to carry the switch — setFloat
-    // no-ops and !float would claim gravity is on however the user's
-    // creation default reads — so the toggle is disabled until a first pin.
-    const { float, setFloat, setProportional, records } = usePinBoard()
+    // Gravity and uniform auto-layout ride in the layout token rather than
+    // in board flags, so they come from the parsed board and are written
+    // through the same path. With no records there is no token to carry
+    // either switch — the setters no-op and the read would claim whatever
+    // the user's creation default isn't — so both toggles are disabled
+    // until a first pin.
+    const { float, setFloat, uniform, setUniform, setProportional, records } =
+        usePinBoard()
     const hasPins = records.length > 0
     const { toast } = useToast()
     const runVerb = useRunVerb()
@@ -264,6 +266,23 @@ export function BoardGlobalMenuItems({
             >
                 Auto-Crop to Cells
             </CheckboxItem>
+            {/* The auto-layout ALGORITHM: on, the fill verbs and the
+                auto-layout trigger tile identical cells instead of
+                composing a mosaic. Stored in the layout token like
+                gravity, hence the same needs-a-board gate; flipping it
+                moves nothing until the next fill, so no immediate verb
+                fires here. */}
+            <CheckboxItem
+                checked={uniform}
+                disabled={!hasPins}
+                title={"Fill Viewport and auto-layout arrange items in"
+                    + " identical cells instead of a mosaic"}
+                onCheckedChange={(checked) => setUniform(!!checked)}
+            >
+                {hasPins
+                    ? "Uniform Auto-Layout"
+                    : "Uniform Auto-Layout (pin something first)"}
+            </CheckboxItem>
             {api.isV1 && <Item onClick={api.upgradeGrid}>
                 <Grid2x2Plus className="mr-2 h-4 w-4" />
                 Upgrade Board Grid
@@ -286,18 +305,21 @@ export function BoardGlobalMenuItems({
                             pbp: proportional,
                             prh: allHandles,
                             gravity: !float,
+                            uniform,
                         })
                         toast({
                             title: "New-Board Defaults Saved",
                             // Named from the registry, so a flag added there
-                            // can't quietly go unmentioned here. Gravity is
-                            // spelled out because it is the one creation
-                            // default that isn't a registry flag (it rides
-                            // the layout token) — same on-screen name as
-                            // its menu row, like every registry label.
+                            // can't quietly go unmentioned here. Gravity and
+                            // Uniform Auto-Layout are spelled out because
+                            // they are the creation defaults that aren't
+                            // registry flags (they ride the layout token) —
+                            // same on-screen names as their menu rows, like
+                            // every registry label.
                             description: "New pinboards will start with this"
                                 + ` board's current ${defaultableFlagLabels()
-                                    .join(", ")} and Gravity settings.`,
+                                    .join(", ")}, Gravity and Uniform`
+                                + " Auto-Layout settings.",
                             duration: 4000,
                         })
                     }}>
@@ -363,6 +385,9 @@ export function LayoutMenuItems({
         <>
             <Item onClick={() => runVerb("Fill Viewport", api.fillViewport(false))}>Fill Viewport</Item>
             <Item onClick={() => runVerb("Fill Viewport", api.fillViewport(true))}>Fill Viewport (Visible Only)</Item>
+            {/* Fill Viewport with identical cells, whatever the board's
+                algorithm flag says (the flag routes Fill Viewport itself) */}
+            <Item onClick={() => runVerb("Uniform Layout", api.uniformLayout())}>Uniform Layout</Item>
             {/* Cycle through the packer's near-best alternative
                 compositions; later auto-fills keep the chosen one */}
             <Item onClick={() => runVerb("Reroll Layout", api.rerollLayout())}>Reroll Layout</Item>

@@ -29,11 +29,15 @@ import {
     growToFill,
     growToFillInBox,
     justifyRows,
+    nearestUniformIndex,
     packMosaic,
     packRegion,
     packRegionInBox,
     packRows,
     packRowsAroundObstacles,
+    packUniform,
+    packUniformInBox,
+    rankUniformFactorizations,
 } from "@/lib/pinboardPack";
 
 // Session-wide reroll counter: every fill-type action renders the variant
@@ -42,6 +46,19 @@ import {
 // purpose — the hook is instantiated once per pin menu plus once for the
 // board, and they must agree.
 let mosaicVariant = 0
+
+// The uniform packer's counterpart of mosaicVariant: the cell ASPECT the
+// last uniform reroll chose, which later uniform fills track by picking
+// the nearest feasible factorization — never a rank index, which a
+// different item count would teleport (see rankUniformFactorizations).
+// Null until a reroll chooses; module-level for the same reason as above.
+let uniformAspect: number | null = null
+
+// The aspect the last committed uniform fill actually used (its best-scored
+// pick when no reroll has chosen): the reroll's starting point, so a reroll
+// advances from what's on screen — not from the ranking's head, which would
+// skip the best factorization when uniform has never been shown yet.
+let uniformShownAspect: number | null = null
 
 // Default for the optional `orients` param. Module-scope because it sits in
 // the build-data invalidation deps below: an inline `= {}` default would be
@@ -67,6 +84,7 @@ export function usePinboardLayoutActions({
     orients = NO_ORIENTS,
     highWater = 0,
     float = false,
+    uniform = false,
     cropKey = null,
     layoutAutoCrop = false,
     selectionAutoCrop = true,
@@ -94,6 +112,11 @@ export function usePinboardLayoutActions({
     // running, so the verbs that grow an item's footprint must resolve the
     // collisions they create themselves — see resolveGrowth.
     float?: boolean,
+    // The board's auto-layout algorithm (the token's uniform switch): the
+    // fill-type verbs and the auto-layout trigger tile identical cells
+    // instead of composing a mosaic. The explicit Uniform verbs force the
+    // uniform packer regardless.
+    uniform?: boolean,
     // The board's open crop item, if any. A verb fired from another pin
     // mid-session must never move the crop window, so with gravity off it
     // enters the overlap resolution as an immovable wall (with gravity on
@@ -345,6 +368,8 @@ export function usePinboardLayoutActions({
         skipIfCovered = false,
         keepProportions = false,
         resetRatchet = false,
+        algorithm,
+        advanceUniform = false,
         history,
     }: {
         visibleOnly?: boolean,
@@ -355,6 +380,15 @@ export function usePinboardLayoutActions({
         // Refit to the current view: target the fold even when the ratchet
         // is higher, and lower the ratchet to it
         resetRatchet?: boolean,
+        // The packer to fill with; absent means the board's algorithm flag
+        // decides. The explicit Uniform verb is the one caller that forces
+        // a value.
+        algorithm?: "mosaic" | "uniform",
+        // Reroll on a uniform fill: advance the session's sticky cell
+        // aspect to the next ranked factorization before packing (the
+        // uniform counterpart of bumping mosaicVariant — done in here
+        // because the ranking needs the fill's own measured inputs)
+        advanceUniform?: boolean,
         // History mode for the resulting record write. Default (push) is
         // right for every fill the user asked for — it is its own undo
         // step. "replace" is for a fill that merely FOLLOWS someone else's
@@ -397,27 +431,66 @@ export function usePinboardLayoutActions({
         const obstacles = [...anchorObstacles, ...placement.rects]
         const items = participants.map(l => toPackItem(buildData, l))
         const weights = keepProportions ? participants.map(l => l.w * l.h) : undefined
-        const packed = items.length === 0 ? [] : obstacles.length > 0
-            ? packRegion({
+        const mins = minPinUnits(grid, buildData.columnWidth)
+        const algo = algorithm ?? (uniform ? "uniform" : "mosaic")
+        let packed: LayoutItem[]
+        if (items.length === 0) {
+            packed = []
+        } else if (algo === "uniform") {
+            // Identical cells, flowing around the obstacle rects by
+            // skipping their cells. Weights don't apply — every cell is
+            // the same by definition, so "keep proportions" has nothing
+            // to keep here.
+            const ranked = rankUniformFactorizations({
+                items, obstacles, grid,
+                columnWidth: buildData.columnWidth,
+                totalGridRows: total, ...mins,
+            })
+            if (advanceUniform && ranked.length > 0) {
+                // Advance from whatever is on screen: the reroll choice if
+                // one exists, else the last uniform fill's own pick. With
+                // neither (the flag was just flipped over a mosaic
+                // arrangement) the first reroll must show the best-scored
+                // factorization, not skip past it to the runner-up.
+                const base = uniformAspect ?? uniformShownAspect
+                uniformAspect = base == null
+                    ? ranked[0].cellAspect
+                    : ranked[(nearestUniformIndex(ranked, base) + 1)
+                        % ranked.length].cellAspect
+            }
+            packed = packUniform({
                 items, obstacles, grid,
                 columnWidth: buildData.columnWidth,
                 totalGridRows: total,
-                variant: mosaicVariant, weights,
-                ...minPinUnits(grid, buildData.columnWidth),
+                chosenAspect: uniformAspect, ...mins,
             })
-            : packMosaic({
-                items, grid,
-                columnWidth: buildData.columnWidth,
-                totalGridRows: total,
-                fill: rest.length > 0 ? "force" : "auto",
-                variant: mosaicVariant, weights,
-                ...minPinUnits(grid, buildData.columnWidth),
-            })
+            if (packed.length > 0 && ranked.length > 0) {
+                uniformShownAspect = ranked[uniformAspect == null
+                    ? 0 : nearestUniformIndex(ranked, uniformAspect)].cellAspect
+            }
+        } else {
+            packed = obstacles.length > 0
+                ? packRegion({
+                    items, obstacles, grid,
+                    columnWidth: buildData.columnWidth,
+                    totalGridRows: total,
+                    variant: mosaicVariant, weights, ...mins,
+                })
+                : packMosaic({
+                    items, grid,
+                    columnWidth: buildData.columnWidth,
+                    totalGridRows: total,
+                    fill: rest.length > 0 ? "force" : "auto",
+                    variant: mosaicVariant, weights, ...mins,
+                })
+        }
         // A packer that can't produce a composition returns [] — committing
         // that would erase the packed items' records (rebuildRecords drops
         // records absent from the reported layout). No layout beats data loss.
         if (items.length > 0 && packed.length === 0) {
-            return "Couldn't fill the viewport around the fixed items"
+            return algo === "uniform"
+                ? "Couldn't fit identical cells at the minimum item size"
+                : "Couldn't fill the viewport around the fixed items"
         }
         const newLayout = [...packed, ...placement.placed, ...rest]
         onLayoutChange(newLayout,
@@ -435,10 +508,20 @@ export function usePinboardLayoutActions({
         return doFill({ visibleOnly, skipIfCovered, history })
     }
 
-    // Cycle to the next distinct near-best composition and re-fill. The
-    // counter is session-wide, so subsequent auto-fills keep the chosen
-    // variant instead of snapping back to the first one.
+    // The one-shot uniform fill: Fill Viewport's semantics exactly, with
+    // the uniform packer forced regardless of the board's algorithm flag
+    function uniformLayout() {
+        return doFill({ algorithm: "uniform" })
+    }
+
+    // Cycle to the next distinct near-best composition and re-fill with
+    // whatever algorithm the board flag selects. The choice is
+    // session-wide either way — mosaicVariant, or the uniform cell aspect
+    // (advanced inside doFill, where the ranking's inputs live) — so
+    // subsequent auto-fills keep the chosen variant instead of snapping
+    // back to the first one.
     function rerollLayout() {
+        if (uniform) return doFill({ advanceUniform: true })
         mosaicVariant++
         return doFill({})
     }
@@ -450,9 +533,12 @@ export function usePinboardLayoutActions({
     }
 
     // Reflow freely but aim every item at its current share of the board:
-    // importance is expressed by how you've already sized things
+    // importance is expressed by how you've already sized things. Always
+    // mosaic, even on a uniform board: identical cells have no proportions
+    // to keep, so routing by the flag would silently turn this verb into a
+    // plain uniform fill.
     function reflowKeepProportions() {
-        return doFill({ keepProportions: true })
+        return doFill({ keepProportions: true, algorithm: "mosaic" })
     }
 
     // "Split the space evenly among N rows" — explicitly row-based. With
@@ -827,6 +913,67 @@ export function usePinboardLayoutActions({
             return "Couldn't arrange the selection around the fixed items"
         }
         const newLayout = [...result.packed, ...result.placement.placed, ...rest]
+        onLayoutChange(newLayout,
+            verbAutoCrops(buildData, newLayout,
+                new Set(participants.map(l => l.i)), selectionAutoCrop))
+        return null
+    }
+
+    // Uniform the selected items within their combined bounding box:
+    // arrangeSelection's exact structure — the box is claimed, intruders
+    // are evicted or become obstacles, anchored selected items hold still,
+    // size-locked ones travel — with the uniform packer splitting the box
+    // into identical cells instead of the mosaic. The box is never grown:
+    // cells below the minimum size refuse, the standard "couldn't fill"
+    // path. The session's rerolled cell aspect deliberately doesn't apply
+    // — that stickiness belongs to the fills.
+    async function uniformSelection(keys: string[]): Promise<string | null> {
+        const buildData = await ensureBuildData()
+        if (!buildData) return null
+        const keySet = new Set(keys)
+        const selectedItems = buildData.sortedLayout.filter(l => keySet.has(l.i))
+        const travellers = selectedItems.filter(l => isSizeLocked(l.i))
+        const participants = selectedItems.filter(l => !isLocked(l.i))
+        if (participants.length + travellers.length < 2) return null
+        const x0 = Math.min(...selectedItems.map(l => l.x))
+        const y0 = Math.min(...selectedItems.map(l => l.y))
+        const x1 = Math.max(...selectedItems.map(l => l.x + l.w))
+        const y1 = Math.max(...selectedItems.map(l => l.y + l.h))
+        const box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+        const packedKeys = new Set([...participants, ...travellers].map(l => l.i))
+        const mins = minPinUnits(grid, buildData.columnWidth)
+        const { rest, extraObstacles } = evictFromBox({
+            layout, box,
+            participantKeys: packedKeys,
+            sizeLockedKeys: new Set(layout.filter(l => isSizeLocked(l.i)).map(l => l.i)),
+            anchoredKeys: new Set(layout.filter(l => isAnchored(l.i)).map(l => l.i)),
+            columns: grid.columns,
+            ...mins,
+        })
+        const baseObstacles = [
+            ...layout
+                .filter(l => isAnchored(l.i)
+                    && l.x < x1 && l.x + l.w > x0 && l.y < y1 && l.y + l.h > y0)
+                .map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h })),
+            ...extraObstacles,
+        ]
+        const placement = placeTravellers(travellers, box, baseObstacles,
+            l => ({ x: l.x, y: l.y }))
+        if (typeof placement === "string") return placement
+        const packed = participants.length > 0
+            ? packUniformInBox({
+                items: participants.map(l => toPackItem(buildData, l)),
+                obstacles: [...baseObstacles, ...placement.rects],
+                grid,
+                columnWidth: buildData.columnWidth,
+                box,
+                ...mins,
+            })
+            : []
+        if (participants.length > 0 && packed.length === 0) {
+            return "Couldn't fit identical cells in the selection's area — the items would go below the minimum size"
+        }
+        const newLayout = [...packed, ...placement.placed, ...rest]
         onLayoutChange(newLayout,
             verbAutoCrops(buildData, newLayout,
                 new Set(participants.map(l => l.i)), selectionAutoCrop))
@@ -1821,6 +1968,8 @@ export function usePinboardLayoutActions({
         rerollLayout,
         refitToView,
         reflowKeepProportions,
+        uniformLayout,
+        uniformSelection,
         growInPlace,
         growSelection,
         swapItems,

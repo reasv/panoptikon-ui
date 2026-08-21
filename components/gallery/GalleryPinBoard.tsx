@@ -33,7 +33,7 @@ import { useVideoPlayback } from '@/lib/videoTranscode'
 import { useVideoTranscodeEnabled } from '@/lib/useClientConfig'
 import { CropGeometry, CropView } from './CropView'
 import { NativeControlsEscape, VideoPlayerSurface, playerSizeForWidth, useVideoPlayerSurface } from './VideoPlayerSurface'
-import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, Check, ChevronDown, ChevronsLeft, ChevronsRight, ChevronsUp, Columns3, Crop, Dices, Expand, FlipHorizontal, FlipHorizontal2, FlipVertical, FlipVertical2, FoldHorizontal, GripVertical, ImageDown, LayoutDashboard, ListX, LockOpen, Maximize, RotateCcw, RotateCw, Ruler, Scaling, Scan, SquareDashed, Trash2, X, type LucideIcon } from 'lucide-react'
+import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, Check, ChevronDown, ChevronsLeft, ChevronsRight, ChevronsUp, Columns3, Crop, Dices, Expand, FlipHorizontal, FlipHorizontal2, FlipVertical, FlipVertical2, FoldHorizontal, GripVertical, ImageDown, LayoutDashboard, LayoutGrid, ListX, LockOpen, Maximize, RotateCcw, RotateCw, Ruler, Scaling, Scan, SquareDashed, Trash2, X, type LucideIcon } from 'lucide-react'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -146,6 +146,12 @@ const SELECTION_VERBS: SelectionVerb[] = [
     {
         id: "arrange", label: "Arrange", icon: LayoutDashboard, min: 2,
         title: "Rearrange the selected items within their combined bounding box",
+    },
+    // Arrange's identical-cells sibling: same bounding box, same eviction,
+    // but the box splits into one repeated cell instead of a mosaic
+    {
+        id: "uniform", label: "Uniform", icon: LayoutGrid, min: 2,
+        title: "Arrange the selected items in identical cells within their combined bounding box",
     },
     {
         id: "swap", label: "Swap", icon: ArrowLeftRight, exact: 2,
@@ -306,7 +312,7 @@ export function PinBoard(
     // Token-stripped records plus the board's grid parameters; writes migrate
     // v1 boards to the v2 grid (see lib/pinboardGrid.ts)
     const {
-        grid, records, isV1, highWater, float, refWidth,
+        grid, records, isV1, highWater, float, uniform, refWidth,
         updateRecords, upgradeGrid, stampRefWidth,
     } = usePinBoard()
     // "Scale With Window" (the pbp board flag): see effGrid below
@@ -1092,10 +1098,12 @@ export function PinBoard(
         orientSelection,
         changeLayout, fillViewportRows, justifyCurrentRows, autoCropToCells,
         clearAutoCrops, shiftLayout, mirrorLayout, rerollLayout, refitToView,
-        reflowKeepProportions, growInPlace, hasLocks, hasAnchors,
+        reflowKeepProportions, uniformLayout, uniformSelection,
+        growInPlace, hasLocks, hasAnchors,
         belowViewportKeys,
     } = usePinboardLayoutActions({
         layout, crops, autoCrops, locks: itemLocks, orients, highWater, float,
+        uniform,
         cropKey,
         // Every packer and fit works in px against the RENDERED cell size,
         // so the layout verbs take the effective grid (their measurement
@@ -1115,8 +1123,8 @@ export function PinBoard(
         Object.assign(boardApiRef.current, {
             changeLayout, fillViewport, fillViewportRows, justifyCurrentRows,
             autoCropToCells, clearAutoCrops, shiftLayout, mirrorLayout,
-            rerollLayout, refitToView, reflowKeepProportions, growInPlace,
-            hasLocks, hasAnchors,
+            rerollLayout, refitToView, reflowKeepProportions, uniformLayout,
+            growInPlace, hasLocks, hasAnchors,
             highWater, isV1, boardWidth: gridWidth, upgradeGrid,
             belowViewportCount: () => belowViewportKeys()?.length ?? null,
             removeBelowViewport: () => removePins(belowViewportKeys() ?? []),
@@ -2605,6 +2613,7 @@ export function PinBoard(
                                     orients={orients}
                                     highWater={highWater}
                                     float={float}
+                                    uniform={uniform}
                                     crop={crops[i] ?? null}
                                     autoCrop={autoCrops[i] ?? null}
                                     trim={trims[i] ?? null}
@@ -2720,6 +2729,7 @@ export function PinBoard(
                         onVerb={(id) => {
                             switch (id) {
                                 case "arrange": runVerb("Arrange", arrangeSelection(selected)); break
+                                case "uniform": runVerb("Uniform", uniformSelection(selected)); break
                                 case "swap": runVerb("Swap", swapItems(selected[0], selected[1])); break
                                 case "hole": holeVerb ? setHoleVerb(false) : enterHoleTarget(); break
                                 case "transform": enterTransform(); break
@@ -3115,6 +3125,7 @@ function PinBoardPin({
     orients,
     highWater,
     float,
+    uniform,
     crop,
     autoCrop,
     trim,
@@ -3160,6 +3171,9 @@ function PinBoardPin({
     // Gravity off (the layout token's float switch); the size and rotation
     // verbs resolve their own overlaps then
     float: boolean
+    // Uniform auto-layout (the token's uniform switch); the context menu's
+    // fill verbs route by it
+    uniform: boolean
     // Manual crop (the editable base) and the derived fit-to-cell auto crop
     crop: CropRect | null
     autoCrop: CropRect | null
@@ -3550,6 +3564,7 @@ function PinBoardPin({
                         orients={orients}
                         highWater={highWater}
                         float={float}
+                        uniform={uniform}
                         cropKey={cropKey}
                         cropMode={cropMode}
                         hasCrop={!!(crop || autoCrop)}

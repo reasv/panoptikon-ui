@@ -94,19 +94,24 @@ export function defaultableFlagLabels(): string[] {
 
 const STORAGE_KEY = "pinboardUserDefaults"
 
-// Gravity is a creation default too, but it is NOT a defaultable flag: it
-// lives in the layout param's grid token (see pinboardGrid.ts), not in a URL
-// parameter and not in pinboards.flags. So it rides the same localStorage
-// payload as a lone extra key, and the first-pin edge stamps it by
-// serializing the initial token with "~f" instead of by writing a parameter.
+// Gravity and uniform auto-layout are creation defaults too, but they are
+// NOT defaultable flags: they live in the layout param's grid token (see
+// pinboardGrid.ts), not in a URL parameter and not in pinboards.flags. So
+// they ride the same localStorage payload as extra keys, and the first-pin
+// edge stamps them by serializing the initial token with "~f"/"~u" instead
+// of by writing parameters.
 export interface PinboardUserDefaults
   extends Partial<Record<PinboardDefaultableKey, boolean>> {
   gravity?: boolean
+  uniform?: boolean
 }
 
 // What a newly created board starts with when the user saved no default:
 // gravity on is the behavior every board has had until now.
 export const GRAVITY_CREATION_DEFAULT = true
+
+// ...and the mosaic packer is what every fill has always used.
+export const UNIFORM_CREATION_DEFAULT = false
 
 // Only allowlisted keys with boolean values survive, so neither stale
 // localStorage nor junk in the database's stored board flags can stamp
@@ -123,16 +128,20 @@ export function sanitizeBoardFlags(
   return out
 }
 
-// The stored-flags sanitizer plus the token-backed gravity key. Kept
-// separate from sanitizeBoardFlags on purpose: that one also guards the
-// board flags the gateway stores, where gravity has no business appearing.
-// Absence is tolerated everywhere — payloads written before gravity existed
-// simply resolve it to its creation default.
+// The stored-flags sanitizer plus the token-backed gravity and uniform
+// keys. Kept separate from sanitizeBoardFlags on purpose: that one also
+// guards the board flags the gateway stores, where the token switches have
+// no business appearing. Absence is tolerated everywhere — payloads written
+// before a switch existed simply resolve it to its creation default.
 export function sanitizeUserDefaults(value: unknown): PinboardUserDefaults {
   const flags = sanitizeBoardFlags(value)
   if (!flags) return {}
+  const out: PinboardUserDefaults = { ...flags }
   const gravity = (value as Record<string, unknown>).gravity
-  return typeof gravity === "boolean" ? { ...flags, gravity } : flags
+  if (typeof gravity === "boolean") out.gravity = gravity
+  const uniform = (value as Record<string, unknown>).uniform
+  if (typeof uniform === "boolean") out.uniform = uniform
+  return out
 }
 
 export function loadUserDefaults(): PinboardUserDefaults {
@@ -147,7 +156,10 @@ export function loadUserDefaults(): PinboardUserDefaults {
 }
 
 export function saveUserDefaults(
-  values: Record<PinboardDefaultableKey, boolean> & { gravity: boolean }
+  values: Record<PinboardDefaultableKey, boolean> & {
+    gravity: boolean
+    uniform: boolean
+  }
 ): void {
   if (typeof window === "undefined") return
   try {
@@ -170,14 +182,16 @@ export function clearUserDefaults(): void {
 export function effectiveCreationDefaults(): Record<
   PinboardDefaultableKey,
   boolean
-> & { gravity: boolean } {
+> & { gravity: boolean; uniform: boolean } {
   const user = loadUserDefaults()
   const out = {} as Record<PinboardDefaultableKey, boolean> & {
     gravity: boolean
+    uniform: boolean
   }
   for (const key of PINBOARD_DEFAULTABLE_KEYS) {
     out[key] = user[key] ?? PINBOARD_DEFAULTABLE_FLAGS[key].creationDefault
   }
   out.gravity = user.gravity ?? GRAVITY_CREATION_DEFAULT
+  out.uniform = user.uniform ?? UNIFORM_CREATION_DEFAULT
   return out
 }

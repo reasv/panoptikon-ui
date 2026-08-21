@@ -221,6 +221,7 @@ export function PinBoardCtx({
     orients,
     highWater,
     float,
+    uniform,
     cropKey,
     cropMode,
     hasCrop,
@@ -272,7 +273,10 @@ export function PinBoardCtx({
     highWater: number,
     // Gravity off (the layout token's float switch): the size and rotation
     // verbs this menu owns resolve their own overlaps then
-    float: boolean,
+    float: boolean
+    // Uniform auto-layout (the token's uniform switch): the fill verbs
+    // this menu's layout-actions instance runs route by it
+    uniform: boolean,
     // The BOARD's open crop item (cropMode below is only whether it is this
     // pin): an overlap resolution run for another pin's verb has to hold it
     // still, so the crop window never moves mid-session
@@ -379,6 +383,8 @@ export function PinBoardCtx({
         rerollLayout,
         refitToView,
         reflowKeepProportions,
+        uniformLayout,
+        uniformSelection,
         growInPlace,
         growSelection,
         swapItems,
@@ -388,7 +394,8 @@ export function PinBoardCtx({
         hasAnchors,
         belowViewportKeys,
     } = usePinboardLayoutActions({
-        layout, crops, autoCrops, locks, orients, highWater, float, cropKey,
+        layout, crops, autoCrops, locks, orients, highWater, float, uniform,
+        cropKey,
         dbs, grid, pinboardRef, onLayoutChange,
         layoutAutoCrop: autoLayoutCrop,
         selectionAutoCrop: selectionCrop,
@@ -419,8 +426,8 @@ export function PinBoardCtx({
     const boardApi: PinboardBoardApi = {
         changeLayout, fillViewport, fillViewportRows, justifyCurrentRows,
         autoCropToCells, clearAutoCrops, shiftLayout, mirrorLayout,
-        rerollLayout, refitToView, reflowKeepProportions, growInPlace,
-        hasLocks, hasAnchors,
+        rerollLayout, refitToView, reflowKeepProportions, uniformLayout,
+        growInPlace, hasLocks, hasAnchors,
         highWater, isV1, boardWidth: gridWidth, upgradeGrid: onUpgradeGrid,
         belowViewportCount: () => belowViewportKeys()?.length ?? null,
         removeBelowViewport: () => onRemove(belowViewportKeys() ?? []),
@@ -532,6 +539,12 @@ export function PinBoardCtx({
                             <ContextMenuItem disabled={selected.length < 2}
                                 onClick={() => runVerb("Arrange", arrangeSelection(selected))}>
                                 Arrange
+                            </ContextMenuItem>
+                            {/* Arrange's identical-cells sibling: the same
+                                bounding box split into one repeated cell */}
+                            <ContextMenuItem disabled={selected.length < 2}
+                                onClick={() => runVerb("Uniform", uniformSelection(selected))}>
+                                Uniform
                             </ContextMenuItem>
                             <ContextMenuItem disabled={selected.length !== 2}
                                 onClick={() => runVerb("Swap", swapItems(selected[0], selected[1]))}>

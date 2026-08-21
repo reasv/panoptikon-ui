@@ -21,6 +21,7 @@ export type PinboardBoardApi = Pick<
     | "rerollLayout"
     | "refitToView"
     | "reflowKeepProportions"
+    | "uniformLayout"
     | "growInPlace"
     | "hasLocks"
     | "hasAnchors"

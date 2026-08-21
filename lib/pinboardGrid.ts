@@ -141,9 +141,12 @@ export function bakeGrid(grid: GridParams, scale: number): GridParams {
 //
 //   f        free-float: gravity/compaction OFF (absent = ON, the original
 //            behavior)
+//   u        uniform auto-layout: the fill verbs and auto-layout tile
+//            identical cells instead of composing a mosaic (absent =
+//            mosaic, the original behavior)
 //   w<int>   reference width in px for the proportional grid (absent = none)
 //
-// e.g. "v2~f", "v2!40~w1503", "v2.108.5.5.5!40~fw1503". The segment is
+// e.g. "v2~f", "v2!40~w1503", "v2.108.5.5.5!40~fuw1503". The segment is
 // append-only and parsed leniently: an unknown letter must never make the
 // whole token unparseable, since falling back to the v1 branch would
 // reinterpret the token as a record and wreck the board. Hence the ext
@@ -153,6 +156,9 @@ export function bakeGrid(grid: GridParams, scale: number): GridParams {
 export interface GridExt {
   // Gravity off: items stay exactly where they were put
   float: boolean
+  // Uniform auto-layout: the fill verbs tile identical cells (absent =
+  // mosaic)
+  uniform: boolean
   // Board width the layout's cell aspects were authored at (0 = unset)
   refWidth: number
 }
@@ -160,7 +166,11 @@ export interface GridExt {
 // Frozen: this is the shared module default handed out by parseExt and
 // spread into ParsedBoard, so a stray mutation on any value that aliased it
 // would poison every later parse.
-export const NO_EXT: GridExt = Object.freeze({ float: false, refWidth: 0 })
+export const NO_EXT: GridExt = Object.freeze({
+  float: false,
+  uniform: false,
+  refWidth: 0,
+})
 
 const TOKEN_RE =
   /^v(\d+)(?:\.(\d+)\.(\d+)\.(\d+)\.(\d+))?(?:!(\d+))?(?:~([^!~]*))?$/
@@ -168,16 +178,24 @@ const TOKEN_RE =
 function parseExt(ext: string | undefined): GridExt {
   if (!ext) return NO_EXT
   const w = /w(\d+)/.exec(ext)
-  return { float: ext.startsWith("f"), refWidth: w ? parseInt(w[1]) : 0 }
+  return {
+    float: ext.startsWith("f"),
+    // "u" can't be confused with the other switches: "f" is positional and
+    // "w" carries only digits — and clients from before the switch existed
+    // simply read past it (the ext charset was tolerant from the start)
+    uniform: ext.includes("u"),
+    refWidth: w ? parseInt(w[1]) : 0,
+  }
 }
 
-// Emits nothing at all when both switches are at their defaults, so boards
+// Emits nothing at all when every switch is at its default, so boards
 // that never touch them keep their exact historical token.
 function formatExt(ext?: Partial<GridExt>): string {
   if (!ext) return ""
   const refWidth =
     ext.refWidth && ext.refWidth > 0 ? Math.round(ext.refWidth) : 0
-  const body = `${ext.float ? "f" : ""}${refWidth > 0 ? `w${refWidth}` : ""}`
+  const body = `${ext.float ? "f" : ""}${ext.uniform ? "u" : ""}${
+    refWidth > 0 ? `w${refWidth}` : ""}`
   return body ? `~${body}` : ""
 }
 
@@ -242,6 +260,7 @@ export function parseBoard(param: string[]): ParsedBoard {
       isV1: false,
       highWater: parsed.highWater,
       float: parsed.float,
+      uniform: parsed.uniform,
       refWidth: parsed.refWidth,
     }
   }
