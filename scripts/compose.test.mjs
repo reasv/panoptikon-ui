@@ -26,6 +26,7 @@ const {
   longestSpanSeconds,
   naturalSize,
   normalizeComposeBackground,
+  resolveItemRendering,
   resolveItemTime,
 } = await import("../lib/pinboardCompose.ts")
 const { mosaicGeometry, resolvePinDraw, itemOutputSize } = await import(
@@ -489,14 +490,64 @@ function solveAt(width, only) {
       want: { kind: "span", start_cs: 200, end_cs: 1200 },
     },
     {
-      name: "a PAUSED video is a still at its trim start",
+      name: "a PAUSED video is a still at its own PLAYHEAD, not the trim start",
       input: {
         isVideo: true,
         trim: { start: 3, end: 9 },
-        state: { playing: false, muted: false, duration: 12 },
+        state: { playing: false, muted: false, duration: 12, currentTime: 5.3 },
+        duration: 12,
+      },
+      want: { kind: "still", at_cs: 530 },
+    },
+    {
+      name: "…even parked at 0 — a real playhead, not a missing one",
+      input: {
+        isVideo: true,
+        trim: { start: 3, end: 9 },
+        state: { playing: false, muted: false, duration: 12, currentTime: 0 },
+        duration: 12,
+      },
+      want: { kind: "still", at_cs: 0 },
+    },
+    {
+      name: "an ENDED element's playhead (== duration) clamps onto the last frame",
+      input: {
+        isVideo: true,
+        trim: null,
+        state: { playing: false, muted: false, duration: 12, currentTime: 12 },
+        duration: 12,
+      },
+      want: { kind: "still", at_cs: 1199 },
+    },
+    {
+      name: "a PAUSED video with no readable playhead falls back to its trim start",
+      input: {
+        isVideo: true,
+        trim: { start: 3, end: 9 },
+        state: { playing: false, muted: false, duration: 12, currentTime: null },
         duration: 12,
       },
       want: { kind: "still", at_cs: 300 },
+    },
+    {
+      name: "a PLAYING pin's span never reads the playhead",
+      input: {
+        isVideo: true,
+        trim: { start: 1.5, end: 8.5 },
+        state: { playing: true, muted: false, duration: 12, currentTime: 5.3 },
+        duration: 12,
+      },
+      want: { kind: "span", start_cs: 150, end_cs: 850 },
+    },
+    {
+      name: "…nor does a playing pin that degrades to a still (no knowable end)",
+      input: {
+        isVideo: true,
+        trim: null,
+        state: { playing: true, muted: false, duration: null, currentTime: 5.3 },
+        duration: null,
+      },
+      want: { kind: "still", at_cs: 0 },
     },
     {
       name: "an UNMOUNTED video is a still too",
@@ -704,6 +755,134 @@ function solveAt(width, only) {
   )
 }
 
+// ---- the closed video: composite the stored thumbnail --------------------
+//
+// docs/compose-still-video-parity-design.md §3: a video pin with no <video>
+// mounted is SHOWING its generated thumbnail, so the export composites the
+// thumbnail itself — a thumbnail-source image item whose rectangles are in
+// the THUMBNAIL's pixel space, exactly as the static mosaic draws it. A
+// thumbnail that cannot be measured falls back to the file-source still,
+// degraded and never refused.
+
+{
+  const THUMB = { width: 640, height: 480 }
+
+  check(
+    "a closed video with a measurable thumbnail renders as a thumbnail-source image",
+    (() => {
+      const r = resolveItemRendering({
+        isVideo: true, trim: { start: 1.5, end: 8.5 }, state: null,
+        duration: 12, thumbnail: THUMB,
+      })
+      return r.source === "thumbnail" && r.time.kind === "image"
+    })()
+  )
+  check(
+    "…with no thumbnail to measure it falls back to the file-source still",
+    (() => {
+      const r = resolveItemRendering({
+        isVideo: true, trim: { start: 1.5, end: 8.5 }, state: null,
+        duration: 12, thumbnail: null,
+      })
+      return r.source === "file" && shape(r.time) === shape({ kind: "still", at_cs: 150 })
+    })()
+  )
+  check(
+    "…and the 4096x4096 missing-thumbnail placeholder reads as no thumbnail",
+    (() => {
+      const r = resolveItemRendering({
+        isVideo: true, trim: { start: 1.5, end: 8.5 }, state: null,
+        duration: 12, thumbnail: { width: 4096, height: 4096 },
+      })
+      return r.source === "file" && shape(r.time) === shape({ kind: "still", at_cs: 150 })
+    })()
+  )
+  check(
+    "a MOUNTED stopped pin keeps the file source — its picture is the element's",
+    (() => {
+      const r = resolveItemRendering({
+        isVideo: true, trim: null,
+        state: { playing: false, muted: false, duration: 12, currentTime: 4 },
+        duration: 12, thumbnail: THUMB,
+      })
+      return r.source === "file" && shape(r.time) === shape({ kind: "still", at_cs: 400 })
+    })()
+  )
+  check(
+    "a playing pin keeps its trim-keyed span, thumbnail or not",
+    (() => {
+      const r = resolveItemRendering({
+        isVideo: true, trim: { start: 1.5, end: 8.5 }, state: PLAYING,
+        duration: 12, thumbnail: THUMB,
+      })
+      return r.source === "file" && shape(r.time) === shape({ kind: "span", start_cs: 150, end_cs: 850 })
+    })()
+  )
+  check(
+    "a non-video never composes from a thumbnail",
+    resolveItemRendering({
+      isVideo: false, trim: null, state: null, duration: null, thumbnail: THUMB,
+    }).source === "file"
+  )
+
+  // …and through the board builder. The thumbnail dims are deliberately NOT
+  // proportional to the index's 1920x1080, so a builder still solving these
+  // rectangles in file space fails the numbers loudly.
+  const thumbOf = (key) => (key.endsWith(VIDEO_SHA) ? THUMB : null)
+  const doc = await built({ probe: () => null, thumb: thumbOf })
+  const geo = solveAt(BOARD_W).geometry
+  const placement = geo.placements[0]
+  const draw = resolvePinDraw(placement, THUMB.width, THUMB.height, {
+    left: placement.left - geo.cropLeft,
+    top: placement.top - geo.cropTop,
+    width: placement.width,
+    height: placement.height,
+  })
+  const item = doc.body.items[0]
+  check(
+    "a closed video composes as a thumbnail-source image item, with no audio",
+    item.source === "thumbnail" && item.time.kind === "image" && item.audio === false,
+    shape(item)
+  )
+  check(
+    "…whose source rect is in the THUMBNAIL's pixel space",
+    item.src.x === Math.floor(draw.src.x * THUMB.width) &&
+      item.src.y === Math.floor(draw.src.y * THUMB.height) &&
+      item.src.w === Math.round(draw.src.w * THUMB.width) &&
+      item.src.h === Math.round(draw.src.h * THUMB.height) &&
+      item.src.x + item.src.w <= THUMB.width &&
+      item.src.y + item.src.h <= THUMB.height,
+    `${shape(item.src)} vs ${shape(draw.src)} of ${THUMB.width}x${THUMB.height}`
+  )
+  check(
+    "…while the image pin beside it keeps its file source",
+    doc.body.items[1].source === "file",
+    shape(doc.body.items[1])
+  )
+  const fallback = await built({ probe: () => null, thumb: () => null })
+  check(
+    "a closed video with no measurable thumbnail composes the file-source still",
+    fallback.body.items[0].source === "file" &&
+      shape(fallback.body.items[0].time) === shape({ kind: "still", at_cs: 150 }),
+    shape(fallback.body.items[0])
+  )
+  const noProbe = await built({ probe: () => null })
+  check(
+    "…and a builder given no thumb probe at all composes the same fallback",
+    noProbe.body.items[0].source === "file" &&
+      shape(noProbe.body.items[0].time) === shape({ kind: "still", at_cs: 150 }),
+    shape(noProbe.body.items[0])
+  )
+  const playing = await built({ thumb: thumbOf })
+  check(
+    "a playing pin's span is untouched by the thumbnail probe",
+    playing.body.items[0].source === "file" &&
+      shape(playing.body.items[0].time) ===
+        shape({ kind: "span", start_cs: 150, end_cs: 850 }),
+    shape(playing.body.items[0])
+  )
+}
+
 // ---- the DOM probe's state rules ---------------------------------------
 
 {
@@ -742,6 +921,27 @@ function solveAt(width, only) {
       })
       return s.muted === true && s.duration === null
     })()
+  )
+  check(
+    "the playhead is read off the element, 0 included",
+    videoStateOf({
+      paused: true, ended: false, readyState: 4, muted: false, duration: 9,
+      currentTime: 3.5,
+    }).currentTime === 3.5 &&
+      videoStateOf({
+        paused: true, ended: false, readyState: 4, muted: false, duration: 9,
+        currentTime: 0,
+      }).currentTime === 0
+  )
+  check(
+    "…and a non-finite (or absent) playhead reads as unknown",
+    videoStateOf({
+      paused: true, ended: false, readyState: 4, muted: false, duration: 9,
+      currentTime: NaN,
+    }).currentTime === null &&
+      videoStateOf({
+        paused: true, ended: false, readyState: 4, muted: false, duration: 9,
+      }).currentTime === null
   )
 }
 

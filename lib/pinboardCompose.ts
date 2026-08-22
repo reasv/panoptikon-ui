@@ -30,7 +30,8 @@
 //      a pin the capture box cuts has to be cut in BOTH spaces or it arrives
 //      squashed (`clipPinDrawToCanvas`).
 //   4. TIME. A canvas composites one frame; a composition composites a span,
-//      a frozen frame or a still image per item (see `resolveItemTime`) — and
+//      a frozen frame, a still image, or a closed video's stored thumbnail
+//      per item (see `resolveItemRendering`) — and
 //      every item shorter than the output is held open by a loop buffer, whose
 //      size the client has to estimate before it asks (`estimateLoopBytes`).
 //
@@ -159,6 +160,13 @@ export interface ItemTimeInput {
    * while the envelope is in flight.
    */
   spanCapableImageMimes?: readonly string[]
+  /**
+   * The natural pixel size of the thumbnail `<img>` a CLOSED video pin is
+   * rendering (`probePinThumbnailSize`), null or absent when there is none
+   * to measure. Read only by `resolveItemRendering` — the time table itself
+   * never consults it.
+   */
+  thumbnail?: { width: number; height: number } | null
 }
 
 /**
@@ -187,11 +195,20 @@ export interface ItemTimeInput {
  *   an untrimmed video whose duration neither the index nor the element knows
  *   composes as a still instead of being refused.
  *
- *   PAUSED, ENDED OR UNMOUNTED → `still`. Its frame is the trim's start, which
- *   for an equal-bounds trim IS the freeze frame the pin is parked on. An
- *   untrimmed stopped video freezes at 0 — accepted, and worth naming: the
- *   board shows such a pin its THUMBNAIL, which is not usually frame 0, so the
- *   animated save can differ from the still one there.
+ *   PAUSED OR ENDED → `still` at the element's own PLAYHEAD: the frame the
+ *   player is parked on IS the picture on the board, exactly as the static
+ *   mosaic draws it — and unlike a playing span's, this playhead is not a
+ *   moving number, so a new pause position minting a new artifact is correct.
+ *   An ended element's `currentTime == duration` clamps onto the last frame
+ *   (below), which is what an ended player shows. The trim's start stands in
+ *   only when the playhead is unknowable.
+ *
+ *   CLOSED (no element at all) → `still` at the trim's start, 0 untrimmed —
+ *   which is frame 0, NOT the thumbnail the board actually shows for such a
+ *   pin. This is the degraded FALLBACK, not the rule: the builders go through
+ *   `resolveItemRendering`, which composes a closed pin's stored thumbnail
+ *   itself whenever the on-screen `<img>` can be measured, and only lands
+ *   here when it cannot.
  *
  * A still's timestamp is clamped inside the item's recorded length: the server
  * refuses `at_cs` at or past it by name (`still_past_end`), and there is
@@ -220,7 +237,8 @@ export function resolveItemTime(input: ItemTimeInput): ItemTime {
     input.duration != null && isFinite(input.duration) && input.duration > 0
       ? input.duration
       : (input.state?.duration ?? null)
-  if (input.state?.playing) {
+  const state = input.state
+  if (state?.playing) {
     const start = trim?.start ?? 0
     const end = trim?.end ?? duration
     if (end != null) {
@@ -231,7 +249,63 @@ export function resolveItemTime(input: ItemTimeInput): ItemTime {
       if (endCs > startCs) return { kind: "span", start_cs: startCs, end_cs: endCs }
     }
   }
-  return { kind: "still", at_cs: stillCs(trim?.start ?? 0, duration) }
+  // The parked playhead, for a MOUNTED stopped element only: a playing pin
+  // that fell through (no knowable end, an equal-bounds trim) keeps the
+  // trim-keyed freeze, because its playhead is still a moving number.
+  const parkedAt =
+    state != null && !state.playing && state.currentTime != null
+      ? state.currentTime
+      : (trim?.start ?? 0)
+  return { kind: "still", at_cs: stillCs(parkedAt, duration) }
+}
+
+/** Where a composed item's pixels come from, as the document's `source`. */
+export type ComposeItemSource = NonNullable<ComposeItem["source"]>
+
+export interface ItemRendering {
+  time: ItemTime
+  source: ComposeItemSource
+}
+
+/**
+ * What one pin is showing AND where its pixels live: `resolveItemTime`, plus
+ * the one case the time enum alone cannot spell
+ * (docs/compose-still-video-parity-design.md §3). A CLOSED video — no
+ * `<video>` mounted — is showing its generated THUMBNAIL, so the honest
+ * export composites the stored thumbnail itself (`source: thumbnail`, an
+ * image in every way) rather than seeking the file to a frame the board
+ * never displayed.
+ *
+ * The gate is the measured `thumbnail` size, because it is also the item's
+ * source-rectangle space: without it there is nothing to solve the geometry
+ * in, so the pin falls back to `resolveItemTime`'s file-source still —
+ * degraded, never refused. The server rejects a thumbnail item it has no
+ * blob for (`thumbnail_missing`), and this gate is what keeps a correct
+ * client from ever building one it did not just measure on screen.
+ */
+export function resolveItemRendering(input: ItemTimeInput): ItemRendering {
+  if (
+    input.isVideo &&
+    input.state == null &&
+    input.thumbnail &&
+    !isPlaceholderThumbnail(input.thumbnail)
+  ) {
+    return { time: { kind: "image" }, source: "thumbnail" }
+  }
+  return { time: resolveItemTime(input), source: "file" }
+}
+
+/**
+ * The missing-thumbnail placeholder, which the thumbnail endpoint serves as
+ * an ordinary 200 at exactly 4096x4096 — a size no real thumbnail can reach
+ * (generation caps them at 1024), so the naturals alone identify it. A pin
+ * showing it has no stored thumbnail to composite; sending
+ * `source: thumbnail` anyway would be refused by name (`thumbnail_missing`)
+ * and fail the whole board, so it reads as "nothing to measure" and takes
+ * the file-source fallback (design §3: degraded, never refused).
+ */
+function isPlaceholderThumbnail(size: { width: number; height: number }): boolean {
+  return size.width === 4096 && size.height === 4096
 }
 
 /**
@@ -627,6 +701,13 @@ export interface CompositionOptions {
   getMeta: (sha256: string) => Promise<ComposeItemMeta | null>
   /** The live state of one pin's <video>, or null when it has none. */
   probe: (key: string) => PinVideoState | null
+  /**
+   * The natural size of the thumbnail a CLOSED pin is rendering, or null
+   * when there is none to measure (`probePinThumbnailSize`). Optional
+   * because only a mounted board can answer; absent reads as "unmeasurable"
+   * everywhere, which composes the file-source fallback still.
+   */
+  thumb?: (key: string) => { width: number; height: number } | null
 }
 
 export interface CompositionDoc {
@@ -807,6 +888,7 @@ export async function buildCompositionDoc(
         placement,
         meta: metas.get(placement.sha256) ?? null,
         state: opts.probe(placement.key),
+        thumb: opts.thumb?.(placement.key) ?? null,
         origin: { left: geo.cropLeft, top: geo.cropTop },
         cell: null,
         canvasW,
@@ -970,6 +1052,9 @@ export function buildItemCompositionDoc(
     placement,
     meta,
     state: opts.state,
+    // Never the thumbnail: this builder is only offered for a pin that
+    // resolves to a SPAN, which a closed pin by definition does not.
+    thumb: null,
     origin: { left: 0, top: 0 },
     // The cell IS the canvas: the crop's own aspect fills it, so the contain
     // fit inside `resolvePinDraw` is the identity up to the half pixel the
@@ -1079,6 +1164,8 @@ function composeItem(input: {
   placement: PinPlacement
   meta: ComposeItemMeta | null
   state: PinVideoState | null
+  /** The closed pin's measured thumbnail size, or null (see ItemTimeInput). */
+  thumb: { width: number; height: number } | null
   origin: { left: number; top: number }
   /** An explicit destination box, or null to use the placement's own cell. */
   cell: DrawRect | null
@@ -1092,8 +1179,25 @@ function composeItem(input: {
   // The FULL hash, never the board's 10-char prefix: the document is cache-keyed
   // on what it sends, so two spellings of one item would be two artifacts.
   const sha256 = meta?.sha256
-  const natural = naturalSize(meta, state)
-  if (!sha256 || !natural) return null
+  if (!sha256) return null
+
+  const isVideo = (meta?.type ?? "").startsWith("video/")
+  const rendering = resolveItemRendering({
+    isVideo,
+    trim: placement.trim,
+    state,
+    duration: meta?.duration ?? null,
+    mime: meta?.type ?? null,
+    spanCapableImageMimes: input.spanMimes,
+    thumbnail: input.thumb,
+  })
+  // A thumbnail-source item's rectangles are solved in the THUMBNAIL's own
+  // pixels — the static compositor's source-space choice (`resolvePinDraw`
+  // reads the same `<img>`'s naturals): same aspect, different numbers, and
+  // the server clamps `src` against the real input either way.
+  const natural =
+    rendering.source === "thumbnail" ? input.thumb : naturalSize(meta, state)
+  if (!natural) return null
 
   const cell = input.cell ?? {
     left: placement.left - input.origin.left,
@@ -1116,17 +1220,13 @@ function composeItem(input: {
   const dest = destPixels(clipped.dest, input.canvasW, input.canvasH)
   if (!src || !dest) return null
 
-  const isVideo = (meta?.type ?? "").startsWith("video/")
-  const time = resolveItemTime({
-    isVideo,
-    trim: placement.trim,
-    state,
-    duration: meta?.duration ?? null,
-    mime: meta?.type ?? null,
-    spanCapableImageMimes: input.spanMimes,
-  })
+  const time = rendering.time
   return {
     sha256,
+    // Stated even when it is the default "file": the document is cache-keyed
+    // on what it sends, and an explicit field cannot drift from the server's
+    // serde default.
+    source: rendering.source,
     src,
     dest,
     // The pin's orientation, passed through verbatim — the same D4

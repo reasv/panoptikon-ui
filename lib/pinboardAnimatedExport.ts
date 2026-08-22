@@ -20,7 +20,7 @@ import {
 } from "@/lib/pinboardCompose"
 import { parsePlacements, type PinPlacement } from "@/lib/pinboardGeometry"
 import { effectiveGrid, gridScale, parseBoard } from "@/lib/pinboardGrid"
-import { probePinVideoState } from "@/lib/pinboardMedia"
+import { probePinThumbnailSize, probePinVideoState } from "@/lib/pinboardMedia"
 import { findBoardElement, findBoardViewport } from "@/lib/pinboardPreview"
 import { useSelectedDBs } from "@/lib/state/database"
 import {
@@ -61,8 +61,10 @@ import { abandonJob, awaitTerminal, raceDeadline } from "@/lib/videoClip"
 //
 // Two things this cannot do that the canvas export can, and both are why the
 // document is built at click time rather than kept around: it needs each pin's
-// LIVE play state (a paused pin composes as a frozen frame, a playing one as a
-// span), and it needs the chosen PRESET (a 720-tall animated-image preset
+// LIVE play state (a paused pin composes the frame it is parked on, a playing
+// one a span, a closed one its on-screen thumbnail — see
+// lib/pinboardCompose's resolveItemRendering), and it needs the chosen PRESET
+// (a 720-tall animated-image preset
 // solves a smaller canvas than an mp4 does — the server refuses an over-tall
 // canvas rather than rescaling one, which is the whole pixel-for-pixel point).
 
@@ -546,6 +548,7 @@ export function useAnimatedMosaicExport(
           background: pageBackground(),
           getMeta,
           probe: probePinVideoState,
+          thumb: probePinThumbnailSize,
         }),
     })
   }

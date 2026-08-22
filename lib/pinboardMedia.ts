@@ -70,16 +70,25 @@ export function findPinVideoFrame(key: string): PinSource | null {
  * end bound, and the server refuses one without it. The metadata's duration
  * wins where both exist; this is the fallback, not the authority.
  *
- * No playhead position is ever read. The composition sends what the pin is
- * SET UP to show (its trim, its play state), never where it happens to be a
- * moment after the click — a document keyed on a moving number would mint a
- * fresh artifact for every export of an unchanged board.
+ * The playhead position rides along too, but it is only ever COMPOSED for a
+ * stopped element: a paused or ended player's playhead IS the picture on the
+ * board, exactly as the static mosaic draws it, so a still keyed on it is the
+ * same-picture rule at work. A PLAYING pin's span stays keyed on its trim,
+ * never on where the playhead happens to be a moment after the click — a
+ * document keyed on a moving number would mint a fresh artifact for every
+ * export of an unchanged board.
  */
 export interface PinVideoState {
   playing: boolean
   muted: boolean
   /** The element's own duration in seconds, when it is a finite number. */
   duration: number | null
+  /**
+   * The element's playhead in seconds, null when it is not a finite number.
+   * Read for the paused/ended freeze frame (see above); never composed for a
+   * playing element.
+   */
+  currentTime: number | null
   /**
    * The element's NATURAL pixel size (`videoWidth`/`videoHeight`), null until
    * it has metadata.
@@ -107,6 +116,8 @@ export interface VideoStateProbe {
   readyState: number
   muted: boolean
   duration: number
+  /** Optional: a plain-object fixture without one reads as "unknown". */
+  currentTime?: number
   /** Optional: an element with no metadata yet reports 0 for both. */
   videoWidth?: number
   videoHeight?: number
@@ -127,6 +138,7 @@ export function videoStateOf(video: VideoStateProbe | null): PinVideoState | nul
   const duration = video.duration
   const natural = (value: number | undefined) =>
     typeof value === "number" && isFinite(value) && value > 0 ? value : null
+  const currentTime = video.currentTime
   return {
     playing:
       !video.paused && !video.ended && video.readyState >= HAVE_CURRENT_DATA,
@@ -134,6 +146,12 @@ export function videoStateOf(video: VideoStateProbe | null): PinVideoState | nul
     duration:
       typeof duration === "number" && isFinite(duration) && duration > 0
         ? duration
+        : null,
+    // 0 is a real playhead (a pin parked at its first frame), so only a
+    // non-finite reading is "unknown".
+    currentTime:
+      typeof currentTime === "number" && isFinite(currentTime) && currentTime >= 0
+        ? currentTime
         : null,
     width: natural(video.videoWidth),
     height: natural(video.videoHeight),
@@ -153,6 +171,38 @@ export function probePinVideoState(key: string): PinVideoState | null {
     `[data-pin-key="${CSS.escape(key)}"] video`
   )
   return videoStateOf(video)
+}
+
+/** The natural pixel size of the thumbnail a closed pin is rendering. */
+export interface PinThumbnailSize {
+  width: number
+  height: number
+}
+
+/**
+ * The natural size of the `<img>` a pin is showing, or null when there is
+ * none to measure (an unmounted board, an image still loading).
+ *
+ * This is the source-rectangle space of a `source: thumbnail` composition
+ * item (docs/compose-still-video-parity-design.md §3): the closed video's
+ * export composites the stored thumbnail, so its `src` rect is measured in
+ * the thumbnail's own pixels — the exact numbers the static mosaic draws
+ * with, read off the same element. Probed from the DOM for the reason
+ * `findPinVideoFrame` documents. Only consulted for a pin with no mounted
+ * `<video>`; a null answer is the builder's cue to fall back to a
+ * file-source still.
+ */
+export function probePinThumbnailSize(key: string): PinThumbnailSize | null {
+  if (typeof document === "undefined") return null
+  const img = document.querySelector<HTMLImageElement>(
+    `[data-pin-key="${CSS.escape(key)}"] img`
+  )
+  if (!img || !img.complete) return null
+  if (!(img.naturalWidth > 0) || !(img.naturalHeight > 0)) return null
+  // Raw naturals, placeholder included: whether what is measured is a real
+  // thumbnail is `resolveItemRendering`'s question (the pure layer, where
+  // the answer is testable), not this probe's.
+  return { width: img.naturalWidth, height: img.naturalHeight }
 }
 
 export interface PinSourceRequest {

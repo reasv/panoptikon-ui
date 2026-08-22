@@ -1849,6 +1849,8 @@ export interface components {
             dest: components["schemas"]["Rect"];
             /** @description Item content hash; resolved against the request's index database. */
             sha256: string;
+            /** @description Where this item's pixels come from; defaults to the item's file. */
+            source?: components["schemas"]["ItemSource"];
             src: components["schemas"]["Rect"];
             time: components["schemas"]["ItemTime"];
             transform?: components["schemas"]["Transform"];
@@ -2486,6 +2488,20 @@ export interface components {
             /** Format: int64 */
             width: number | null;
         };
+        /**
+         * @description Which of an item's stored pictures the composition reads
+         *     (docs/compose-still-video-parity-design.md §2).
+         *
+         *     `File` is the item's own file on disk — everything before this field
+         *     existed. `Thumbnail` is the stored thumbnail blob the board renders for a
+         *     video no `<video>` element is mounted for: it has no file path and no
+         *     recorded source timestamp, so it can be neither referenced as a file nor
+         *     recreated by a seek — the API layer materializes the blob to a per-job
+         *     temp file instead. A thumbnail is a still image in every way, so admission
+         *     requires `time.kind = image` for it.
+         * @enum {string}
+         */
+        ItemSource: "file" | "thumbnail";
         /**
          * @description What an item is showing. Replaces the design's separate "playing" and
          *     "muted" flags (§0.5): a span *is* playing, a still and an image are
@@ -7402,7 +7418,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Unknown preset, or a document the composition limits refuse: too many items, a canvas that is odd/too large/taller than the preset renders, a destination rectangle outside the canvas or at an odd position, a span whose end is not after its start, a still frozen at or past its item's recorded length, an unusable frame rate or length cap, or loop buffers over `max_mosaic_loop_mb` (the message carries the estimate) */
+            /** @description Unknown preset, or a document the composition limits refuse: too many items, a canvas that is odd/too large/taller than the preset renders, a destination rectangle outside the canvas or at an odd position, a span whose end is not after its start, a still frozen at or past its item's recorded length, a thumbnail-source item whose time is not `image` or whose item has no stored thumbnail, an unusable frame rate or length cap, or loop buffers over `max_mosaic_loop_mb` (the message carries the estimate) */
             422: {
                 headers: {
                     [name: string]: unknown;
