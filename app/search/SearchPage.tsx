@@ -53,14 +53,19 @@ export function SearchPageContent({ initialQuery, isRestrictedMode }:
     { initialQuery: SearchQueryArgs, isRestrictedMode: boolean }) {
     const [sidebarOpen, _] = useSideBarOpen()
     const [updateRibbonVisible, setUpdateRibbonVisible] = useState(false)
+    // A maximized board owns the whole view: the sidebar is a search consumer
+    // like everything else the maximize hides, and `sb` stays untouched so it
+    // is back when the board shrinks.
+    const pinboardMaximized = usePinboardMaximized()
+    const sidebarVisible = sidebarOpen && !pinboardMaximized
     return (
         <div className="flex h-screen w-full flex-col">
             <DesktopUpdateRibbon onVisibilityChange={setUpdateRibbonVisible} />
             <div className="flex min-h-0 flex-1">
-                <SideBar />
+                {!pinboardMaximized && <SideBar />}
                 {!isRestrictedMode && <ScanDrawer />}
                 <div className={cn('p-4 transition-all duration-300 mx-auto',
-                    sidebarOpen ? 'w-full lg:w-1/2 xl:w-2/3 2xl:w-3/4 4xl:w-[80%] 5xl:w-[82%]' : 'w-full'
+                    sidebarVisible ? 'w-full lg:w-1/2 xl:w-2/3 2xl:w-3/4 4xl:w-[80%] 5xl:w-[82%]' : 'w-full'
                 )}>
                     <MultiSearchView
                         initialQuery={initialQuery}
