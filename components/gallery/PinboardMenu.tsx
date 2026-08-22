@@ -7,6 +7,7 @@ import {
     Grid2x2Plus,
     Grid3x3,
     History,
+    LayoutGrid,
     LibraryBig,
     Magnet,
     Minimize2,
@@ -494,7 +495,8 @@ export function PinboardFullscreenBar() {
     // "Scale With Window" is a flag whose two edges both write the token,
     // so it is gated on a board existing for the same reason.
     const [proportional] = useGalleryPinProportional()
-    const { float, setFloat, setProportional, records } = usePinBoard()
+    const { float, setFloat, uniform, setUniform, setProportional, records } =
+        usePinBoard()
     const hasPins = records.length > 0
     const boardApi = usePinboardBoardApi(s => s.api)
     const { save, pbid, board, openLibrary, openHistory, openRename, dialogs } =
@@ -648,6 +650,23 @@ export function PinboardFullscreenBar() {
                         onClick={() => setFloat(!float)}
                     >
                         <Magnet className="h-5 w-5" />
+                    </ToolbarButton>
+                    {/* The auto-layout ALGORITHM: identical cells instead
+                        of the mosaic, for the fill verbs and the
+                        auto-layout trigger. Token state like gravity, so it
+                        waits for the first pin the same way; flipping it
+                        moves nothing until the next fill. */}
+                    <ToolbarButton
+                        title={!hasPins
+                            ? "Pin something first — the algorithm choice is stored in the board layout"
+                            : uniform
+                                ? "Uniform Auto-Layout on: Fill Viewport and auto-layout arrange items in identical cells. Click to compose a mosaic instead"
+                                : "Uniform Auto-Layout off: Fill Viewport and auto-layout compose a mosaic. Click to arrange in identical cells instead"}
+                        active={hasPins && uniform}
+                        disabled={!hasPins}
+                        onClick={() => setUniform(!uniform)}
+                    >
+                        <LayoutGrid className="h-5 w-5" />
                     </ToolbarButton>
                     {/* Scale With Window: freeze the cell shape and let the
                         whole grid zoom with the container. Needs the mounted
