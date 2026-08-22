@@ -11,6 +11,7 @@
     "start": "next start",
     "gen:api": "openapi-typescript ../panoptikon/openapi.json -o lib/panoptikon.d.ts --default-non-nullable=false",
     "test:overlap": "node --experimental-strip-types scripts/overlap.test.mjs",
+    "test:crop": "node --experimental-strip-types scripts/crop.test.mjs",
     "test:mosaic": "node --experimental-strip-types scripts/mosaic.test.mjs",
     "test:uniform": "node --experimental-strip-types scripts/uniform.test.mjs",
     "test:trimparam": "node --experimental-strip-types scripts/trimparam.test.mjs",

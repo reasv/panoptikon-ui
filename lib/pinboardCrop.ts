@@ -117,10 +117,23 @@ export function composeCrops(
 // letterbox visibility is absolute — 2% of a 1000px cell is a 20px bar.
 export const AUTO_CROP_MAX_LETTERBOX_PX = 4
 
-// Fit-to-cell auto crop: the centered window over the base (the
-// manual-cropped region) whose aspect matches the cell of cellW x cellH
-// pixels. Computed from the BASE aspect only, so recomputing for the same
-// cell is idempotent — the result never feeds back into itself.
+// Vertical cuts at least this deep (as a fraction of the base height)
+// anchor to the TOP of the base instead of centering. Top-weighted content
+// — heads in portraits, most obviously — sits at an unpredictable distance
+// from the top edge, so there is no safe nonzero top margin: once the cut
+// is big enough to threaten it, the only correct top crop is none at all
+// (the grid thumbnails' rule). Below the threshold the cut stays centered,
+// where evening out a sliver is less noticeable than taking it all from
+// one edge. The exact value only picks between those two regimes at a
+// boundary where both are acceptable; tuned by eye.
+export const AUTO_CROP_TOP_ANCHOR_CUT = 0.15
+
+// Fit-to-cell auto crop: the window over the base (the manual-cropped
+// region) whose aspect matches the cell of cellW x cellH pixels — centered,
+// except that deep vertical cuts anchor to the top (see
+// AUTO_CROP_TOP_ANCHOR_CUT). Computed from the BASE aspect only, so
+// recomputing for the same cell is idempotent — the result never feeds
+// back into itself.
 export function computeAutoCrop(
   baseAspect: number,
   cellW: number,
@@ -136,9 +149,12 @@ export function computeAutoCrop(
     return clampCrop({ x: (1 - f) / 2, y: 0, w: f, h: 1 })
   }
   // Base taller than the cell: letterbox at the sides, crop top and bottom
+  // — or bottom only, once the cut is deep enough to threaten top-weighted
+  // content
   const f = baseAspect / cellAspect
   if ((1 - f) * cellW < AUTO_CROP_MAX_LETTERBOX_PX) return null
-  return clampCrop({ x: 0, y: (1 - f) / 2, w: 1, h: f })
+  const y = 1 - f > AUTO_CROP_TOP_ANCHOR_CUT ? 0 : (1 - f) / 2
+  return clampCrop({ x: 0, y, w: 1, h: f })
 }
 
 // Video playback range in seconds; null bounds are unset. start === end
