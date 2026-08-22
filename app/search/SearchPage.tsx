@@ -38,8 +38,6 @@ import { overscanItemsFor, topRowHighlightItem, virtualPageAnchor, virtualPageOf
 import { useSearchParams, type ReadonlyURLSearchParams } from "next/navigation"
 import { ResultCellSkeleton } from "@/components/ResultCellSkeleton"
 import Link from "next/link"
-import { useScanDrawerOpen } from "@/lib/state/scanDrawer"
-import { ScanDrawer } from "@/components/scan/ScanDrawer"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { components } from "@/lib/panoptikon"
@@ -63,7 +61,6 @@ export function SearchPageContent({ initialQuery, isRestrictedMode }:
             <DesktopUpdateRibbon onVisibilityChange={setUpdateRibbonVisible} />
             <div className="flex min-h-0 flex-1">
                 {!pinboardMaximized && <SideBar />}
-                {!isRestrictedMode && <ScanDrawer />}
                 <div className={cn('p-4 transition-all duration-300 mx-auto',
                     sidebarVisible ? 'w-full lg:w-1/2 xl:w-2/3 2xl:w-3/4 4xl:w-[80%] 5xl:w-[82%]' : 'w-full'
                 )}>
@@ -418,7 +415,6 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
             user_data_db: dbs.user_data_db,
         })
     }, [dbs])
-    const [scanOpen, setScanOpen] = useScanDrawerOpen()
 
     const selectedItem = useItemSelection((state) => state.getSelected())
     // Keeps the gallery index pointing at the selected item. Deliberately keyed
@@ -578,7 +574,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                     >
                         <Settings className="h-4 w-4" />
                     </Toggle>
-                    {!isRestrictedMode && <Link href={scanLink} onClick={() => setScanOpen(true)}>
+                    {!isRestrictedMode && <Link href={scanLink}>
                         <Button title="File Scan & Indexing" variant="ghost" size="icon">
                             <ScanEye className="h-4 w-4" />
                         </Button>

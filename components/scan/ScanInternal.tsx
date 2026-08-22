@@ -1,5 +1,4 @@
 "use client"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { SwitchDB } from "@/components/sidebar/options/switchDB"
 import { CreateNewDB } from "@/components/scan/CreateDB"
 import { Config } from "@/components/scan/Config"
@@ -10,10 +9,6 @@ import { JobQueue } from "@/components/scan/JobQueue"
 import { JobHistory } from "@/components/scan/JobHistory"
 import { FailedFiles } from "@/components/scan/FailedFiles"
 import { FolderLists } from "@/components/scan/FolderLists"
-import { Button } from "@/components/ui/button"
-import { SidebarClose } from "lucide-react"
-import { useScanDrawerOpen } from "@/lib/state/scanDrawer"
-import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 
 export function ScanInternal() {
     // pb-4: cards only carry a top margin (FilterContainer), so without this
@@ -32,24 +27,4 @@ export function ScanInternal() {
         <JobHistory />
         <FailedFiles />
     </div>
-}
-
-export function ScanDrawer() {
-    const [open, setOpen] = useScanDrawerOpen()
-    if (!open) {
-        return null
-    }
-    return (
-        <Drawer open={open} onOpenChange={setOpen}>
-            <DrawerTitle title="Scan" />
-            <DrawerContent>
-                <ScrollArea className="h-svh w-full">
-                    <Button onClick={() => setOpen(false)} title="Back to Search" variant="ghost" size="icon">
-                        <SidebarClose className="h-4 w-4" />
-                    </Button>
-                    <ScanInternal />
-                </ScrollArea>
-            </DrawerContent>
-        </Drawer>
-    )
 }
