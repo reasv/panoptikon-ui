@@ -500,6 +500,26 @@ const of = (url) => new URLSearchParams(url)
 }
 
 {
+  // With the gallery open the link is a gallery jump: it carries the target
+  // page's first item as `gi`, the same value the scrubber's own click writes
+  // (SearchPage's setVirtualPage), never the index the user is looking at now.
+  const base = params("top=17&gi=5")
+  const deep = of(getScrollPositionURL(base, 37, 10, true))
+  check(
+    "a gallery-open link carries gi = top = (N-1)*k",
+    deep.get("gi") === "360" && deep.get("top") === "360",
+    deep.toString()
+  )
+  check("…with page removed", !deep.has("page"), deep.toString())
+  const first = of(getScrollPositionURL(base, 1, 10, true))
+  check(
+    "…and page 1 writes gi=0 explicitly (presence opens the gallery) with no anchor",
+    first.get("gi") === "0" && !first.has("top"),
+    first.toString()
+  )
+}
+
+{
   // Pages mode's link is untouched by any of this.
   const base = params("tag.pos_match_all=cat&top=17")
   const paged = of(getSearchPageURL(base, 4))

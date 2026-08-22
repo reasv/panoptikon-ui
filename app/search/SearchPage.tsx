@@ -532,35 +532,37 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     const scrollTotalPages = k > 0 ? (Math.ceil((nResults || 1) / k) || 1) : 1
     const setVirtualPage = (newPage: number) => {
         const anchor = virtualPageAnchor(newPage, k)
-        // `gi` is cleared in the SAME tick, which is what makes the click and
+        // `gi` is written in the SAME tick, which is what makes the click and
         // its own middle-clicked link one operation: getScrollPositionURL
-        // deletes `gi` for the same reason (a global gallery index would open
-        // the target page at the item the user is looking at NOW). With the
-        // gallery open, a scrubber jump is therefore a grid navigation that
-        // closes it — the destination is a position in the grid, and there is
-        // no item at it to keep the gallery on.
+        // writes the same value under the same condition. With the gallery
+        // OPEN, a scrubber click moves it to the first item of the target
+        // virtual page — the pages-mode behaviour, item for item: there a
+        // page click lands the open gallery on the new page's first item
+        // (useSearchPage's setGi(0)), and the gallery reads the whole set
+        // here, so the global index can say the same thing directly. The
+        // anchor carries the identical value, the rule the gallery's own
+        // navigation already follows ("the anchor follows the position").
+        // With the gallery CLOSED the click is a grid navigation and `gi`
+        // stays cleared — a leftover global index would reopen the gallery.
         //
-        // "replace" on the clear and "push" on the anchor: nuqs coalesces the
+        // "replace" on `gi` and "push" on the anchor: nuqs coalesces the
         // batch into one URL update and escalates it to a pushed entry because
-        // one member asked for push, so Back undoes the whole jump at once.
+        // one member asked for push, so Back undoes the whole jump at once —
+        // gallery position included.
         //
-        // Step 3 may revisit this once the gallery reads the whole set: a
-        // global `gi` could then MOVE the open gallery to the target page
-        // instead of closing it.
-        // The saved pixel offset must not survive the jump: clearing `gi`
-        // remounts the grid, and a fresh mount lets a non-zero saved offset
-        // WIN over the anchor ("a quick look at one item must not shift the
-        // grid") — which here would silently discard the jump in favor of
-        // wherever the grid last sat. A scrubber jump is exactly the case
-        // that rationale does not cover.
+        // The saved pixel offset must not survive the jump either way: on the
+        // next grid mount a non-zero saved offset WINS over the anchor ("a
+        // quick look at one item must not shift the grid") — which here would
+        // silently discard the jump in favor of wherever the grid last sat. A
+        // scrubber jump is exactly the case that rationale does not cover.
         gridScrollOffsetRef.current = 0
         return Promise.all([
             setScrollAnchor(anchor > 0 ? anchor : null, { history: "push" }),
-            setIndex(null, { history: "replace" }),
+            setIndex(qIndex !== null ? anchor : null, { history: "replace" }),
         ])
     }
     const getVirtualPageURL = (base: ReadonlyURLSearchParams | URLSearchParams, newPage: number) =>
-        getScrollPositionURL(base, newPage, k)
+        getScrollPositionURL(base, newPage, k, qIndex !== null)
     return (
         <>
             <SearchErrorToast noFtsErrors={options.e_iss} isError={isError} error={error} />

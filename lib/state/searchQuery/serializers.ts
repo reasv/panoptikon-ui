@@ -134,20 +134,26 @@ const scrollAnchorSerializer = createSerializer({
 export const getScrollPositionURL = (
   base: ReadonlyURLSearchParams | URLSearchParams,
   newPage: number,
-  pageSize: number
+  pageSize: number,
+  galleryOpen = false
 ) => {
   const queryParams = new URLSearchParams(base)
   // The literal key `orderParamsKeyMap` addresses (see getSearchPageURL's
   // `{ page }` above): dropped outright, not set to 1, so the URL says
   // "position, not pagination".
   queryParams.delete("page")
-  // Likewise the gallery index (`lib/state/gallery.ts`'s `gi`). In scroll mode
-  // `gi` is a GLOBAL index and it wins over `top` on load — it opens the
-  // gallery on that exact item — so carrying the current one into a virtual
-  // page link would open the middle-clicked page at the item the user is
-  // looking at now, not at the page the link is labelled with.
-  queryParams.delete("gi")
   const anchor = virtualPageAnchor(newPage, pageSize)
+  // The gallery index (`lib/state/gallery.ts`'s `gi`). In scroll mode `gi` is
+  // a GLOBAL index and it wins over `top` on load — it opens the gallery on
+  // that exact item. With the gallery OPEN the link is a gallery jump, so it
+  // carries the target page's first item (`gi=0` written explicitly:
+  // presence, not value, is what opens the gallery) — the same value the
+  // scrubber's own click writes (see setVirtualPage). Never the CURRENT
+  // index: that would open the middle-clicked page at the item the user is
+  // looking at now, not at the page the link is labelled with. With the
+  // gallery closed the link is a grid position and carries no `gi` at all.
+  if (galleryOpen) queryParams.set("gi", String(anchor))
+  else queryParams.delete("gi")
   return scrollAnchorSerializer(queryParams, {
     [GRID_SCROLL_ANCHOR_KEY]: anchor > 0 ? anchor : null,
   })
