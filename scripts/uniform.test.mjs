@@ -181,22 +181,33 @@ const cellAspectOf = (cols, rows, total = TOTAL) =>
 // ---- obstacles: blocked cells are skipped, shortfall refuses ------------
 
 {
-  // An anchored block over the top-left 54x30: of the cols<=4
-  // factorizations only 3x2 keeps 4 cells free (row 0 loses two of its
-  // three cells, row 1 is untouched)
+  // An anchored block over the top-left 54x30. The sweep grows lattices
+  // past the item count when cells are blocked, so alongside the natural
+  // 3x2 there are deeper factorizations whose extra cells sit under the
+  // obstacle — and for square items the best of them is near-square,
+  // which the item-count-sized lattices alone could never offer
   const obstacle = { x: 0, y: 0, w: 54, h: 30 }
   const ranked = rankUniformFactorizations({
     items: items(4), obstacles: [obstacle], grid: G, columnWidth: COL_W,
     totalGridRows: TOTAL, ...MINS,
   })
   check(
-    "only the factorization with enough free cells survives",
-    ranked.length === 1 && ranked[0].cols === 3 && ranked[0].rows === 2,
-    JSON.stringify(ranked)
+    "natural-depth factorization survives among deeper ones",
+    ranked.some((f) => f.cols === 3 && f.rows === 2) && ranked.length > 1,
+    JSON.stringify(ranked.map((f) => [f.cols, f.rows]))
   )
+  check(
+    "a deeper lattice beats it for square items",
+    ranked.length > 0 &&
+      Math.abs(Math.log(ranked[0].cellAspect)) <
+        Math.abs(Math.log(cellAspectOf(3, 2))),
+    JSON.stringify(ranked[0])
+  )
+  // Pin the 3x2 factorization via the sticky aspect to keep the
+  // placement coordinates deterministic
   const layout = packUniform({
     items: items(4), obstacles: [obstacle], grid: G, columnWidth: COL_W,
-    totalGridRows: TOTAL, ...MINS,
+    totalGridRows: TOTAL, chosenAspect: cellAspectOf(3, 2), ...MINS,
   })
   const hits = layout.filter(
     (l) =>
@@ -221,6 +232,40 @@ const cellAspectOf = (cols, rows, total = TOTAL) =>
       obstacles: [{ x: 0, y: 0, w: G.columns, h: TOTAL }],
       grid: G, columnWidth: COL_W, totalGridRows: TOTAL, ...MINS,
     }).length === 0
+  )
+}
+
+// ---- obstacles: items divide the space the anchors leave ----------------
+
+{
+  // Anchors covering the entire top half of the fold — the reported
+  // regression: every item-count-sized lattice loses at least half its
+  // cells, so the old sweep refused a board that obviously tiles
+  const anchored = { x: 0, y: 0, w: G.columns, h: 30 }
+  const layout = packUniform({
+    items: items(8), obstacles: [anchored], grid: G, columnWidth: COL_W,
+    totalGridRows: TOTAL, ...MINS,
+  })
+  check(
+    "half-fold anchors: items tile the free half",
+    layout.length === 8 && layout.every((l) => l.y >= 30),
+    JSON.stringify(layout)
+  )
+}
+
+{
+  // A free strip narrower than the item count is wide: left 5/6 anchored,
+  // two items — feasible only with more columns than items (col cuts at
+  // 18 units), which the old n-capped sweep could never reach
+  const anchored = { x: 0, y: 0, w: 90, h: TOTAL }
+  const layout = packUniform({
+    items: items(2), obstacles: [anchored], grid: G, columnWidth: COL_W,
+    totalGridRows: TOTAL, ...MINS,
+  })
+  check(
+    "narrow free strip: columns cut finer than the item count",
+    layout.length === 2 && layout.every((l) => l.x >= 90),
+    JSON.stringify(layout)
   )
 }
 

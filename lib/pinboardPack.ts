@@ -1636,14 +1636,31 @@ export function rankUniformFactorizations({
     const effMinH = Math.max(1, minH)
     const clipped = clipUniformObstacles(obstacles, grid.columns, total)
     const out: UniformFactorization[] = []
-    for (let cols = 1; cols <= n; cols++) {
-        const rows = Math.ceil(n / cols)
+    // Obstacles consume lattice cells, so the sweep can't stop at n
+    // columns: a free strip narrower than the item count still tiles once
+    // the fold is cut finer than the items alone would need — the extra
+    // cells just sit under the obstacles
+    const maxCols = clipped.length > 0
+        ? Math.floor(grid.columns / effMinW) : n
+    const maxRows = Math.floor(total / effMinH)
+    for (let cols = 1; cols <= maxCols; cols++) {
         if (Math.floor(grid.columns / cols) < effMinW) continue
-        if (Math.floor(total / rows) < effMinH) continue
+        let rows = Math.ceil(n / cols)
+        if (rows > maxRows) continue
         if (clipped.length > 0) {
-            const lattice =
-                uniformLattice(cols, rows, grid.columns, total, effMinW, effMinH)
-            if (uniformFreeCells(lattice, clipped).length < n) continue
+            // The item-count division sizes the lattice as if every cell
+            // were usable, but blocked cells shrink its capacity below
+            // cols×rows — an anchored region covering half the fold
+            // rejects every such lattice outright. Search upward for the
+            // smallest row count whose lattice keeps n cells free: the
+            // items divide the space the obstacles leave them, and the
+            // smallest feasible count is the largest such cells.
+            for (; rows <= maxRows; rows++) {
+                const lattice = uniformLattice(
+                    cols, rows, grid.columns, total, effMinW, effMinH)
+                if (uniformFreeCells(lattice, clipped).length >= n) break
+            }
+            if (rows > maxRows) continue
         }
         // Ideal cell pixel dims — the fractional equal share through the
         // same px-per-unit mapping pixelWidth and rowNaturalHeight use
