@@ -110,6 +110,13 @@ const FALLBACK_LIMITS = {
   maxMosaicLoopMb: 512,
   maxAnimatedImageSeconds: 30,
   maxOutputSeconds: 300,
+  // Deliberately EMPTY, not a mirror of the server's unconditional entries
+  // (`image/gif`, and `image/webp` via its Rust-side bridge): while the
+  // limits are in flight nothing is known about the server's capabilities,
+  // and the conservative reading composes an animated image as a frozen
+  // frame rather than risking a span the server cannot play. A frozen
+  // mosaic is degraded; a failed job is a broken export.
+  spanCapableImageMimes: [] as readonly string[],
 } as const
 
 /** `compose.rs`'s `BYTES_PER_MB` — the loop budget is stated in MiB. */
@@ -133,7 +140,7 @@ function toCs(seconds: number): number {
 }
 
 export interface ItemTimeInput {
-  /** Only a video has a span or a frozen frame; everything else is an image. */
+  /** Only a video has a still or a trim-driven span; see below for images. */
   isVideo: boolean
   /** The pin's own trim, off its h field. */
   trim: TrimRange | null
@@ -141,6 +148,17 @@ export interface ItemTimeInput {
   state: PinVideoState | null
   /** The item's recorded duration in seconds, when the index knows one. */
   duration: number | null
+  /** The item's mime type, for the animated-image rule below. */
+  mime?: string | null
+  /**
+   * The limits envelope's `span_capable_image_mimes`: the image containers
+   * the server can play animation from — natively via its ffmpeg, or via
+   * the Rust-side extraction bridge for animated WebP, which no ffmpeg
+   * decodes (docs/animated-webp-bridge-design.md). Absent or empty reads as
+   * "none", which composes an animated image frozen — the safe direction
+   * while the envelope is in flight.
+   */
+  spanCapableImageMimes?: readonly string[]
 }
 
 /**
@@ -149,7 +167,14 @@ export interface ItemTimeInput {
  *
  * The rules, and why each one is the honest reading of the board:
  *
- *   NOT A VIDEO → `image`. A still image held for the whole output.
+ *   NOT A VIDEO → `image`… unless the index measured an animation length
+ *   AND the server listed this container as span-capable
+ *   (docs/animated-image-spans-design.md §6): then the full `0..duration`
+ *   span, always. An animated image on the board PLAYS — it has no <video>
+ *   element, no trim, no play/pause state to consult — so the whole
+ *   animation is the only honest span, and it loops or trims to the target
+ *   exactly like a video span does. A still (duration 0), an unmeasured item
+ *   (null), or a container off the capability list stays a frozen `image`.
  *
  *   MOUNTED AND PLAYING → `span`, from the pin's trim: start is `trim.start`
  *   (or 0), end is `trim.end` (or the item's length). What the user set the
@@ -173,7 +198,23 @@ export interface ItemTimeInput {
  * nothing to learn from a round trip that says so.
  */
 export function resolveItemTime(input: ItemTimeInput): ItemTime {
-  if (!input.isVideo) return { kind: "image" }
+  if (!input.isVideo) {
+    const duration = input.duration
+    if (
+      duration != null &&
+      isFinite(duration) &&
+      duration > 0 &&
+      input.mime != null &&
+      (input.spanCapableImageMimes ?? []).includes(input.mime)
+    ) {
+      // Sub-centisecond animations round to `span{0,0}`, which the server
+      // refuses outright (`span_not_a_clip`) — and one refused item fails the
+      // whole board. A frozen frame is what a 4 ms animation means anyway.
+      const endCs = toCs(duration)
+      if (endCs > 0) return { kind: "span", start_cs: 0, end_cs: endCs }
+    }
+    return { kind: "image" }
+  }
   const trim = input.trim
   const duration =
     input.duration != null && isFinite(input.duration) && input.duration > 0
@@ -716,6 +757,8 @@ export async function buildCompositionDoc(
 
   const bounds = canvasBounds(limits, preset)
   const carriesAudio = !isAnimatedContainer(preset.container)
+  const spanMimes =
+    limits?.span_capable_image_mimes ?? FALLBACK_LIMITS.spanCapableImageMimes
   // Resolved ONCE per sha across every pass below: the clamp loops re-solve
   // the geometry, never the item table, and a lookup is a request.
   const metas = new Map<string, ComposeItemMeta | null>()
@@ -769,6 +812,7 @@ export async function buildCompositionDoc(
         canvasW,
         canvasH,
         carriesAudio,
+        spanMimes,
       })
       if (item) items.push(item)
       else skipped.push(placement.sha256)
@@ -934,6 +978,8 @@ export function buildItemCompositionDoc(
     canvasW,
     canvasH,
     carriesAudio: !isAnimatedContainer(preset.container),
+    spanMimes:
+      limits?.span_capable_image_mimes ?? FALLBACK_LIMITS.spanCapableImageMimes,
   })
   if (!item) {
     return refuse(
@@ -1039,6 +1085,8 @@ function composeItem(input: {
   canvasW: number
   canvasH: number
   carriesAudio: boolean
+  /** The limits envelope's span-capable image mimes; empty pre-envelope. */
+  spanMimes: readonly string[]
 }): ComposeItem | null {
   const { placement, meta, state } = input
   // The FULL hash, never the board's 10-char prefix: the document is cache-keyed
@@ -1074,6 +1122,8 @@ function composeItem(input: {
     trim: placement.trim,
     state,
     duration: meta?.duration ?? null,
+    mime: meta?.type ?? null,
+    spanCapableImageMimes: input.spanMimes,
   })
   return {
     sha256,

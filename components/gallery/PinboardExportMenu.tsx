@@ -330,10 +330,12 @@ export function SelectionExportMenuItems({
                 </Item>
             ))}
             {/* The animated twin of whichever export this menu is: a mosaic of
-                the selection, or — for a single pin that is PLAYING — the item
-                itself as a video, cropped and oriented exactly as the board
-                shows it. A stopped pin has no animated row: its frozen frame
-                is a still image, and the rows above already save it. */}
+                the selection, or — for a single pin that RESOLVES TO A SPAN (a
+                playing video, or an animated image the server can decode) —
+                the item itself as a video, cropped and oriented exactly as the
+                board shows it. A stopped or genuinely still pin has no
+                animated row: its frozen frame is a still image, and the rows
+                above already save it. */}
             {one
                 ? <AnimatedItemRows kit={kit} itemKey={keys[0] ?? null} />
                 : <AnimatedMosaicRows kit={kit} keys={keys} />}

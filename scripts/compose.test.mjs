@@ -105,6 +105,8 @@ const LIMITS = {
   max_canvas_side: 4096,
   max_canvas_area: 3840 * 2160,
   max_compose_fps: 60,
+  // avif deliberately absent, so the capability-miss rows below are real.
+  span_capable_image_mimes: ["image/gif", "image/webp"],
 }
 
 const MP4 = { id: "mosaic-mp4", label: "MP4", container: "mp4", ext: "mp4" }
@@ -552,6 +554,154 @@ function solveAt(width, only) {
     const ok = shape(got) === shape(row.want)
     check(row.name, ok, ok ? "" : `${shape(got)} != ${shape(row.want)}`)
   }
+}
+
+// ---- time: the animated-image rule (design §6) ---------------------------
+//
+// A non-video with a measured animation length AND a container on the
+// server's capability list is a span — always the full 0..duration, since an
+// animated image has no <video> element, no trim and no play state — and
+// everything else stays the frozen image it has always been.
+
+{
+  const caps = LIMITS.span_capable_image_mimes
+  const table = [
+    {
+      name: "a measured GIF on the capability list is a full-length span",
+      input: {
+        isVideo: false, trim: null, state: null,
+        duration: 3, mime: "image/gif", spanCapableImageMimes: caps,
+      },
+      want: { kind: "span", start_cs: 0, end_cs: 300 },
+    },
+    {
+      name: "…and a fractional length lands on the centisecond lattice",
+      input: {
+        isVideo: false, trim: null, state: null,
+        duration: 0.75, mime: "image/webp", spanCapableImageMimes: caps,
+      },
+      want: { kind: "span", start_cs: 0, end_cs: 75 },
+    },
+    {
+      name: "a measured-still image (duration 0) stays an image",
+      input: {
+        isVideo: false, trim: null, state: null,
+        duration: 0, mime: "image/gif", spanCapableImageMimes: caps,
+      },
+      want: { kind: "image" },
+    },
+    {
+      name: "an unmeasured image (duration null) stays an image",
+      input: {
+        isVideo: false, trim: null, state: null,
+        duration: null, mime: "image/gif", spanCapableImageMimes: caps,
+      },
+      want: { kind: "image" },
+    },
+    {
+      name: "a container off the capability list composes frozen",
+      input: {
+        isVideo: false, trim: null, state: null,
+        duration: 3, mime: "image/avif", spanCapableImageMimes: caps,
+      },
+      want: { kind: "image" },
+    },
+    {
+      name: "the empty pre-envelope fallback list composes frozen too",
+      input: {
+        isVideo: false, trim: null, state: null,
+        duration: 3, mime: "image/gif", spanCapableImageMimes: [],
+      },
+      want: { kind: "image" },
+    },
+    {
+      name: "a caller that passes no capability input at all composes frozen",
+      input: { isVideo: false, trim: null, state: null, duration: 3 },
+      want: { kind: "image" },
+    },
+    {
+      name: "a sub-centisecond animation composes frozen, not as span{0,0}",
+      input: {
+        isVideo: false, trim: null, state: null,
+        duration: 0.004, mime: "image/webp", spanCapableImageMimes: caps,
+      },
+      want: { kind: "image" },
+    },
+  ]
+  for (const row of table) {
+    const got = resolveItemTime(row.input)
+    const ok = shape(got) === shape(row.want)
+    check(row.name, ok, ok ? "" : `${shape(got)} != ${shape(row.want)}`)
+  }
+}
+
+// ---- animated images through the builders --------------------------------
+//
+// The rule above, threaded: the board builder passes the envelope's
+// capability list into every item's classification, and the single-item
+// builder resolves the SAME span the item-row gate keys on — an animated GIF
+// saves as a looping clip, a genuine still refuses exactly as before.
+
+{
+  const GIF_META = {
+    ...META[IMAGE_SHA],
+    type: "image/gif",
+    duration: 2.5,
+  }
+  const doc = await built({
+    getMeta: async (sha) => (sha === IMAGE_SHA ? GIF_META : META[sha] ?? null),
+  })
+  const gifItem = doc.body.items[1]
+  check(
+    "a measured GIF pin composes as its full span, with no audio",
+    gifItem.time.kind === "span" &&
+      gifItem.time.start_cs === 0 &&
+      gifItem.time.end_cs === 250 &&
+      gifItem.audio === false,
+    shape(gifItem.time)
+  )
+  const preEnvelope = await built({
+    getMeta: async (sha) => (sha === IMAGE_SHA ? GIF_META : META[sha] ?? null),
+    limits: null,
+  })
+  check(
+    "…but with no envelope yet the same GIF composes frozen",
+    preEnvelope.body.items[1].time.kind === "image",
+    shape(preEnvelope.body.items[1].time)
+  )
+
+  // The single-item export gate keys on the RESOLVED kind: the same
+  // classification the item hook runs answers span for this pin, and the
+  // document built for it is that span covering its own canvas.
+  const placement = solveAt(BOARD_W).geometry.placements[1]
+  const single = buildItemCompositionDoc({
+    placement,
+    meta: GIF_META,
+    state: null,
+    preset: MP4,
+    limits: LIMITS,
+    length: { mode: "longest_loop_once" },
+    targetWidth: null,
+    background: "#101820",
+  })
+  check(
+    "a GIF pin saves on its own as a looping clip",
+    single.ok === true &&
+      single.doc.body.items[0].time.kind === "span" &&
+      single.doc.body.items[0].time.end_cs === 250,
+    shape(single)
+  )
+  check(
+    "…and the gate's own classification refuses a genuine still",
+    resolveItemTime({
+      isVideo: false,
+      trim: placement.trim,
+      state: null,
+      duration: META[IMAGE_SHA].duration,
+      mime: META[IMAGE_SHA].type,
+      spanCapableImageMimes: LIMITS.span_capable_image_mimes,
+    }).kind === "image"
+  )
 }
 
 // ---- the DOM probe's state rules ---------------------------------------

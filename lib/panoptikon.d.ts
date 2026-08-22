@@ -4282,6 +4282,20 @@ export interface components {
             max_output_seconds: number;
             /** Format: int64 */
             min_canvas_side: number;
+            /**
+             * @description The image mimes this server can play *animation* from in a
+             *     composition, so a client may classify such an item as a compose span
+             *     instead of a frozen frame (docs/animated-image-spans-design.md §5).
+             *     Always `image/gif`, and always `image/webp` — which no ffmpeg
+             *     decodes, so the server bridges it through its own decoder
+             *     (docs/animated-webp-bridge-design.md); `image/avif` rides the decode
+             *     probe.
+             *
+             *     A capability, not a validation: the server does not reject a span on
+             *     an unlisted container at admission (admission is probe-free and knows
+             *     no mimes) — this list exists so a correct client never builds one.
+             */
+            span_capable_image_mimes: string[];
         };
         TranscodePresetInfo: {
             channel: components["schemas"]["Channel"];

@@ -382,7 +382,10 @@ function anyPinPlayable(placements: readonly PinPlacement[]): boolean {
 export interface ComposeScope {
   /** The placements the rows would compose, in board order. */
   placements: PinPlacement[]
-  /** At least one of them is a video — otherwise there is nothing to animate. */
+  /**
+   * At least one of them can PLAY — a video, or an animated image the server
+   * can decode as a span — otherwise there is nothing to animate.
+   */
   hasVideo: boolean
   /** How long the output would run, for the animated-image row's length cap. */
   requestedSeconds: number
@@ -410,6 +413,11 @@ export function useComposeScope(
   const [proportional] = useGalleryPinProportional()
   const dbs = useSelectedDBs()[0]
   const queryClient = useQueryClient()
+  // The same envelope the rows themselves are built from (one fetch per
+  // session through the query cache), for the animated-image capability list
+  // the classification below reads.
+  const { limits } = useVideoPresets("mosaic")
+  const spanMimes = limits?.span_capable_image_mimes ?? []
 
   const boardWidth = measuredWidth()
   const parsed = parseBoard(layout)
@@ -426,15 +434,6 @@ export function useComposeScope(
   )
 
   const metas = placements.map((p) => cachedItemMeta(queryClient, dbs, p.sha256))
-  // Either signal alone is enough, and neither is checked first: the cache is
-  // partial by nature (a board whose first pin resolved and whose video pin has
-  // not would read as "no video" if a single cache hit were taken as the whole
-  // answer), and the DOM marker is a POSITIVE fact — a mounted player is a
-  // video whatever the cache knows about it.
-  const hasVideo =
-    metas.some((meta) => (meta?.type ?? "").startsWith("video/")) ||
-    anyPinPlayable(placements)
-
   const times = placements.map((placement, i) => {
     const meta = metas[i]
     return resolveItemTime({
@@ -442,8 +441,21 @@ export function useComposeScope(
       trim: placement.trim,
       state: probePinVideoState(placement.key),
       duration: meta?.duration ?? null,
+      mime: meta?.type ?? null,
+      spanCapableImageMimes: spanMimes,
     })
   })
+  // Any signal alone is enough, and none is checked first: the cache is
+  // partial by nature (a board whose first pin resolved and whose video pin has
+  // not would read as "no video" if a single cache hit were taken as the whole
+  // answer), and the DOM marker is a POSITIVE fact — a mounted player is a
+  // video whatever the cache knows about it. A span-classified animated image
+  // counts too (docs/animated-image-spans-design.md §6): a board of GIFs has
+  // something to animate even though no pin ever mounts a player.
+  const hasVideo =
+    metas.some((meta) => (meta?.type ?? "").startsWith("video/")) ||
+    anyPinPlayable(placements) ||
+    times.some((time) => time.kind === "span")
   return {
     placements,
     hasVideo,
@@ -550,11 +562,14 @@ export function useAnimatedMosaicExport(
  * The animated rows for ONE pin: the item itself, cropped and oriented exactly
  * as the board shows it, as a video.
  *
- * Offered only while the pin resolves to a SPAN — a stopped pin's frozen frame
- * is a still image, and the existing image export serves it better than a
- * one-second video would. That is also why this hook probes the pin's state
- * itself rather than taking the section's word for it: "is this one playing"
- * is the entire gate.
+ * Offered only while the pin resolves to a SPAN — the RESOLVED time kind,
+ * deliberately, not "is it a video": an animated GIF/WebP/AVIF the server can
+ * decode resolves to a span with no <video> element at all and saves as a
+ * looping clip, while a stopped pin's frozen frame (and a genuine still) is a
+ * still image the existing image export serves better than a one-second video
+ * would. That is also why this hook probes the pin's state itself rather than
+ * taking the section's word for it: "does this one resolve to a span" is the
+ * entire gate.
  */
 export function useAnimatedItemExport(key: string | null): AnimatedRowSet {
   const [layout] = useGalleryPinBoardLayout()
@@ -591,6 +606,8 @@ export function useAnimatedItemExport(key: string | null): AnimatedRowSet {
         trim: placement.trim,
         state,
         duration: meta?.duration ?? null,
+        mime: meta?.type ?? null,
+        spanCapableImageMimes: limits?.span_capable_image_mimes ?? [],
       })
     : null
   const isSpan = time?.kind === "span"
