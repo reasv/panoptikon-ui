@@ -1,12 +1,12 @@
 'use client'
 
-import React, { useEffect } from 'react'
+import React, { useEffect, useRef } from 'react'
 import { FolderSearch } from 'lucide-react'
 import { useToast } from '../ui/use-toast'
 import { getGalleryOptionsSerializer, useGalleryIndex } from '@/lib/state/gallery'
 import { useFileFilters, useOrderArgs, useQueryOptions, useResetSearchQueryState } from '@/lib/state/searchQuery/clientHooks'
 import { selectedDBsSerializer, useSelectedDBs } from '@/lib/state/database'
-import { $api, fetchClient } from '@/lib/api'
+import { fetchClient } from '@/lib/api'
 import { components } from '@/lib/panoptikon'
 import { OrderArgsType, orderByType } from '@/lib/state/searchQuery/searchQueryKeyMaps'
 import { Button } from '../ui/button'
@@ -14,6 +14,11 @@ import { partitionBySerializer, usePartitionBy } from '@/lib/state/partitionBy'
 import { useInstantSearch } from '@/lib/state/zust'
 import { serializers } from '@/lib/state/searchQuery/serializers'
 import { cn } from '@/lib/utils'
+import {
+    FindNavigationData,
+    FindNavigatorApi,
+    useFindNavigatorApi,
+} from '@/lib/state/findNavigatorApi'
 
 function getFolderFromPath(fullPath: string): string {
     // Find the last occurrence of a separator, either '/' or '\'
@@ -103,36 +108,29 @@ async function findFileIndex(
     }
     return [0, 0]
 }
-interface NavigationData {
-    folder: string
-    page: number
-    index: number
-    order_by: orderByType
-    order: OrderArgsType["order"]
-    page_size: number
-}
-export function FindButton({
-    id,
-    id_type,
-    path,
-    buttonVariant,
-    buttonClassName,
-}: {
-    id: number | string,
-    id_type: "file_id" | "sha256",
-    path: string,
-    buttonVariant?: boolean
-    buttonClassName?: string
-}) {
-    const { toast } = useToast()
+
+/**
+ * The one owner of find-in-folder's URL state, mounted once by the search
+ * page and published through useFindNavigatorApi. Every FindButton used to
+ * own these hooks itself; with one button per grid cell, per pin and per
+ * strip item, that put ~27 nuqs hook families in every cell, and any URL
+ * write re-rendered them all (see lib/state/findNavigatorApi.ts).
+ */
+export function FindNavigator() {
     const setIndex = useGalleryIndex()[1]
     const resetSearch = useResetSearchQueryState()
     const [orderArgs, setOrderArgs] = useOrderArgs()
-    const [options, setOptions] = useQueryOptions()
-    const [filter, setFilter] = useFileFilters()
+    const setOptions = useQueryOptions()[1]
+    const setFilter = useFileFilters()[1]
     const commit = useInstantSearch((state) => state.commit)
     const dbs = useSelectedDBs()[0]
-    const getNavigationData = async () => {
+    const [partitionBy] = usePartitionBy()
+
+    const getNavigationData = async (
+        id: number | string,
+        id_type: "file_id" | "sha256",
+        path: string,
+    ) => {
         let file_path = path
         let file_id: number = 0
         if (id_type === "sha256" || file_path === "") {
@@ -185,9 +183,8 @@ export function FindButton({
             order,
             dbs
         )
-        return { folder, page, index, order_by, order, page_size } as NavigationData
+        return { folder, page, index, order_by, order, page_size } as FindNavigationData
     }
-    const [partitionBy] = usePartitionBy()
 
     const buildLink = ({
         folder,
@@ -196,7 +193,7 @@ export function FindButton({
         order_by,
         order,
         page_size,
-    }: NavigationData) => {
+    }: FindNavigationData) => {
         let fullURL = selectedDBsSerializer({
             index_db: dbs.index_db,
             user_data_db: dbs.user_data_db,
@@ -225,7 +222,7 @@ export function FindButton({
         order_by,
         order,
         page_size,
-    }: NavigationData
+    }: FindNavigationData
     ) => {
         // Awaited as a batch so the URL holds this query before `commit()`
         // declares it one to run: navigating to a folder is a committed
@@ -251,13 +248,72 @@ export function FindButton({
             setIndex(index, { history: "push" }),
         ])
         commit()
+    }
+
+    // One stable object, mutated every render so callers always see current
+    // values without the store notifying anyone; registered while mounted
+    // (the usePinboardBoardApi idiom).
+    const apiRef = useRef<FindNavigatorApi>({} as FindNavigatorApi)
+    useEffect(() => {
+        Object.assign(apiRef.current, {
+            getNavigationData,
+            buildLink,
+            navigate,
+        } satisfies FindNavigatorApi)
+    })
+    useEffect(() => {
+        const api = apiRef.current
+        useFindNavigatorApi.getState().register(api)
+        return () => useFindNavigatorApi.getState().unregister(api)
+    }, [])
+    // Prefetched hrefs bake in the ordering and DB selection; buttons drop
+    // theirs when either changes (their old link-reset effect's deps).
+    const bumpLinkEpoch = useFindNavigatorApi((state) => state.bumpLinkEpoch)
+    useEffect(() => {
+        bumpLinkEpoch()
+    }, [
+        bumpLinkEpoch,
+        orderArgs.page_size,
+        orderArgs.order_by,
+        orderArgs.order,
+        dbs.index_db,
+        dbs.user_data_db,
+    ])
+    return null
+}
+
+export function FindButton({
+    id,
+    id_type,
+    path,
+    buttonVariant,
+    buttonClassName,
+}: {
+    id: number | string,
+    id_type: "file_id" | "sha256",
+    path: string,
+    buttonVariant?: boolean
+    buttonClassName?: string
+}) {
+    const { toast } = useToast()
+    // Deliberately NO URL-state hooks here — this component is mounted once
+    // per cell/pin/strip item and must stay out of the URL-write blast
+    // radius. Everything stateful comes from the navigator's handle at
+    // interaction time.
+    const navigatorMissing = () => {
         toast({
-            title: "Navigating to folder...",
-            description: `${folder}`,
+            title: "Error",
+            description: "Could not navigate to this file's folder",
+            variant: "destructive",
         })
     }
     const handleFindClick = async () => {
-        const data = await getNavigationData()
+        const api = useFindNavigatorApi.getState().api
+        if (!api) {
+            navigatorMissing()
+            return
+        }
+        const data = await api.getNavigationData(id, id_type, path)
         if (!data) {
             toast({
                 title: "Error",
@@ -266,16 +322,27 @@ export function FindButton({
             })
             return
         }
-        await navigate(data)
+        await api.navigate(data)
+        toast({
+            title: "Navigating to folder...",
+            description: `${data.folder}`,
+        })
     }
     const [link, setLink] = React.useState<string | null>(null)
-    // Reset the link when the id or path changes
+    // Reset the link when the id or path changes — or when the ordering/DB
+    // state it was serialized from does (linkEpoch, bumped by the navigator)
+    const linkEpoch = useFindNavigatorApi((state) => state.linkEpoch)
     useEffect(() => {
         setLink(null)
-    }, [id, id_type, path, orderArgs.page_size, orderArgs.order_by, orderArgs.order, dbs.index_db, dbs.user_data_db])
+    }, [id, id_type, path, linkEpoch])
 
     const handleHover = async () => {
-        const data = await getNavigationData()
+        const api = useFindNavigatorApi.getState().api
+        if (!api) {
+            navigatorMissing()
+            return
+        }
+        const data = await api.getNavigationData(id, id_type, path)
         if (!data) {
             toast({
                 title: "Error",
@@ -284,7 +351,7 @@ export function FindButton({
             })
             return
         }
-        const link = buildLink(data)
+        const link = api.buildLink(data)
         setLink(link)
     }
     return (

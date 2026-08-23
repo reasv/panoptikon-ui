@@ -43,6 +43,7 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 import { components } from "@/lib/panoptikon"
 import { GRID_SCROLL_ANCHOR_KEY, useGridScrollAnchor } from "@/lib/state/gridScroll"
 import { DesktopUpdateRibbon } from "@/components/DesktopUpdateRibbon"
+import { FindNavigator } from "@/components/gallery/FindButton"
 import { SearchMetricsHoverCard } from "@/components/SearchMetricsCard"
 import { $api } from "@/lib/api"
 import { useClientConfig } from "@/lib/useClientConfig"
@@ -58,6 +59,10 @@ export function SearchPageContent({ initialQuery, isRestrictedMode }:
     const sidebarVisible = sidebarOpen && !pinboardMaximized
     return (
         <div className="flex h-screen w-full flex-col">
+            {/* The one owner of find-in-folder's URL-state hooks; every
+                FindButton (per cell, per pin, per strip item) calls through
+                its registered handle instead of owning the hooks itself */}
+            <FindNavigator />
             <DesktopUpdateRibbon onVisibilityChange={setUpdateRibbonVisible} />
             <div className="flex min-h-0 flex-1">
                 {!pinboardMaximized && <SideBar />}
@@ -407,6 +412,26 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     // (see useSearch's countIsPlaceholder).
     const countSettled = !scrollMode || (nResults > 0 && !countIsPlaceholder)
 
+    // The gallery-vs-grid host choice, latched while the board is maximized:
+    // the maximized search overlay writes `gi` (selection IS `gi`) and results
+    // churn `itemCount`, and a live choice here would swap hosts and remount
+    // the board mid-maximize — RGL mounts are expensive on large boards, and
+    // maximize must stay the cheap in-instance transition it is today
+    // (docs/maximized-pinboard-search-overlay-design.md §3). Only the render
+    // branch below freezes: every other reader of `qIndex`/`itemCount` (the
+    // gallery's own clamp, useDerivedVirtualPage's `galleryOpen` — position
+    // semantics, not mount semantics) keeps tracking the live values. Not
+    // maximized, the ternary reads the live value directly, so a restore
+    // shows the right host in the same render with no wrong-host frame; the
+    // effect only re-syncs the latch afterwards. State+effect rather than a
+    // render-time ref write, which the React Compiler cannot accept.
+    const liveGalleryHost = qIndex !== null && itemCount > 0
+    const [frozenGalleryHost, setFrozenGalleryHost] = useState(liveGalleryHost)
+    useEffect(() => {
+        if (!pinboardMaximized) setFrozenGalleryHost(liveGalleryHost)
+    }, [pinboardMaximized, liveGalleryHost])
+    const galleryHost = pinboardMaximized ? frozenGalleryHost : liveGalleryHost
+
     const [options, setOptions] = useQueryOptions()
     const dbs = useSelectedDBs()[0]
     const scanLink = useMemo(() => {
@@ -596,8 +621,9 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                 // (the source wraps the page's array), while in scroll mode
                 // the navigable extent is the whole set — and the gallery
                 // resolves a global `gi` against it, holding a loading frame
-                // for the frame or two a cold chunk takes to arrive.
-                (qIndex !== null && itemCount > 0)
+                // for the frame or two a cold chunk takes to arrive. Latched
+                // while the board is maximized — see galleryHost above.
+                galleryHost
                     ?
                     <ImageGallery
                         source={resultsSource}
