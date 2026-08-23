@@ -722,6 +722,28 @@ const of = (url) => new URLSearchParams(url)
   )
 }
 
+{
+  // The thumbnail strip's live highlight (VirtualizedHorizontalScroll,
+  // docs/maximized-pinboard-search-overlay-design.md §6) is this same
+  // function at columns = 1: a horizontal strip is a one-column grid
+  // rotated, so the leading visible card is both the first and last item of
+  // its "row" and the grid's row-vs-item distinction collapses.
+  check(
+    "strip (columns=1): the leading visible card is the highlight item",
+    topRowHighlightItem(37, 1, 1000, false) === 37,
+    `${topRowHighlightItem(37, 1, 1000, false)}`
+  )
+  // The end clamp is the horizontal analog of lastRowVisible: once the last
+  // card is on screen the leading card can move no further, so the final
+  // virtual pages are reachable only by letting the LAST item speak.
+  const item = topRowHighlightItem(990, 1, 1000, true)
+  check(
+    "strip (columns=1): the last card visible highlights the final page",
+    item === 999 && virtualPageOf(item, 10) === 100,
+    `item=${item} page=${virtualPageOf(item, 10)}`
+  )
+}
+
 // ---- fetch margin ------------------------------------------------------
 
 {

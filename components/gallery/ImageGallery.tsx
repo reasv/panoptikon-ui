@@ -15,7 +15,7 @@ import { cn, downloadFileName, fileNameFromPath, getFileURL, getLocale } from "@
 import { itemEquals, OpenDetailsButton } from "@/components/OpenFileDetails"
 import { useFileShare } from "@/hooks/fileShare"
 import { useItemSelection } from "@/lib/state/itemSelection"
-import { useGalleryIndex, getGalleryOptionsSerializer, useGalleryThumbnail, useGalleryPinBoardLayout, useGalleryFullscreen, useGalleryHidePinBoard, useGalleryTrim, useViewMode } from "@/lib/state/gallery"
+import { useGalleryIndex, useGalleryNavigate, getGalleryOptionsSerializer, useGalleryThumbnail, useGalleryPinBoardLayout, useGalleryFullscreen, useGalleryHidePinBoard, useGalleryTrim, useViewMode } from "@/lib/state/gallery"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -114,6 +114,7 @@ export function ImageGallery({
     countSettled = true,
     resultsAreStale = false,
     queryEnabled,
+    onDerivedPageChange,
 }: {
     /**
      * The rows, however they are fetched: the page's array in pages mode, a
@@ -146,14 +147,27 @@ export function ImageGallery({
     resultsAreStale?: boolean
     /**
      * Is the LIVE search actually being served? False while the update lock
-     * withholds uncommitted sidebar edits, while input is invalid, or while a
-     * maximized board suspends searching — see useSearch. Everything on the
-     * auto-advance path stands down on it (docs/video-end-action-design.md
-     * §3): `resultsAreStale` is deliberately false in the update-lock state,
-     * so it cannot carry this, and without its own gate a video ending
-     * mid-edit would fetch and land on a search the user withheld.
+     * withholds uncommitted sidebar edits, while input is invalid, or while
+     * the board is maximized WITH THE SEARCH OVERLAY HIDDEN (suppression is
+     * scoped to "no consumer on screen" — see useSearchSuppressed) — see
+     * useSearch. Everything on the auto-advance path stands down on it
+     * (docs/video-end-action-design.md §3): `resultsAreStale` is deliberately
+     * false in the update-lock state, so it cannot carry this, and without
+     * its own gate a video ending mid-edit would fetch and land on a search
+     * the user withheld.
      */
     queryEnabled: boolean
+    /**
+     * The scrubber's live highlight setter, scroll mode only — the host's
+     * setDerivedPage, stable by construction (a useState setter), which the
+     * strip's scroll listener depends on. Threaded to the thumbnail strip so
+     * the pagination bar under the open gallery finally tracks a strip PAN
+     * (docs/maximized-pinboard-search-overlay-design.md §6) — navigation was
+     * already reported through the anchor (useDerivedVirtualPage's
+     * gallery-open branch); a pan writes no anchor by design, so only the
+     * strip itself can report it.
+     */
+    onDerivedPageChange?: (page: number) => void
 }) {
     const [qIndex, setIndex] = useGalleryIndex()
     // The mode, read from `vm` itself rather than inferred. Everything else in
@@ -396,29 +410,13 @@ export function ImageGallery({
     // because `gi` is already a global index over the whole set.
     //
     // MANUAL navigation's position write — the arrows, the click-through halves
-    // of the large image, the ← / → keys and the filmstrip, which all end up
-    // here. In scroll mode the grid's anchor FOLLOWS `gi`, the same rule the
-    // advance chain already states for its own landings ("the anchor follows
-    // the position", and absent while that position is the top of the set): the
-    // grid is unmounted while the gallery is open, so the anchor is the only
-    // record of where the user got to, and without this a binge from item 5000
-    // to item 8000 would put the grid back at 5000 on close — outside the
-    // ensure-visible scan window, so not even the selected item would be found
-    // (design §8). It also gives the pagination bar under the open gallery the
-    // only position signal it can have while the grid is gone (see
-    // useDerivedVirtualPage in SearchPage).
-    //
-    // "replace", like every other position write on this path: stepping is not
-    // navigation to bury the Back button under.
-    //
-    // PAGES MODE writes nothing here. `top` is a within-page index there, kept
-    // by the grid from its own scroll position, and the value of a step within
-    // a page is not it — that mode's `gi` and `top` answer different questions.
-    const navigateTo = (target: number) => {
-        setIndex(target)
-        if (!scrollMode) return
-        setScrollAnchor(target > 0 ? target : null, { history: "replace" })
-    }
+    // of the large image, the ← / → keys and the filmstrip all end up here.
+    // The write itself, and the anchor-follows-position rule it implements,
+    // live in useGalleryNavigate: the maximized board's search-overlay strip
+    // performs the identical write, and sharing the hook is what keeps the two
+    // mounts from drifting (docs/maximized-pinboard-search-overlay-design.md
+    // §5.3).
+    const navigateTo = useGalleryNavigate(scrollMode)
     const nextImage = () => {
         cancelPendingAdvance()
         if (index === (count - 1)) {
@@ -1147,8 +1145,15 @@ export function ImageGallery({
                 // A card click is manual navigation like the arrows are, and
                 // has to write the anchor with it — the strip is how a scroll-
                 // mode binge covers ground fast, so it is the path that most
-                // needs the grid to know where it ended up (see navigateTo).
+                // needs the grid to know where it ended up (see
+                // useGalleryNavigate).
                 onNavigate={navigateTo}
+                // The strip's own live push (design §6): a strip PAN moves
+                // the highlight without touching the URL, which navigation
+                // (via the anchor) never covered. Already gated to scroll
+                // mode by the host.
+                onDerivedPageChange={onDerivedPageChange}
+                pageSize={pageSize}
             /> : null}
         </div>
     )

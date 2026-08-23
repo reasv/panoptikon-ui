@@ -11,6 +11,7 @@ import type { TrimRange } from "@/lib/pinboardCrop"
 import { encodeGalleryTrim, parseGalleryTrim } from "@/lib/galleryTrim"
 import { isPinboardMaximized, isSearchSuppressed } from "./pinboardView"
 import { useSearchOverlayReveal } from "./searchOverlayReveal"
+import { useGridScrollAnchor } from "./gridScroll"
 
 const useGalleryIndex = () =>
   useQueryState(
@@ -19,6 +20,41 @@ const useGalleryIndex = () =>
       history: "push",
     })
   )
+
+// MANUAL navigation's position write, shared by every surface that moves the
+// gallery position by item: the gallery's arrows, the click-through halves of
+// the large image, the ← / → keys and the filmstrip — and the maximized
+// board's search-overlay strip, which is why it lives here rather than inside
+// ImageGallery (docs/maximized-pinboard-search-overlay-design.md §5.3: one
+// write, two mounts, so they cannot drift).
+//
+// In scroll mode the grid's anchor FOLLOWS `gi`, the same rule the advance
+// chain already states for its own landings ("the anchor follows the
+// position", and absent while that position is the top of the set): the grid
+// is unmounted while the gallery is open, so the anchor is the only record of
+// where the user got to, and without this a binge from item 5000 to item 8000
+// would put the grid back at 5000 on close — outside the ensure-visible scan
+// window, so not even the selected item would be found
+// (docs/search-scroll-mode-design.md §8). It also gives the pagination bar
+// under the open gallery (and under the maximized board's search overlay) the
+// only position signal it can have while the grid is gone (see
+// useDerivedVirtualPage in SearchPage).
+//
+// "replace", like every other position write on this path: stepping is not
+// navigation to bury the Back button under.
+//
+// PAGES MODE writes nothing here. `top` is a within-page index there, kept by
+// the grid from its own scroll position, and the value of a step within a
+// page is not it — that mode's `gi` and `top` answer different questions.
+const useGalleryNavigate = (scrollMode: boolean) => {
+  const setIndex = useGalleryIndex()[1]
+  const setScrollAnchor = useGridScrollAnchor()[1]
+  return (target: number) => {
+    setIndex(target)
+    if (!scrollMode) return
+    setScrollAnchor(target > 0 ? target : null, { history: "replace" })
+  }
+}
 
 const useGalleryThumbnail = () =>
   useQueryState(
@@ -300,6 +336,7 @@ const getGalleryOptionsSerializer = () => {
 
 export {
   useGalleryIndex,
+  useGalleryNavigate,
   useGalleryThumbnail,
   getGalleryOptionsSerializer,
   useGalleryPinBoardLayout,

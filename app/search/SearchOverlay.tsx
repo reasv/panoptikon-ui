@@ -1,11 +1,15 @@
 "use client"
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { ChevronUp, Pin } from "lucide-react"
+import type { ReadonlyURLSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Toggle } from "@/components/ui/toggle"
+import { PageSelect } from "@/components/pageselect"
+import { VirtualGalleryHorizontalScroll } from "@/components/gallery/VirtualizedHorizontalScroll"
 import { SearchBarRow } from "./SearchBarRow"
-import { useSearchOverlayOpen } from "@/lib/state/gallery"
+import { useGalleryNavigate, useSearchOverlayOpen } from "@/lib/state/gallery"
 import { useSearchOverlayReveal } from "@/lib/state/searchOverlayReveal"
+import type { ResultsSource } from "@/lib/searchHooks"
 import { components } from "@/lib/panoptikon"
 
 // The maximized board's bottom search overlay
@@ -46,14 +50,62 @@ export function SearchOverlay({
     nResults,
     resultMetrics,
     countMetrics,
+    source,
+    count,
+    scrollMode,
+    fallbackAnchor,
+    onDerivedPageChange,
+    pageSize,
+    totalPages,
+    currentPage,
+    setPage,
+    getPageURL,
 }: {
     onRefresh: () => void
     isFetching: boolean
     nResults: number
     resultMetrics?: components["schemas"]["SearchMetrics"]
     countMetrics?: components["schemas"]["SearchMetrics"]
+    /** The same rows grid and gallery read — see ResultsSource. */
+    source: ResultsSource
+    /** The navigable extent — MultiSearchView's itemCount. */
+    count: number
+    /** `vm === "scroll"` — gates the anchor half of useGalleryNavigate. */
+    scrollMode: boolean
+    /**
+     * Scroll mode: the grid scroll anchor, so a scrubber click with `gi`
+     * null still moves the strip (design §5.3 — `setVirtualPage` keeps `gi`
+     * null while the gallery is closed, so `top` is the only position the
+     * click writes). Null in pages mode, where `top` is a within-page index
+     * the grid owns and means nothing to the strip.
+     */
+    fallbackAnchor: number | null
+    /**
+     * Scroll mode: the host's setDerivedPage, stable by construction (a
+     * useState setter) — the strip's scroll listener depends on it (§6).
+     */
+    onDerivedPageChange?: (page: number) => void
+    /** k, the virtual-page size, for the strip's derived page number. */
+    pageSize: number
+    // The pagination row: the exact four-prop switch MultiSearchView already
+    // computes for the page-level bar (design §5.4) —
+    // totalPages/currentPage/setPage/getPageURL in pages mode,
+    // scrollTotalPages/derivedPage/setVirtualPage/getVirtualPageURL in
+    // scroll mode. Only one PageSelect is ever on screen: the page-level bar
+    // is gated `!fs`, and this overlay only mounts while maximized.
+    totalPages: number
+    currentPage: number
+    setPage: (page: number) => void
+    getPageURL: (base: ReadonlyURLSearchParams | URLSearchParams, newPage: number) => string
 }) {
     const [pinned, setPinned] = useSearchOverlayOpen()
+    // The strip's card clicks perform the GALLERY's position write — `gi`
+    // plus, in scroll mode, the anchor ("the anchor follows the position") —
+    // through the same shared hook the gallery uses, so the two mounts
+    // cannot drift (design §5.3). Writing `gi` is safe mid-maximize: the
+    // host choice is latched while maximized (see galleryHost in
+    // MultiSearchView), so the selection cannot flip hosts under the board.
+    const navigate = useGalleryNavigate(scrollMode)
     const [hoverBand, setHoverBand] = useState(false)
     const [hoverPanel, setHoverPanel] = useState(false)
     // Focus inside the panel holds it open so it cannot vanish mid-typing.
@@ -223,6 +275,47 @@ export function SearchOverlay({
                             <Pin className="h-4 w-4" />
                         </Toggle>
                     </div>
+                    {/* The thumbnail strip (design §5.3). Mounted for the
+                        whole maximized session like the rest of the panel —
+                        hiding is CSS-only, so a card serving as the HTML5
+                        drag source survives its own panel hiding mid-drag
+                        (§5.1). Drag-out, PinButton and shift-carry need no
+                        overlay code: cards already set the sha256 +
+                        text/uri-list payload, and the maximized board above
+                        is the mounted RGL drop target. While search is
+                        suppressed (hidden, unpinned, unrevealed) the strip
+                        is inert by construction: its ensureRange calls flow
+                        into useChunkedResults, whose queries are
+                        `enabled: false` then — wanted chunks accumulate
+                        under the disabled placeholder key but nothing
+                        fetches, and the first enabled render rebuilds the
+                        wanted window from the visible range. */}
+                    <div className="mt-2">
+                        <VirtualGalleryHorizontalScroll
+                            source={source}
+                            count={count}
+                            onNavigate={navigate}
+                            fallbackAnchor={fallbackAnchor}
+                            onDerivedPageChange={onDerivedPageChange}
+                            pageSize={pageSize}
+                        />
+                    </div>
+                    {/* The pagination row: with `gi` set, a scrubber click
+                        moves the gallery position to the target page's first
+                        item (setVirtualPage); with `gi` null it writes only
+                        the anchor, and the strip follows via fallbackAnchor
+                        while the highlight converges through the strip's own
+                        live push (§5.4). Gated like the page-level bar's
+                        content test: one page means nothing to flip or
+                        scrub. */}
+                    {totalPages > 1 && (
+                        <PageSelect
+                            totalPages={totalPages}
+                            currentPage={currentPage}
+                            setPage={setPage}
+                            getPageURL={getPageURL}
+                        />
+                    )}
                 </div>
             </div>
         </>

@@ -16,6 +16,7 @@ import { PinButton } from './PinButton'
 import { FindButton } from './FindButton'
 import { blurHashToDataURL } from '@/lib/state/blurHashDataURL'
 import { useSearchLoading } from '@/lib/state/zust'
+import { topRowHighlightItem, virtualPageOf } from '@/lib/scrollMode'
 import type { ResultsSource } from '@/lib/searchHooks'
 
 // How far past the rendered cards the strip warms rows, in items. The strip
@@ -37,6 +38,9 @@ export function VirtualGalleryHorizontalScroll({
     source,
     count,
     onNavigate,
+    fallbackAnchor = null,
+    onDerivedPageChange,
+    pageSize = 0,
 }: {
     /**
      * The same rows the gallery reads: the page's array in pages mode, a
@@ -47,24 +51,47 @@ export function VirtualGalleryHorizontalScroll({
      */
     source: ResultsSource
     /**
-     * The navigable extent, taken from the GALLERY rather than read off
-     * `source.count` here. The two differ while the count query is still in
-     * flight: the source's answer is then the loaded extent, and the gallery's
-     * is that extent widened to include the position the URL names (see its
-     * `countSettled` handling). Resolving `gi` against the narrower one would
-     * put the strip's selected card somewhere else entirely — two surfaces
-     * disagreeing about how far the set reaches is a wrong item on one of them.
+     * The navigable extent, taken from the HOST rather than read off
+     * `source.count` here. The gallery passes its own count — the loaded
+     * extent widened to include the position the URL names while the count
+     * query is still in flight (see its `countSettled` handling): resolving
+     * `gi` against the narrower value would put the strip's selected card
+     * somewhere else entirely, and two surfaces disagreeing about how far the
+     * set reaches is a wrong item on one of them. The maximized search
+     * overlay passes MultiSearchView's `itemCount` (= `source.count`),
+     * accepting the pre-settle clamp for that transient window.
      */
     count: number
     /**
      * Where a card click sends the gallery. The GALLERY's own position write,
      * not a bare `setIndex`: in scroll mode it carries the grid's scroll anchor
      * along with `gi`, which is what makes a strip-driven jump across the set
-     * survive closing the gallery (see `navigateTo` in ImageGallery). The
+     * survive closing the gallery (see useGalleryNavigate — both mounts). The
      * `href` on each card is unaffected — a real navigation re-mounts against
      * the URL it names.
      */
     onNavigate: (index: number) => void
+    /**
+     * Where the strip should sit while NO item is selected (`gi` null): the
+     * grid's scroll anchor, passed by the maximized board's search overlay
+     * (docs/maximized-pinboard-search-overlay-design.md §5.3). There a
+     * scrubber click with nothing selected writes only `top` —
+     * `setVirtualPage` deliberately keeps `gi` null while the gallery is
+     * closed — and without this the strip would not move. The gallery passes
+     * nothing and keeps exact current behavior: `gi` wins whenever it is set
+     * (`??`, so index 0 is still an address, not an absence).
+     */
+    fallbackAnchor?: number | null
+    /**
+     * The live position indicator (design §6): called with the virtual page
+     * of the leading visible card, and ONLY when that number changes, so
+     * panning doesn't re-render the host per frame. Must be referentially
+     * stable — it is a dependency of the scroll listener below (both mounts
+     * pass a useState setter). Comes with `pageSize`.
+     */
+    onDerivedPageChange?: (page: number) => void
+    /** k, the virtual-page size, for the derived page number. */
+    pageSize?: number
 }) {
     "use no memo"
     const parentRef = useRef<HTMLDivElement>(null)
@@ -118,16 +145,117 @@ export function VirtualGalleryHorizontalScroll({
     // deep `gi` onto an unrelated card near the front while the count is still
     // in flight. Clamping holds it at the strip's loading edge instead, which
     // is where the item will be once the extent catches up.
-    const stripTarget = count > 0 ? clampToCount(qIndex, count) : 0
+    //
+    // `gi` wins over the fallback whenever it is set — the fallback exists
+    // only for the overlay's no-selection state (see the prop).
+    const stripTarget = count > 0 ? clampToCount(qIndex ?? fallbackAnchor, count) : 0
     const fileAtTarget = source.get(stripTarget)?.file_id
     // Keep the selected thumbnail in view as the gallery index moves — the
     // ← / → keys of the gallery keyboard scope (GalleryImageLarge), the
     // click-through halves of the large image, the header arrows and
     // pagination all land here.
+    //
+    // The scroll this issues is PROGRAMMATIC, and the live listener below
+    // must not derive a highlight from it: a programmatic scroll is
+    // anchor/selection-driven, and for those the anchor itself is the
+    // authoritative highlight source (useDerivedVirtualPage's anchor-trigger
+    // branch — exact, item-addressed). Deriving from the leading visible
+    // card is only valid for USER pans, because scrollToIndex's default
+    // 'auto' alignment resolves to 'end' on a forward jump: the target card
+    // lands at the RIGHT edge, the leading card belongs to the PREVIOUS
+    // virtual page, and the listener would push N−1 for a jump to N. (Not
+    // fixed with align:'start' — that would change the gallery's
+    // minimal-scroll stepping into a full re-seat per step.)
+    const programmaticScrollRef = useRef(false)
     useEffect(() => {
         if (count === 0) return
+        programmaticScrollRef.current = true
         virtualizer.scrollToIndex(stripTarget)
+        // Clear on the next frame, not in the listener alone: when the
+        // target is ALREADY in view scrollToIndex moves nothing and NO
+        // scroll event ever fires, so a listener-only clear would leave the
+        // flag stuck — eating the first crossing of the next real user pan.
+        // Ordering is safe for the case where a scroll DOES happen: the
+        // browser runs scroll steps before animation-frame callbacks in the
+        // same rendering update, so the listener consumes the flag first.
+        requestAnimationFrame(() => {
+            programmaticScrollRef.current = false
+        })
     }, [stripTarget, fileAtTarget, count, virtualizer])
+
+    // ---- live scrubber tracking (design §6): the strip-side mirror of
+    // ResultGrid's scroll listener, so the pagination bar's highlight follows
+    // a strip PAN the way it follows a grid scroll.
+    //
+    // The last page reported, so the push fires on a page CROSSING rather
+    // than on every scroll frame — the host re-renders on each push.
+    const lastDerivedPage = useRef<number | null>(null)
+    // What the listener reads that must not re-subscribe it: `count` moves on
+    // every chunk that lands and `pageSize` on a relabel, and neither changes
+    // WHERE the strip is. The grid routes the same values through a ref to
+    // protect a 350ms scroll-stop timer; this listener owns no timer, but
+    // re-subscribing per chunk landing would still be churn with nothing
+    // bought. Written after every commit, read only from the handler.
+    const listenerData = useRef({ count, pageSize })
+    useEffect(() => {
+        listenerData.current = { count, pageSize }
+    })
+    // HIGHLIGHT ONLY — this listener writes NOTHING to the URL (no `top`, no
+    // `gi`). In gallery/overlay mode the anchor is owned by selection ("the
+    // anchor follows the position", useGalleryNavigate); giving strip pans an
+    // anchor write would create two owners for one coordinate, the exact bug
+    // class scroll mode is defined to avoid (design §6). A pan is therefore
+    // visual-only, and a refresh re-centres on the selection — consistent
+    // with selection being the durable coordinate.
+    //
+    // topRowHighlightItem with columns = 1: the strip IS a one-column grid
+    // rotated, so the leading visible card is both the first and last item of
+    // its "row" and the grid's row-vs-item distinction collapses. The
+    // end-clamp branch is the horizontal analog of the grid's lastRowVisible:
+    // once the LAST card is on screen no further scroll can move the leading
+    // one, so the final virtual pages are reachable only by letting the last
+    // item speak (asserted for this geometry in scripts/scrollmode.test.mjs).
+    //
+    // The keep-in-view programmatic scrollToIndex above fires this same
+    // listener, and the listener STANDS DOWN for it (programmaticScrollRef):
+    // the anchor that caused the scroll is the authoritative highlight
+    // source there, via the host's anchor-triggered derivation
+    // (useDerivedVirtualPage), and the leading card after an 'auto'-aligned
+    // forward jump sits on the previous page — deriving from it would
+    // overwrite the anchor's exact page with N−1.
+    useEffect(() => {
+        const element = parentRef.current
+        if (!element || !onDerivedPageChange) return
+        // A re-subscription is a new reporting epoch: leave the dedupe
+        // cleared so the first crossing under it is reported.
+        lastDerivedPage.current = null
+        const onScroll = () => {
+            // A programmatic keep-in-view scroll: consume the flag and stand
+            // down — the anchor is the highlight source for those (see the
+            // flag's comment above).
+            if (programmaticScrollRef.current) {
+                programmaticScrollRef.current = false
+                return
+            }
+            const live = listenerData.current
+            const range = virtualizer.range
+            const lastItemVisible =
+                range !== null && range.endIndex >= live.count - 1
+            const item = topRowHighlightItem(
+                range?.startIndex ?? 0,
+                1,
+                live.count,
+                lastItemVisible
+            )
+            const derived = virtualPageOf(item, live.pageSize)
+            if (derived !== lastDerivedPage.current) {
+                lastDerivedPage.current = derived
+                onDerivedPageChange(derived)
+            }
+        }
+        element.addEventListener('scroll', onScroll, { passive: true })
+        return () => element.removeEventListener('scroll', onScroll)
+    }, [virtualizer, onDerivedPageChange])
 
     // Warm the rows the strip is showing, the same way the result grid warms
     // the rows it is showing: without it a scroll-mode strip dragged past the
@@ -243,9 +371,13 @@ function VirtualHorizontalScrollElement({
     const [qIndex] = useGalleryIndex()
     // The same mapping the strip scrolls to (see stripTarget): clamped, not
     // wrapped, or the ring would land on a different card than the one the
-    // strip centres.
+    // strip centres. `gi` null is NO selection and no ring — reachable only
+    // in the overlay mount (the gallery never shows the strip without `gi`),
+    // where the strip follows `fallbackAnchor`, a position rather than a
+    // selection, and ringing card 0 for it would invent a selection that
+    // does not exist.
     const isSelected = useMemo(
-        () => nItems > 0 && ownIndex === clampToCount(qIndex, nItems),
+        () => qIndex !== null && nItems > 0 && ownIndex === clampToCount(qIndex, nItems),
         [qIndex, nItems, ownIndex]
     )
     const [dbs] = useSelectedDBs()

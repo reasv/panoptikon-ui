@@ -117,7 +117,17 @@ function useDerivedVirtualPage({ scrollMode, scrollAnchor, k, galleryOpen }: {
     scrollMode: boolean,
     scrollAnchor: number | null,
     k: number,
-    /** `gi !== null`: the gallery is mounted and the grid is NOT. */
+    /**
+     * The param's real meaning: NO grid is mounted to report scrolls, and
+     * the URL anchor IS the position — so the anchor write is the
+     * authoritative highlight trigger. Two states satisfy it: the gallery
+     * open (`gi !== null` — the gallery is mounted and the grid is not),
+     * and the maximized board (the P0 frozen host keeps the grid unmounted;
+     * the overlay strip is the only scroll surface, and its programmatic
+     * keep-in-view scrolls stand down rather than report — see
+     * VirtualizedHorizontalScroll's programmaticScrollRef — so nothing
+     * competes with the anchor).
+     */
     galleryOpen: boolean,
 }) {
     const [derivedPage, setDerivedPage] = useState(() => virtualPageOf(scrollAnchor ?? 0, k))
@@ -557,11 +567,19 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     const [scrollAnchor, setScrollAnchor] = useGridScrollAnchor()
     // The pagination bar's highlight while the grid has not reported one — and,
     // with the gallery open, for as long as it stays open (see the hook).
+    // `|| pinboardMaximized`: the flag means "no grid is mounted to report
+    // scrolls, and the anchor IS the position" — which the maximized board
+    // satisfies by construction (frozen host, grid unmounted), whatever `gi`
+    // is. This is what makes an overlay scrubber click with nothing selected
+    // (`gi` null, anchor-only write) move the highlight at all: the strip's
+    // keep-in-view scroll is programmatic and stands down (see
+    // VirtualizedHorizontalScroll), so the anchor write here is the sole —
+    // and exact — source.
     const [derivedPage, setDerivedPage] = useDerivedVirtualPage({
         scrollMode,
         scrollAnchor,
         k,
-        galleryOpen: qIndex !== null,
+        galleryOpen: qIndex !== null || pinboardMaximized,
     })
 
     // The two mount-time URL corrections, mutually exclusive by construction —
@@ -670,6 +688,11 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                         // when the live query is being withheld — see the prop
                         // (docs/video-end-action-design.md §3).
                         queryEnabled={queryEnabled}
+                        // Stable by construction (a useState setter) — the
+                        // strip's scroll listener depends on it, same
+                        // contract as the grid's. Scroll mode only: what it
+                        // reports is a virtual-page number.
+                        onDerivedPageChange={scrollMode ? setDerivedPage : undefined}
                     />
                     :
                     <GridPanel
@@ -733,6 +756,30 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                     nResults={nResults}
                     resultMetrics={data?.result_metrics}
                     countMetrics={data?.count_metrics}
+                    source={resultsSource}
+                    count={itemCount}
+                    scrollMode={scrollMode}
+                    // Scroll mode only: in pages mode `top` is a within-page
+                    // index the grid owns, not a strip position (§5.3).
+                    fallbackAnchor={scrollMode ? scrollAnchor : null}
+                    // Stable by construction (a useState setter) — the
+                    // strip's scroll listener depends on it. The division of
+                    // labor: USER pans push through this (leading-card
+                    // derivation), while anchor/selection-driven moves are
+                    // reported by useDerivedVirtualPage's anchor-trigger
+                    // branch (its `galleryOpen` flag covers the maximized
+                    // board) — the strip suppresses its own programmatic
+                    // keep-in-view scrolls, whose 'auto' alignment can put a
+                    // previous-page card in the lead (§5.4, §6).
+                    onDerivedPageChange={scrollMode ? setDerivedPage : undefined}
+                    pageSize={k}
+                    // The exact four-prop switch the page-level bar gets —
+                    // that one is gated `!fs`, so only one PageSelect is
+                    // ever on screen (§5.4).
+                    totalPages={scrollMode ? scrollTotalPages : totalPages}
+                    currentPage={scrollMode ? derivedPage : page}
+                    setPage={scrollMode ? setVirtualPage : setPage}
+                    getPageURL={scrollMode ? getVirtualPageURL : getPageURL}
                 />
             )}
         </>
