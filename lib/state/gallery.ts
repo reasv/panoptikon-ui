@@ -91,6 +91,24 @@ const useSearchOverlayOpen = () =>
     })
   )
 
+// The maximized board's LEFT-edge sidebar overlay PINNED flag
+// (docs/maximized-pinboard-search-overlay-design.md §9): the same dock
+// model as `gso`, rotated, revealing the search sidebar over the board.
+// Deliberately NOT `sb` (lib/state/sideBar.ts): maximize leaves `sb`
+// untouched so the page sidebar returns on restore — this flag names a
+// different surface with its own lifetime. Unlike `gso` it plays NO part
+// in the search-suppression gate: the sidebar EDITS the query, it does not
+// consume results, so revealing it enables nothing (useSearchSuppressed
+// below stays gso-only).
+const useSidebarOverlayOpen = () =>
+  useQueryState(
+    "gsb",
+    parseAsBoolean.withDefault(false).withOptions({
+      history: "push",
+      clearOnDefault: true,
+    })
+  )
+
 // BOARD FLAG DEFAULTS ARE WIRE FORMAT: the withDefault values on the
 // pinboard flags below define what an ABSENT parameter means in every
 // board URL ever shared, forever — never change them, or existing links
@@ -355,6 +373,7 @@ export {
   useGalleryTrim,
   usePinboardMaximized,
   useSearchOverlayOpen,
+  useSidebarOverlayOpen,
   useSearchSuppressed,
   useViewMode,
 }

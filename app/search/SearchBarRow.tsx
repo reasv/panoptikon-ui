@@ -10,6 +10,7 @@ import { AnimatedNumber } from "@/components/ui/animatedNumber"
 import { SearchMetricsHoverCard } from "@/components/SearchMetricsCard"
 import { useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
 import { useSideBarOpen } from "@/lib/state/sideBar"
+import { useSidebarOverlayOpen } from "@/lib/state/gallery"
 import { components } from "@/lib/panoptikon"
 
 // The search bar row, shared between the page header and the maximized
@@ -18,9 +19,11 @@ import { components } from "@/lib/panoptikon"
 // providers (nuqs, react-query, the toaster), so both mounts drive the SAME
 // search; what differs is chrome, driven by `variant`:
 //
-// - The sidebar toggle is page-only: the page sidebar is hidden while the
-//   board is maximized, so in the overlay the toggle would flip a control
-//   with nothing to show. P4 wires an overlay-sidebar flag (gsb) here.
+// - The sidebar toggle drives a different flag per mount: `sb` (the page
+//   sidebar) on the page, `gsb` (the left-edge sidebar overlay's PIN,
+//   design §9) in the overlay — the page sidebar is unmounted while the
+//   board is maximized, and `sb` must stay untouched so it returns on
+//   restore.
 // - The scan link is page-only: navigating to the scan page from inside a
 //   maximized board is out of place.
 // - The overlay appends a compact result count at the row's right edge —
@@ -49,17 +52,26 @@ export function SearchBarRow({
 }) {
     const [options] = useQueryOptions()
     const [sidebarOpen, setSideBarOpen] = useSideBarOpen()
+    const [sidebarOverlayPinned, setSidebarOverlayPinned] = useSidebarOverlayOpen()
     const overlay = variant === "overlay"
     return (
         <div className="flex gap-2">
-            {!overlay && <Toggle
-                pressed={sidebarOpen}
-                onClick={() => setSideBarOpen(!sidebarOpen)}
-                title={"Advanced Search Options Are " + (sidebarOpen ? "Open" : "Closed")}
+            <Toggle
+                pressed={overlay ? sidebarOverlayPinned : sidebarOpen}
+                onClick={() => overlay
+                    ? setSidebarOverlayPinned(!sidebarOverlayPinned)
+                    : setSideBarOpen(!sidebarOpen)}
+                title={overlay
+                    // The overlay toggle controls the PIN, not visibility:
+                    // an unpinned sidebar can still be revealed by hover.
+                    ? (sidebarOverlayPinned
+                        ? "Unpin Advanced Search Options — unpinned, the sidebar hides when the pointer leaves"
+                        : "Pin Advanced Search Options open")
+                    : "Advanced Search Options Are " + (sidebarOpen ? "Open" : "Closed")}
                 aria-label="Toggle Advanced Search Options"
             >
                 <Settings className="h-4 w-4" />
-            </Toggle>}
+            </Toggle>
             {!overlay && !isRestrictedMode && scanLink != null && <Link href={scanLink}>
                 <Button title="File Scan & Indexing" variant="ghost" size="icon">
                     <ScanEye className="h-4 w-4" />

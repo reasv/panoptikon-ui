@@ -85,12 +85,20 @@ function panelStyle(corner: Corner, area: DOMRect | null): React.CSSProperties {
     // added to the bottom offset (and taken out of the height budget) via
     // calc, so with no overlay the 0px fallback reproduces the plain math.
     const bottomDocked = corner[0] === "b"
+    // Left docking likewise yields to the maximized board's left-edge
+    // sidebar overlay, which publishes its width as --pinboard-left-inset
+    // while shown (design §9): same calc pattern, same 0px fallback
+    // reproducing the plain math when no sidebar is shown. Width needs no
+    // budget adjustment (unlike bottom's maxHeight): the panel is a fixed
+    // w-80 and merely slides right, off the covered band.
     return {
         top: corner[0] === "t" ? rect.top + PANEL_INSET : undefined,
         bottom: bottomDocked
             ? `calc(${vh - rect.bottom + PANEL_INSET}px + var(--pinboard-bottom-inset, 0px))`
             : undefined,
-        left: corner[1] === "l" ? rect.left + PANEL_INSET : undefined,
+        left: corner[1] === "l"
+            ? `calc(${rect.left + PANEL_INSET}px + var(--pinboard-left-inset, 0px))`
+            : undefined,
         right: corner[1] === "r" ? vw - rect.right + PANEL_INSET : undefined,
         maxHeight: bottomDocked
             ? `max(160px, calc(${rect.height - 2 * PANEL_INSET}px - var(--pinboard-bottom-inset, 0px)))`

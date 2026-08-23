@@ -27,6 +27,7 @@ import { usePinboardAssociatedOnly } from '@/lib/state/pinboardLibraryPrefs'
 import { mintSeed, useOrderBy, usePageSize, usePageSizeRaw, useQueryOptions, useRandomSeed, useSearchPageRaw, useStampRandomSeed } from "@/lib/state/searchQuery/clientHooks"
 import { SearchBarRow } from "./SearchBarRow"
 import { SearchOverlay } from "./SearchOverlay"
+import { SidebarOverlay } from "./SidebarOverlay"
 import { creationStamp, effectiveCreationDefaults, isFreshSession } from "@/lib/searchDefaults"
 import { ViewModeToggle } from "@/components/ViewModeToggle"
 import { getScrollPositionURL } from "@/lib/state/searchQuery/serializers"
@@ -782,6 +783,13 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                     getPageURL={scrollMode ? getVirtualPageURL : getPageURL}
                 />
             )}
+            {/* The left-edge sidebar dock — the same model rotated
+                (design §9). Self-contained (the sidebar content reads
+                everything from hooks), so no props. The page <SideBar/> is
+                unmounted while maximized (SearchPageContent gates it on
+                !pinboardMaximized), so this is the only mount of the
+                sidebar content — the two can never double-mount. */}
+            {pinboardMaximized && <SidebarOverlay />}
         </>
     )
 }
