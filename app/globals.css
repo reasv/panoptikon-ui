@@ -220,6 +220,19 @@
   transition: none !important;
 }
 
+/* RGL item SIZE changes never ease. RGL's stylesheet transitions
+   transform, width and height; width/height are layout properties, so
+   easing them re-lays-out the pin (and re-rasters its media) every frame
+   for 200ms — and a container-width change (sidebar toggle, maximize)
+   does that for every item on the board at once, which reads as the whole
+   board stuttering. Position keeps RGL's easing: transform composites
+   without layout, and movement is what makes a settle look animated —
+   sizes just snap to their new cell. Parent-qualified to outrank the
+   stock `.react-grid-item.cssTransforms` rule whatever the import order. */
+.react-grid-layout > .react-grid-item.cssTransforms {
+  transition-property: transform;
+}
+
 /* Pinboard gesture floor: while a drag/resize gesture is active the
    board's grid container may not shrink below its gesture-start height
    (a shrinking container shrinks the scroll range, the browser clamps
