@@ -41,6 +41,7 @@ export function VirtualGalleryHorizontalScroll({
     fallbackAnchor = null,
     onDerivedPageChange,
     pageSize = 0,
+    onItemHover,
 }: {
     /**
      * The same rows the gallery reads: the page's array in pages mode, a
@@ -92,6 +93,16 @@ export function VirtualGalleryHorizontalScroll({
     onDerivedPageChange?: (page: number) => void
     /** k, the virtual-page size, for the derived page number. */
     pageSize?: number
+    /**
+     * Hover reporting for the maximized search overlay's centered preview
+     * (docs/maximized-pinboard-search-overlay-design.md §8): the row on card
+     * mouseenter, null on mouseleave — and null again on a card's own
+     * dragstart, part of the same contract, because the preview portals at
+     * z-70 and would visually occlude a drag toward the board (§8). Only
+     * LOADED cards report: a skeleton has no row to preview. The gallery
+     * mount passes nothing and is unaffected.
+     */
+    onItemHover?: (item: SearchResult | null, index: number) => void
 }) {
     "use no memo"
     const parentRef = useRef<HTMLDivElement>(null)
@@ -319,6 +330,7 @@ export function VirtualGalleryHorizontalScroll({
                                 nItems={count}
                                 style={style}
                                 onNavigate={onNavigate}
+                                onItemHover={onItemHover}
                             />
                         )
                     })}
@@ -360,6 +372,7 @@ function VirtualHorizontalScrollElement({
     nItems,
     style,
     onNavigate,
+    onItemHover,
 }: {
     item: SearchResult
     ownIndex: number
@@ -367,6 +380,8 @@ function VirtualHorizontalScrollElement({
     style: React.CSSProperties
     /** The gallery's position write — see the strip's own prop. */
     onNavigate: (index: number) => void
+    /** Hover reporting for the overlay preview — see the strip's own prop. */
+    onItemHover?: (item: SearchResult | null, index: number) => void
 }) {
     const [qIndex] = useGalleryIndex()
     // The same mapping the strip scrolls to (see stripTarget): clamped, not
@@ -403,6 +418,11 @@ function VirtualHorizontalScrollElement({
         event.dataTransfer.effectAllowed = 'copy';
         event.dataTransfer.setData('text/plain', item.sha256);
         event.dataTransfer.setData('text/uri-list', getFileURL(dbs, "file", "sha256", item.sha256));
+        // The hovered card is by definition the drag source, so clear the
+        // overlay's hover preview: it portals at z-70 and would sit over the
+        // board exactly where the drag is headed (design §8). mouseleave is
+        // not reliable mid-HTML5-drag, hence the explicit clear here.
+        onItemHover?.(null, ownIndex);
     }
     return (
         <div
@@ -419,6 +439,8 @@ function VirtualHorizontalScrollElement({
                 )}
                 onDragStart={handleDragStart}
                 draggable={true}
+                onMouseEnter={() => onItemHover?.(item, ownIndex)}
+                onMouseLeave={() => onItemHover?.(null, ownIndex)}
             >
                 <Link href={imageLink} onClick={onClick}>
                     <div className="w-full h-full relative">

@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils"
 import { Toggle } from "@/components/ui/toggle"
 import { PageSelect } from "@/components/pageselect"
 import { VirtualGalleryHorizontalScroll } from "@/components/gallery/VirtualizedHorizontalScroll"
+import { useDelayedHover } from "@/components/gallery/PinboardPreviewPopover"
+import { ResultHoverPreview } from "./ResultHoverPreview"
 import { SearchBarRow } from "./SearchBarRow"
 import { useGalleryNavigate, useSearchOverlayOpen } from "@/lib/state/gallery"
 import { useSearchOverlayReveal } from "@/lib/state/searchOverlayReveal"
@@ -116,6 +118,28 @@ export function SearchOverlay({
     const [focusWithin, setFocusWithin] = useState(false)
     const panelRef = useRef<HTMLDivElement>(null)
     const shown = hoverBand || hoverPanel || focusWithin || pinned
+
+    // The hover preview's subject (design §8): the strip card under the
+    // pointer, debounced 200ms on open so a sweep across cards doesn't
+    // flash a preview per card, cleared instantly on leave — the same
+    // useDelayedHover the pinboard preview popovers use. The strip's
+    // onItemHover contract also feeds null on a card's own dragstart (the
+    // z-70 preview would occlude the drag toward the board). Passing the
+    // setter directly is deliberate: it is stable (useCallback inside the
+    // hook) and its (item | null) shape is assignable to the strip's
+    // (item | null, index) callback.
+    const [hoverItem, setHoverItem] = useDelayedHover<SearchResult>(200)
+    // Panel hide clears the preview too (§8 "cleared on overlay close").
+    // Leaving a card fires its own mouseleave before the panel's on any
+    // pointer path, so this is the net for hide paths where no card
+    // mouseleave is delivered — e.g. a drag that exits an unpinned panel
+    // (HTML5 drags suppress mouse events; dragstart already cleared it,
+    // this keeps the invariant if that ever changes). A hidden panel with
+    // a live full-viewport preview stranded over the board is never
+    // acceptable, so the clear keys on the show-state itself.
+    useEffect(() => {
+        if (!shown) setHoverItem(null)
+    }, [shown, setHoverItem])
 
     // Mirror the show-state into the ephemeral reveal store, which is the
     // client-only half of useSearchSuppressed: a hover-revealed overlay is
@@ -298,6 +322,7 @@ export function SearchOverlay({
                             fallbackAnchor={fallbackAnchor}
                             onDerivedPageChange={onDerivedPageChange}
                             pageSize={pageSize}
+                            onItemHover={setHoverItem}
                         />
                     </div>
                     {/* The pagination row: with `gi` set, a scrubber click
@@ -318,6 +343,11 @@ export function SearchOverlay({
                     )}
                 </div>
             </div>
+            {/* The hover preview (design §8): mounted ONLY while a card is
+                hovered — no idle portal — replacing the gallery's
+                large-image role over the maximized board. Its own file owns
+                the box, layering and dwell upgrade. */}
+            {hoverItem && <ResultHoverPreview item={hoverItem} />}
         </>
     )
 }
