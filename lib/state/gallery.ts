@@ -10,6 +10,7 @@ import {
 import type { TrimRange } from "@/lib/pinboardCrop"
 import { encodeGalleryTrim, parseGalleryTrim } from "@/lib/galleryTrim"
 import { isPinboardMaximized, isSearchSuppressed } from "./pinboardView"
+import { useSearchOverlayReveal } from "./searchOverlayReveal"
 
 const useGalleryIndex = () =>
   useQueryState(
@@ -36,12 +37,15 @@ const useGalleryFullscreen = () =>
     })
   )
 
-// The maximized board's bottom search overlay
-// (docs/maximized-pinboard-search-overlay-design.md §2). history "push" so
-// Back closes the overlay; clearOnDefault so clean board links stay clean
-// and "open maximized in a new tab" carries no stray flag. The default is
-// mirrored by the server-side parser in lib/state/pinboardView.ts — wire
-// format, like every flag in this file.
+// The maximized board's bottom search overlay PINNED flag
+// (docs/maximized-pinboard-search-overlay-design.md §2): pinned means the
+// panel stays up without the pointer holding it there. The ephemeral reveal
+// (hover/focus) is client state in lib/state/searchOverlayReveal.ts, not
+// here — a peek must never rewrite history. history "push" so Back unpins;
+// clearOnDefault so clean board links stay clean and "open maximized in a
+// new tab" carries no stray flag. The default is mirrored by the
+// server-side parser in lib/state/pinboardView.ts — wire format, like
+// every flag in this file.
 const useSearchOverlayOpen = () =>
   useQueryState(
     "gso",
@@ -261,18 +265,29 @@ const usePinboardMaximized = () =>
   })
 
 // Whether the search queries should be withheld: the board is maximized AND
-// the search overlay is closed, so nothing on screen consumes the results.
-// The search gates read this, not usePinboardMaximized — see
-// lib/state/pinboardView.ts.
-const useSearchSuppressed = () =>
-  isSearchSuppressed({
-    fs: useGalleryFullscreen()[0],
-    hidePinBoard: useGalleryHidePinBoard()[0],
-    gridTab: useGridPinboardTab()[0],
-    pinboard: useGalleryPinBoardLayout()[0],
-    pbl: useGalleryPinBoardLoad()[0],
-    searchOverlay: useSearchOverlayOpen()[0],
-  })
+// nothing on screen consumes the results — the overlay is neither pinned
+// (`gso`) nor transiently revealed (hover/focus, the client-only store).
+// The reveal read is the one client-only addition over the pure predicate:
+// a hover-revealed overlay is a consumer and enables the query exactly like
+// a pinned one, while the SSR twin (isSearchSuppressedFromParams) consults
+// `gso` alone — a cold load is either pinned-open or closed
+// (docs/maximized-pinboard-search-overlay-design.md §2). The search gates
+// read this, not usePinboardMaximized — see lib/state/pinboardView.ts.
+const useSearchSuppressed = () => {
+  // Subscribed unconditionally, before the predicate: hooks may not hide
+  // behind a short-circuit.
+  const revealed = useSearchOverlayReveal((s) => s.revealed)
+  return (
+    isSearchSuppressed({
+      fs: useGalleryFullscreen()[0],
+      hidePinBoard: useGalleryHidePinBoard()[0],
+      gridTab: useGridPinboardTab()[0],
+      pinboard: useGalleryPinBoardLayout()[0],
+      pbl: useGalleryPinBoardLoad()[0],
+      searchOverlay: useSearchOverlayOpen()[0],
+    }) && !revealed
+  )
+}
 
 const gallerySearchParams = () => ({
   gi: parseAsInteger,

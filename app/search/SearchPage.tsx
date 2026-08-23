@@ -461,24 +461,25 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     }, [pinboardMaximized, liveGalleryHost])
     const galleryHost = pinboardMaximized ? frozenGalleryHost : liveGalleryHost
 
-    // The maximized board's search overlay (its shell is SearchOverlay; the
-    // flag scopes the query gates above — see useSearchSuppressed). The
-    // chord follows the grid host's Ctrl+Shift+M effect: registered only
-    // while it can mean anything (the overlay exists only over a maximized
-    // board), functional toggle through the setter so the handler closes
-    // over no stale flag value.
-    const [overlayOpen, setOverlayOpen] = useSearchOverlayOpen()
+    // The maximized board's search overlay chord: Ctrl+Shift+F toggles the
+    // PIN (`gso` — see useSearchSuppressed for how the flag scopes the
+    // query gates above; the hover/focus reveal is the dock's own affair,
+    // SearchOverlay). The chord follows the grid host's Ctrl+Shift+M
+    // effect: registered only while it can mean anything (the overlay
+    // exists only over a maximized board), functional toggle through the
+    // setter so the handler closes over no stale flag value.
+    const setOverlayPinned = useSearchOverlayOpen()[1]
     useEffect(() => {
         if (!pinboardMaximized) return
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.ctrlKey && event.shiftKey && event.code === 'KeyF') {
                 event.preventDefault()
-                setOverlayOpen((open) => !open)
+                setOverlayPinned((pinned) => !pinned)
             }
         }
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [pinboardMaximized, setOverlayOpen])
+    }, [pinboardMaximized, setOverlayPinned])
 
     const [options, setOptions] = useQueryOptions()
     const dbs = useSelectedDBs()[0]
@@ -739,11 +740,14 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                     />
                 )
             }
-            {/* The maximized board's bottom search overlay — search chrome,
+            {/* The maximized board's bottom search dock — search chrome,
                 so it mounts here where every value it needs is in scope,
-                never inside PinBoard (docs/maximized-pinboard-search-
+                never inside PinBoard. Mounted whenever the board is
+                maximized: visibility (hidden, hover-revealed, pinned) is
+                the dock's own affair, mirroring how PinboardFullscreenBar
+                owns its hover state (docs/maximized-pinboard-search-
                 overlay-design.md §5.1) */}
-            {pinboardMaximized && overlayOpen && (
+            {pinboardMaximized && (
                 <SearchOverlay
                     onRefresh={onRefresh}
                     isFetching={isFetching}

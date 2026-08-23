@@ -62,14 +62,20 @@ export function isPinboardMaximizedFromParams(params: {
 
 // "Search is suppressed" — the maximize rationale above, scoped to "no
 // consumer is on screen": the maximized board's bottom search overlay
-// (?gso=true) puts a search bar and result count OVER the board, so an open
-// overlay is a consumer and the queries must run for it. The search gates
+// puts a search bar and result count OVER the board, so a shown overlay is
+// a consumer and the queries must run for it. `gso` is the overlay's
+// PINNED flag; the transient hover/focus reveal is client-only state
+// (lib/state/searchOverlayReveal.ts) that the client hook
+// useSearchSuppressed (lib/state/gallery.ts) layers on top of this pure
+// predicate — suppressed = maximized && !pinned && !revealed. This module
+// stays `gso`-only on purpose: the SSR prefetch has no reveal to consult,
+// so a cold load is either pinned-open or closed. The search gates
 // (useSearch, the chunk store, the SSR prefetch) all switched from
 // isPinboardMaximized to this — isPinboardMaximized itself keeps its other
 // consumers (sidebar hiding, host latching) unchanged. See
 // docs/maximized-pinboard-search-overlay-design.md §2/§4.
 export interface SearchSuppressionState extends PinboardViewState {
-  /** gso — the maximized board's bottom search overlay */
+  /** gso — the maximized board's search overlay PINNED flag */
   searchOverlay: boolean
 }
 
