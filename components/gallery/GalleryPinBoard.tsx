@@ -1936,7 +1936,10 @@ export function PinBoard(
     // In fullscreen the board effectively IS the screen, so the surface
     // widens to the whole viewport: any press not claimed by the board
     // itself (whose background handler already arms), a pin, an overlay
-    // control or a floating panel starts a marquee.
+    // control or a floating panel starts a marquee. The maximized search
+    // overlay is one of those panels: a press on its own padding must not
+    // rubber-band the board underneath it
+    // (docs/maximized-pinboard-search-overlay-design.md §7).
     useEffect(() => {
         const onDown = (e: PointerEvent) => {
             if (e.button !== 0) return
@@ -1945,7 +1948,8 @@ export function PinBoard(
             const onFrame = t.hasAttribute?.("data-pinboard-frame")
             const fromViewport = fs && !isInteractiveTarget(t) && !t.closest?.(
                 '[data-pinboard-area], [data-pin-key], [data-selection-toolbar],'
-                + ' [data-pinboard-history], [data-radix-popper-content-wrapper],'
+                + ' [data-pinboard-history], [data-search-overlay],'
+                + ' [data-radix-popper-content-wrapper],'
                 + ' [role="menu"], [role="dialog"]'
             )
             if (!onFrame && !fromViewport) return
@@ -2027,7 +2031,9 @@ export function PinBoard(
     // menu — the board background, the rest of the app — deselects, the
     // way every file manager does. Ctrl/shift presses are exempt so
     // additive marquees and range clicks can start anywhere. Capture
-    // phase on document, so this runs before any React handler.
+    // phase on document, so this runs before any React handler. The
+    // maximized search overlay is exempt too: running a search over the
+    // board must not clear the pin selection (design doc §7).
     useEffect(() => {
         if (selected.length === 0) return
         const onDown = (e: PointerEvent) => {
@@ -2042,7 +2048,7 @@ export function PinBoard(
             if (t.closest?.(
                 '[data-pin-key], [data-selection-toolbar], [data-scroll-area-scrollbar],'
                 + ' [data-radix-popper-content-wrapper], [role="menu"], [data-hole-overlay],'
-                + ' [data-transform-overlay]'
+                + ' [data-transform-overlay], [data-search-overlay]'
             )) return
             usePinSelection.getState().clear()
         }

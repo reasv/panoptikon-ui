@@ -17,6 +17,7 @@ import {
     Save,
     SaveAll,
     Scaling,
+    Search,
     Trash2,
     WandSparkles,
 } from "lucide-react"
@@ -55,6 +56,7 @@ import {
     useGalleryPinGrid,
     useGalleryPinProportional,
     useGalleryPinResizeHandles,
+    useSearchOverlayOpen,
 } from "@/lib/state/gallery"
 import { usePinboardBoardApi } from "@/lib/state/pinboardBoardApi"
 import { PinboardLibraryDialog } from "./PinboardLibrary"
@@ -485,6 +487,12 @@ function ToolbarDivider() {
 // the bar shows itself briefly when entering fullscreen.
 export function PinboardFullscreenBar() {
     const setFs = useGalleryFullscreen()[1]
+    // The bottom search overlay's flag. A plain URL toggle, deliberately
+    // NOT wired into the openMenu exclusive slot below — that machinery
+    // exists only for the bar's dropdowns, and the overlay is not a Radix
+    // layer this bar owns (MultiSearchView mounts it; this button only
+    // writes gso — docs/maximized-pinboard-search-overlay-design.md §5.1).
+    const [searchOverlay, setSearchOverlay] = useSearchOverlayOpen()
     const [showGrid, setShowGrid] = useGalleryPinGrid()
     const [allHandles, setAllHandles] = useGalleryPinResizeHandles()
     const [autoLayout] = useGalleryPinAutoLayout()
@@ -741,6 +749,18 @@ export function PinboardFullscreenBar() {
                             />
                         </DropdownMenuContent>
                     </DropdownMenu>
+                    {/* The search overlay toggle sits with the view-level
+                        controls: it changes what is on screen over the
+                        board, not the board itself */}
+                    <ToolbarButton
+                        title={searchOverlay
+                            ? "Search (Ctrl+Shift+F): the search overlay is open. Click to close it"
+                            : "Search (Ctrl+Shift+F): open the search overlay to find and pin items without leaving the board"}
+                        active={searchOverlay}
+                        onClick={() => setSearchOverlay(!searchOverlay)}
+                    >
+                        <Search className="h-5 w-5" />
+                    </ToolbarButton>
                     <ToolbarDivider />
                     <ToolbarButton
                         title="Restore pinboard size (Ctrl+Shift+M)"

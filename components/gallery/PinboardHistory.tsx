@@ -79,12 +79,22 @@ function panelStyle(corner: Corner, area: DOMRect | null): React.CSSProperties {
     const vw = window.innerWidth
     const vh = window.innerHeight
     const rect = area ?? new DOMRect(16, 96, vw - 32, vh - 112)
+    // Bottom docking yields to the maximized board's search overlay, which
+    // publishes its height as --pinboard-bottom-inset while mounted
+    // (docs/maximized-pinboard-search-overlay-design.md §7): the inset is
+    // added to the bottom offset (and taken out of the height budget) via
+    // calc, so with no overlay the 0px fallback reproduces the plain math.
+    const bottomDocked = corner[0] === "b"
     return {
         top: corner[0] === "t" ? rect.top + PANEL_INSET : undefined,
-        bottom: corner[0] === "b" ? vh - rect.bottom + PANEL_INSET : undefined,
+        bottom: bottomDocked
+            ? `calc(${vh - rect.bottom + PANEL_INSET}px + var(--pinboard-bottom-inset, 0px))`
+            : undefined,
         left: corner[1] === "l" ? rect.left + PANEL_INSET : undefined,
         right: corner[1] === "r" ? vw - rect.right + PANEL_INSET : undefined,
-        maxHeight: Math.max(160, rect.height - 2 * PANEL_INSET),
+        maxHeight: bottomDocked
+            ? `max(160px, calc(${rect.height - 2 * PANEL_INSET}px - var(--pinboard-bottom-inset, 0px)))`
+            : Math.max(160, rect.height - 2 * PANEL_INSET),
     }
 }
 

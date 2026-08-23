@@ -9,7 +9,7 @@ import {
 } from "nuqs"
 import type { TrimRange } from "@/lib/pinboardCrop"
 import { encodeGalleryTrim, parseGalleryTrim } from "@/lib/galleryTrim"
-import { isPinboardMaximized } from "./pinboardView"
+import { isPinboardMaximized, isSearchSuppressed } from "./pinboardView"
 
 const useGalleryIndex = () =>
   useQueryState(
@@ -33,6 +33,21 @@ const useGalleryFullscreen = () =>
     parseAsBoolean.withDefault(false).withOptions({
       clearOnDefault: false,
       history: "push",
+    })
+  )
+
+// The maximized board's bottom search overlay
+// (docs/maximized-pinboard-search-overlay-design.md §2). history "push" so
+// Back closes the overlay; clearOnDefault so clean board links stay clean
+// and "open maximized in a new tab" carries no stray flag. The default is
+// mirrored by the server-side parser in lib/state/pinboardView.ts — wire
+// format, like every flag in this file.
+const useSearchOverlayOpen = () =>
+  useQueryState(
+    "gso",
+    parseAsBoolean.withDefault(false).withOptions({
+      history: "push",
+      clearOnDefault: true,
     })
   )
 
@@ -245,6 +260,20 @@ const usePinboardMaximized = () =>
     pbl: useGalleryPinBoardLoad()[0],
   })
 
+// Whether the search queries should be withheld: the board is maximized AND
+// the search overlay is closed, so nothing on screen consumes the results.
+// The search gates read this, not usePinboardMaximized — see
+// lib/state/pinboardView.ts.
+const useSearchSuppressed = () =>
+  isSearchSuppressed({
+    fs: useGalleryFullscreen()[0],
+    hidePinBoard: useGalleryHidePinBoard()[0],
+    gridTab: useGridPinboardTab()[0],
+    pinboard: useGalleryPinBoardLayout()[0],
+    pbl: useGalleryPinBoardLoad()[0],
+    searchOverlay: useSearchOverlayOpen()[0],
+  })
+
 const gallerySearchParams = () => ({
   gi: parseAsInteger,
   gt: parseAsBoolean,
@@ -273,5 +302,7 @@ export {
   useGalleryPinResizeHandles,
   useGalleryTrim,
   usePinboardMaximized,
+  useSearchOverlayOpen,
+  useSearchSuppressed,
   useViewMode,
 }

@@ -59,3 +59,34 @@ export function isPinboardMaximizedFromParams(params: {
     pbl: parseAsString.parseServerSide(params.pbl),
   })
 }
+
+// "Search is suppressed" — the maximize rationale above, scoped to "no
+// consumer is on screen": the maximized board's bottom search overlay
+// (?gso=true) puts a search bar and result count OVER the board, so an open
+// overlay is a consumer and the queries must run for it. The search gates
+// (useSearch, the chunk store, the SSR prefetch) all switched from
+// isPinboardMaximized to this — isPinboardMaximized itself keeps its other
+// consumers (sidebar hiding, host latching) unchanged. See
+// docs/maximized-pinboard-search-overlay-design.md §2/§4.
+export interface SearchSuppressionState extends PinboardViewState {
+  /** gso — the maximized board's bottom search overlay */
+  searchOverlay: boolean
+}
+
+export function isSearchSuppressed(state: SearchSuppressionState): boolean {
+  return isPinboardMaximized(state) && !state.searchOverlay
+}
+
+/**
+ * The suppression predicate over raw search params, for the server render.
+ * The gso parser mirrors state/gallery.ts exactly, like every parser in
+ * this file — its default is wire format (see the note there).
+ */
+export function isSearchSuppressedFromParams(params: {
+  [key: string]: string | string[] | undefined
+}): boolean {
+  return (
+    isPinboardMaximizedFromParams(params) &&
+    !parseAsBoolean.withDefault(false).parseServerSide(params.gso)
+  )
+}

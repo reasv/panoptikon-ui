@@ -23,7 +23,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useThrottledValue } from "./useThrottledValue"
 import {
   useGalleryIndex,
-  usePinboardMaximized,
+  useSearchSuppressed,
   useViewMode,
 } from "./state/gallery"
 import type { ViewMode } from "./state/gallery"
@@ -121,12 +121,16 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const searchEnabled = useQueryOptions()[0].s_enable
   const instantSearch = useInstantSearch((state) => state.enabled)
   const commitToken = useInstantSearch((state) => state.commitToken)
-  // A maximized board hides every consumer of these results, so running the
-  // search buys nothing — and for an embedding query it costs a model load.
-  // keepPreviousData below means whatever was fetched before maximizing
-  // stays in hand, so restoring the board size shows it immediately while
-  // the now-stale query refetches. See lib/state/pinboardView.ts.
-  const pinboardMaximized = usePinboardMaximized()
+  // A maximized board with the search overlay closed hides every consumer of
+  // these results, so running the search buys nothing — and for an embedding
+  // query it costs a model load. An open overlay IS a consumer on screen, so
+  // the gate is isSearchSuppressed (maximized AND overlay closed), not
+  // isPinboardMaximized (docs/maximized-pinboard-search-overlay-design.md
+  // §4). keepPreviousData below means whatever was fetched before the
+  // suppression stays in hand, so restoring the board size — or opening the
+  // overlay — shows it immediately while the now-stale query refetches. See
+  // lib/state/pinboardView.ts.
+  const searchSuppressed = useSearchSuppressed()
   const [partitionBy] = usePartitionBy()
   // The request is throttled as a single unit — filters, page, partitioning
   // and database selection together — so a partially-updated "hybrid" query
@@ -177,7 +181,7 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
   const queryEnabled =
     searchEnabled &&
     (instantSearch || committedKey === liveKey) &&
-    !pinboardMaximized
+    !searchSuppressed
   // Spread, not passed straight through: openapi-react-query's init type wants
   // an index signature, which a named interface doesn't carry. The spread is
   // shallow and the key is hashed by value, so it changes nothing at runtime.
@@ -725,7 +729,7 @@ export function useChunkedResults({
 }: {
   committedQuery: SearchRequestParts
   /**
-   * `searchEnabled && !pinboardMaximized` — NOT `useSearch`'s `queryEnabled`.
+   * `searchEnabled && !searchSuppressed` — NOT `useSearch`'s `queryEnabled`.
    *
    * Every chunk body is derived from the COMMITTED query, so fetching one is
    * always safe for what is on screen: there is no uncommitted edit it could
@@ -735,8 +739,11 @@ export function useChunkedResults({
    * nudge (which changes the live key while the committed query stands still),
    * would disable chunk fetching and freeze the user on skeletons until they
    * pressed Enter. The two gates that DO belong here are the `s_enable` one
-   * (invalid input has no request to make) and the maximized-board one (no
-   * consumer is on screen, and an embedding query costs a model load).
+   * (invalid input has no request to make) and the suppression one — the
+   * board maximized with the search overlay closed, so no consumer is on
+   * screen and an embedding query would cost a model load for nothing; an
+   * open overlay IS a consumer, which is exactly what `isSearchSuppressed`
+   * scopes the old maximized-board gate down to.
    */
   enabled: boolean
   /**

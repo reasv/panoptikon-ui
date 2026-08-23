@@ -280,8 +280,10 @@ export function HoleTargetOverlay({
                 </div>
             )}
             {/* Fixed so it stays readable however far the board is
-                scrolled */}
-            <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-none rounded-full bg-black/70 text-white text-xs px-3 py-1.5 whitespace-nowrap">
+                scrolled; the bottom offset adds --pinboard-bottom-inset so
+                the maximized board's search overlay never covers it
+                (docs/maximized-pinboard-search-overlay-design.md §7) */}
+            <div className="fixed bottom-[calc(1rem_+_var(--pinboard-bottom-inset,0px))] left-1/2 -translate-x-1/2 z-50 pointer-events-none rounded-full bg-black/70 text-white text-xs px-3 py-1.5 whitespace-nowrap">
                 {hint}
             </div>
         </div>

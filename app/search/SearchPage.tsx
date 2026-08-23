@@ -1,13 +1,8 @@
 "use client"
 import { PageSelect } from "@/components/pageselect"
 import { useInstantSearch, useSearchLoading } from "@/lib/state/zust"
-import { Toggle } from "@/components/ui/toggle"
-import { Settings, RefreshCw, ScanEye } from "lucide-react"
 import { AnimatedNumber } from "@/components/ui/animatedNumber"
-import { InstantSearchLock } from "@/components/InstantSearchLock"
-import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/use-toast"
-import { SearchBar, TagSearchBar } from "@/components/searchBar"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { SearchQueryArgs } from "./queryFns"
 import { SearchErrorToast } from "@/components/searchErrorToaster"
@@ -16,7 +11,7 @@ import { ScrollBar } from "@/components/ui/scroll-area"
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { SideBar } from "@/components/sidebar/SideBar"
 import { SearchResultImage } from "@/components/SearchResultImage"
-import { useGalleryFullscreen, useGalleryIndex, useGalleryPinBoardLayout, useGridLibraryTab, useGridPinboardTab, usePinboardMaximized, useViewMode } from "@/lib/state/gallery"
+import { useGalleryFullscreen, useGalleryIndex, useGalleryPinBoardLayout, useGridLibraryTab, useGridPinboardTab, usePinboardMaximized, useSearchOverlayOpen, useSearchSuppressed, useViewMode } from "@/lib/state/gallery"
 import type { ViewMode } from "@/lib/state/gallery"
 import { useSideBarOpen } from "@/lib/state/sideBar"
 import { selectedDBsSerializer, useSelectedDBs } from "@/lib/state/database"
@@ -29,15 +24,15 @@ import { PinboardSearchGrid } from '@/components/gallery/PinboardSearchGrid'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { usePinboardURLLoader } from '@/lib/pinboardLinks'
 import { usePinboardAssociatedOnly } from '@/lib/state/pinboardLibraryPrefs'
-import { ImageSimilarityHeader } from '@/components/ImageSimilarityHeader'
 import { mintSeed, useOrderBy, usePageSize, usePageSizeRaw, useQueryOptions, useRandomSeed, useSearchPageRaw, useStampRandomSeed } from "@/lib/state/searchQuery/clientHooks"
+import { SearchBarRow } from "./SearchBarRow"
+import { SearchOverlay } from "./SearchOverlay"
 import { creationStamp, effectiveCreationDefaults, isFreshSession } from "@/lib/searchDefaults"
 import { ViewModeToggle } from "@/components/ViewModeToggle"
 import { getScrollPositionURL } from "@/lib/state/searchQuery/serializers"
 import { overscanItemsFor, topRowHighlightItem, virtualPageAnchor, virtualPageOf } from "@/lib/scrollMode"
 import { useSearchParams, type ReadonlyURLSearchParams } from "next/navigation"
 import { ResultCellSkeleton } from "@/components/ResultCellSkeleton"
-import Link from "next/link"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { components } from "@/lib/panoptikon"
@@ -358,7 +353,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     const totalPages = pageSize > 0 ? (Math.ceil((nResults || 1) / (pageSize)) || 1) : 1
     const [qIndex, setIndex] = useGalleryIndex()
     const results = data?.results || []
-    const [sidebarOpen, setSideBarOpen] = useSideBarOpen()
+    const [sidebarOpen] = useSideBarOpen()
     // The setter is used once, by the creation-defaults stamp far below —
     // taken from this same hook call rather than a second one, so there is one
     // subscription to `vm` on this component.
@@ -370,16 +365,20 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     // calls `ensureRange` there either, so its query set is empty regardless —
     // the flag is the belt to that braces).
     //
-    // `searchEnabled && !pinboardMaximized` rather than useSearch's
+    // `searchEnabled && !searchSuppressed` rather than useSearch's
     // `queryEnabled`: chunk bodies are built from the COMMITTED query, so
     // there is no uncommitted edit a chunk fetch could leak, while the
     // committed-vs-live half of `queryEnabled` would freeze scrolling on
     // skeletons whenever the user has instant search off or nudges page_size
-    // (see useChunkedResults' `enabled` param).
+    // (see useChunkedResults' `enabled` param). The suppression predicate,
+    // not `pinboardMaximized`: an open search overlay over the maximized
+    // board is a consumer of these rows
+    // (docs/maximized-pinboard-search-overlay-design.md §4).
     const pinboardMaximized = usePinboardMaximized()
+    const searchSuppressed = useSearchSuppressed()
     const chunkSource = useChunkedResults({
         committedQuery,
-        enabled: scrollMode && searchEnabled && !pinboardMaximized,
+        enabled: scrollMode && searchEnabled && !searchSuppressed,
         // The fallback reads `results[i]` AS global item i, which is only true
         // while the main query is on page 1 — scroll mode's own invariant, but
         // one that a hand-made `vm=scroll&page=3` URL breaks for the tick
@@ -431,6 +430,25 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
         if (!pinboardMaximized) setFrozenGalleryHost(liveGalleryHost)
     }, [pinboardMaximized, liveGalleryHost])
     const galleryHost = pinboardMaximized ? frozenGalleryHost : liveGalleryHost
+
+    // The maximized board's search overlay (its shell is SearchOverlay; the
+    // flag scopes the query gates above — see useSearchSuppressed). The
+    // chord follows the grid host's Ctrl+Shift+M effect: registered only
+    // while it can mean anything (the overlay exists only over a maximized
+    // board), functional toggle through the setter so the handler closes
+    // over no stale flag value.
+    const [overlayOpen, setOverlayOpen] = useSearchOverlayOpen()
+    useEffect(() => {
+        if (!pinboardMaximized) return
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.ctrlKey && event.shiftKey && event.code === 'KeyF') {
+                event.preventDefault()
+                setOverlayOpen((open) => !open)
+            }
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [pinboardMaximized, setOverlayOpen])
 
     const [options, setOptions] = useQueryOptions()
     const dbs = useSelectedDBs()[0]
@@ -590,29 +608,13 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
             {!fs && <div className={cn("mb-4 2xl:mx-auto",
                 sidebarOpen ? '2xl:w-2/3' : '2xl:w-1/2'
             )}>
-                <div className="flex gap-2">
-                    <Toggle
-                        pressed={sidebarOpen}
-                        onClick={() => setSideBarOpen(!sidebarOpen)}
-                        title={"Advanced Search Options Are " + (sidebarOpen ? "Open" : "Closed")}
-                        aria-label="Toggle Advanced Search Options"
-                    >
-                        <Settings className="h-4 w-4" />
-                    </Toggle>
-                    {!isRestrictedMode && <Link href={scanLink}>
-                        <Button title="File Scan & Indexing" variant="ghost" size="icon">
-                            <ScanEye className="h-4 w-4" />
-                        </Button>
-                    </Link>}
-                    {
-                        options.tag_mode ? <TagSearchBar onSubmit={onRefresh} /> :
-                            options.e_iss ? <ImageSimilarityHeader /> : <SearchBar onSubmit={onRefresh} />
-                    }
-                    <InstantSearchLock />
-                    <Toggle title="Refresh search results" onClick={onRefresh} pressed={false}>
-                        <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-                    </Toggle>
-                </div>
+                <SearchBarRow
+                    variant="page"
+                    onRefresh={onRefresh}
+                    isFetching={isFetching}
+                    isRestrictedMode={isRestrictedMode}
+                    scanLink={scanLink}
+                />
             </div>}
             {
                 // The gallery is mounted while there is a position and there
@@ -707,6 +709,19 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                     />
                 )
             }
+            {/* The maximized board's bottom search overlay — search chrome,
+                so it mounts here where every value it needs is in scope,
+                never inside PinBoard (docs/maximized-pinboard-search-
+                overlay-design.md §5.1) */}
+            {pinboardMaximized && overlayOpen && (
+                <SearchOverlay
+                    onRefresh={onRefresh}
+                    isFetching={isFetching}
+                    nResults={nResults}
+                    resultMetrics={data?.result_metrics}
+                    countMetrics={data?.count_metrics}
+                />
+            )}
         </>
     )
 }
