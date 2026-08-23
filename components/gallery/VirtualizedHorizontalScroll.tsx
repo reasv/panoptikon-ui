@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { Expand } from 'lucide-react'
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { useSearchParams } from 'next/navigation'
 import { BookmarkBtn, FileActionCluster } from "@/components/imageButtons"
@@ -95,12 +96,16 @@ export function VirtualGalleryHorizontalScroll({
     pageSize?: number
     /**
      * Hover reporting for the maximized search overlay's centered preview
-     * (docs/maximized-pinboard-search-overlay-design.md §8): the row on card
-     * mouseenter, null on mouseleave — and null again on a card's own
-     * dragstart, part of the same contract, because the preview portals at
-     * z-70 and would visually occlude a drag toward the board (§8). Only
-     * LOADED cards report: a skeleton has no row to preview. The gallery
-     * mount passes nothing and is unaffected.
+     * (docs/maximized-pinboard-search-overlay-design.md §8): the row while
+     * the pointer is over the card's PREVIEW BUTTON, null when it leaves —
+     * and null again on a card's own dragstart, part of the same contract,
+     * because the preview portals at z-70 and would visually occlude a drag
+     * toward the board (§8). The card BODY deliberately reports nothing
+     * (§8.1): a sweep across cards to reach a drag source must not take the
+     * board over, which is exactly what it is being reached across for.
+     * Only LOADED cards report: a skeleton has no row to preview. Passing
+     * this prop is also what puts the button on the card at all — the
+     * gallery mount passes nothing, gets no button, and is unaffected.
      */
     onItemHover?: (item: SearchResult | null, index: number) => void
 }) {
@@ -380,7 +385,10 @@ function VirtualHorizontalScrollElement({
     style: React.CSSProperties
     /** The gallery's position write — see the strip's own prop. */
     onNavigate: (index: number) => void
-    /** Hover reporting for the overlay preview — see the strip's own prop. */
+    /**
+     * Hover reporting for the overlay preview, and the gate on the preview
+     * button existing at all — see the strip's own prop.
+     */
     onItemHover?: (item: SearchResult | null, index: number) => void
 }) {
     const [qIndex] = useGalleryIndex()
@@ -439,8 +447,6 @@ function VirtualHorizontalScrollElement({
                 )}
                 onDragStart={handleDragStart}
                 draggable={true}
-                onMouseEnter={() => onItemHover?.(item, ownIndex)}
-                onMouseLeave={() => onItemHover?.(null, ownIndex)}
             >
                 <Link href={imageLink} onClick={onClick}>
                     <div className="w-full h-full relative">
@@ -466,6 +472,28 @@ function VirtualHorizontalScrollElement({
                         />
                     </div>
                 )}
+                {/* The preview trigger (design §8.1), top-center because
+                    the four corners are taken. Rendered only where the
+                    preview surface exists — the overlay mount, which is the
+                    one that passes onItemHover; the page gallery has a large
+                    image already and a second preview over it would be
+                    noise. Its click runs the CARD's selection write verbatim
+                    (§8.1's identity rule: there is no second selection
+                    concept), because it paints over the card's Link and a
+                    control that swallows the click without doing what the
+                    card would is a 40px dead zone on every card. The other
+                    half of §8.1's click — opening/closing the pinned viewer,
+                    and the glyph that reflects which — is P6. */}
+                {onItemHover && (
+                    <PreviewButton
+                        onEnter={() => onItemHover?.(item, ownIndex)}
+                        onLeave={() => onItemHover?.(null, ownIndex)}
+                        onSelect={() => {
+                            onNavigate(ownIndex % nItems)
+                            setSelected(item)
+                        }}
+                    />
+                )}
                 <BookmarkBtn sha256={item.sha256} bookmarked={item.bookmarked} />
                 <PinButton sha256={item.sha256} />
                 <FindButton
@@ -478,5 +506,66 @@ function VirtualHorizontalScrollElement({
                 <FileActionCluster sha256={item.sha256} path={item.path} anchor="bottom-right" />
             </figure>
         </div>
+    )
+}
+
+// The strip card's preview trigger (design §8.1): hover shows the item on
+// the maximized board's centered preview surface, and the card BODY no
+// longer does — an unconditional full-screen takeover on every pointer
+// sweep covers the board precisely when the user is reaching across it to
+// drop something.
+//
+// Top-center: the four corners are taken by BookmarkBtn, PinButton,
+// FindButton and the FileActionCluster. Every other class is theirs
+// verbatim (the white pill, the group-hover reveal, the 300ms opacity
+// fade), so the five verbs read as one set; only the centering translate is
+// new, and in Tailwind 4 `translate` and `scale` are separate CSS
+// properties, so it composes with hover:scale-105 rather than fighting it.
+//
+// draggable + a cancelling dragstart, NOT draggable={false}: the card is the
+// HTML5 drag source and the drag source is the nearest DRAGGABLE ancestor of
+// the press — a `false` child is skipped over, not honoured, so the figure
+// would still start an item drag. Making the button its own source and
+// preventing the default cancels the drag outright. This is a deliberate
+// deviation from the corner buttons, which leave the pass-through drag
+// alone: this one is a HOVER target first, so the pointer resting on it is
+// the normal state, and a drag born under a pointer that is holding a
+// preview open is the one gesture it must never produce.
+//
+// stopPropagation is load-bearing next to that preventDefault: dragstart
+// BUBBLES, so cancelling the drag here does not stop the figure's own
+// handler from running, and that handler clears the hover preview (it
+// assumes the hovered card is the drag source). Without it, a press on the
+// button kills the preview the user is looking at and nothing brings it back
+// until the pointer leaves and re-enters.
+//
+// No `title`: its native tooltip surfaces about a second after the pointer
+// settles — i.e. floating over the preview this button just opened. The
+// aria-label carries the same text for anything that needs it.
+function PreviewButton({
+    onEnter,
+    onLeave,
+    onSelect,
+}: {
+    onEnter: () => void
+    onLeave: () => void
+    onSelect: () => void
+}) {
+    return (
+        <button
+            type="button"
+            aria-label="Preview this item"
+            draggable
+            onDragStart={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+            }}
+            onClick={onSelect}
+            onMouseEnter={onEnter}
+            onMouseLeave={onLeave}
+            className="hover:scale-105 absolute top-2 left-1/2 -translate-x-1/2 bg-white rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+        >
+            <Expand className="w-6 h-6 text-gray-800" />
+        </button>
     )
 }
