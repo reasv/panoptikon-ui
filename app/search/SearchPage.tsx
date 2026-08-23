@@ -52,23 +52,6 @@ export function SearchPageContent({ initialQuery, isRestrictedMode }:
     // is back when the board shrinks.
     const pinboardMaximized = usePinboardMaximized()
     const sidebarVisible = sidebarOpen && !pinboardMaximized
-    // Whether the sidebar has finished ENTERING. Opening used to change the
-    // results column's width in the toggle's own render, which meant the
-    // whole results subtree re-laid-out and re-rastered before the first
-    // animation frame could paint — a 100-300ms frozen start, i.e. the
-    // stutter. Instead the panel slides in as a transient overlay (see
-    // SideBar: absolutely positioned, transform+opacity animation, zero
-    // layout impact), and only when it lands (onAnimationEnd -> onSettled)
-    // does the column narrow — ONE reflow, at a moment when nothing is
-    // moving. A sidebar already open at mount (deep link, reload, SSR)
-    // starts settled: it was never animating, and initializing from the URL
-    // keeps the server and client first renders identical.
-    const [sidebarSettled, setSidebarSettled] = useState(() => sidebarOpen)
-    useEffect(() => {
-        // Closing (or a maximize hiding the panel) re-arms the entrance for
-        // the next open
-        if (!sidebarVisible) setSidebarSettled(false)
-    }, [sidebarVisible])
     return (
         <div className="flex h-screen w-full flex-col">
             {/* The one owner of find-in-folder's URL-state hooks; every
@@ -76,23 +59,19 @@ export function SearchPageContent({ initialQuery, isRestrictedMode }:
                 its registered handle instead of owning the hooks itself */}
             <FindNavigator />
             <DesktopUpdateRibbon onVisibilityChange={setUpdateRibbonVisible} />
-            {/* relative: the entering sidebar overlays this row */}
-            <div className="relative flex min-h-0 flex-1">
-                {!pinboardMaximized && (
-                    <SideBar
-                        settled={sidebarSettled}
-                        onSettled={() => setSidebarSettled(true)}
-                    />
-                )}
-                {/* No width transition: animating a layout property re-lays
+            <div className="flex min-h-0 flex-1">
+                {!pinboardMaximized && <SideBar />}
+                {/* No transition on the toggle: an animated width re-lays
                     out and re-rasters the whole results subtree every frame
                     (a board in the grid host re-runs RGL per frame on top),
-                    which is what made the sidebar toggle stutter in every
-                    view. The column snaps in one reflow — after the
-                    sidebar's slide-in has landed (sidebarSettled), so the
-                    motion is over before the layout work starts. */}
+                    and any staged transition (overlay entrance, deferred
+                    content mount, settle latch) splits the toggle into two
+                    visible layout shifts. The panel and the column change
+                    together, in one commit, as one reflow — see SideBar for
+                    the mount latch that keeps reopen to a CSS visibility
+                    flip. */}
                 <div className={cn('p-4 mx-auto',
-                    sidebarVisible && sidebarSettled ? 'w-full lg:w-1/2 xl:w-2/3 2xl:w-3/4 4xl:w-[80%] 5xl:w-[82%]' : 'w-full'
+                    sidebarVisible ? 'w-full lg:w-1/2 xl:w-2/3 2xl:w-3/4 4xl:w-[80%] 5xl:w-[82%]' : 'w-full'
                 )}>
                     <MultiSearchView
                         initialQuery={initialQuery}
