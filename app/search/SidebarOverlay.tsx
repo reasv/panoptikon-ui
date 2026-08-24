@@ -1,33 +1,47 @@
 "use client"
-import { useLayoutEffect, useRef, useState } from "react"
-import { ChevronRight, Pin } from "lucide-react"
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react"
+import { ChevronRight, Pin, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Toggle } from "@/components/ui/toggle"
+import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { SideBarContent } from "@/components/sidebar/SideBar"
 import { useSidebarOverlayOpen } from "@/lib/state/gallery"
+import { useSearchOverlayReveal } from "@/lib/state/searchOverlayReveal"
+import { DockHandle, isPanelBackground, useDockDismiss } from "./dockChrome"
 
 // The maximized board's LEFT-edge sidebar overlay
 // (docs/maximized-pinboard-search-overlay-design.md §9): the SearchOverlay
 // dock model rotated to the left edge, revealing the search sidebar
 // (filters / details / similar items) over the board. Like the bottom dock
 // it is search chrome, mounted by MultiSearchView for the whole maximized
-// session; visibility (hidden, hover-revealed, pinned `gsb`) is the dock's
-// own affair. The pin gestures are the bottom dock's: clicking the hot
-// band, the pin toggle in the panel, and any pointerdown inside the panel
-// (interacting IS the intent to keep it around — and what keeps the panel
-// alive when a Radix dropdown portals focus out of it). No hotkey:
-// Ctrl+Shift+S is the browser's save-page-as and every nearby chord is
-// taken (Ctrl+Shift+F pins the bottom dock, Ctrl+Shift+M maximizes), so a
-// keyboard pin for this panel is future work, not a squatted browser chord.
+// session, and its visibility is its own affair: `shown = open || pinned`,
+// where `open` is ephemeral client state and `pinned` is `gsb` in the URL.
+//
+// CLICK-TO-OPEN, exactly as the bottom dock: ONE always-visible handle on
+// the left edge — in the UPPER-middle region, clearly partitioned from the
+// bottom dock's low-left handle, which owns the lower region — that
+// highlights on hover and opens on CLICK. There is no hot band; the strip
+// that used to be here sat at z-50 over the board and ate every click in
+// the leftmost 16px. Dismissal of an open, unpinned panel: Esc, a click
+// outside, or the panel's own X. Pinning: the pin toggle, a double-click on
+// genuine panel background (one-way). The bottom dock's search-bar row also
+// carries a settings toggle for this panel, but it drives OPEN, not the pin
+// (see SearchBarRow) — it is the "show me the filters" gesture, not a
+// persistence request. No hotkey: Ctrl+Shift+S is the browser's
+// save-page-as and every nearby chord is taken (Ctrl+Shift+F opens the
+// bottom dock, Ctrl+Shift+M maximizes), so a keyboard gesture for this
+// panel is future work, not a squatted browser chord.
 //
 // What is deliberately NOT mirrored from SearchOverlay:
 //
-// - No reveal store and no search-gate coupling: the sidebar EDITS the
-//   query, it does not consume results, so revealing it must not enable
-//   the suppressed queries — useSearchSuppressed stays `gso`-only (§9).
-//   Filter edits made here write the same URL params as always; whether a
-//   query runs is still decided solely by the bottom overlay's pin/reveal.
+// - No search-gate coupling: the sidebar EDITS the query, it does not
+//   consume results, so opening it must not enable the suppressed queries —
+//   useSearchSuppressed reads the BOTTOM dock's flag only (§9). Filter
+//   edits made here write the same URL params as always; whether a query
+//   runs is still decided solely by the bottom overlay's open/pin state.
+//   The open flag still lives in the shared store rather than in local
+//   state, because the bottom dock's search-bar row toggles it.
 // - Hiding is NOT CSS-only for the content: SideBarContent is mounted
 //   only while `shown` and unmounts on hide. The CSS-only-hide rule
 //   (§5.1) exists for HTML5 drag sources, which must survive their own
@@ -37,24 +51,28 @@ import { useSidebarOverlayOpen } from "@/lib/state/gallery"
 //   expensive query in the app on every strip-card selection change with
 //   nothing visible — exactly the behavior the user has ruled against.
 //   So visibility-mount wins: zero sidebar queries before the first
-//   reveal AND while hidden after it. Accepted costs: each reveal
-//   remounts the content, re-firing the cheap stats fetches (react-query
-//   cache + staleTime soften them) and resetting transient scroll
-//   position; accordion open/closed state persists via FilterContainer's
+//   open AND while hidden after it. Accepted costs: each open remounts
+//   the content, re-firing the cheap stats fetches (react-query cache +
+//   staleTime soften them) and resetting transient scroll position;
+//   accordion open/closed state persists via FilterContainer's
 //   localStorage and the active tab via the `sbt` URL param, so the
 //   visible state loss is minimal.
 export function SidebarOverlay() {
     const [pinned, setPinned] = useSidebarOverlayOpen()
-    const [hoverBand, setHoverBand] = useState(false)
-    const [hoverPanel, setHoverPanel] = useState(false)
-    // Focus inside the panel holds it open so it cannot vanish mid-typing.
-    // Tracked with capture-phase focus/blur (focus events don't bubble);
-    // blur only clears it when focus actually LEFT the panel container —
-    // relatedTarget is the element gaining focus, and a move between two
-    // controls inside the panel must not blink the hold off.
-    const [focusWithin, setFocusWithin] = useState(false)
+    // The ephemeral OPEN half. In the shared store, not local state, for
+    // one reason: SearchBarRow's settings toggle — which lives inside the
+    // BOTTOM dock — is the primary way to open this panel, and it cannot
+    // reach local state here. Cleared on unmount so restoring the board and
+    // re-maximizing starts closed unless `gsb` says otherwise.
+    const open = useSearchOverlayReveal((s) => s.sidebarRevealed)
+    const setOpen = useSearchOverlayReveal((s) => s.setSidebarRevealed)
     const panelRef = useRef<HTMLDivElement>(null)
-    const shown = hoverBand || hoverPanel || focusWithin || pinned
+    const shown = open || pinned
+    const dismiss = useCallback(() => setOpen(false), [setOpen])
+    useDockDismiss(shown, pinned, dismiss)
+    useEffect(() => {
+        return () => setOpen(false)
+    }, [setOpen])
 
     // --pinboard-left-inset: the band this panel is COVERING right now, the
     // left-edge analog of the bottom dock's --pinboard-bottom-inset. Its
@@ -86,46 +104,25 @@ export function SidebarOverlay() {
     // All fixed elements carry data-search-overlay: the maximized board's
     // viewport-marquee starter and click-outside deselect both exempt that
     // selector (GalleryPinBoard) — reusing the bottom dock's attribute
-    // keeps the exemption lists short (§9).
+    // keeps the exemption lists short (§9), and it is also what makes the
+    // two docks mutually exempt from each other's outside-click dismissal.
     return (
         <>
-            {/* The hot band: the left-edge analog of the bottom dock's
-                band. Vertically inset top-4 bottom-4 so the corners stay
-                with their horizontal owners — the fullscreen toolbar's top
-                band and the search overlay's bottom band each claim the
-                full viewport width, and two hot bands meeting in a corner
-                would make the corner pixel reveal both panels at once. The
-                bottom inset additionally yields to the SHOWN search
-                overlay panel (which is far taller than its band): this
-                band renders after it in DOM order at the same z, so
-                without the retreat its 1rem-wide strip would eat the
-                bottom panel's left-edge clicks. While the sidebar panel is
-                shown the band is occluded by it, so in practice the band's
-                click pins from the hidden state — a click, not a hover, is
-                the deliberate pin gesture. */}
-            <div
-                data-search-overlay
-                className="fixed left-0 top-4 bottom-[calc(1rem+var(--pinboard-bottom-inset,0px))] z-50 w-4"
-                onMouseEnter={() => setHoverBand(true)}
-                onMouseLeave={() => setHoverBand(false)}
-                onClick={() => setPinned(true)}
-            />
-            {/* The handle: a permanent hint that the sidebar dock lives at
-                the left edge, fading out while the panel itself is shown —
-                the bottom dock's handle rotated a quarter turn */}
-            <div
-                data-search-overlay
-                className="fixed left-0 top-1/2 z-50 -translate-y-1/2 pointer-events-none"
+            {/* The one handle, in the UPPER third of the left edge. The
+                partition is deliberate: the bottom dock's low-left handle
+                owns bottom-24, so at 1080p the two sit ~450px apart and
+                neither can be mistaken for the other. It hides while the
+                panel is shown, since the panel covers it. */}
+            <DockHandle
+                position="left-0 top-1/3 -translate-y-1/2"
+                shape="h-28 w-4 rounded-r-md border-l-0 hover:w-5 hover:h-32"
+                hidden={shown}
+                onOpen={() => setOpen(true)}
+                title="Open the search filters"
+                label="Open sidebar overlay"
             >
-                <div
-                    className={cn(
-                        "flex h-28 w-4 items-center justify-center rounded-r-md border border-l-0 bg-muted text-muted-foreground shadow-sm transition-opacity duration-150",
-                        shown ? "opacity-0" : "opacity-100",
-                    )}
-                >
-                    <ChevronRight className="h-3 w-3" />
-                </div>
-            </div>
+                <ChevronRight className="h-3 w-3" />
+            </DockHandle>
             {/* pointer-events-none on the wrapper, re-enabled on the panel
                 only while shown — the bottom dock's show pattern with the
                 translate direction flipped for a left edge. The wrapper
@@ -141,34 +138,16 @@ export function SidebarOverlay() {
                 <div
                     ref={panelRef}
                     data-search-overlay
-                    onMouseEnter={() => setHoverPanel(true)}
-                    onMouseLeave={() => setHoverPanel(false)}
-                    onFocusCapture={() => setFocusWithin(true)}
-                    onBlurCapture={(e) => {
-                        const next = e.relatedTarget as Node | null
-                        if (!next || !panelRef.current?.contains(next)) {
-                            setFocusWithin(false)
-                        }
-                    }}
-                    // Auto-pin: interacting with the sidebar IS the intent
-                    // to keep it around — and this is what keeps the panel
-                    // alive when a Radix dropdown portals focus out of it
-                    // (§5.1 via §9). The pin toggle is the one exception:
-                    // without it, pressing the toggle while unpinned would
-                    // auto-pin on pointerdown and the click's own toggle
-                    // would immediately unpin — a no-op button.
-                    // data-sidebar-pin-toggle, not data-overlay-pin-toggle:
-                    // that attribute belongs to the bottom dock's button,
-                    // and sharing it would let either panel's pointerdown
-                    // filter match the other's toggle.
-                    onPointerDownCapture={(e) => {
-                        if (
-                            e.target instanceof Element &&
-                            e.target.closest("[data-sidebar-pin-toggle]")
-                        ) {
-                            return
-                        }
-                        if (!pinned) setPinned(true)
+                    // Double-click on genuine background pins, one way (the
+                    // bottom dock's gesture, same reasoning: the pin toggle
+                    // flipping to pressed is the feedback, and the
+                    // interactive-ancestor test keeps rapid clicks on the
+                    // tab bar or a slider from pinning). Single background
+                    // clicks are inert — no auto-pin from pointer or
+                    // keyboard anywhere in this dock.
+                    onDoubleClick={(e) => {
+                        if (pinned || !isPanelBackground(e.target)) return
+                        void setPinned(true)
                     }}
                     className={cn(
                         "flex h-full w-[26rem] flex-col border-r bg-background/95 shadow-md transition-all duration-150",
@@ -177,42 +156,46 @@ export function SidebarOverlay() {
                             : "opacity-0 -translate-x-2",
                     )}
                 >
-                    {/* Slim in-flow header row for the pin toggle, above
-                        the scroll area — the bottom dock keeps its pin
-                        toggle in-flow in its own row for the same reason:
-                        an absolute right-2 top-2 toggle sat on top of the
-                        centered DirectionAwareTabs bar, visually covering
-                        (and click-eating) the right end of the tab list.
+                    {/* Slim in-flow header row for the pin and close
+                        controls, above the scroll area — the bottom dock
+                        keeps its pair in-flow in its own row for the same
+                        reason: an absolute right-2 top-2 cluster sat on top
+                        of the centered DirectionAwareTabs bar, visually
+                        covering (and click-eating) the right end of the tab
+                        list.
 
-                        Unpinning while the pointer is still inside does not
-                        hide the panel — hoverPanel keeps `shown` true and
-                        it hides on the next leave, per the show-state
-                        formula above. The blur on unpin is load-bearing:
-                        Chromium focuses the button on mousedown, so after
-                        unpinning the button's own focus would hold
-                        `focusWithin` (and thus the panel) — and no click on
-                        the maximized board can ever blur it, because both
-                        marquee starters in GalleryPinBoard preventDefault()
-                        on pointerdown (suppressing the default focus
-                        change) and pins aren't focusable. Blurring here
-                        (relatedTarget null → focusWithin false in
-                        onBlurCapture) makes "hides on the next pointer
-                        leave" actually reachable by mouse. */}
+                        Unpinning leaves the panel OPEN, and closing closes
+                        for real (unpinning too) — see the bottom dock's
+                        identical pair for why each. The close button has to
+                        exist here at all because the edge handle that opens
+                        this dock is covered by the open panel. */}
                     <div className="flex shrink-0 justify-end px-2 pt-2">
                         <Toggle
                             data-sidebar-pin-toggle
                             pressed={pinned}
-                            onClick={(e) => {
-                                if (pinned) e.currentTarget.blur()
-                                setPinned(!pinned)
+                            onClick={() => {
+                                if (pinned) setOpen(true)
+                                void setPinned(!pinned)
                             }}
                             title={pinned
-                                ? "Pinned: the sidebar stays open. Click to unpin — it hides when the pointer leaves"
-                                : "Pin the sidebar open — unpinned, it hides when the pointer leaves"}
+                                ? "Pinned: the sidebar survives clicks on the board. Click to unpin — it stays open until Esc or a click outside"
+                                : "Pin the sidebar open — unpinned, it closes on Esc or a click outside"}
                             aria-label="Pin sidebar overlay"
                         >
                             <Pin className="h-4 w-4" />
                         </Toggle>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                                setOpen(false)
+                                if (pinned) void setPinned(false)
+                            }}
+                            title="Close the sidebar (Esc)"
+                            aria-label="Close sidebar overlay"
+                        >
+                            <X className="h-4 w-4" />
+                        </Button>
                     </div>
                     {/* Content mounts only while shown (see the header
                         comment): unmounting on hide is what guarantees a

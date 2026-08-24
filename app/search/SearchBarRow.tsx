@@ -11,6 +11,7 @@ import { SearchMetricsHoverCard } from "@/components/SearchMetricsCard"
 import { useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
 import { useSideBarOpen } from "@/lib/state/sideBar"
 import { useSidebarOverlayOpen } from "@/lib/state/gallery"
+import { useSearchOverlayReveal } from "@/lib/state/searchOverlayReveal"
 import { components } from "@/lib/panoptikon"
 
 // The search bar row, shared between the page header and the maximized
@@ -19,11 +20,13 @@ import { components } from "@/lib/panoptikon"
 // providers (nuqs, react-query, the toaster), so both mounts drive the SAME
 // search; what differs is chrome, driven by `variant`:
 //
-// - The sidebar toggle drives a different flag per mount: `sb` (the page
-//   sidebar) on the page, `gsb` (the left-edge sidebar overlay's PIN,
-//   design §9) in the overlay — the page sidebar is unmounted while the
-//   board is maximized, and `sb` must stay untouched so it returns on
-//   restore.
+// - The sidebar toggle drives a different surface per mount: `sb` (the page
+//   sidebar) on the page, the left-edge sidebar OVERLAY in the overlay —
+//   the page sidebar is unmounted while the board is maximized, and `sb`
+//   must stay untouched so it returns on restore. In the overlay it writes
+//   the sidebar dock's ephemeral OPEN state, NOT its `gsb` pin (design §9):
+//   this is the "show me the filters" gesture, not a persistence request,
+//   and pinning stays on the panel's own toggle.
 // - The scan link is page-only: navigating to the scan page from inside a
 //   maximized board is out of place.
 // - The overlay appends a compact result count at the row's right edge —
@@ -52,21 +55,38 @@ export function SearchBarRow({
 }) {
     const [options] = useQueryOptions()
     const [sidebarOpen, setSideBarOpen] = useSideBarOpen()
+    // The sidebar dock's two halves. `shown` is what the toggle reflects —
+    // the user asked whether the filters are on screen, and pin vs open is
+    // not a distinction the button can usefully draw.
     const [sidebarOverlayPinned, setSidebarOverlayPinned] = useSidebarOverlayOpen()
+    const sidebarOverlayOpen = useSearchOverlayReveal((s) => s.sidebarRevealed)
+    const setSidebarOverlayOpen = useSearchOverlayReveal((s) => s.setSidebarRevealed)
+    const sidebarOverlayShown = sidebarOverlayOpen || sidebarOverlayPinned
     const overlay = variant === "overlay"
     return (
         <div className="flex gap-2">
             <Toggle
-                pressed={overlay ? sidebarOverlayPinned : sidebarOpen}
-                onClick={() => overlay
-                    ? setSidebarOverlayPinned(!sidebarOverlayPinned)
-                    : setSideBarOpen(!sidebarOpen)}
+                pressed={overlay ? sidebarOverlayShown : sidebarOpen}
+                // Opening is purely ephemeral — this gesture never pins.
+                // CLOSING does clear the pin as well, and has to: without
+                // that, pressing a toggle that reads "pressed" over a PINNED
+                // sidebar would write `open = false` under a panel that stays
+                // up regardless, i.e. a dead button. Same resolution
+                // Ctrl+Shift+F uses for the bottom dock's hide direction.
+                onClick={() => {
+                    if (!overlay) {
+                        void setSideBarOpen(!sidebarOpen)
+                        return
+                    }
+                    setSidebarOverlayOpen(!sidebarOverlayShown)
+                    if (sidebarOverlayShown && sidebarOverlayPinned) {
+                        void setSidebarOverlayPinned(false)
+                    }
+                }}
                 title={overlay
-                    // The overlay toggle controls the PIN, not visibility:
-                    // an unpinned sidebar can still be revealed by hover.
-                    ? (sidebarOverlayPinned
-                        ? "Unpin Advanced Search Options — unpinned, the sidebar hides when the pointer leaves"
-                        : "Pin Advanced Search Options open")
+                    ? (sidebarOverlayShown
+                        ? "Hide Advanced Search Options"
+                        : "Show Advanced Search Options")
                     : "Advanced Search Options Are " + (sidebarOpen ? "Open" : "Closed")}
                 aria-label="Toggle Advanced Search Options"
             >

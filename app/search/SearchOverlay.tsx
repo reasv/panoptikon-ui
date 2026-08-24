@@ -1,20 +1,23 @@
 "use client"
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
-import { ChevronUp, Pin } from "lucide-react"
+import { ChevronUp, Pin, Search, X } from "lucide-react"
 import type { ReadonlyURLSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Toggle } from "@/components/ui/toggle"
+import { Button } from "@/components/ui/button"
 import { PageSelect } from "@/components/pageselect"
 import { ViewModeToggle } from "@/components/ViewModeToggle"
 import { VirtualGalleryHorizontalScroll } from "@/components/gallery/VirtualizedHorizontalScroll"
 import { useDelayedHover } from "@/components/gallery/PinboardPreviewPopover"
 import { PreviewSurface, useViewerItem, viewerPosition } from "./PreviewSurface"
 import { SearchBarRow } from "./SearchBarRow"
+import { DockHandle, isPanelBackground, useDockDismiss } from "./dockChrome"
 import {
     useGalleryIndex,
     useGalleryNavigate,
     useSearchOverlayOpen,
     useSearchViewerOpen,
+    useSidebarOverlayOpen,
 } from "@/lib/state/gallery"
 import { useSearchOverlayReveal } from "@/lib/state/searchOverlayReveal"
 import type { ResultsSource } from "@/lib/searchHooks"
@@ -24,34 +27,54 @@ import { components } from "@/lib/panoptikon"
 // (docs/maximized-pinboard-search-overlay-design.md §5.1). Search chrome,
 // not board chrome: it is mounted by MultiSearchView, where every value it
 // needs is already in scope, never inside PinBoard — and it mounts for the
-// WHOLE maximized session. It is a dock mirroring PinboardFullscreenBar
-// flipped to the bottom edge: a hot band along the bottom reveals the panel
-// on hover, a grab-handle hints at it while hidden, and the panel is held
-// open while the pointer is over it, focus is inside it (typing), or it is
-// PINNED (`gso`). Pinning: clicking the hot band, the pin toggle at the
-// panel's right edge, Ctrl+Shift+F (registered by MultiSearchView), and
-// any pointerdown inside the panel (interacting IS the intent to keep it
-// around — and it is what keeps the panel alive when a Radix dropdown
-// portals focus out of it).
+// WHOLE maximized session. Visibility is the dock's own affair:
+// `shown = open || pinned`, where `open` is ephemeral client state
+// (lib/state/searchOverlayReveal.ts) and `pinned` is `gso` in the URL.
+//
+// CLICK-TO-OPEN, not hover. The dock is opened by clicking one of THREE
+// always-visible edge handles — bottom-center, low-left, low-right — and
+// nothing else on the screen edge is hot. Three because one is not enough:
+// an auto-hide taskbar pops over the browser at the bottom edge and steals
+// the gesture there, and side handles are out of its reach. The handles
+// highlight on hover but never open on it (see DockHandle in dockChrome.tsx
+// for why that signalling matters, and for the hot bands this replaced).
+//
+// Dismissal of an open, UNPINNED panel: Esc, a click outside it, or the
+// panel's own X (the handles are covered by the open panel, so the panel
+// must carry its own close affordance). Rules in useDockDismiss.
+//
+// Pinning, and ONLY these: the pin toggle, Ctrl+Shift+F (registered by
+// MultiSearchView), and a double-click on genuine panel background. Single
+// background clicks are INERT. There is no auto-pin from pointer or
+// keyboard: the old pointerdown auto-pin silently upgraded the panel to a
+// state that looked identical and only behaved differently several clicks
+// later, so the panel was pinned the moment you used it — which defeated
+// the transient reveal it was supposed to protect.
+//
+// Visibility depends on neither pointer nor focus, which is what deleted
+// the hoverBand/hoverPanel/focusWithin machinery AND the problem it was
+// patching: a Radix dropdown portaling focus out of the panel used to fade
+// the panel out from under its own open menu, and the keyboard/pointer
+// auto-pins existed largely to prevent that. Nothing replaced them.
 //
 // Hiding is CSS-only (translate/opacity + pointer-events-none): the panel
 // and its contents stay MOUNTED for the whole maximized session. This is
-// load-bearing, not a styling choice — a drag that starts inside an
-// unpinned panel and leaves it hides the panel (deliberately: a drag toward
-// the board is exactly when the panel should get out of the drop's way),
-// and a P2 strip card serving as the HTML5 drag source must survive its own
-// panel hiding mid-drag. Never convert the hide to a conditional unmount
-// (design §5.1, "Drags are not held").
+// load-bearing, not a styling choice — a strip card serving as the HTML5
+// drag source must survive its own panel hiding mid-drag by whatever path
+// remains (Esc, an outside click). Never convert the hide to a conditional
+// unmount (design §5.1). Drags themselves need no special case any more:
+// nothing hides on pointer exit, so dragging out of an OPEN unpinned panel
+// leaves it open and multi-item drag sessions work unpinned.
 //
 // Pointer-events follow the toolbar's SHOW pattern only: the hidden panel
 // is pointer-events-none (an invisible fixed panel must not eat board
 // clicks near the bottom edge) and becomes interactive when shown. What is
 // NOT replicated is the toolbar's always-auto piercing of modal-locked
-// bodies and the exclusive-menu-slot machinery it necessitates: auto-pin on
-// interaction makes a panel with an open menu pinned by construction, so
-// Radix modal layers may disable it along with the rest of the body while a
-// menu is open — correct dismiss behavior. Menus inside the overlay work
-// exactly as they do on the normal page (§5.1).
+// bodies and the exclusive-menu-slot machinery it necessitates: an open
+// panel no longer depends on focus or pointer to stay up, so Radix modal
+// layers may disable it along with the rest of the body while a menu is
+// open — correct dismiss behavior. Menus inside the overlay work exactly as
+// they do on the normal page (§5.1).
 export function SearchOverlay({
     onRefresh,
     isFetching,
@@ -202,16 +225,25 @@ export function SearchOverlay({
         if (!viewerOpen || qIndex !== null || count <= 0) return
         navigate(0, { history: "replace" })
     }, [viewerOpen, qIndex, count, navigate])
-    const [hoverBand, setHoverBand] = useState(false)
-    const [hoverPanel, setHoverPanel] = useState(false)
-    // Focus inside the panel holds it open so it cannot vanish mid-typing.
-    // Tracked with capture-phase focus/blur (focus events don't bubble);
-    // blur only clears it when focus actually LEFT the panel container —
-    // relatedTarget is the element gaining focus, and a move between two
-    // controls inside the panel must not blink the hold off.
-    const [focusWithin, setFocusWithin] = useState(false)
+    // The ephemeral OPEN half of the show state. It lives in a store rather
+    // than in local state because Ctrl+Shift+F (SearchPage) writes it too,
+    // and because useSearchSuppressed reads it: an open dock is a search
+    // consumer on screen and enables the query exactly like a pinned one
+    // (design §2/§4). Cleared on unmount, so restoring the board and
+    // re-maximizing starts closed unless pinned.
+    const open = useSearchOverlayReveal((s) => s.revealed)
+    const setOpen = useSearchOverlayReveal((s) => s.setRevealed)
     const panelRef = useRef<HTMLDivElement>(null)
-    const shown = hoverBand || hoverPanel || focusWithin || pinned
+    const shown = open || pinned
+    // Whether the SIDEBAR dock is on screen — the one thing this dock needs
+    // to know about the other one. Its 26rem panel covers this dock's
+    // low-LEFT handle, and an invisible click target under a panel is a bug,
+    // so that handle stands down while the sidebar shows (§9).
+    const sidebarPinned = useSidebarOverlayOpen()[0]
+    const sidebarOpen = useSearchOverlayReveal((s) => s.sidebarRevealed)
+    const sidebarShown = sidebarOpen || sidebarPinned
+    const dismiss = useCallback(() => setOpen(false), [setOpen])
+    useDockDismiss(shown, pinned, dismiss)
 
     // The hover preview's subject (design §8): the strip card under the
     // pointer, debounced 200ms on open so a sweep across cards doesn't
@@ -226,11 +258,11 @@ export function SearchOverlay({
     // Panel hide clears the preview too (§8 "cleared on overlay close").
     // Leaving a card fires its own mouseleave before the panel's on any
     // pointer path, so this is the net for hide paths where no card
-    // mouseleave is delivered — e.g. a drag that exits an unpinned panel
-    // (HTML5 drags suppress mouse events; dragstart already cleared it,
-    // this keeps the invariant if that ever changes). A hidden panel with
-    // a live full-viewport preview stranded over the board is never
-    // acceptable, so the clear keys on the show-state itself.
+    // mouseleave is delivered — the dock now hides only by Esc, an outside
+    // click or the close button, none of which involve the pointer leaving
+    // the card it is resting on. A hidden panel with a live full-viewport
+    // preview stranded over the board is never acceptable, so the clear
+    // keys on the show-state itself.
     useEffect(() => {
         if (!shown) setHoverItem(null)
     }, [shown, setHoverItem])
@@ -310,17 +342,13 @@ export function SearchOverlay({
             ? heldPeek
             : null
 
-    // Mirror the show-state into the ephemeral reveal store, which is the
-    // client-only half of useSearchSuppressed: a hover-revealed overlay is
-    // a search consumer on screen and enables the query exactly like a
-    // pinned one (design §2/§4). From an effect, never during render (store
-    // writes are side effects); cleared on unmount so a restored board
-    // never inherits a stale "revealed".
-    const setRevealed = useSearchOverlayReveal((s) => s.setRevealed)
+    // The open flag outlives no dock: clear it when this one unmounts (the
+    // board being restored) so a later re-maximize starts closed unless
+    // `gso` says otherwise. Mount-scoped deliberately — keying it on the
+    // flag's own value would make it fight every legitimate write.
     useEffect(() => {
-        setRevealed(shown)
-        return () => setRevealed(false)
-    }, [shown, setRevealed])
+        return () => setOpen(false)
+    }, [setOpen])
 
     // The dock's height, published in TWO custom properties with deliberately
     // different lifetimes. Measured with a ResizeObserver rather than a
@@ -405,42 +433,56 @@ export function SearchOverlay({
         }
     }, [shown])
 
-    // All three fixed elements carry data-search-overlay: the maximized
+    // Every fixed element here carries data-search-overlay: the maximized
     // board's viewport-marquee starter and click-outside deselect both
     // exempt that selector (GalleryPinBoard), so a press on the dock never
-    // rubber-bands the board underneath or clears the pin selection.
+    // rubber-bands the board underneath or clears the pin selection — and
+    // useDockDismiss exempts it too, so the chrome never dismisses itself.
     return (
         <>
-            {/* The hot band: the bottom-edge analog of the fullscreen
-                toolbar's top band. While the panel is shown it is occluded
-                by it (the panel renders later at the same z and is far
-                taller), so in practice the band's click pins from the
-                hidden state — a click, not a hover, is the deliberate
-                pin gesture; unpinning happens via the pin toggle,
-                Ctrl+Shift+F or Back. */}
-            <div
-                data-search-overlay
-                className="fixed inset-x-0 bottom-0 z-50 h-4"
-                onMouseEnter={() => setHoverBand(true)}
-                onMouseLeave={() => setHoverBand(false)}
-                onClick={() => setPinned(true)}
-            />
-            {/* The handle: a permanent hint that the search dock lives down
-                here, fading out while the panel itself is shown — the
-                toolbar's top-center handle upside down */}
-            <div
-                data-search-overlay
-                className="fixed bottom-0 left-1/2 z-50 -translate-x-1/2 pointer-events-none"
+            {/* THREE handles, one panel. The center one is the toolbar's
+                top-center handle upside down and keeps its chevron; the two
+                side handles are the sidebar's handle shape mirrored and
+                carry a SEARCH glyph instead, because they do not sit
+                adjacent to the direction a chevron would imply. They exist
+                so an auto-hide taskbar — which pops over the browser at the
+                bottom edge and swallows the gesture there — can never gate
+                the feature. All three hide while the panel is shown, since
+                the panel covers them. */}
+            <DockHandle
+                position="bottom-0 left-1/2 -translate-x-1/2"
+                shape="h-4 w-28 rounded-t-md border-b-0 hover:h-5 hover:w-32"
+                hidden={shown}
+                onOpen={() => setOpen(true)}
+                title="Open the search dock"
+                label="Open search dock"
             >
-                <div
-                    className={cn(
-                        "flex h-4 w-28 items-center justify-center rounded-t-md border border-b-0 bg-muted text-muted-foreground shadow-sm transition-opacity duration-150",
-                        shown ? "opacity-0" : "opacity-100",
-                    )}
-                >
-                    <ChevronUp className="h-3 w-3" />
-                </div>
-            </div>
+                <ChevronUp className="h-3 w-3" />
+            </DockHandle>
+            {/* Low-left, and additionally out of the way of the sidebar
+                panel that covers this spot. bottom-24 keeps it clear of the
+                sidebar's own handle, which owns the UPPER third of the left
+                edge (§9) — at 1080p the two are ~450px apart. */}
+            <DockHandle
+                position="bottom-24 left-0"
+                shape="h-28 w-4 rounded-r-md border-l-0 hover:w-5 hover:h-32"
+                hidden={shown || sidebarShown}
+                onOpen={() => setOpen(true)}
+                title="Open the search dock"
+                label="Open search dock"
+            >
+                <Search className="h-3 w-3" />
+            </DockHandle>
+            <DockHandle
+                position="bottom-24 right-0"
+                shape="h-28 w-4 rounded-l-md border-r-0 hover:w-5 hover:h-32"
+                hidden={shown}
+                onOpen={() => setOpen(true)}
+                title="Open the search dock"
+                label="Open search dock"
+            >
+                <Search className="h-3 w-3" />
+            </DockHandle>
             {/* pointer-events-none on the wrapper, re-enabled on the panel
                 only while shown — the toolbar's show pattern with the
                 translate direction flipped for a bottom edge */}
@@ -448,75 +490,22 @@ export function SearchOverlay({
                 <div
                     ref={panelRef}
                     data-search-overlay
-                    onMouseEnter={() => setHoverPanel(true)}
-                    onMouseLeave={() => setHoverPanel(false)}
-                    onFocusCapture={() => setFocusWithin(true)}
-                    onBlurCapture={(e) => {
-                        const next = e.relatedTarget as Node | null
-                        if (!next || !panelRef.current?.contains(next)) {
-                            setFocusWithin(false)
-                        }
-                    }}
-                    // Auto-pin: interacting with the search UI IS the intent
-                    // to keep it around — and this is what keeps the panel
-                    // alive when a Radix dropdown portals focus out of it
-                    // (design §5.1). The pin toggle is the one exception:
-                    // without it, pressing the toggle while unpinned would
-                    // auto-pin on pointerdown and the click's own toggle
-                    // would immediately unpin — a no-op button.
-                    onPointerDownCapture={(e) => {
-                        if (
-                            e.target instanceof Element &&
-                            e.target.closest("[data-overlay-pin-toggle]")
-                        ) {
-                            return
-                        }
-                        if (!pinned) setPinned(true)
-                    }}
-                    // …and the same auto-pin from the KEYBOARD, because the
-                    // principle above is about interacting with the search
-                    // UI, not about the mouse. The dock now contains a
-                    // focus-portaling menu (ViewModeToggle's caret, §5.5):
-                    // Tab to it and press Enter and Radix moves focus into a
-                    // body portal, `onBlurCapture` clears focusWithin, and an
-                    // unpinned panel fades out from under its own open menu.
-                    // A mouse press on the same caret is already safe — this
-                    // is the other input method reaching the same state.
+                    // The only pointer gesture on the panel body: a
+                    // DOUBLE-click on genuine background pins, one way —
+                    // never unpin, so a stray double-click can only make the
+                    // panel more persistent. Users who watch the panel
+                    // dismiss on outside clicks reach for a double-click to
+                    // "activate" it, and the pin toggle flipping to pressed
+                    // is the feedback. The interactive-ancestor test
+                    // (isPanelBackground) is what guarantees rapid clicking
+                    // on a control never pins.
                     //
-                    // Deliberately not keyed to a list of activation keys:
-                    // Radix opens its menus on Enter, Space AND the arrows,
-                    // and typeahead makes any letter meaningful once one is
-                    // open. The exclusions are what carry the meaning:
-                    //   - editable targets — Enter/Space there are text
-                    //     entry and search submission, and the caret already
-                    //     holds the panel through focusWithin, so typing a
-                    //     space in the query must not pin;
-                    //   - Tab and Escape, which move focus out or dismiss
-                    //     rather than activate anything;
-                    //   - modifier chords, and Ctrl+Shift+F specifically:
-                    //     it is the PIN TOGGLE from the keyboard (registered
-                    //     on window by SearchPage). Pinning here first would
-                    //     make its functional toggle read `true` and unpin —
-                    //     the chord would do the opposite of its job
-                    //     whenever focus sat inside the panel;
-                    //   - the pin toggle button, for exactly the reason the
-                    //     pointerdown path exempts it: pin-then-toggle is a
-                    //     no-op button.
-                    onKeyDownCapture={(e) => {
-                        if (e.ctrlKey || e.metaKey || e.altKey) return
-                        if (e.key === "Tab" || e.key === "Escape") return
-                        const t =
-                            e.target instanceof HTMLElement ? e.target : null
-                        if (
-                            t &&
-                            (t.tagName === "INPUT" ||
-                                t.tagName === "TEXTAREA" ||
-                                t.isContentEditable)
-                        ) {
-                            return
-                        }
-                        if (t?.closest("[data-overlay-pin-toggle]")) return
-                        if (!pinned) setPinned(true)
+                    // Single background clicks stay INERT: they neither pin
+                    // nor dismiss. Anything else here would be the old
+                    // auto-pin under another name.
+                    onDoubleClick={(e) => {
+                        if (pinned || !isPanelBackground(e.target)) return
+                        void setPinned(true)
                     }}
                     className={cn(
                         // pb-6, not py-3: the browser's own link-target
@@ -549,35 +538,46 @@ export function SearchOverlay({
                                 countMetrics={countMetrics}
                             />
                         </div>
-                        {/* Unpinning while the pointer is still inside does
-                            not hide the panel — hoverPanel keeps `shown`
-                            true and it hides on the next leave, per the
-                            show-state formula above. The blur on unpin is
-                            load-bearing: Chromium focuses the button on
-                            mousedown, so after unpinning the button's own
-                            focus would hold `focusWithin` (and thus the
-                            panel) — and no click on the maximized board can
-                            ever blur it, because both marquee starters in
-                            GalleryPinBoard preventDefault() on pointerdown
-                            (suppressing the default focus change) and pins
-                            aren't focusable. Blurring here (relatedTarget
-                            null → focusWithin false in onBlurCapture) makes
-                            "hides on the next pointer leave" actually
-                            reachable by mouse. */}
+                        {/* UNPINNING LEAVES THE PANEL OPEN. The pointer is
+                            right here looking at it, so snapping it away
+                            would read as the button having closed the dock;
+                            instead `open` is raised in the same commit and
+                            the panel dismisses on the next Esc or outside
+                            click, which is exactly what "unpinned" now
+                            means. */}
                         <Toggle
                             data-overlay-pin-toggle
                             pressed={pinned}
-                            onClick={(e) => {
-                                if (pinned) e.currentTarget.blur()
-                                setPinned(!pinned)
+                            onClick={() => {
+                                if (pinned) setOpen(true)
+                                void setPinned(!pinned)
                             }}
                             title={pinned
-                                ? "Pinned (Ctrl+Shift+F): the search overlay stays open. Click to unpin — it hides when the pointer leaves"
-                                : "Pin the search overlay open (Ctrl+Shift+F) — unpinned, it hides when the pointer leaves"}
+                                ? "Pinned (Ctrl+Shift+F): the search dock survives clicks on the board. Click to unpin — it stays open until Esc or a click outside"
+                                : "Pin the search dock open (Ctrl+Shift+F) — unpinned, it closes on Esc or a click outside"}
                             aria-label="Pin search overlay"
                         >
                             <Pin className="h-4 w-4" />
                         </Toggle>
+                        {/* The panel's own close affordance. It has to be
+                            here: the edge handles that open the dock are
+                            covered by the open panel, so there is no other
+                            control on screen that closes it by pointer.
+                            Closes for real — an unpin as well, when pinned —
+                            because a close button that leaves the thing open
+                            is not a close button. */}
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                                setOpen(false)
+                                if (pinned) void setPinned(false)
+                            }}
+                            title="Close the search dock (Esc)"
+                            aria-label="Close search overlay"
+                        >
+                            <X className="h-4 w-4" />
+                        </Button>
                     </div>
                     {/* The thumbnail strip (design §5.3). Mounted for the
                         whole maximized session like the rest of the panel —
@@ -587,7 +587,7 @@ export function SearchOverlay({
                         overlay code: cards already set the sha256 +
                         text/uri-list payload, and the maximized board above
                         is the mounted RGL drop target. While search is
-                        suppressed (hidden, unpinned, unrevealed) the strip
+                        suppressed (dock neither open nor pinned) the strip
                         is inert by construction: its ensureRange calls flow
                         into useChunkedResults, whose queries are
                         `enabled: false` then — wanted chunks accumulate

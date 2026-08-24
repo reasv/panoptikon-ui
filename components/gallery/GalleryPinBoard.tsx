@@ -2651,6 +2651,51 @@ export function PinBoard(
                         </div>
                     ))}
                 </GridLayout>
+                {/* Bottom-dock scroll reservation, half one
+                    (docs/maximized-pinboard-search-overlay-design.md §7).
+                    While maximized the search dock covers the bottom band of
+                    the viewport, and without extra scroll range the board's
+                    last rows sit under it forever — worse than the normal
+                    gallery, where the thumbnail strip takes real layout space
+                    so the board can always be scrolled clear of it.
+                    --pinboard-bottom-inset is published by the dock while it
+                    is SHOWN (pinned or not) and tracks its live height, so
+                    consuming the var is the whole implementation; absent, it
+                    resolves to 0px and this is a zero-height box.
+
+                    Two spacers, because the board has two possible bottoms.
+                    A board taller than the wrapper overflows it and the
+                    scroll range is the GRID's bottom — this spacer, the
+                    grid's in-flow successor, follows it. A board that FITS
+                    (the common case: fillViewport sizes it to the container)
+                    leaves the range at the wrapper's own fixed-height box,
+                    which clamps this spacer away — the twin after the wrapper
+                    covers that. The range ends up at max(grid bottom, wrapper
+                    bottom) + inset either way.
+
+                    In-flow blocks deliberately: the grid is the wrapper's
+                    in-flow child whose height already defines the range at
+                    rest (see the gesture-floor note above), whereas an
+                    absolutely positioned spacer relies on abspos overflow
+                    reaching the Radix viewport's scrollable area — the
+                    engine-dependent propagation that already bit the floor.
+
+                    Nothing here feeds the grid's math. The grid's width comes
+                    from the WRAPPER (useContainerWidth's ResizeObserver on
+                    gridAreaRef) and a block child's height cannot move it;
+                    holeRows and gridContentHeight read that wrapper's own
+                    clientHeight, fixed by its height class; and the fill
+                    verbs' fold measures [data-pinboard-area] — the ScrollArea
+                    ROOT, outside the scrolling content entirely. Never move
+                    the reservation onto the wrapper as padding: clientHeight
+                    includes padding, which would silently change both the
+                    hole mask and the fold. */}
+                {fs && (
+                    <div
+                        aria-hidden
+                        style={{ height: "var(--pinboard-bottom-inset, 0px)" }}
+                    />
+                )}
                 {marquee && (
                     <div
                         className="absolute z-40 pointer-events-none border border-blue-400 bg-blue-400/10 rounded-xs"
@@ -2772,6 +2817,20 @@ export function PinBoard(
                     />
                 )}
             </div>
+            {/* Bottom-dock scroll reservation, half two: the case where the
+                board FITS its wrapper, so the wrapper's own box — not the
+                grid — is the bottom of the scroll range and the spacer
+                inside it is clamped away. Sibling of the grid area, still
+                in-flow inside the Radix viewport's content, so it extends
+                the range by the dock's height without touching the wrapper
+                the grid measures itself against. See the long note beside
+                its twin, above the grid. */}
+            {fs && (
+                <div
+                    aria-hidden
+                    style={{ height: "var(--pinboard-bottom-inset, 0px)" }}
+                />
+            )}
         </ScrollArea>
     </>)
 }

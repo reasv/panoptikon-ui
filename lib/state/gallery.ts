@@ -81,9 +81,11 @@ const useGalleryFullscreen = () =>
 
 // The maximized board's bottom search overlay PINNED flag
 // (docs/maximized-pinboard-search-overlay-design.md §2): pinned means the
-// panel stays up without the pointer holding it there. The ephemeral reveal
-// (hover/focus) is client state in lib/state/searchOverlayReveal.ts, not
-// here — a peek must never rewrite history. history "push" so Back unpins;
+// open panel SURVIVES an outside click or Esc, which an open-but-unpinned
+// one does not — plus reload and Back, since pin is URL state while open is
+// not. The ephemeral OPEN state is client state in
+// lib/state/searchOverlayReveal.ts, not here — opening the dock for one
+// search must never rewrite history. history "push" so Back unpins;
 // clearOnDefault so clean board links stay clean and "open maximized in a
 // new tab" carries no stray flag. The default is mirrored by the
 // server-side parser in lib/state/pinboardView.ts — wire format, like
@@ -127,8 +129,9 @@ const useSearchViewerOpen = () =>
 // untouched so the page sidebar returns on restore — this flag names a
 // different surface with its own lifetime. Unlike `gso` it plays NO part
 // in the search-suppression gate: the sidebar EDITS the query, it does not
-// consume results, so revealing it enables nothing (useSearchSuppressed
-// below stays gso-only).
+// consume results, so opening it enables nothing (useSearchSuppressed
+// below stays gso-only). Its ephemeral OPEN half lives in
+// lib/state/searchOverlayReveal.ts beside the bottom dock's.
 const useSidebarOverlayOpen = () =>
   useQueryState(
     "gsb",
@@ -348,14 +351,16 @@ const usePinboardMaximized = () =>
   })
 
 // Whether the search queries should be withheld: the board is maximized AND
-// nothing on screen consumes the results — the overlay is neither pinned
-// (`gso`), nor holding the item viewer open (`gsv`), nor transiently
-// revealed (hover/focus, the client-only store).
-// The reveal read is the one client-only addition over the pure predicate:
-// a hover-revealed overlay is a consumer and enables the query exactly like
-// a pinned one, while the SSR twin (isSearchSuppressedFromParams) consults
-// `gso` alone — a cold load is either pinned-open or closed
-// (docs/maximized-pinboard-search-overlay-design.md §2). The search gates
+// nothing on screen consumes the results — the bottom dock is neither
+// pinned (`gso`), nor holding the item viewer open (`gsv`), nor OPEN (the
+// ephemeral click-to-open state in the client-only store).
+// That last read is the one client-only addition over the pure predicate:
+// an open dock is a consumer and enables the query exactly like a pinned
+// one, while the SSR twin (isSearchSuppressedFromParams) consults `gso`
+// alone — a cold load is either pinned-open or closed
+// (docs/maximized-pinboard-search-overlay-design.md §2). Deliberately reads
+// the BOTTOM dock's flag only: the sidebar dock has its own open flag in
+// the same store and does NOT take part in this gate (§9). The search gates
 // read this, not usePinboardMaximized — see lib/state/pinboardView.ts.
 const useSearchSuppressed = () => {
   // Subscribed unconditionally, before the predicate: hooks may not hide

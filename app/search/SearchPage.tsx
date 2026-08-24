@@ -13,6 +13,7 @@ import { SideBar } from "@/components/sidebar/SideBar"
 import { SearchResultImage } from "@/components/SearchResultImage"
 import { useGalleryFullscreen, useGalleryHidePinBoard, useGalleryIndex, useGalleryPinBoardLayout, useGridLibraryTab, useGridPinboardTab, usePinboardMaximized, useSearchOverlayOpen, useSearchSuppressed, useViewMode } from "@/lib/state/gallery"
 import type { ViewMode } from "@/lib/state/gallery"
+import { useSearchOverlayReveal } from "@/lib/state/searchOverlayReveal"
 import { useSideBarOpen } from "@/lib/state/sideBar"
 import { selectedDBsSerializer, useSelectedDBs } from "@/lib/state/database"
 import { arrayResultsSource, useChunkedResults, useSearch, type ResultsSource } from "@/lib/searchHooks"
@@ -466,25 +467,36 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     const largeImageHosted =
         galleryHost && (pinboardLayout.length === 0 || hidePinBoard)
 
-    // The maximized board's search overlay chord: Ctrl+Shift+F toggles the
-    // PIN (`gso` — see useSearchSuppressed for how the flag scopes the
-    // query gates above; the hover/focus reveal is the dock's own affair,
-    // SearchOverlay). The chord follows the grid host's Ctrl+Shift+M
-    // effect: registered only while it can mean anything (the overlay
-    // exists only over a maximized board), functional toggle through the
-    // setter so the handler closes over no stale flag value.
-    const setOverlayPinned = useSearchOverlayOpen()[1]
+    // The maximized board's search dock chord: Ctrl+Shift+F is a clean
+    // SHOW/HIDE toggle over the dock's whole show state, not over one of
+    // its two halves. Shown (open or pinned) → close it fully: unpin AND
+    // clear the open flag, because clearing only one of the two would leave
+    // the panel up and the chord would read as broken. Hidden → open AND
+    // pin, since a chord is a deliberate "keep this here" gesture (the
+    // handles are the transient way in), and the raised open flag is what
+    // keeps the panel up if the pin toggle is later pressed.
+    //
+    // The chord follows the grid host's Ctrl+Shift+M effect: registered
+    // only while it can mean anything (the dock exists only over a
+    // maximized board). `open` is read through getState() rather than
+    // subscribed — the handler wants the value at press time and re-binding
+    // this listener on every open/close would be noise.
+    const [overlayPinned, setOverlayPinned] = useSearchOverlayOpen()
+    const setOverlayOpen = useSearchOverlayReveal((s) => s.setRevealed)
     useEffect(() => {
         if (!pinboardMaximized) return
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.ctrlKey && event.shiftKey && event.code === 'KeyF') {
                 event.preventDefault()
-                setOverlayPinned((pinned) => !pinned)
+                const shown =
+                    overlayPinned || useSearchOverlayReveal.getState().revealed
+                setOverlayOpen(!shown)
+                void setOverlayPinned(!shown)
             }
         }
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [pinboardMaximized, setOverlayPinned])
+    }, [pinboardMaximized, overlayPinned, setOverlayPinned, setOverlayOpen])
 
     const [options, setOptions] = useQueryOptions()
     const dbs = useSelectedDBs()[0]
@@ -761,10 +773,10 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
             {/* The maximized board's bottom search dock — search chrome,
                 so it mounts here where every value it needs is in scope,
                 never inside PinBoard. Mounted whenever the board is
-                maximized: visibility (hidden, hover-revealed, pinned) is
-                the dock's own affair, mirroring how PinboardFullscreenBar
-                owns its hover state (docs/maximized-pinboard-search-
-                overlay-design.md §5.1) */}
+                maximized: visibility (hidden, click-opened, pinned) is the
+                dock's own affair, the way PinboardFullscreenBar owns its
+                hover state (docs/maximized-pinboard-search-overlay-
+                design.md §5.1) */}
             {pinboardMaximized && (
                 <SearchOverlay
                     onRefresh={onRefresh}

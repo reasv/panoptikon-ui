@@ -486,9 +486,12 @@ function ToolbarDivider() {
 export function PinboardFullscreenBar() {
     const setFs = useGalleryFullscreen()[1]
     // No search button here: the search overlay is a bottom-edge dock with
-    // its own hover reveal and pin control (app/search/SearchOverlay.tsx) —
+    // its own edge handles and pin control (app/search/SearchOverlay.tsx) —
     // a top control toggling a bottom panel would be a pointer round trip
     // for nothing (docs/maximized-pinboard-search-overlay-design.md §5.1).
+    // This bar stays HOVER-revealed while those docks are click-revealed:
+    // it is small, low-collision, and its own handles sit where compaction
+    // rarely puts board content (§5.1).
     const [showGrid, setShowGrid] = useGalleryPinGrid()
     const [allHandles, setAllHandles] = useGalleryPinResizeHandles()
     const [autoLayout] = useGalleryPinAutoLayout()

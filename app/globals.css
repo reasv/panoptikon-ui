@@ -353,9 +353,79 @@
   z-index: 20;
 }
 
-/* Pinboard crop mode: make all 8 resize handles on the active item stand out */
+/* Resize-handle knobs. Two stock stylesheets paint these, and both paint
+   the same thing: react-resizable ships a translucent-black corner sprite
+   (a background-image), and react-grid-layout stacks a second L on top of
+   it (the 5x5 ::after with two rgba(0,0,0,0.4) borders). Single-tone dark
+   line-art on transparency disappears over dark or busy pictures — which is
+   what a pinboard is made of — so replace both with the image-editor
+   convention: a solid light knob carrying a dark ring and a drop shadow, so
+   one of the two tones always contrasts with whatever is underneath.
+   Neutralize the sprite rather than layering over it: it is a background
+   image, so a knob drawn in ::after would sit next to it, not replace it.
+
+   Deliberately theme-independent, unlike the rest of this file: the backdrop
+   here is the user's images, not an app surface, so a knob that followed
+   light/dark would still vanish on half the boards. Both tones ship on every
+   knob in both themes instead.
+
+   Specificity, not source order: RGL's ::after rule is two classes plus a
+   pseudo-element, and its stylesheet is imported by the board component
+   while this file is imported by the root layout — the order Next emits
+   them in is not ours to rely on (the crop rule below has carried an
+   !important for that reason). RGL puts .react-grid-item on our own pin
+   div, so the two classes always co-occur and naming both outranks every
+   stock rule outright.
+
+   The knob is anchored to the box's bottom-right corner, the one anchor
+   that serves all eight positions: react-resizable rotates the entire 20x20
+   box per handle (90/180/270 for the corners, 45/135/225/315 for the
+   edges), which carries that corner onto the item's outer corner for a
+   corner handle and onto the middle of the edge for an edge handle. A
+   rotation preserves distance from the box centre, so the 2px inset that
+   keeps the knob inside the box for the corners keeps it inside for the
+   diagonals too (its centre lands ~4.2px straight out from the centre of a
+   20px box, radius 5). The hit area therefore stays exactly the stock
+   20x20 — nothing here grows it — so the pin's own corner buttons keep the
+   seats the z-index note above gave them.
+
+   Round, not square: the knob inherits its handle's rotation, and a square
+   would read as a diamond on the four edge handles and a square on the four
+   corners. A circle is rotation-invariant, so all eight look alike. */
+.pinboard-pin.react-grid-item > .react-resizable-handle {
+  background-image: none;
+  padding: 0;
+}
+.pinboard-pin.react-grid-item > .react-resizable-handle::after {
+  content: "";
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(15, 23, 42, 0.92);
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* Pinboard crop mode: make all 8 resize handles on the active item stand
+   out — there the handles ARE the tool, so they get a bigger knob and a
+   blue ring/glow on top of the base treatment. The z-index stays 40 (above
+   the pin's own buttons at 20, per the note above; outside crop mode the
+   handles keep no z-index at all so the buttons stay clickable), and the
+   opacity override stays !important because RGL's hover rule reveals
+   handles only while the item is hovered.
+   The glow replaced a brightness(1.6) that existed to lift the old dark
+   sprite: applied to a white knob it only washes the dark ring back out. */
 .pinboard-crop-item > .react-resizable-handle {
   opacity: 1 !important;
-  filter: drop-shadow(0 0 3px rgb(59 130 246)) brightness(1.6);
+  filter: drop-shadow(0 0 3px rgb(59 130 246));
   z-index: 40;
+}
+.pinboard-pin.pinboard-crop-item > .react-resizable-handle::after {
+  width: 14px;
+  height: 14px;
+  border-color: rgb(29 78 216);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
 }
