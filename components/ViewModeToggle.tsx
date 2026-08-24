@@ -28,6 +28,12 @@ import {
  * header renders whenever the grid does, so a short result set — which has
  * no pagination bar at all — can still switch modes, and the footer keeps
  * its symmetry and its full width on narrow viewports.
+ *
+ * Mounted a second time in the maximized board's search dock, which renders
+ * no results header (see SearchOverlay's bottom row and design §5.5). The
+ * two seats are mutually exclusive — the header band is gated `!fs` and the
+ * dock exists only while `gf` maximizes a board — so nothing below needs to
+ * account for two live instances.
  */
 export function ViewModeToggle() {
     const [viewMode] = useViewMode()

@@ -251,7 +251,37 @@ export function ImageGallery({
     // mode, where a failed search is the SearchErrorToast's business.
     const targetErrored = targetUnloaded && source.errorAt(urlIndex)
     const [heldIndex, setHeldIndex] = useState(urlIndex)
-    if (!holding && heldIndex !== urlIndex) {
+    // TRAP — a held index MUST NOT survive a `vm` change, and this has now
+    // been predicted, deleted and re-discovered once (see useCommitViewMode,
+    // whose scroll branch used to carry the prediction as a comment about a
+    // caller that did not exist yet; the maximized dock's ViewModeToggle
+    // made it real). The held number is page-local in pages mode and global
+    // in scroll mode, so across a switch it names an item in a coordinate
+    // system that no longer exists — a page-3 `gi=4` becomes a global 24,
+    // and a hold left at 4 addresses global row 4 through the chunk source's
+    // page-1 fallback. That is not a cosmetic lag: the selection push below
+    // publishes that row, and BOTH surfaces that fall back to the selection
+    // (this panel's own `currentItem`, and the maximized viewer's
+    // useViewerItem) then show a different picture for a whole chunk round
+    // trip before snapping back. `resultsAreStale` cannot cover it — it
+    // clears as soon as the main query settles, which in scroll mode says
+    // nothing about the chunk under the new index.
+    //
+    // Resetting to `urlIndex` is the whole fix, and it costs no flash: the
+    // switch preserved the POSITION, so the row the URL now names is the row
+    // that was on screen, and while its chunk is in flight `source.get`
+    // answers undefined — which suppresses the publish and leaves the
+    // selection store holding that very item for both fallbacks to use.
+    //
+    // State + render-time adjustment, mirroring the `heldIndex` line above,
+    // because a ref written during render is what the React Compiler
+    // forbids; `holding` is deliberately not consulted, since a hold that is
+    // still engaged is exactly the case that must be dropped.
+    const [heldMode, setHeldMode] = useState(scrollMode)
+    if (heldMode !== scrollMode) {
+        setHeldMode(scrollMode)
+        setHeldIndex(urlIndex)
+    } else if (!holding && heldIndex !== urlIndex) {
         setHeldIndex(urlIndex)
     }
     const index = holding

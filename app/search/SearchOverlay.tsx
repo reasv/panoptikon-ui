@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils"
 import { itemEquals } from "@/components/OpenFileDetails"
 import { Toggle } from "@/components/ui/toggle"
 import { PageSelect } from "@/components/pageselect"
+import { ViewModeToggle } from "@/components/ViewModeToggle"
 import { VirtualGalleryHorizontalScroll } from "@/components/gallery/VirtualizedHorizontalScroll"
 import { useDelayedHover } from "@/components/gallery/PinboardPreviewPopover"
 import { ResultHoverPreview } from "./ResultHoverPreview"
@@ -399,6 +400,51 @@ export function SearchOverlay({
                         }
                         if (!pinned) setPinned(true)
                     }}
+                    // …and the same auto-pin from the KEYBOARD, because the
+                    // principle above is about interacting with the search
+                    // UI, not about the mouse. The dock now contains a
+                    // focus-portaling menu (ViewModeToggle's caret, §5.5):
+                    // Tab to it and press Enter and Radix moves focus into a
+                    // body portal, `onBlurCapture` clears focusWithin, and an
+                    // unpinned panel fades out from under its own open menu.
+                    // A mouse press on the same caret is already safe — this
+                    // is the other input method reaching the same state.
+                    //
+                    // Deliberately not keyed to a list of activation keys:
+                    // Radix opens its menus on Enter, Space AND the arrows,
+                    // and typeahead makes any letter meaningful once one is
+                    // open. The exclusions are what carry the meaning:
+                    //   - editable targets — Enter/Space there are text
+                    //     entry and search submission, and the caret already
+                    //     holds the panel through focusWithin, so typing a
+                    //     space in the query must not pin;
+                    //   - Tab and Escape, which move focus out or dismiss
+                    //     rather than activate anything;
+                    //   - modifier chords, and Ctrl+Shift+F specifically:
+                    //     it is the PIN TOGGLE from the keyboard (registered
+                    //     on window by SearchPage). Pinning here first would
+                    //     make its functional toggle read `true` and unpin —
+                    //     the chord would do the opposite of its job
+                    //     whenever focus sat inside the panel;
+                    //   - the pin toggle button, for exactly the reason the
+                    //     pointerdown path exempts it: pin-then-toggle is a
+                    //     no-op button.
+                    onKeyDownCapture={(e) => {
+                        if (e.ctrlKey || e.metaKey || e.altKey) return
+                        if (e.key === "Tab" || e.key === "Escape") return
+                        const t =
+                            e.target instanceof HTMLElement ? e.target : null
+                        if (
+                            t &&
+                            (t.tagName === "INPUT" ||
+                                t.tagName === "TEXTAREA" ||
+                                t.isContentEditable)
+                        ) {
+                            return
+                        }
+                        if (t?.closest("[data-overlay-pin-toggle]")) return
+                        if (!pinned) setPinned(true)
+                    }}
                     className={cn(
                         "border-t bg-background/95 px-4 py-3 shadow-md transition-all duration-150",
                         shown
@@ -475,22 +521,104 @@ export function SearchOverlay({
                             onViewerOpenChange={viewerToggle}
                         />
                     </div>
-                    {/* The pagination row: with `gi` set, a scrubber click
-                        moves the gallery position to the target page's first
-                        item (setVirtualPage); with `gi` null it writes only
-                        the anchor, and the strip follows via fallbackAnchor
-                        while the highlight converges through the strip's own
-                        live push (§5.4). Gated like the page-level bar's
-                        content test: one page means nothing to flip or
-                        scrub. */}
-                    {totalPages > 1 && (
-                        <PageSelect
-                            totalPages={totalPages}
-                            currentPage={currentPage}
-                            setPage={setPage}
-                            getPageURL={getPageURL}
-                        />
-                    )}
+                    {/* The bottom row. 1fr_auto_1fr is the results header's
+                        own idiom, here for the same reason: the scrubber
+                        stays centered on the panel however wide the
+                        right-hand cluster grows, and stays centered when the
+                        cluster is the only thing in the row.
+
+                        The middle track is minmax(0,auto), NOT auto, and
+                        that is load-bearing rather than tidiness. A plain
+                        max-content track never shrinks, so a wide enough
+                        pagination bar (PageSelect renders up to 35 page
+                        buttons) pushes the third track's start past the
+                        panel's right edge — and this dock is `fixed
+                        inset-x-0` with no overflow, so a fixed element's
+                        overflow contributes no document scroll and the
+                        toggle becomes literally unreachable. That would
+                        evict the ONLY control able to change view mode while
+                        maximized (§5.5), which is the one thing this row
+                        exists to guarantee. With a zero minimum the
+                        pagination is what degrades instead: the third track
+                        keeps its min-content floor (1fr's automatic minimum
+                        is the toggle's own min-content), the middle absorbs
+                        the shortfall, and the bar scrolls inside its cell.
+                        Roomy — the ordinary case — nothing moves: an `auto`
+                        maximum is still max-content and the two 1fr tracks
+                        still centre it. */}
+                    <div className="grid grid-cols-[1fr_minmax(0,auto)_1fr] items-center">
+                        {/* The pagination bar: with `gi` set, a scrubber
+                            click moves the gallery position to the target
+                            page's first item (setVirtualPage); with `gi` null
+                            it writes only the anchor, and the strip follows
+                            via fallbackAnchor while the highlight converges
+                            through the strip's own live push (§5.4). Gated
+                            like the page-level bar's content test: one page
+                            means nothing to flip or scrub. */}
+                        {totalPages > 1 && (
+                            /* min-w-0 + overflow-x-auto is the other half of
+                               the minmax(0,…) above: the track may now be
+                               narrower than the bar, and a grid item whose
+                               automatic minimum is min-content would simply
+                               overflow it instead of scrolling.
+
+                               The other two classes are not decoration.
+                               `overflow-y-hidden` because a scroll container
+                               with `overflow-x: auto` computes its Y to auto
+                               as well, and the bar overflows its cell
+                               vertically by a hairline (button borders
+                               against a track height set by the taller
+                               toggle cell) — enough to raise a VERTICAL
+                               scrollbar that eats ~15px of width and shows
+                               up in the ordinary, non-degraded case.
+                               Measured: with Y hidden, the roomy case is
+                               pixel-identical to the plain `auto` track it
+                               replaces.
+
+                               `justify-center-safe` because PageSelect's
+                               root is `w-full justify-center`, and centred
+                               overflow spills past the scroll ORIGIN, which
+                               is not scrollable back to: measured at a 560px
+                               panel, the first page button sat 493px to the
+                               left of the origin and only half the overflow
+                               was reachable. `safe center` centres while it
+                               fits and falls back to start when it does not,
+                               which puts every button back in reach. */
+                            <div className="col-start-2 min-w-0 overflow-x-auto overflow-y-hidden [&>nav]:justify-center-safe">
+                                <PageSelect
+                                    totalPages={totalPages}
+                                    currentPage={currentPage}
+                                    setPage={setPage}
+                                    getPageURL={getPageURL}
+                                />
+                            </div>
+                        )}
+                        {/* The paged/scroll switch, seated beside the control
+                            whose meaning it changes (§5.5). Its page mount is
+                            in the results header — a surface the maximized
+                            board never renders — so without this one the
+                            maximized workspace cannot change mode at all. It
+                            is deliberately OUTSIDE the bar's gate above:
+                            "fewer results than one page" is precisely the
+                            case the header placement was chosen to cover (see
+                            ViewModeToggle's docstring), and inheriting the
+                            gate would lose the switch exactly there. The two
+                            mounts can never be on screen together — the
+                            header band is gated `!fs` and this dock only
+                            exists while maximized, which requires `gf` — so
+                            this is a second seat for the same machinery, not
+                            a second copy of it.
+
+                            col-start-3: the bar above is conditional, so
+                            without an explicit track this cluster would slide
+                            into the center when it is alone. mt-4 mirrors the
+                            margin PageSelect carries, which is what lines the
+                            two up in the row and what gives the row its gap
+                            from the strip when the bar is absent. */}
+                        <div className="col-start-3 mt-4 flex items-center justify-end">
+                            <ViewModeToggle />
+                        </div>
+                    </div>
                 </div>
             </div>
             {/* The pinned viewer (design §8.3), rendered BEFORE the peek so

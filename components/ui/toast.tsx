@@ -13,10 +13,22 @@ const ToastViewport = React.forwardRef<
   React.ElementRef<typeof ToastPrimitives.Viewport>,
   React.ComponentPropsWithoutRef<typeof ToastPrimitives.Viewport>
 >(({ className, ...props }, ref) => (
+  // The bottom offset yields to --pinboard-bottom-inset, like every other
+  // occupant of the bottom band (SidebarOverlay, HoleTargetOverlay,
+  // PinboardHistory — docs/maximized-pinboard-search-overlay-design.md §7).
+  // Without it a toast lands ON the maximized search dock's bottom-right
+  // corner — over the view-mode toggle and part of the pagination bar — for
+  // its whole duration, which routinely means covering the very control that
+  // raised it (the toggle's save/clear-defaults menu toasts).
+  //
+  // Global component, so the 0px fallback is what keeps every other surface
+  // unchanged: the property is only ever set while the dock is SHOWN, and
+  // `bottom: var(--pinboard-bottom-inset, 0px)` is the same computed 0px as
+  // the `sm:bottom-0` it replaces everywhere else.
   <ToastPrimitives.Viewport
     ref={ref}
     className={cn(
-      "fixed top-0 z-100 flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]",
+      "fixed top-0 z-100 flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-[var(--pinboard-bottom-inset,0px)] sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]",
       className
     )}
     {...props}

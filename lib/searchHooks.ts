@@ -1202,19 +1202,32 @@ export function useCommitViewMode() {
       // `gi` becomes global too, so the gallery and the grid keep naming
       // positions the same way in each mode.
       //
-      // CURRENTLY UNREACHABLE, and worth stating because the branch looks
-      // live: the only caller of this hook is the header ViewModeToggle, which
-      // is rendered by the grid panel — so switching mode with the gallery
-      // open is not a thing the UI can express, and `galleryOpen` is false
-      // here every time. Anything that DOES make it reachable (a toggle inside
-      // the gallery header, a keyboard shortcut) has to seed the gallery's
-      // HELD index as well as `gi`: the gallery mounts against page-1 rows
-      // until the chunk covering the new global index lands, `resultsAreStale`
-      // clears the moment the main query settles, and the held index is still
-      // the page-local one it was minted with — so the selection push
-      // publishes a page-1 row and the selection→index effect in SearchPage
-      // then rewrites `gi` to wherever that row sits. Writing the URL is only
-      // half of this switch; the surface's own held position is the other.
+      // REACHED, and by two callers. The maximized search dock's own seat for
+      // ViewModeToggle (design §5.5) is the ordinary one: `gi` IS that dock's
+      // selection, so a switch made there routinely arrives with a gallery
+      // position set — and the gallery host can be MOUNTED behind the
+      // maximized board (showing the board rather than the large image) with
+      // its selection push live. It was NOT unreachable before that seat
+      // existed, contrary to what this comment used to assert as settled
+      // history: the header toggle is rendered by the GRID panel, and the grid
+      // panel is exactly what a URL with `gi` set and zero results renders
+      // (`liveGalleryHost = qIndex !== null && itemCount > 0`, SearchPage), so
+      // `galleryOpen` is true on that path too.
+      //
+      // Writing the URL is only half of the switch; the display surface's own
+      // HELD index is the other, and that half is a real hazard rather than a
+      // cosmetic lag: a held index is minted in one coordinate system and
+      // names nothing in the other, so left alone it resolves to a DIFFERENT
+      // item, gets published as the selection, and every surface that falls
+      // back to the selection (the gallery's own picture, the maximized
+      // viewer) shows that item for a whole chunk round trip before snapping
+      // back. `resultsAreStale` cannot cover the window — it clears the moment
+      // the main query settles, which in scroll mode says nothing about the
+      // chunk under the new global index. That half now lives where the hold
+      // does — ImageGallery drops its hold on a `vm` change, see the trap
+      // comment there — rather than being seeded from here, because the hazard
+      // belongs to the mode change itself and would otherwise have to be
+      // re-solved by every future writer of `vm`.
       if (galleryOpen && global !== galleryIndex) {
         writes.push(setGalleryIndex(global, replace))
       }
