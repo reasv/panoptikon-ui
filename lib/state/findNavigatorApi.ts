@@ -7,8 +7,25 @@ import type {
 
 export interface FindNavigationData {
   folder: string
+  /** 1-based page holding the file. PAGES MODE only. */
   page: number
+  /** The file's index WITHIN that page. PAGES MODE only. */
   index: number
+  /**
+   * The file's index within the whole folder listing, which is what SCROLL
+   * MODE's position params mean: there, `gi` is an absolute index over the
+   * entire result set and `top` is the grid's anchor onto it, with no page
+   * involved (lib/state/gallery.ts useGalleryNavigate,
+   * docs/search-scroll-mode-design.md §8).
+   *
+   * Carried alongside the paged pair rather than replacing it because the
+   * two modes want different numbers and this data crosses the API boundary
+   * to buildLink as well as navigate. Sending only the paged pair is what
+   * made find-in-folder land on absolute item `indexInFolder % page_size`
+   * in scroll mode — right only while the file sat in the folder's first
+   * page, i.e. only when it was already on screen.
+   */
+  absoluteIndex: number
   order_by: orderByType
   order: OrderArgsType["order"]
   page_size: number

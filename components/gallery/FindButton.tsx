@@ -3,7 +3,8 @@
 import React, { useEffect, useRef } from 'react'
 import { FolderSearch } from 'lucide-react'
 import { useToast } from '../ui/use-toast'
-import { getGalleryOptionsSerializer, useGalleryIndex, usePinboardMaximized } from '@/lib/state/gallery'
+import { getGalleryOptionsSerializer, useGalleryNavigate, usePinboardMaximized, useViewMode } from '@/lib/state/gallery'
+import { gridScrollAnchorSerializer } from '@/lib/state/gridScroll'
 import { useSearchOverlayReveal } from '@/lib/state/searchOverlayReveal'
 import { useFileFilters, useOrderArgs, useQueryOptions, useResetSearchQueryState } from '@/lib/state/searchQuery/clientHooks'
 import { selectedDBsSerializer, useSelectedDBs } from '@/lib/state/database'
@@ -99,15 +100,18 @@ async function findFileIndex(
         const result = resultQuery.data?.results || []
         const indexInFolder = result.findIndex((r: { file_id: number }) => r.file_id === file_id)
         if (indexInFolder === -1) {
-            return [0, 0]
+            return [0, 0, 0]
         }
         const page = Math.floor(indexInFolder / page_size) + 1
         const index = indexInFolder % page_size
-        return [page, index]
+        // Three numbers, because the two view modes want different ones:
+        // pages mode lands with (page, index-within-page), scroll mode with
+        // the absolute index (see FindNavigationData).
+        return [page, index, indexInFolder]
     } catch (e) {
         console.error(e)
     }
-    return [0, 0]
+    return [0, 0, 0]
 }
 
 /**
@@ -118,7 +122,27 @@ async function findFileIndex(
  * write re-rendered them all (see lib/state/findNavigatorApi.ts).
  */
 export function FindNavigator() {
-    const setIndex = useGalleryIndex()[1]
+    // THE POSITION WRITE IS MODE-DEPENDENT, and getting that wrong is what
+    // made find-in-folder miss. `gi` means different things in the two view
+    // modes: in PAGES mode it is an index WITHIN the page `page` selects, in
+    // SCROLL mode it is an absolute index over the whole result set, with
+    // `top` as the grid's anchor onto it and no page at all
+    // (lib/state/gallery.ts useGalleryNavigate,
+    // docs/search-scroll-mode-design.md §8).
+    //
+    // This wrote the paged pair unconditionally, so in scroll mode the
+    // landing was absolute item `indexInFolder % page_size` — the right item
+    // only while the file sat in its folder's first page, which is exactly
+    // the case where it was already on screen. Every real navigation (item
+    // 137 of a folder, page_size 10) landed on item 7.
+    //
+    // useGalleryNavigate is the shared write every by-item position gesture
+    // already goes through, and it is used here for the same stated reason
+    // it exists: one write, so the surfaces cannot drift on which number
+    // `gi` holds or on whether the anchor follows it.
+    const [viewMode] = useViewMode()
+    const scrollMode = viewMode === "scroll"
+    const navigateGallery = useGalleryNavigate(scrollMode)
     const resetSearch = useResetSearchQueryState()
     const [orderArgs, setOrderArgs] = useOrderArgs()
     const setOptions = useQueryOptions()[1]
@@ -200,7 +224,7 @@ export function FindNavigator() {
         ].includes(orderArgs.order_by) ? orderArgs.order_by : "last_modified"
         const order = orderArgs.order
 
-        const [page, index] = await findFileIndex(
+        const [page, index, absoluteIndex] = await findFileIndex(
             folder,
             file_id,
             page_size,
@@ -208,13 +232,16 @@ export function FindNavigator() {
             order,
             dbs
         )
-        return { folder, page, index, order_by, order, page_size } as FindNavigationData
+        return {
+            folder, page, index, absoluteIndex, order_by, order, page_size,
+        } as FindNavigationData
     }
 
     const buildLink = ({
         folder,
         page,
         index,
+        absoluteIndex,
         order_by,
         order,
         page_size,
@@ -226,7 +253,15 @@ export function FindNavigator() {
         fullURL = partitionBySerializer(fullURL, {
             partition_by: partitionBy.partition_by
         })
-        fullURL = serializers.orderArgs(fullURL, {
+        // The prefetched href has to land where the in-place navigate below
+        // does, so it takes the same fork: no `page` in scroll mode (the URL
+        // normalization strips it there anyway), and `gi` carries whichever
+        // number that mode's position params mean.
+        fullURL = serializers.orderArgs(fullURL, scrollMode ? {
+            order,
+            order_by,
+            page_size,
+        } : {
             order,
             order_by,
             page,
@@ -236,7 +271,20 @@ export function FindNavigator() {
         fullURL = serializers.fileFilters(fullURL, {
             paths: [folder],
         })
-        fullURL = getGalleryOptionsSerializer()(fullURL, { gi: index })
+        fullURL = getGalleryOptionsSerializer()(fullURL, {
+            gi: scrollMode ? absoluteIndex : index,
+        })
+        if (scrollMode) {
+            // The grid's anchor, the scroll-mode half of the landing: `gi`
+            // alone selects the item but leaves the grid wherever it was, so
+            // a link that omits this opens the folder scrolled to the top
+            // with the target outside the ensure-visible scan window. Null
+            // at 0 mirrors useGalleryNavigate's own rule — the top of the
+            // set needs no anchor and a clean URL is worth keeping.
+            fullURL = gridScrollAnchorSerializer(fullURL, {
+                top: absoluteIndex > 0 ? absoluteIndex : null,
+            })
+        }
         return fullURL
     }
 
@@ -244,6 +292,7 @@ export function FindNavigator() {
         folder,
         page,
         index,
+        absoluteIndex,
         order_by,
         order,
         page_size,
@@ -264,13 +313,31 @@ export function FindNavigator() {
             setOptions({
                 e_path: true,
             }, { history: "push" }),
-            setOrderArgs({
+            // `page` is a PAGES-MODE landing and only that: scroll mode
+            // reads rows from a sparse window over the whole set and has
+            // useScrollURLNormalization strip the param, so writing it there
+            // is at best a transient the normalizer undoes.
+            setOrderArgs(scrollMode ? {
+                order_by,
+                order,
+                page_size,
+            } : {
                 order_by,
                 order,
                 page,
                 page_size,
             }, { history: "push" }),
-            setIndex(index, { history: "push" }),
+            // One write for both modes, and it also sets the grid's anchor
+            // in scroll mode (see the hook at the top of this component).
+            // Returns void rather than a promise, so it adds nothing to the
+            // batch's settling — it does not need to: its setters fire in
+            // this same synchronous tick, so they join the same nuqs update
+            // the awaited ones do, and `gi` is a position rather than part
+            // of the query key `commit()` is about.
+            navigateGallery(
+                scrollMode ? absoluteIndex : index,
+                { history: "push" },
+            ),
         ])
         // After the writes, before the commit: the dock must be open for
         // `commit()` to declare a query that anything will actually run
@@ -309,6 +376,11 @@ export function FindNavigator() {
         orderArgs.order,
         dbs.index_db,
         dbs.user_data_db,
+        // A prefetched href now bakes in the VIEW MODE as well (buildLink
+        // forks on it for both the position number and whether `page` is
+        // written at all), so a mode switch has to drop stale hrefs the same
+        // way an ordering or DB change does.
+        viewMode,
     ])
     return null
 }
