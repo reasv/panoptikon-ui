@@ -355,7 +355,7 @@ function SurfacePopover({
      * NOT a menu (it is a row of trim controls, and claiming role="menu" or
      * role="toolbar" would promise roving-focus keyboard behavior it does not
      * implement), so it needs a marker of its own or a surface above it eats
-     * its Esc — see SearchViewer's guard.
+     * its Esc — see PreviewSurface's guard.
      */
     escOwner?: boolean
     className?: string

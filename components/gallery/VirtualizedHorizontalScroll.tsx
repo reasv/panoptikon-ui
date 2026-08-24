@@ -97,14 +97,24 @@ export function VirtualGalleryHorizontalScroll({
     /** k, the virtual-page size, for the derived page number. */
     pageSize?: number
     /**
-     * Hover reporting for the maximized search overlay's centered preview
+     * Hover reporting for the maximized search overlay's preview surface
      * (docs/maximized-pinboard-search-overlay-design.md §8): the row while
-     * the pointer is over the card's PREVIEW BUTTON, null when it leaves —
-     * and null again on a card's own dragstart, part of the same contract,
-     * because the preview portals at z-70 and would visually occlude a drag
-     * toward the board (§8). The card BODY deliberately reports nothing
-     * (§8.1): a sweep across cards to reach a drag source must not take the
-     * board over, which is exactly what it is being reached across for.
+     * the pointer is on the card's peek trigger, null when it leaves — and
+     * null again on a card's own dragstart, part of the same contract,
+     * because the surface sits over the board and would visually occlude a
+     * drag toward it (§8).
+     *
+     * WHICH part of the card is that trigger is asymmetric between the two
+     * viewer states, deliberately (§8.1). Viewer CLOSED: the preview button
+     * only, because an unconditional body-hover takeover covers the board
+     * exactly when the user is reaching across it to drop something, which
+     * is the whole reason the button exists. Viewer OPEN: the card BODY as
+     * well — the takeover already happened and the surface is up, so making
+     * the user find a small target per item is friction for no protection,
+     * and it matches the click semantics they already have (clicking a body
+     * fixes that item; hovering one showing it temporarily is the same
+     * gesture, weaker).
+     *
      * Only LOADED cards report: a skeleton has no row to preview. Passing
      * this prop is also what puts the button on the card at all — the
      * gallery mount passes nothing, gets no button, and is unaffected.
@@ -116,7 +126,8 @@ export function VirtualGalleryHorizontalScroll({
      * holds is not a second piece of state: by §8's identity rule the viewer
      * always shows the selected item, so "the viewer is on this card" is
      * exactly `viewerOpen && isSelected`. It decides the preview button's
-     * glyph and what its click does — open, close, or swap.
+     * glyph and what its click does — open, close, or swap — and, per §8.1's
+     * trigger asymmetry, whether the card BODY peeks as well as the button.
      */
     viewerOpen?: boolean
     /** Open/close the viewer — the other half of the button's click (§8.1). */
@@ -426,6 +437,40 @@ function VirtualHorizontalScrollElement({
     const [dbs] = useSelectedDBs()
     const setSelected = useItemSelection((state) => state.setItem)
     const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256)
+    // Every hover report this card makes goes through here, so the card can
+    // know whether the dock's hover subject is currently ITS item. Tracked
+    // from the reports rather than from raw pointer presence: the unmount
+    // clear below must never wipe a peek some other card owns, and only the
+    // reports say which card that is.
+    const ownsHoverRef = useRef(false)
+    const reportHover = onItemHover
+        ? (next: SearchResult | null) => {
+            ownsHoverRef.current = next !== null
+            onItemHover(next, ownIndex)
+        }
+        : undefined
+    // TRAP: a card that UNMOUNTS under a stationary pointer strands its peek.
+    // Cards are keyed by file_id, so one leaving the virtual window genuinely
+    // unmounts — and React fires no mouseleave for an element that ceased to
+    // exist. The path is real and needs no user input: with the viewer open
+    // the card BODY is a peek trigger, so a video ending runs
+    // advanceToNextVideo → onNavigate → the keep-in-view scrollToIndex above,
+    // which can scroll the peeked card out of the window. No leave, `gsv`
+    // never moved, dock pinned — so a peek of a card nobody is pointing at
+    // covers the viewer until the pointer happens to find another card. The
+    // card's own unmount is the only signal that survives virtualization.
+    //
+    // Latched through a ref rather than depended on: the cleanup must run at
+    // UNMOUNT and nowhere else, and `ownIndex` moves under a mounted card as
+    // chunks land — a dep array carrying it would fire this clear on a
+    // relabel, with the pointer still resting on the card.
+    const strandedClearRef = useRef<(() => void) | undefined>(undefined)
+    useEffect(() => {
+        strandedClearRef.current = reportHover ? () => reportHover(null) : undefined
+    })
+    useEffect(() => () => {
+        if (ownsHoverRef.current) strandedClearRef.current?.()
+    }, [])
     const params = useSearchParams()
 
     const imageLink = useMemo(() => {
@@ -450,8 +495,24 @@ function VirtualHorizontalScrollElement({
         // overlay's hover preview: it portals at z-70 and would sit over the
         // board exactly where the drag is headed (design §8). mouseleave is
         // not reliable mid-HTML5-drag, hence the explicit clear here.
-        onItemHover?.(null, ownIndex);
+        reportHover?.(null);
     }
+    // Does the card BODY peek, as well as its button (§8.1)? A GATE, tested
+    // INSIDE the enter handler — never a switch on whether the handlers exist.
+    //
+    // TRAP: React resolves an element's enter/leave handlers at DISPATCH time
+    // from the props last committed, so a handler wired only while some state
+    // holds ceases to exist the moment that state flips. Under a stationary
+    // pointer the matching LEAVE is then never delivered at all, and whatever
+    // the enter opened is stranded. This is not theoretical: with these two
+    // conditional, closing the viewer (Esc, Back, or the button's own Shrink)
+    // while the pointer rested on a card removed the card's leave in the same
+    // commit that collapsed the dock's peek suppression — so a full-size peek
+    // of that card appeared over the board and nothing short of hovering
+    // another card's BUTTON or hiding the dock could clear it. Mounting them
+    // unconditionally is what makes "the pointer left" an event the strip
+    // always reports, whichever state it was in when the pointer arrived.
+    const bodyPeeks = !!viewerOpen
     return (
         <div
             style={{
@@ -467,6 +528,25 @@ function VirtualHorizontalScrollElement({
                 )}
                 onDragStart={handleDragStart}
                 draggable={true}
+                // Both paths go through the dock's 200ms delayed-open,
+                // instant-close hook, and that is what makes body hover safe
+                // at all: a sweep across the strip to reach the scrollbar, a
+                // pin button or a drag source passes over many cards and must
+                // swap nothing. Only a deliberate pause does (§8.1).
+                //
+                // Present or absent with the PROP, which is fixed per mount
+                // (the page gallery never passes it and is untouched), never
+                // with the viewer's open state — see the trap on bodyPeeks.
+                // Leave reports null unconditionally: "the pointer is off this
+                // card" is true whichever half of it owned the trigger, and it
+                // is the only clear that survives the viewer closing under a
+                // pointer that never moves.
+                onMouseEnter={reportHover
+                    ? () => { if (bodyPeeks) reportHover(item) }
+                    : undefined}
+                onMouseLeave={reportHover
+                    ? () => reportHover(null)
+                    : undefined}
             >
                 <Link href={imageLink} onClick={onClick}>
                     <div className="w-full h-full relative">
@@ -518,12 +598,21 @@ function VirtualHorizontalScrollElement({
                     GalleryImageLarge would collide with the gallery's own) —
                     the button then keeps only its P5 half, select + peek, and
                     its label says so. */}
-                {onItemHover && (
+                {reportHover && (
                     <PreviewButton
                         canToggleViewer={!!onViewerOpenChange}
                         isViewerItem={!!viewerOpen && isSelected}
-                        onEnter={() => onItemHover?.(item, ownIndex)}
-                        onLeave={() => onItemHover?.(null, ownIndex)}
+                        onEnter={() => reportHover(item)}
+                        // RE-ASSERTS rather than clears while the body owns
+                        // the trigger, because mouseenter/mouseleave ignore
+                        // moves between a container and its descendants: the
+                        // figure delivers no re-entry when the pointer slides
+                        // off the button back onto the card, so a plain null
+                        // here would drop a peek under a pointer that never
+                        // left. Leaving the CARD still clears it — leave
+                        // events fire innermost-first, so the figure's null
+                        // lands after this one.
+                        onLeave={() => reportHover(bodyPeeks ? item : null)}
                         onSelect={() => {
                             const nextOpen = !(viewerOpen && isSelected)
                             onNavigate(ownIndex % nItems)
@@ -550,10 +639,13 @@ function VirtualHorizontalScrollElement({
 }
 
 // The strip card's preview trigger (design §8.1): hover shows the item on
-// the maximized board's centered preview surface, and the card BODY no
-// longer does — an unconditional full-screen takeover on every pointer
-// sweep covers the board precisely when the user is reaching across it to
-// drop something.
+// the maximized board's preview surface, and with the viewer CLOSED it is
+// the only thing on the card that does — an unconditional full-screen
+// takeover on every pointer sweep covers the board precisely when the user
+// is reaching across it to drop something. Once the viewer is open the
+// takeover has already happened and the card body takes the hover over (see
+// bodyPeeks); the button stays for its other half, which is the one control
+// on this card whose meaning is explicit.
 //
 // Top-center: the four corners are taken by BookmarkBtn, PinButton,
 // FindButton and the FileActionCluster. Every other class is theirs
@@ -602,6 +694,16 @@ function PreviewButton({
      * gesture as opening it.
      */
     isViewerItem: boolean
+    /**
+     * The peek trigger. ALWAYS wired, even where the card body peeks too
+     * (§8.1, viewer open) — what changes there is what `onLeave` reports,
+     * because sliding off the button back onto the card delivers no re-entry
+     * from the figure (enter/leave ignore container↔descendant moves), so a
+     * leave that cleared would drop a peek under a pointer that never left.
+     * Making the handler conditional instead is the trap documented on
+     * bodyPeeks: a listener that disappears under a resting pointer never
+     * delivers its leave at all.
+     */
     onEnter: () => void
     onLeave: () => void
     onSelect: () => void

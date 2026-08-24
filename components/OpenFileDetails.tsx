@@ -32,10 +32,20 @@ export function OpenDetailsButton({
     item,
     variantButton,
     target,
+    className,
 }: {
     item?: SearchResult,
     variantButton?: boolean
     target?: DetailsPaneTarget
+    /**
+     * Extra classes for the TOGGLE form only — the button form already paints
+     * itself a white pill for a hover overlay. It exists for the maximized
+     * board's viewer header, which is chrome laid over arbitrary picture
+     * content and therefore has to recolour its controls the way
+     * VideoPlayerSurface does (white over a scrim). Every other mount passes
+     * nothing and is untouched.
+     */
+    className?: string
 }) {
     const { toast } = useToast()
     const [pageSidebarOpen, setPageSideBarOpen] = useSideBarOpen()
@@ -89,6 +99,7 @@ export function OpenDetailsButton({
                 onClick={() => onClick()}
                 title={!itemDetailsOpen ? "Open Data View" : "Close Data View"}
                 aria-label={!itemDetailsOpen ? "Open Data View" : "Close Data View"}
+                className={className}
             >
                 <BookOpen className="h-4 w-4" />
             </Toggle>

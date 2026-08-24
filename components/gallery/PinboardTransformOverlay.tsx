@@ -367,7 +367,7 @@ export function PinboardTransformOverlay({
             data-transform-overlay
             // Scale & Move is a MODAL BOARD GESTURE and cancels on Esc (see
             // the handler above), so surfaces that would otherwise take Esc
-            // stand down while it runs — SearchViewer's guard explains the
+            // stand down while it runs — PreviewSurface's guard explains the
             // attribute and why it is not the identity one beside it.
             data-esc-owner
             className="absolute left-0 top-0 z-40 w-full"

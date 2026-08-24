@@ -1405,6 +1405,8 @@ export function GalleryImageLarge(
         advanceToNextVideo,
         cancelPendingAdvance,
         heightClass,
+        playerTopRightClass,
+        onMediaAspect,
     }: {
         item: SearchResult,
         prevImage: () => void,
@@ -1440,6 +1442,53 @@ export function GalleryImageLarge(
          * renders exactly as before.
          */
         heightClass?: string
+        /**
+         * Where the video's TOP-RIGHT controls anchor — the download control
+         * (S1) and the native-controls escape kebab (S2), which share that
+         * corner because only one of them is ever mounted. Absent, they sit at
+         * `top-2 right-2` of the picture, as they always have.
+         *
+         * It exists because a host may own the picture's top band itself: the
+         * maximized board's viewer lays its header OVER the frame (§8.3 — a
+         * header in flow would take height out of the fit budget and shrink
+         * the picture), and its close button lands on exactly that corner. The
+         * kebab is the ONLY way back from the native controls, so burying it
+         * traps the user in S2 until they close and reopen the item. Same
+         * lever as `heightClass`: a class a host substitutes for a layout
+         * decision that is only correct inside the gallery shell. The page
+         * gallery passes nothing and renders exactly as before.
+         */
+        playerTopRightClass?: string
+        /**
+         * Report the aspect an ELEMENT here has actually painted, for a host
+         * that fits its own box around this component
+         * (docs/maximized-pinboard-search-overlay-design.md §8.2). `item`'s
+         * width/height are the CODED dimensions — the scanner never reads EXIF
+         * orientation — so a host box built on them is a landscape frame
+         * around a portrait photo, and only an element can say otherwise.
+         *
+         * ONLY <img>-confirmed aspects leave this component, never the
+         * <video>'s onLoadedMetadata one, and that is a deliberate line: a
+         * host box is a LAYOUT, and re-fitting it the moment a live element
+         * reports metadata re-lays-out the player, its overlays and its click
+         * zones mid-playback. The thumbnail's report costs nothing by
+         * comparison — it lands in the same frame as the picture appearing, and
+         * for a video that is reached in S0 (a play press) it lands before any
+         * player exists, so a rotated one's host box is already corrected by
+         * the time it plays. A video that mounts STRAIGHT into S1 — the
+         * auto-advance chain, where `showVideo` is already on — renders no
+         * thumbnail and reports nothing, so its host box keeps whatever it had
+         * and the element letterboxes inside it. That is the behavior from
+         * before this prop existed, and it is the right trade: a wrong frame
+         * for one item beats re-laying-out a player that is already running.
+         * The metadata aspect still drives THIS component's own overlays,
+         * which are measured against the panel and are meant to move.
+         *
+         * Passing it is also what makes a plain image report at all: without a
+         * host asking, a non-playable item does no aspect bookkeeping (it has
+         * no overlays to anchor), and every existing call site keeps that.
+         */
+        onMediaAspect?: (sha256: string, ratio: number) => void
     }
 ) {
     const [dbs, ___] = useSelectedDBs()
@@ -1559,6 +1608,13 @@ export function GalleryImageLarge(
     const noteThumbAspect = (el: HTMLImageElement | null) => {
         if (!el || !el.naturalWidth || !el.naturalHeight) return
         const thumbRatio = el.naturalWidth / el.naturalHeight
+        // Out to a host that fits its own box around this component, if one
+        // asked (see onMediaAspect). Deliberately not behind the first-writer
+        // rule below: the host weighs this against sources of its own, and a
+        // re-run of the ref callback must reach it every time or a host that
+        // mounted after the picture loaded would never hear the answer. Its
+        // handler is idempotent for the same reason PeekLayer's is.
+        onMediaAspect?.(item.sha256, thumbRatio)
         setMediaAspect((prev) => (
             prev?.sha === item.sha256 ? prev : { sha: item.sha256, ratio: thumbRatio }
         ))
@@ -2113,7 +2169,23 @@ export function GalleryImageLarge(
                             >
                                 <NativeControlsEscape
                                     videoState={videoState}
-                                    className="pointer-events-auto"
+                                    // A host that owns the picture's top band
+                                    // moves this out from under its own chrome
+                                    // — see playerTopRightClass. This kebab is
+                                    // the only way out of S2.
+                                    //
+                                    // Forked on fullscreen for the same reason
+                                    // VideoDownloadControl below is, and it has
+                                    // to be the SAME answer: the two share this
+                                    // corner and only one is ever mounted. In
+                                    // element fullscreen the fullscreen element
+                                    // is the player host, so the host's own
+                                    // chrome is not painted at all and the
+                                    // corner is free.
+                                    className={cn(
+                                        "pointer-events-auto",
+                                        !player.isFullscreen && playerTopRightClass,
+                                    )}
                                 />
                             </div>
                             // The surface's own box, laid over the displayed
@@ -2183,6 +2255,15 @@ export function GalleryImageLarge(
                                 style={player.isFullscreen ? undefined : pictureBox ?? undefined}
                             >
                                 <VideoDownloadControl
+                                    // Shares the escape kebab's corner, and
+                                    // therefore the host's override for it —
+                                    // except in fullscreen, where the host's
+                                    // own chrome is not painted at all (the
+                                    // fullscreen element is the player host
+                                    // BELOW it), so the corner is free and the
+                                    // button belongs where it always sits.
+                                    // Same fork as the box above.
+                                    className={player.isFullscreen ? undefined : playerTopRightClass}
                                     controller={player}
                                     download={{
                                         url: fileURL,
@@ -2219,16 +2300,29 @@ export function GalleryImageLarge(
                             fill
                             className="object-contain"
                             unoptimized={true}
-                            // Playable items only — a plain image renders
-                            // exactly as it always did, with no aspect
-                            // bookkeeping and no overlay box to anchor. The
-                            // ref covers cache hits that complete before React
-                            // attaches onLoad (same pattern as the pin's
+                            // Playable items, or a host that asked for the
+                            // painted aspect (onMediaAspect) — for a still
+                            // image this element is what the panel actually
+                            // shows, so it is the only thing that can correct
+                            // an EXIF-rotated host box. It is NOT necessarily
+                            // the original file: `thumbnail` serves the file
+                            // itself only below the scanner's size thresholds,
+                            // and above them a STORED thumbnail the `image`
+                            // crate wrote with no EXIF and no orientation
+                            // applied (panoptikon/src/jobs/files.rs,
+                            // image_is_served_directly). A host must weigh the
+                            // answer knowing that — see PreviewSurface's
+                            // `confirmed`, where treating "same file" as "same
+                            // painted image" was a real bug. Neither: a plain
+                            // image renders exactly as it always did, with no
+                            // aspect bookkeeping and no overlay box to anchor.
+                            // The ref covers cache hits that complete before
+                            // React attaches onLoad (same pattern as the pin's
                             // thumbnail); onLoad covers the network path.
-                            ref={isPlayable ? ((el) => {
+                            ref={isPlayable || onMediaAspect ? ((el) => {
                                 if (el?.complete) noteThumbAspect(el)
                             }) : undefined}
-                            onLoad={isPlayable
+                            onLoad={isPlayable || onMediaAspect
                                 ? ((e) => noteThumbAspect(e.currentTarget))
                                 : undefined}
                         />

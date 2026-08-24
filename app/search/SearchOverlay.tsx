@@ -3,14 +3,12 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { ChevronUp, Pin } from "lucide-react"
 import type { ReadonlyURLSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { itemEquals } from "@/components/OpenFileDetails"
 import { Toggle } from "@/components/ui/toggle"
 import { PageSelect } from "@/components/pageselect"
 import { ViewModeToggle } from "@/components/ViewModeToggle"
 import { VirtualGalleryHorizontalScroll } from "@/components/gallery/VirtualizedHorizontalScroll"
 import { useDelayedHover } from "@/components/gallery/PinboardPreviewPopover"
-import { ResultHoverPreview } from "./ResultHoverPreview"
-import { SearchViewer, useViewerItem, viewerPosition } from "./SearchViewer"
+import { PreviewSurface, useViewerItem, viewerPosition } from "./PreviewSurface"
 import { SearchBarRow } from "./SearchBarRow"
 import {
     useGalleryIndex,
@@ -236,6 +234,81 @@ export function SearchOverlay({
     useEffect(() => {
         if (!shown) setHoverItem(null)
     }, [shown, setHoverItem])
+    // And the viewer's open state voids it too, both ways. Belt and braces
+    // for a hazard the strip's handlers alone cannot cover: the ONLY other
+    // clear is the one above, which never fires while the dock is pinned, and
+    // both peek triggers live on a card the pointer may simply be resting on
+    // when `gsv` flips. Closing the viewer collapses the suppression below in
+    // the same commit, so a subject held from before the close would surface
+    // as a full-size peek nobody asked for — and pressing the strip's own
+    // "close viewer" button would replace the viewer with a pixel-identical
+    // peek of the same item, minus the header, which reads as the close having
+    // eaten the chrome and done nothing else. A peek that is still legitimate
+    // is one pointer move away from coming back; a stranded one has no way out
+    // at all.
+    //
+    // TRAP — this WAS a passive effect, and a passive effect only cleans up
+    // after the thing it looks like it prevents. `useEffect(…, [viewerOpen])`
+    // runs one commit LATE: render N already has `viewerOpen=false` and the
+    // held subject as a peek, so the player is torn down (it is gated on
+    // `viewerOpen`) AND a peek mounts and fires a thumbnail request plus, for
+    // a still, a full-file one — render N+1 is where the effect's clear
+    // unmounts it again. Pressing Shrink with the pointer on the fixed item's
+    // own card did exactly that. So the void is DERIVED during render instead,
+    // the "adjust state when a value changes" pattern this codebase already
+    // uses for GalleryImageLarge's per-item videoSlot and ImageGallery's
+    // heldIndex: React re-runs this component immediately, WITHOUT committing,
+    // so the peek never reaches the DOM at all.
+    //
+    // Voided by IDENTITY rather than by clearing `hoverItem`, because the
+    // clear is not ours to make during render — `setHoverItem` also cancels
+    // the hook's dwell timer, and a ref write while rendering is what the
+    // React Compiler forbids. The effect below still makes the clear, which is
+    // what cancels a dwell already in flight (it would otherwise land a peek
+    // after the fact) and what lets the void release itself.
+    //
+    // §8's trigger is `viewerPinned` (`gsv`), NOT the effective `viewerOpen`:
+    // the latter also carries `largeImageHosted`, which follows the board's
+    // CONTENTS (`pinboardLayout.length === 0`), so pinning the first item onto
+    // an empty board would void a live peek under a pointer that never moved.
+    const [heldViewerPinned, setHeldViewerPinned] = useState(viewerPinned)
+    const [voidedPeek, setVoidedPeek] = useState<SearchResult | null>(null)
+    if (heldViewerPinned !== viewerPinned) {
+        setHeldViewerPinned(viewerPinned)
+        // Whatever is held at the flip is void; null (the common case, no
+        // hover) voids nothing and the branch below never has to fire.
+        setVoidedPeek(hoverItem)
+    } else if (voidedPeek !== null && voidedPeek !== hoverItem) {
+        // The hook produced a different subject — a genuinely new hover, or
+        // the effect's own clear — so the void has done its job.
+        setVoidedPeek(null)
+    }
+    const heldPeek = hoverItem !== voidedPeek ? hoverItem : null
+    useEffect(() => {
+        setHoverItem(null)
+    }, [viewerPinned, setHoverItem])
+    // The peek the SURFACE is given, which is the hover subject minus the one
+    // case that is pure loss: the item already fixed in the viewer. Peeking it
+    // would lay a static thumbnail over the live picture inside the same box
+    // — a playing video would read as having frozen — and the peek can teach
+    // nothing there, since both subjects are the same file at the same size.
+    // Withheld here rather than inside the surface because this is where the
+    // two are compared anyway (`viewerItem` is resolved here for the strip's
+    // button glyph), and because the surface's own rule is simpler for it:
+    // whatever it is handed, it displays.
+    //
+    // Compared by SHA, not by itemEquals: Panoptikon indexes per FILE, so a
+    // copy or a hardlink of the viewer's item is an ordinary second row with
+    // its own file_id and the same bytes. On file_id the suppression missed
+    // it, and hovering the duplicate laid a static thumbnail over the very
+    // video playing underneath — precisely the "reads as the video froze"
+    // failure this exists to prevent. Identity for SELECTION stays file_id
+    // (itemEquals, and `gi` addresses rows); identity for "would this peek
+    // paint the same picture" is the content hash.
+    const peekItem =
+        heldPeek && !(viewerOpen && viewerItem && viewerItem.sha256 === heldPeek.sha256)
+            ? heldPeek
+            : null
 
     // Mirror the show-state into the ephemeral reveal store, which is the
     // client-only half of useSearchSuppressed: a hover-revealed overlay is
@@ -621,17 +694,26 @@ export function SearchOverlay({
                     </div>
                 </div>
             </div>
-            {/* The pinned viewer (design §8.3), rendered BEFORE the peek so
-                the two z-order by their own values rather than by accident.
-                Mounted here, not in MultiSearchView: `source`, `count`,
-                `scrollMode` and the shared navigate write are already in
-                scope, the surface's trigger is a control on this dock's own
-                strip (so the button's glyph and the viewer's open state have
-                to have one owner), and this component's own lifetime is
-                already exactly the viewer's — the whole maximized session. */}
-            {viewerOpen && (
-                <SearchViewer
+            {/* ONE preview surface, two subjects (design §8): the peek is a
+                LAYER inside the viewer's own box, not a second framed thing
+                over it, so fixing a peek changes nothing about the picture
+                and peeking a neighbour never unmounts the player the viewer
+                has running. Mounted here, not in MultiSearchView: `source`,
+                `count`, `scrollMode` and the shared navigate write are
+                already in scope, the surface's triggers are controls on this
+                dock's own strip (so the button's glyph and the viewer's open
+                state have to have one owner), and this component's own
+                lifetime is already exactly the viewer's — the whole maximized
+                session.
+
+                It mounts for EITHER subject: a peek with the viewer closed is
+                the P5 behavior and is still what the strip's preview button
+                does before anything is fixed. */}
+            {(viewerOpen || peekItem) && (
+                <PreviewSurface
+                    viewerOpen={viewerOpen}
                     item={viewerItem}
+                    peek={peekItem}
                     source={source}
                     extent={viewerExtent}
                     resultsAreStale={resultsAreStale}
@@ -640,23 +722,6 @@ export function SearchOverlay({
                     onClose={closeViewer}
                 />
             )}
-            {/* The hover preview (design §8): mounted ONLY while a card is
-                hovered — no idle portal — replacing the gallery's
-                large-image role over the maximized board. Its own file owns
-                the box, layering and dwell upgrade.
-
-                Over the viewer, never instead of it (§8.4): the peek portals
-                at z-70 above the viewer's z-50 and the viewer is not
-                unmounted, so a video playing underneath keeps playing and is
-                revealed again when the hover ends. Hover never touches `gi`,
-                so it can never swap the viewer's item either. The one peek
-                withheld is the viewer's OWN item: covering a live picture
-                with a static thumbnail of itself is pure loss, and both
-                surfaces occupy the same fitted box, so it would read as the
-                video freezing. */}
-            {hoverItem
-                && !(viewerOpen && viewerItem && itemEquals(viewerItem, hoverItem))
-                && <ResultHoverPreview item={hoverItem} />}
         </>
     )
 }

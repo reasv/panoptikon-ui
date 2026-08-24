@@ -3446,7 +3446,7 @@ function PinBoardPin({
                 // one with no overlay element of its own — it restyles this
                 // pin instead. It exits on Esc through the window listener
                 // above, so it has to be discoverable to the surfaces that
-                // would otherwise swallow the key (SearchViewer's guard,
+                // would otherwise swallow the key (PreviewSurface's guard,
                 // which explains the attribute): without this, Esc with the
                 // viewer open closed the VIEWER, tearing down a playing
                 // video, and left the pin still cropping.
