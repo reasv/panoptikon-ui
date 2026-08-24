@@ -1,13 +1,7 @@
 "use client"
 import { useEffect, useRef, useState } from "react"
 import { X } from "lucide-react"
-import {
-    BookmarkBtn,
-    FilePathComponent,
-    OpenFile,
-    OpenFolder,
-    ShareButton,
-} from "@/components/imageButtons"
+import { FilePathComponent } from "@/components/imageButtons"
 import { OpenDetailsButton } from "@/components/OpenFileDetails"
 import { Button } from "@/components/ui/button"
 import { GalleryImageLarge, isPlayableVideo } from "@/components/gallery/ImageGallery"
@@ -464,12 +458,20 @@ export function SearchViewer({
     )
 }
 
-// The same atoms as the gallery header, in the same 5-and-a-path arrangement,
-// minus everything that is about the gallery rather than the file. No
-// `shortcut` on the ShareButton: the Ctrl+C accelerator belongs to the
-// gallery's own listener, which stands down whenever the board is what's on
-// screen — advertising a chord that does nothing here would be worse than
-// not advertising one.
+// Label and viewer chrome, and nothing else: the file verbs (bookmark, open
+// file, open folder, share) live on the strip card's own hover overlay, which
+// acts on this very item — selection and the viewer's subject are the same
+// thing (§8) — so carrying them here as well would be duplicating the card
+// into a surface whose whole job is showing the picture. Accepted cost, and
+// the reason this is a deliberate choice rather than an oversight: with the
+// dock unpinned and hidden the card is off-screen, so acting on the item
+// means bringing the dock back first.
+//
+// The path sits in the middle track of a symmetric 1fr grid rather than a
+// flex `flex-1`, so it is centered on the FRAME, not on whatever space the
+// button clusters leave over — the gallery header's flex arrangement is
+// balanced only because its two sides carry the same number of controls, and
+// this one's never will.
 function ViewerHeader({
     item,
     onClose,
@@ -487,18 +489,11 @@ function ViewerHeader({
     const [sidebarPinned, setSidebarPinned] = useSidebarOverlayOpen()
     return (
         <div className={cn(
-            "flex shrink-0 items-center gap-1 border-b px-2",
+            "grid shrink-0 grid-cols-[1fr_minmax(0,auto)_1fr] items-center",
+            "border-b px-2",
             HEADER_CLASS,
         )}>
-            <div className="flex items-center">
-                {item && <>
-                    <BookmarkBtn sha256={item.sha256} bookmarked={item.bookmarked} buttonVariant />
-                    <OpenFile sha256={item.sha256} path={item.path} buttonVariant />
-                    <OpenFolder sha256={item.sha256} path={item.path} buttonVariant />
-                    <ShareButton sha256={item.sha256} path={item.path} />
-                </>}
-            </div>
-            <div className="min-w-0 flex-1 px-2 text-center">
+            <div className="col-start-2 min-w-0 px-2 text-center">
                 {item && <>
                     <FilePathComponent path={item.path} />
                     <p className="text-xs text-gray-500 truncate">
@@ -506,7 +501,7 @@ function ViewerHeader({
                     </p>
                 </>}
             </div>
-            <div className="flex items-center">
+            <div className="col-start-3 flex items-center justify-end">
                 <OpenDetailsButton
                     item={item}
                     target={{
