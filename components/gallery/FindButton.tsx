@@ -3,7 +3,8 @@
 import React, { useEffect, useRef } from 'react'
 import { FolderSearch } from 'lucide-react'
 import { useToast } from '../ui/use-toast'
-import { getGalleryOptionsSerializer, useGalleryIndex } from '@/lib/state/gallery'
+import { getGalleryOptionsSerializer, useGalleryIndex, usePinboardMaximized } from '@/lib/state/gallery'
+import { useSearchOverlayReveal } from '@/lib/state/searchOverlayReveal'
 import { useFileFilters, useOrderArgs, useQueryOptions, useResetSearchQueryState } from '@/lib/state/searchQuery/clientHooks'
 import { selectedDBsSerializer, useSelectedDBs } from '@/lib/state/database'
 import { fetchClient } from '@/lib/api'
@@ -125,6 +126,30 @@ export function FindNavigator() {
     const commit = useInstantSearch((state) => state.commit)
     const dbs = useSelectedDBs()[0]
     const [partitionBy] = usePartitionBy()
+    // Find-in-folder has to SHOW the folder it navigated to, and on a
+    // maximized board the only results surface is the bottom search dock
+    // (docs/maximized-pinboard-search-overlay-design.md §5.1). Two separate
+    // reasons this must open it, and either alone is enough:
+    //
+    //   - the query would not even RUN. useSearchSuppressed is
+    //     `maximized && !gso && !revealed`, so with the dock closed the
+    //     navigate rewrote every search param and then executed nothing;
+    //     the user got the "Navigating to folder…" toast and no other
+    //     evidence anything had happened.
+    //   - the button lives on a PIN, i.e. on the board, so its press is an
+    //     outside click for the dock's dismissal (dockChrome.tsx). Clicking
+    //     it with the dock already open therefore CLOSED the dock and
+    //     re-suppressed the search. Opening here also undoes that, and the
+    //     ordering is safe: dismissal runs synchronously on the click, this
+    //     runs after `navigate`'s awaited URL writes.
+    //
+    // Deliberately the EPHEMERAL open flag, not the `gso` pin: navigating to
+    // a folder is one look, and the dock should dismiss on the next Esc or
+    // click outside like any other opened dock rather than stranding a URL
+    // flag. Mounted once, so these two extra subscriptions are not on any
+    // per-row path.
+    const maximized = usePinboardMaximized()
+    const setOverlayOpen = useSearchOverlayReveal((s) => s.setRevealed)
 
     const getNavigationData = async (
         id: number | string,
@@ -247,6 +272,12 @@ export function FindNavigator() {
             }, { history: "push" }),
             setIndex(index, { history: "push" }),
         ])
+        // After the writes, before the commit: the dock must be open for
+        // `commit()` to declare a query that anything will actually run
+        // (see the flag's declaration above), and opening it BEFORE the
+        // batch would have un-suppressed the search over the half-reset
+        // params the batch passes through.
+        if (maximized) setOverlayOpen(true)
         commit()
     }
 
