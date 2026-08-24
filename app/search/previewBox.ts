@@ -8,40 +8,45 @@ import type { CSSProperties } from "react"
 // beside the viewer's frame instead of on it.
 //
 // The bounds below are the region a preview MAY occupy, NOT the visible box:
-// the frame belongs to the fitted box inside them. Both edges that can move
-// under a surface — the bottom dock's band and the sidebar overlay's width —
-// come from custom properties, and each of those is published TWICE with
-// different lifetimes. The peek reads the SHOWN-scoped pair, the viewer the
-// MOUNT-scoped pair, and that split is the whole point of this module:
+// the frame belongs to the fitted box inside them. ONE set of bounds, shared:
+// the two surfaces are layered, and the peek is supposed to land ON the
+// viewer's frame, which it cannot do if the two are centered differently.
 //
-//   - the peek is a plain <img> that exists only while the bottom dock is
-//     shown, so re-laying it out costs nothing and the live insets give it
-//     every pixel that is genuinely free;
-//   - the viewer can hold a PLAYING <video>, and re-laying out its frame
-//     re-lays out the element, the player surface and the click zones
-//     mid-playback. It must not move because a panel revealed or hid.
+// Only ONE moving edge is reserved — the bottom dock's band — and the two
+// surfaces are treated differently on the two axes for reasons that are not
+// symmetric:
 //
-// TRAP (bottom, fixed once): reserving --pinboard-bottom-inset here made the
-// box ~400px taller the instant an unpinned dock hid, and snap back when the
-// band was hovered. --pinboard-dock-height is the same measurement published
-// for as long as the dock is MOUNTED — the whole maximized session — so the
-// viewer subtracts that instead.
+//   - BOTTOM: the dock is what you are using WHILE the viewer is up (hovering
+//     strip buttons peeks over it), so a viewer underneath the dock would be
+//     unusable. Reserved.
+//   - LEFT: the sidebar is a filter panel, not something in play while you
+//     are looking at a picture — and it is an OVERLAY by design, which the
+//     board and the peek both simply let cover them. Reserving it would push
+//     the viewer permanently off center by the sidebar's whole width for a
+//     panel that is usually hidden. Not reserved; when it is open it covers
+//     the viewer's left edge like it covers everything else.
 //
-// TRAP (left, the same bug wearing the other axis): "it only slides the box
-// sideways" is FALSE, and that is why --pinboard-left-inset is not in the
-// viewer's bounds either. The fitted box is `min(100%, heightTerm * ratio,
-// capPx)` and `100%` is the bounds' width — 76vw MINUS the left inset — so
-// for any item wide enough for the 100% term to bind (ratio above ~2.1 at
-// 2560×1440) changing the left edge changes the box's WIDTH, and the aspect
-// ratio turns that into a height change. Hover-revealing an unpinned sidebar
-// would resize a frame around a playing video. --pinboard-sidebar-width is
-// the sidebar's width for as long as IT is mounted, which is the same whole
-// session, so the viewer's bounds are constant.
+// TRAP (bottom): reserve --pinboard-dock-height, NEVER
+// --pinboard-bottom-inset. The inset is published only while the dock is
+// SHOWN, so reserving it made the box ~400px taller the instant an unpinned
+// dock hid, and snap back when the band was hovered — a live <video> being
+// re-laid-out mid-playback. The dock var is the same measurement published
+// for as long as the dock is MOUNTED, i.e. the whole maximized session, so
+// the viewer's height is constant. The peek shares that expression for a
+// different reason: the two dock vars are EQUAL whenever a peek can exist (a
+// card's preview button can only be hovered while the dock is shown).
 //
-// The cost of both is a dock-tall / sidebar-wide empty band beside a viewer
-// whose panel is hidden, which is exactly the stability being bought.
-const PEEK_BOUNDS_LEFT = "calc(12vw + var(--pinboard-left-inset, 0px))"
-const VIEWER_BOUNDS_LEFT = "calc(12vw + var(--pinboard-sidebar-width, 0px))"
+// TRAP (left): do not "fix" the sidebar overlapping the viewer by adding its
+// width back here. That was tried, and the mounted-for-the-session lifetime
+// that makes such a var safe against resizes is exactly what makes it wrong
+// as a left edge: the reservation never goes away, so the viewer sat a full
+// sidebar-width right of the peek at all times. A SHOWN-scoped left inset is
+// not the answer either — the fitted box is `min(100%, heightTerm * ratio,
+// capPx)` and `100%` is the bounds' width, so for any item wide enough for
+// the 100% term to bind (ratio above ~2.1 at 2560×1440) a moving left edge
+// changes the box's WIDTH, and the aspect ratio turns that into a height
+// change. "It only slides sideways" is false.
+const BOUNDS_LEFT = "12vw"
 const BOUNDS_RIGHT = "12vw"
 // The height as a bare EXPRESSION, so the fit's min() below can take it as an
 // operand: min() is its own math context and accepts a parenthesized term
@@ -52,27 +57,20 @@ const BOUNDS_RIGHT = "12vw"
 const BOUNDS_HEIGHT = "92vh - var(--pinboard-dock-height, 0px)"
 
 /**
- * The ephemeral peek's bounds: live insets, per the split above. The height
- * still reads the stable dock var, and reads it for a reason that is not
- * stability — the two dock vars are EQUAL whenever the peek is on screen (a
- * card's preview button can only be hovered while the dock is shown), so
- * sharing one expression is free here and keeps the two surfaces' fits
- * identical, which §8.4's layering requires.
+ * The region both surfaces occupy. ONE object, exported under both names so
+ * the layering in §8.4 holds by construction: the peek renders over the open
+ * viewer, and two sets of bounds meant the peek landing beside the viewer's
+ * frame rather than on it.
  */
-export const PEEK_BOUNDS: CSSProperties = {
+export const PREVIEW_BOUNDS: CSSProperties = {
     top: "4vh",
-    left: PEEK_BOUNDS_LEFT,
+    left: BOUNDS_LEFT,
     right: BOUNDS_RIGHT,
     height: `calc(${BOUNDS_HEIGHT})`,
 }
 
-/** The pinned viewer's bounds: mount-scoped on both axes. See above. */
-export const VIEWER_BOUNDS: CSSProperties = {
-    top: "4vh",
-    left: VIEWER_BOUNDS_LEFT,
-    right: BOUNDS_RIGHT,
-    height: `calc(${BOUNDS_HEIGHT})`,
-}
+export const PEEK_BOUNDS = PREVIEW_BOUNDS
+export const VIEWER_BOUNDS = PREVIEW_BOUNDS
 
 /**
  * The bounds' height as a min() operand for fittedBoxStyle, optionally less a
@@ -100,9 +98,10 @@ const MIN_PREVIEW_PX = 320
  * whichever element the picture actually fills — the peek puts both on one
  * div, the viewer splits them across its frame and its picture row.
  *
- * Expressed in CSS rather than resolved in JS because two of the bounds are
- * custom properties the overlays publish from ResizeObservers: render-time JS
- * does not know them, and measuring them would size the box a frame late.
+ * Expressed in CSS rather than resolved in JS because the bounds' height
+ * rides a custom property the dock publishes from a ResizeObserver:
+ * render-time JS does not know it, and measuring it would size the box a
+ * frame late.
  * min() over the three constraints with the aspect carried by aspect-ratio
  * gets the exact fit, the natural cap and the live insets without measuring
  * anything.
