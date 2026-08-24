@@ -1,8 +1,9 @@
 "use client"
-import { useState, type CSSProperties } from "react"
+import { useState } from "react"
 import { createPortal } from "react-dom"
 import { cn, getFileURL } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
+import { fittedBoxStyle, PEEK_BOUNDS } from "./previewBox"
 
 // The maximized search overlay's hover preview
 // (docs/maximized-pinboard-search-overlay-design.md §8): hovering a strip
@@ -16,39 +17,13 @@ import { useSelectedDBs } from "@/lib/state/database"
 // and object-contain img — but with a CENTERED box over the board area
 // instead of the near-card box math.
 //
-// The bounds below are the region the preview may occupy, NOT the visible
-// box: the frame belongs to the fitted box inside them (§8.2). Height
-// subtracts --pinboard-bottom-inset, which the overlay publishes only while
-// its panel is SHOWN — and a card's preview button can only be hovered
-// while the panel is shown, so the var is present by construction whenever
-// this renders and the preview never covers the open panel. The LEFT edge
-// adds --pinboard-left-inset for the same reason one step around the board:
-// the P4 sidebar overlay (§9) publishes its width there while shown, and it
-// is a z-50 panel under this z-70 portal, so a preview that ignored the var
-// would simply bury it. Unlike the bottom dock, the sidebar's shown state is
-// independent of ours, so here the 0px fallback carries real traffic.
-const BOUNDS_LEFT = "calc(12vw + var(--pinboard-left-inset, 0px))"
-const BOUNDS_RIGHT = "12vw"
-// The height WITHOUT its calc() wrapper, so the fit expression below can use
-// it as an operand: min() is its own math context and takes a parenthesized
-// term directly, while `calc(…) * ratio` would nest one math function inside
-// another for nothing. There is no width counterpart: with the left edge
-// riding a custom property the bounds' width is no longer a literal, and the
-// fitted box is a CHILD of the bounds, so `100%` resolves to exactly it.
-const BOUNDS_HEIGHT_TERM = "(92vh - var(--pinboard-bottom-inset, 0px))"
-const PREVIEW_BOUNDS: CSSProperties = {
-    top: "4vh",
-    left: BOUNDS_LEFT,
-    right: BOUNDS_RIGHT,
-    height: `calc${BOUNDS_HEIGHT_TERM}`,
-}
-
-// The smallest the fitted box may be on its LONGER side. A thumbnail-sized
-// item scaled to its natural cap would be a postage stamp in the middle of
-// the board, so the cap is raised uniformly until the long side reaches this
-// — uniformly, because the promise is "see it properly", not "see it
-// stretched" (§8.2).
-const MIN_PREVIEW_PX = 320
+// The bounds and the fit are in ./previewBox, shared with the pinned viewer
+// (§8.3): the two surfaces are LAYERED — this one renders over the open
+// viewer without unmounting it (§8.4) — so they must occupy the same region
+// and fit an item the same way, or the peek would land beside the viewer's
+// frame instead of on it. The var the height subtracts is present by
+// construction whenever this renders: a card's preview button can only be
+// hovered while the dock's panel is shown.
 
 // How far an element-confirmed aspect must differ from the item-dimensions
 // one before the box is resized to it. Purely a no-op filter: an agreeing
@@ -57,54 +32,11 @@ const MIN_PREVIEW_PX = 320
 // clears this by a mile.
 const ASPECT_TOLERANCE = 0.02
 
-// The largest box at the given aspect that fits the bounds, capped at the
-// item's natural size (§8.2: a 400px-wide image must not be blown up to the
-// full bounds on a surface whose whole promise is showing it properly) and
-// floored as above.
-//
-// Expressed in CSS rather than resolved in JS because two of the bounds are
-// custom properties the overlays publish from ResizeObservers: render-time
-// JS does not know them, and measuring them would size the box a frame late.
-// min() over the three constraints with the aspect carried by aspect-ratio
-// gets the exact fit, the natural cap and the live insets without measuring
-// anything.
-//
-// The natural cap is taken on the LONGER side, the one quantity here that
-// survives a rotation: max(coded w, coded h) is the same number whether or
-// not the browser turned the picture, so `ratio` alone decides which way to
-// project it onto the box's WIDTH. That is what lets a corrected aspect (see
-// below) keep the right cap without anyone having to know which way the
-// picture turned.
-//
-// Null when the item carries no dimensions (rows from older scans): the
-// caller then keeps the full-bounds box and lets object-contain letterbox,
-// unprobed, exactly as §8.2 rules.
-function fittedBoxStyle(
-    ratio: number | null,
-    width?: number | null,
-    height?: number | null
-): CSSProperties | null {
-    if (!ratio || !width || !height) return null
-    const longSide = Math.max(MIN_PREVIEW_PX, Math.max(width, height))
-    // Clamped to 1px: this operand is a WIDTH, and an aspect extreme enough
-    // (a 1×1000 item) projects the long side down to nothing — min() would
-    // take that and there would be no preview at all. A degenerate aspect
-    // still yields a sliver, but never a box the cap alone erased.
-    const capPx = Math.max(
-        1,
-        Math.round(ratio >= 1 ? longSide : longSide * ratio)
-    )
-    return {
-        width: `min(100%, ${BOUNDS_HEIGHT_TERM} * ${ratio}, ${capPx}px)`,
-        aspectRatio: ratio,
-    }
-}
-
 export function ResultHoverPreview({ item }: { item: SearchResult }) {
     return createPortal(
         <div
             className="pointer-events-none fixed z-70 flex items-center justify-center"
-            style={PREVIEW_BOUNDS}
+            style={PEEK_BOUNDS}
         >
             {/* Keyed by content: PreviewImage owns the dwell-upgrade state
                 (fullLoaded) and the confirmed aspect, and moving the hover to

@@ -56,15 +56,46 @@ export function SidebarOverlay() {
     const panelRef = useRef<HTMLDivElement>(null)
     const shown = hoverBand || hoverPanel || focusWithin || pinned
 
-    // While SHOWN, publish the panel's width as --pinboard-left-inset on
-    // the document root, the left-edge analog of the bottom dock's
-    // --pinboard-bottom-inset: left-band occupants (PinboardHistory's
-    // tl/bl docking) add it to their left offsets so they are not buried
-    // under the sidebar (§9, §7). ResizeObserver rather than a one-shot
-    // for the same reason as the bottom dock: the var must track the panel
-    // if its width ever changes. Only while shown — absence of the var IS
-    // "no sidebar shown", with consumers falling back to 0px. NOT consumed
-    // by any search gate: this is pure layout yielding.
+    // The panel's width, published in TWO custom properties with deliberately
+    // different lifetimes — the bottom dock's height split, on the other axis
+    // and for the same reason (see SearchOverlay, and previewBox.ts's TRAP
+    // notes before touching either).
+    //
+    // --pinboard-sidebar-width: the band this panel OWNS for as long as it is
+    // mounted, i.e. the whole maximized session. Its consumer is the pinned
+    // viewer's bounds, which must not move when the sidebar merely reveals or
+    // hides: the viewer's fitted box takes `min(100%, …)` and `100%` is the
+    // bounds' width, so a moving left edge RESIZES a frame that can hold a
+    // playing <video> — the exact regression the bottom edge already had.
+    // Measured with a ResizeObserver, and hiding is CSS-only for the panel
+    // BOX (opacity + translate; only its content unmounts), so its
+    // offsetWidth is the same shown or hidden and one observer covers both.
+    useLayoutEffect(() => {
+        const el = panelRef.current
+        if (!el) return
+        const publish = () =>
+            document.documentElement.style.setProperty(
+                "--pinboard-sidebar-width",
+                `${el.offsetWidth}px`
+            )
+        publish()
+        const observer = new ResizeObserver(publish)
+        observer.observe(el)
+        return () => {
+            observer.disconnect()
+            document.documentElement.style.removeProperty(
+                "--pinboard-sidebar-width"
+            )
+        }
+    }, [])
+
+    // --pinboard-left-inset: the band this panel is COVERING right now, the
+    // left-edge analog of the bottom dock's --pinboard-bottom-inset. Its
+    // consumers — PinboardHistory's tl/bl docking, and the ephemeral hover
+    // peek's bounds — SHOULD reclaim the band the moment the sidebar hides,
+    // so this one stays shown-scoped: absence of the var IS "no sidebar
+    // shown", with consumers falling back to 0px. NOT consumed by any search
+    // gate: this is pure layout yielding.
     useLayoutEffect(() => {
         if (!shown) return
         const el = panelRef.current

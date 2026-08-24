@@ -11,7 +11,7 @@ import { ScrollBar } from "@/components/ui/scroll-area"
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { SideBar } from "@/components/sidebar/SideBar"
 import { SearchResultImage } from "@/components/SearchResultImage"
-import { useGalleryFullscreen, useGalleryIndex, useGalleryPinBoardLayout, useGridLibraryTab, useGridPinboardTab, usePinboardMaximized, useSearchOverlayOpen, useSearchSuppressed, useViewMode } from "@/lib/state/gallery"
+import { useGalleryFullscreen, useGalleryHidePinBoard, useGalleryIndex, useGalleryPinBoardLayout, useGridLibraryTab, useGridPinboardTab, usePinboardMaximized, useSearchOverlayOpen, useSearchSuppressed, useViewMode } from "@/lib/state/gallery"
 import type { ViewMode } from "@/lib/state/gallery"
 import { useSideBarOpen } from "@/lib/state/sideBar"
 import { selectedDBsSerializer, useSelectedDBs } from "@/lib/state/database"
@@ -451,6 +451,21 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     }, [pinboardMaximized, liveGalleryHost])
     const galleryHost = pinboardMaximized ? frozenGalleryHost : liveGalleryHost
 
+    // Is GalleryImageLarge on screen right now? Exactly ImageGallery's own
+    // `showsLargeImage` test, evaluated against the host that is actually
+    // mounted — which is what the maximized viewer needs and what
+    // isPinboardMaximized cannot say, since it ORs the two hosts' board tabs
+    // (`ghp`, `gpb`) without knowing which host is live. Maximizing from the
+    // gallery's image tab with a stale `gpb=true` therefore reports a
+    // maximized board while the large image is what is shown; the viewer
+    // stands down there rather than becoming a second mount of the same
+    // component (docs/maximized-pinboard-search-overlay-design.md §8.3, "No
+    // double mount").
+    const pinboardLayout = useGalleryPinBoardLayout()[0]
+    const hidePinBoard = useGalleryHidePinBoard()[0]
+    const largeImageHosted =
+        galleryHost && (pinboardLayout.length === 0 || hidePinBoard)
+
     // The maximized board's search overlay chord: Ctrl+Shift+F toggles the
     // PIN (`gso` — see useSearchSuppressed for how the flag scopes the
     // query gates above; the hover/focus reveal is the dock's own affair,
@@ -759,6 +774,11 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                     countMetrics={data?.count_metrics}
                     source={resultsSource}
                     count={itemCount}
+                    // Same two flags, same expressions, as the gallery gets —
+                    // the viewer inside the dock resolves and steps a position
+                    // exactly as the gallery does and needs both corrections.
+                    countSettled={countSettled}
+                    resultsAreStale={resultsAreStale}
                     scrollMode={scrollMode}
                     // Scroll mode only: in pages mode `top` is a within-page
                     // index the grid owns, not a strip position (§5.3).
@@ -781,6 +801,9 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                     currentPage={scrollMode ? derivedPage : page}
                     setPage={scrollMode ? setVirtualPage : setPage}
                     getPageURL={scrollMode ? getVirtualPageURL : getPageURL}
+                    // The one input the pinned viewer needs that only this
+                    // component can compute — see the prop and §8.3.
+                    largeImageHosted={largeImageHosted}
                 />
             )}
             {/* The left-edge sidebar dock — the same model rotated

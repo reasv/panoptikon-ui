@@ -342,11 +342,22 @@ function SurfaceButton({
 function SurfacePopover({
     placement,
     role,
+    escOwner,
     className,
     children,
 }: {
     placement: "above" | "below"
     role?: string
+    /**
+     * Does this popover's own handler act on Escape right now? The menu-role
+     * popovers need no flag — a `[role="menu"]` is already a popup layer to
+     * every window key scope in the app (hasOpenLayer). The trim popover is
+     * NOT a menu (it is a row of trim controls, and claiming role="menu" or
+     * role="toolbar" would promise roving-focus keyboard behavior it does not
+     * implement), so it needs a marker of its own or a surface above it eats
+     * its Esc — see SearchViewer's guard.
+     */
+    escOwner?: boolean
     className?: string
     children: React.ReactNode
 }) {
@@ -359,6 +370,7 @@ function SurfacePopover({
         >
             <div
                 role={role}
+                data-esc-owner={escOwner ? "" : undefined}
                 className={cn(
                     "rounded bg-black/85 p-1 text-white shadow-lg ring-1 ring-white/15",
                     className,
@@ -973,7 +985,12 @@ export function VideoPlayerSurface({
                                 <Brackets className="size-[20px]" />
                             </SurfaceButton>
                             {trimOpen && (
-                                <SurfacePopover placement="above" className="flex items-center gap-1">
+                                // escOwner tracks PINNED, not open: the
+                                // Esc dismissal is useDismissOnOutside
+                                // (trimPinned) above, so a merely HOVERED
+                                // popover does not act on the key and must
+                                // not stop anything else from taking it.
+                                <SurfacePopover placement="above" escOwner={trimPinned} className="flex items-center gap-1">
                                     {boundButton("start")}
                                     {boundButton("end")}
                                     <span className="mx-0.5 h-4 w-px bg-white/20" />

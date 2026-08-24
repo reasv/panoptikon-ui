@@ -205,6 +205,14 @@ export function HoleTargetOverlay({
     return (
         <div
             data-hole-overlay
+            // Hole targeting is a MODAL BOARD GESTURE and cancels on Esc (the
+            // effect above), so every surface that would otherwise take Esc
+            // stands down while this is mounted — see SearchViewer's guard for
+            // what the attribute means and why it is separate from the
+            // identity attribute beside it. Unconditional, including
+            // mode="drag" where the effect is not registered: Esc belongs to
+            // the native drag there, which is equally not the viewer's.
+            data-esc-owner
             className={cn(
                 "absolute left-0 top-0 w-full z-30",
                 mode === "drag"

@@ -11,7 +11,7 @@ import { X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal, Download } from "luc
 import { Button } from "@/components/ui/button"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useShallow } from "zustand/react/shallow"
-import { cn, downloadFileName, fileNameFromPath, getFileURL, getLocale } from "@/lib/utils"
+import { cn, consumesArrowKeys, downloadFileName, fileNameFromPath, getFileURL, getLocale, hasOpenLayer } from "@/lib/utils"
 import { itemEquals, OpenDetailsButton } from "@/components/OpenFileDetails"
 import { useFileShare } from "@/hooks/fileShare"
 import { useItemSelection } from "@/lib/state/itemSelection"
@@ -72,7 +72,7 @@ import { trimForSha } from '@/lib/galleryTrim'
 // the flag cannot change this answer. That keeps the predicate a plain
 // function callable from the fetch continuation and the prefetch effect
 // without threading the client config through them.
-function isPlayableVideo(item: SearchResult | null | undefined): boolean {
+export function isPlayableVideo(item: SearchResult | null | undefined): boolean {
     return videoPlayability(item, { transcodeEnabled: false }) === "playable"
 }
 
@@ -584,10 +584,7 @@ export function ImageGallery({
             if (event.repeat) return
             const t = event.target as HTMLElement | null
             if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return
-            if (document.querySelector(
-                '[role="dialog"], [role="menu"], [role="listbox"],'
-                + ' [data-radix-popper-content-wrapper]'
-            )) return
+            if (hasOpenLayer()) return
             // A live text selection is the user's own copy — don't take it.
             const selection = window.getSelection()
             if (selection && selection.isCollapsed === false) return
@@ -1377,6 +1374,7 @@ export function GalleryImageLarge(
         showPagination,
         advanceToNextVideo,
         cancelPendingAdvance,
+        heightClass,
     }: {
         item: SearchResult,
         prevImage: () => void,
@@ -1396,6 +1394,22 @@ export function GalleryImageLarge(
         advanceToNextVideo: (opts: { playback: boolean; isFullscreen: () => boolean }) => void
         /** Invalidate a page turn that is still fetching — see §3, "Supersession". */
         cancelPendingAdvance: () => void
+        /**
+         * Replaces the panel's own viewport-derived height expression
+         * (galleryPanelHeight) for a host that is NOT the gallery shell. That
+         * expression is the one and only thing coupling this component to that
+         * shell, which is what makes it reusable whole — the playability
+         * ladder, transcode rendition, trim/outro handling, end action,
+         * fullscreen host, click-half navigation and drag-out all come along
+         * (docs/maximized-pinboard-search-overlay-design.md §8.3).
+         *
+         * The maximized board's viewer passes `absolute inset-0` to fill the
+         * aspect-fitted box it computes for itself; `showPagination` and
+         * `thumbnailsOpen` are inert for it, since they exist only to build
+         * the expression this replaces. The page gallery passes nothing and
+         * renders exactly as before.
+         */
+        heightClass?: string
     }
 ) {
     const [dbs, ___] = useSelectedDBs()
@@ -1777,11 +1791,12 @@ export function GalleryImageLarge(
             // (library, rename, confirms) and the Radix menus that render
             // ALONGSIDE the large image — the pinboard tab strip's dropdown,
             // context menus, selects — whose own arrow keys must not double as
-            // gallery navigation.
-            if (document.querySelector(
-                '[role="dialog"], [role="menu"], [role="listbox"],'
-                + ' [data-radix-popper-content-wrapper]'
-            )) return
+            // gallery navigation. Shared with every other key scope, and read
+            // its TRAP note: the list this used to spell out inline included
+            // `[role="listbox"]`, which cmdk renders on a permanently-mounted
+            // element, so on a tag-indexed database this whole handler — every
+            // arrow, every player chord — returned on the first line.
+            if (hasOpenLayer()) return
             // Modified presses belong to the browser and to app shortcuts
             // (Ctrl+Shift+M above); shift is documented for the loop keys
             // (clear that bound) and for the speed keys, which ARE the
@@ -1795,6 +1810,18 @@ export function GalleryImageLarge(
                 // page boundary. The seek keys below repeat freely — they
                 // write no history.
                 if (e.shiftKey || e.repeat) return
+                // TRAP: this bail is what the `[role="listbox"]` guard above
+                // was accidentally standing in for. While that guard matched
+                // on every tag-indexed database this whole handler was dead,
+                // so the collisions never showed; with the scope revived,
+                // `←` on a focused Radix tab trigger would switch the tab AND
+                // step `gi` (pushing a history entry), and `→` on a focused
+                // slider thumb would move the value AND advance the gallery.
+                // Only the ARROW branch stands down — the player chords below
+                // are not keys a tab strip or a slider claims, and the
+                // viewer's own arrows ride this same scope (§8.3), so a
+                // blanket return would take those with it.
+                if (consumesArrowKeys(t)) return
                 e.preventDefault()
                 if (key === "ArrowLeft") prevImage()
                 else nextImage()
@@ -1812,6 +1839,12 @@ export function GalleryImageLarge(
                     focused.tagName === "BUTTON"
                     || focused.tagName === "A"
                     || focused.getAttribute("role") === "menuitem"
+                    // A slider thumb is a focusable span, not a button, so
+                    // the tests above miss it: a widget that owns its own
+                    // keyboard owns its own activation key too, and starting
+                    // playback because the pointer left focus on a sidebar
+                    // slider is not what the press meant.
+                    || consumesArrowKeys(focused)
                 )) return
                 if (e.shiftKey) return
                 e.preventDefault()
@@ -1924,7 +1957,8 @@ export function GalleryImageLarge(
                 // Fills the remaining space, and by how much depends on
                 // whether the pagination bar and the thumbnails are shown —
                 // see galleryPanelHeight, which the loading frame shares.
-                galleryPanelHeight(showPagination, thumbnailsOpen),
+                // A host outside the gallery shell overrides it outright.
+                heightClass ?? galleryPanelHeight(showPagination, thumbnailsOpen),
             )}
         >
             <div

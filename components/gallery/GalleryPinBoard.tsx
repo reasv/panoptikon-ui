@@ -3442,6 +3442,15 @@ function PinBoardPin({
             <div
                 ref={contentRef}
                 data-playable={isPlayable ? "" : undefined}
+                // Crop mode is the board's THIRD modal gesture, and the only
+                // one with no overlay element of its own — it restyles this
+                // pin instead. It exits on Esc through the window listener
+                // above, so it has to be discoverable to the surfaces that
+                // would otherwise swallow the key (SearchViewer's guard,
+                // which explains the attribute): without this, Esc with the
+                // viewer open closed the VIEWER, tearing down a playing
+                // video, and left the pin still cropping.
+                data-esc-owner={cropMode ? "" : undefined}
                 className={cn(
                     "pinboard-pin-content absolute inset-0",
                     player.cursorHidden && "cursor-none",

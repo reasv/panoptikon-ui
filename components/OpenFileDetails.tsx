@@ -10,15 +10,37 @@ import { useSideBarOpen, useSideBarTab } from "@/lib/state/sideBar"
 export function itemEquals(a: SearchResult, b: SearchResult) {
     return a.file_id === b.file_id
 }
+/**
+ * Which sidebar surface the button opens. Absent — every page-gallery and
+ * grid call site — means the page's own <SideBar/>, driven by `sb`, and
+ * nothing about those call sites changes.
+ *
+ * The maximized board needs the override because the page sidebar is NOT
+ * mounted there (SearchPageContent gates it on `!pinboardMaximized`) and the
+ * left-edge SidebarOverlay is what shows the tabs instead, driven by `gsb`
+ * plus hover. Writing `sb` from inside a maximized workspace opens nothing,
+ * flips the button to "Close Data View" on the second press, and strands
+ * `sb=true` so the page sidebar pops open on restore. The tab param (`sbt`)
+ * is shared by both mounts, so only the open flag needs redirecting.
+ */
+export interface DetailsPaneTarget {
+    open: boolean
+    setOpen: (open: boolean) => void
+}
+
 export function OpenDetailsButton({
     item,
-    variantButton
+    variantButton,
+    target,
 }: {
     item?: SearchResult,
     variantButton?: boolean
+    target?: DetailsPaneTarget
 }) {
     const { toast } = useToast()
-    const [sidebarOpen, setSideBarOpen] = useSideBarOpen()
+    const [pageSidebarOpen, setPageSideBarOpen] = useSideBarOpen()
+    const sidebarOpen = target ? target.open : pageSidebarOpen
+    const setSideBarOpen = target ? target.setOpen : setPageSideBarOpen
     const [tab, setTab] = useSideBarTab()
     const setSelected = useItemSelection((state) => state.setItem)
     const detailsPaneOpen = (tab === 1) && sidebarOpen

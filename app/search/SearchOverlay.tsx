@@ -1,15 +1,22 @@
 "use client"
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { ChevronUp, Pin } from "lucide-react"
 import type { ReadonlyURLSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { itemEquals } from "@/components/OpenFileDetails"
 import { Toggle } from "@/components/ui/toggle"
 import { PageSelect } from "@/components/pageselect"
 import { VirtualGalleryHorizontalScroll } from "@/components/gallery/VirtualizedHorizontalScroll"
 import { useDelayedHover } from "@/components/gallery/PinboardPreviewPopover"
 import { ResultHoverPreview } from "./ResultHoverPreview"
+import { SearchViewer, useViewerItem, viewerPosition } from "./SearchViewer"
 import { SearchBarRow } from "./SearchBarRow"
-import { useGalleryNavigate, useSearchOverlayOpen } from "@/lib/state/gallery"
+import {
+    useGalleryIndex,
+    useGalleryNavigate,
+    useSearchOverlayOpen,
+    useSearchViewerOpen,
+} from "@/lib/state/gallery"
 import { useSearchOverlayReveal } from "@/lib/state/searchOverlayReveal"
 import type { ResultsSource } from "@/lib/searchHooks"
 import { components } from "@/lib/panoptikon"
@@ -54,6 +61,8 @@ export function SearchOverlay({
     countMetrics,
     source,
     count,
+    countSettled,
+    resultsAreStale,
     scrollMode,
     fallbackAnchor,
     onDerivedPageChange,
@@ -62,6 +71,7 @@ export function SearchOverlay({
     currentPage,
     setPage,
     getPageURL,
+    largeImageHosted,
 }: {
     onRefresh: () => void
     isFetching: boolean
@@ -72,6 +82,14 @@ export function SearchOverlay({
     source: ResultsSource
     /** The navigable extent — MultiSearchView's itemCount. */
     count: number
+    /**
+     * The same two the gallery takes, for the same two reasons, forwarded to
+     * the viewer: an unsettled count means `count` is the loaded extent and
+     * not the set, and stale results mean the rows do not answer the URL yet.
+     * The dock's own surfaces (strip, pagination) are unaffected by either.
+     */
+    countSettled: boolean
+    resultsAreStale: boolean
     /** `vm === "scroll"` — gates the anchor half of useGalleryNavigate. */
     scrollMode: boolean
     /**
@@ -99,6 +117,21 @@ export function SearchOverlay({
     currentPage: number
     setPage: (page: number) => void
     getPageURL: (base: ReadonlyURLSearchParams | URLSearchParams, newPage: number) => string
+    /**
+     * Is the gallery host rendering GalleryImageLarge right now? §8.3 rests
+     * the viewer on "no double mount" — PinBoard and GalleryImageLarge are
+     * the two arms of one ternary in ImageGallery, so while the board shows,
+     * that component is mounted nowhere else. That holds for every path the
+     * UI can reach EXCEPT one: `gpb` is the GRID host's board tab and `ghp`
+     * the GALLERY host's, and isPinboardMaximized ORs them without knowing
+     * which host is live — so maximizing from the gallery's IMAGE tab with a
+     * stale `gpb=true` reports a maximized board while the large image is
+     * what is actually on screen. The dock already mounts in that state; a
+     * SECOND GalleryImageLarge would duplicate its window keydown scope and
+     * put two <video> elements in play. The flag says when that is happening
+     * so the viewer can stay out of it.
+     */
+    largeImageHosted: boolean
 }) {
     const [pinned, setPinned] = useSearchOverlayOpen()
     // The strip's card clicks perform the GALLERY's position write — `gi`
@@ -108,6 +141,68 @@ export function SearchOverlay({
     // host choice is latched while maximized (see galleryHost in
     // MultiSearchView), so the selection cannot flip hosts under the board.
     const navigate = useGalleryNavigate(scrollMode)
+    // The pinned viewer (design §8.3). `gsv` is open/closed and nothing more:
+    // WHICH item it shows is `gi`, by §8's identity rule — "selected" and
+    // "the item in the viewer" are the same thing, so the viewer follows
+    // every card click, arrow key and scrubber jump for free. The effective
+    // flag stands the surface down where a second GalleryImageLarge would
+    // collide with the gallery's own (see largeImageHosted); using it
+    // everywhere — including the strip's button glyph — keeps the button
+    // honest about what a click will do in that state.
+    const [viewerPinned, setViewerOpen] = useSearchViewerOpen()
+    const viewerOpen = viewerPinned && !largeImageHosted
+    // The strip's preview button gets a viewer toggle only where there IS a
+    // viewer to toggle. Standing the SURFACE down without standing the CONTROL
+    // down left the button promising to open something and writing `gsv=true`
+    // when `gsv` was ALREADY true — nuqs 2.9.0 has no same-value short-circuit
+    // and the flag is history:"push", so every click buried the back button
+    // under one more dead entry and nothing appeared. Withheld rather than
+    // cleared: `gsv` is one of the terms that ENABLES the suppressed search
+    // (see useSearchSuppressed), the stand-down is a transient host conflict,
+    // and the flag surviving it is the same treatment `sb` gets across a
+    // maximize. The button keeps its other half — it still selects and still
+    // drives the hover peek — and says so (see PreviewButton's label).
+    const viewerToggle = largeImageHosted ? undefined : setViewerOpen
+    const [qIndex] = useGalleryIndex()
+    // The position the viewer actually shows, CLAMPED — the gallery clamps
+    // (`urlIndex`) and the strip clamps (`clampToCount`), and this is what
+    // makes the third surface agree with them by construction rather than by
+    // coincidence. TRAP: pass `qIndex` raw and `source.get` answers undefined
+    // for an out-of-range index, at which point useViewerItem's held-item
+    // fallback — written for a chunk that is still coming — holds the last
+    // item forever. Every consumer below takes the clamped pair: the item, the
+    // peek suppression that compares against it, and the surface itself.
+    // Once settled it also lines the STRIP's preview-button glyph up with
+    // reality, since both then clamp `gi` against the same number.
+    const { extent: viewerExtent, index: viewerIndex } =
+        viewerPosition(count, countSettled, qIndex)
+    const viewerItem = useViewerItem(source, viewerIndex, resultsAreStale)
+    // Stable, because the viewer's Esc listener depends on it.
+    const closeViewer = useCallback(() => {
+        void setViewerOpen(false)
+    }, [setViewerOpen])
+    // Seed the position for a viewer opened without one. `gsv` says a viewer
+    // is up and §8's identity rule says its item IS the selection, so
+    // `gsv=true` with no `gi` is half a sentence. Reachable two ways: a
+    // shared or hand-written URL, and the gallery's own close button, which
+    // writes `gi=null` (ImageGallery's closeGallery) while `gsv` — deliberately
+    // NOT cleared when the viewer stands down for a hosted large image — rides
+    // along into the next maximize. Back can land on either. Left alone it opened
+    // a permanent skeleton: no row, so no GalleryImageLarge, so none of the
+    // key scope the viewer's arrows and player chords live in, and only the X
+    // and Esc to get out of it. Making the URL honest means giving the flag
+    // the item it claims to be showing rather than quietly ignoring it, so:
+    // row 0, the first thing any surface here would select.
+    //
+    // "replace" — this repairs the entry the user is standing on, it is not a
+    // step to bury Back under. Gated on rows actually existing (the RAW
+    // count: a set with no rows has no row 0 to seed, and the viewer's
+    // loading frame is then the honest answer) and self-terminating, since
+    // the write is what makes the guard above it false.
+    useEffect(() => {
+        if (!viewerOpen || qIndex !== null || count <= 0) return
+        navigate(0, { history: "replace" })
+    }, [viewerOpen, qIndex, count, navigate])
     const [hoverBand, setHoverBand] = useState(false)
     const [hoverPanel, setHoverPanel] = useState(false)
     // Focus inside the panel holds it open so it cannot vanish mid-typing.
@@ -153,30 +248,83 @@ export function SearchOverlay({
         return () => setRevealed(false)
     }, [shown, setRevealed])
 
-    // While SHOWN, the overlay publishes its height as
-    // --pinboard-bottom-inset on the document root, so the bottom-band
-    // occupants that would otherwise sit under it (PinboardHistory's bottom
-    // docking, the hole-mode hint toast) can add the inset to their bottom
-    // offsets (design §7). Measured with a ResizeObserver rather than a
-    // one-shot: later phases add the thumbnail strip and pagination rows,
-    // and the var must track the panel as it grows. Only while shown — the
-    // dock now mounts for the whole maximized session, so mere mountedness
-    // means nothing; a hidden panel occupies no band, and absence of the
-    // var IS "no overlay shown", with consumers falling back to 0px.
+    // The dock's height, published in TWO custom properties with deliberately
+    // different lifetimes. Measured with a ResizeObserver rather than a
+    // one-shot because the panel grows: search bar row, strip, pagination.
+    // Hiding the panel is CSS-only (opacity + translate, §5.1), so its
+    // offsetHeight is the same shown or hidden and one observer covers both.
+    //
+    // --pinboard-dock-height: the band the dock OWNS, for as long as it is
+    // mounted — the whole maximized session. For consumers that must not move
+    // when the dock merely reveals or hides, which today means the two
+    // preview surfaces (previewBox.ts): the pinned viewer can hold a playing
+    // <video>, and re-laying out its frame when the dock hid was P6's worst
+    // regression. Read that file's TRAP note before changing which var it
+    // subtracts.
+    //
+    // --pinboard-bottom-inset: the band the dock is COVERING right now, so the
+    // bottom-band occupants that would otherwise sit under it (PinboardHistory's
+    // bottom docking, the hole-mode hint toast, the sidebar overlay's bottom
+    // edge) can add it to their offsets (design §7). Those SHOULD reclaim the
+    // band the moment the dock hides, so this one stays shown-scoped: absence
+    // of the var IS "no overlay shown", with consumers falling back to 0px.
+    //
+    // BOTH vars are written synchronously inside the same publish(), and the
+    // shown-scoped one reads its gate from a ref rather than from a state
+    // value. TRAP: routing the inset through a state update instead makes it
+    // land a frame late whenever the dock RESIZES while shown — the pagination
+    // row appearing as a search crosses one page, the bar rewrapping, the
+    // strip mounting — because a ResizeObserver callback is outside React's
+    // event and effect systems, so its setState is not batched into the
+    // commit that is about to paint. The consumers above would then paint one
+    // frame at the old inset. State is used only for what genuinely IS state:
+    // re-syncing on the shown transition, below.
+    const dockHeightRef = useRef(0)
+    const shownRef = useRef(shown)
     useLayoutEffect(() => {
-        if (!shown) return
         const el = panelRef.current
         if (!el) return
-        const publish = () =>
+        const publish = () => {
+            const height = el.offsetHeight
+            dockHeightRef.current = height
             document.documentElement.style.setProperty(
-                "--pinboard-bottom-inset",
-                `${el.offsetHeight}px`
+                "--pinboard-dock-height",
+                `${height}px`
             )
+            if (shownRef.current) {
+                document.documentElement.style.setProperty(
+                    "--pinboard-bottom-inset",
+                    `${height}px`
+                )
+            }
+        }
         publish()
         const observer = new ResizeObserver(publish)
         observer.observe(el)
         return () => {
             observer.disconnect()
+            document.documentElement.style.removeProperty(
+                "--pinboard-dock-height"
+            )
+            document.documentElement.style.removeProperty(
+                "--pinboard-bottom-inset"
+            )
+        }
+    }, [])
+
+    // The show transition: the ref the publish above gates on, plus the
+    // set/remove of the inset for a dock whose height did not change. Written
+    // from an effect and never during render, and the ref is assigned before
+    // the early return so a resize observed while HIDDEN can never re-add the
+    // var behind this effect's back.
+    useLayoutEffect(() => {
+        shownRef.current = shown
+        if (!shown) return
+        document.documentElement.style.setProperty(
+            "--pinboard-bottom-inset",
+            `${dockHeightRef.current}px`
+        )
+        return () => {
             document.documentElement.style.removeProperty(
                 "--pinboard-bottom-inset"
             )
@@ -323,6 +471,8 @@ export function SearchOverlay({
                             onDerivedPageChange={onDerivedPageChange}
                             pageSize={pageSize}
                             onItemHover={setHoverItem}
+                            viewerOpen={viewerOpen}
+                            onViewerOpenChange={viewerToggle}
                         />
                     </div>
                     {/* The pagination row: with `gi` set, a scrubber click
@@ -343,11 +493,42 @@ export function SearchOverlay({
                     )}
                 </div>
             </div>
+            {/* The pinned viewer (design §8.3), rendered BEFORE the peek so
+                the two z-order by their own values rather than by accident.
+                Mounted here, not in MultiSearchView: `source`, `count`,
+                `scrollMode` and the shared navigate write are already in
+                scope, the surface's trigger is a control on this dock's own
+                strip (so the button's glyph and the viewer's open state have
+                to have one owner), and this component's own lifetime is
+                already exactly the viewer's — the whole maximized session. */}
+            {viewerOpen && (
+                <SearchViewer
+                    item={viewerItem}
+                    source={source}
+                    extent={viewerExtent}
+                    resultsAreStale={resultsAreStale}
+                    index={viewerIndex}
+                    onNavigate={navigate}
+                    onClose={closeViewer}
+                />
+            )}
             {/* The hover preview (design §8): mounted ONLY while a card is
                 hovered — no idle portal — replacing the gallery's
                 large-image role over the maximized board. Its own file owns
-                the box, layering and dwell upgrade. */}
-            {hoverItem && <ResultHoverPreview item={hoverItem} />}
+                the box, layering and dwell upgrade.
+
+                Over the viewer, never instead of it (§8.4): the peek portals
+                at z-70 above the viewer's z-50 and the viewer is not
+                unmounted, so a video playing underneath keeps playing and is
+                revealed again when the hover ends. Hover never touches `gi`,
+                so it can never swap the viewer's item either. The one peek
+                withheld is the viewer's OWN item: covering a live picture
+                with a static thumbnail of itself is pure loss, and both
+                surfaces occupy the same fitted box, so it would read as the
+                video freezing. */}
+            {hoverItem
+                && !(viewerOpen && viewerItem && itemEquals(viewerItem, hoverItem))
+                && <ResultHoverPreview item={hoverItem} />}
         </>
     )
 }

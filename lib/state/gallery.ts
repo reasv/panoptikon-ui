@@ -49,8 +49,14 @@ const useGalleryIndex = () =>
 const useGalleryNavigate = (scrollMode: boolean) => {
   const setIndex = useGalleryIndex()[1]
   const setScrollAnchor = useGridScrollAnchor()[1]
-  return (target: number) => {
-    setIndex(target)
+  // `options` exists for the ONE caller whose write is not a user gesture:
+  // the maximized viewer's auto-advance chain, which must land with
+  // "replace" or an unattended binge buries the back button under one entry
+  // per video (the rule the gallery's own chain already follows,
+  // docs/video-end-action-design.md §4). Omitted, nuqs uses the param's own
+  // history mode — so every existing call site is unchanged.
+  return (target: number, options?: { history: "push" | "replace" }) => {
+    setIndex(target, options)
     if (!scrollMode) return
     setScrollAnchor(target > 0 ? target : null, { history: "replace" })
   }
@@ -85,6 +91,29 @@ const useGalleryFullscreen = () =>
 const useSearchOverlayOpen = () =>
   useQueryState(
     "gso",
+    parseAsBoolean.withDefault(false).withOptions({
+      history: "push",
+      clearOnDefault: true,
+    })
+  )
+
+// The maximized board's PINNED ITEM VIEWER flag
+// (docs/maximized-pinboard-search-overlay-design.md §8.3): true while the
+// centered viewer — GalleryImageLarge over the board, which is how video
+// playback reaches the maximized workspace — is open. In the URL because
+// the viewer is a place the user IS, not a hover: it survives refresh, and
+// history "push" makes Back close it, which is the gesture people reach for
+// first. clearOnDefault so a clean board link carries no stray flag.
+//
+// WHICH item it shows is not stored here: "selected" (`gi`, the blue ring)
+// and "the item in the viewer" are the same thing by §8's identity rule, so
+// this flag is open/closed and nothing else. Unlike `gsb` it DOES take part
+// in the search-suppression gate — the viewer paints a result row and
+// browses the set, so it is a consumer on screen (see
+// lib/state/pinboardView.ts).
+const useSearchViewerOpen = () =>
+  useQueryState(
+    "gsv",
     parseAsBoolean.withDefault(false).withOptions({
       history: "push",
       clearOnDefault: true,
@@ -320,7 +349,8 @@ const usePinboardMaximized = () =>
 
 // Whether the search queries should be withheld: the board is maximized AND
 // nothing on screen consumes the results — the overlay is neither pinned
-// (`gso`) nor transiently revealed (hover/focus, the client-only store).
+// (`gso`), nor holding the item viewer open (`gsv`), nor transiently
+// revealed (hover/focus, the client-only store).
 // The reveal read is the one client-only addition over the pure predicate:
 // a hover-revealed overlay is a consumer and enables the query exactly like
 // a pinned one, while the SSR twin (isSearchSuppressedFromParams) consults
@@ -339,6 +369,7 @@ const useSearchSuppressed = () => {
       pinboard: useGalleryPinBoardLayout()[0],
       pbl: useGalleryPinBoardLoad()[0],
       searchOverlay: useSearchOverlayOpen()[0],
+      viewer: useSearchViewerOpen()[0],
     }) && !revealed
   )
 }
@@ -373,6 +404,7 @@ export {
   useGalleryTrim,
   usePinboardMaximized,
   useSearchOverlayOpen,
+  useSearchViewerOpen,
   useSidebarOverlayOpen,
   useSearchSuppressed,
   useViewMode,

@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { Expand } from 'lucide-react'
+import { Expand, Shrink } from 'lucide-react'
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { useSearchParams } from 'next/navigation'
 import { BookmarkBtn, FileActionCluster } from "@/components/imageButtons"
@@ -43,6 +43,8 @@ export function VirtualGalleryHorizontalScroll({
     onDerivedPageChange,
     pageSize = 0,
     onItemHover,
+    viewerOpen,
+    onViewerOpenChange,
 }: {
     /**
      * The same rows the gallery reads: the page's array in pages mode, a
@@ -108,6 +110,17 @@ export function VirtualGalleryHorizontalScroll({
      * gallery mount passes nothing, gets no button, and is unaffected.
      */
     onItemHover?: (item: SearchResult | null, index: number) => void
+    /**
+     * Whether the maximized board's pinned viewer is open
+     * (docs/maximized-pinboard-search-overlay-design.md §8.1). WHICH item it
+     * holds is not a second piece of state: by §8's identity rule the viewer
+     * always shows the selected item, so "the viewer is on this card" is
+     * exactly `viewerOpen && isSelected`. It decides the preview button's
+     * glyph and what its click does — open, close, or swap.
+     */
+    viewerOpen?: boolean
+    /** Open/close the viewer — the other half of the button's click (§8.1). */
+    onViewerOpenChange?: (open: boolean) => void
 }) {
     "use no memo"
     const parentRef = useRef<HTMLDivElement>(null)
@@ -336,6 +349,8 @@ export function VirtualGalleryHorizontalScroll({
                                 style={style}
                                 onNavigate={onNavigate}
                                 onItemHover={onItemHover}
+                                viewerOpen={viewerOpen}
+                                onViewerOpenChange={onViewerOpenChange}
                             />
                         )
                     })}
@@ -378,6 +393,8 @@ function VirtualHorizontalScrollElement({
     style,
     onNavigate,
     onItemHover,
+    viewerOpen,
+    onViewerOpenChange,
 }: {
     item: SearchResult
     ownIndex: number
@@ -390,6 +407,9 @@ function VirtualHorizontalScrollElement({
      * button existing at all — see the strip's own prop.
      */
     onItemHover?: (item: SearchResult | null, index: number) => void
+    /** The pinned viewer's open state and setter — see the strip's props. */
+    viewerOpen?: boolean
+    onViewerOpenChange?: (open: boolean) => void
 }) {
     const [qIndex] = useGalleryIndex()
     // The same mapping the strip scrolls to (see stripTarget): clamped, not
@@ -481,16 +501,36 @@ function VirtualHorizontalScrollElement({
                     (§8.1's identity rule: there is no second selection
                     concept), because it paints over the card's Link and a
                     control that swallows the click without doing what the
-                    card would is a 40px dead zone on every card. The other
-                    half of §8.1's click — opening/closing the pinned viewer,
-                    and the glyph that reflects which — is P6. */}
+                    card would is a 40px dead zone on every card.
+
+                    The other half of the click is the viewer toggle (§8.1),
+                    and the three cases fall out of one comparison because
+                    selection and "the item in the viewer" are the same thing:
+                    closed → open it here; open ON THIS CARD → close it; open
+                    on ANOTHER card → the selection write above already moved
+                    the viewer, so the flag must not be touched. Guarding on a
+                    real change matters, not just tidiness: `gsv` is a
+                    history:push param, and re-writing `true` while swapping
+                    would bury the back button under one entry per swap.
+
+                    No `onViewerOpenChange` means there is no viewer surface to
+                    toggle at all (the dock withholds the setter where a second
+                    GalleryImageLarge would collide with the gallery's own) —
+                    the button then keeps only its P5 half, select + peek, and
+                    its label says so. */}
                 {onItemHover && (
                     <PreviewButton
+                        canToggleViewer={!!onViewerOpenChange}
+                        isViewerItem={!!viewerOpen && isSelected}
                         onEnter={() => onItemHover?.(item, ownIndex)}
                         onLeave={() => onItemHover?.(null, ownIndex)}
                         onSelect={() => {
+                            const nextOpen = !(viewerOpen && isSelected)
                             onNavigate(ownIndex % nItems)
                             setSelected(item)
+                            if (nextOpen !== !!viewerOpen) {
+                                onViewerOpenChange?.(nextOpen)
+                            }
                         }}
                     />
                 )}
@@ -543,10 +583,25 @@ function VirtualHorizontalScrollElement({
 // settles — i.e. floating over the preview this button just opened. The
 // aria-label carries the same text for anything that needs it.
 function PreviewButton({
+    canToggleViewer,
+    isViewerItem,
     onEnter,
     onLeave,
     onSelect,
 }: {
+    /**
+     * Can a click reach the viewer at all? False in the one state where the
+     * dock stands the viewer down, and the label must not go on promising a
+     * surface that will not appear.
+     */
+    canToggleViewer: boolean
+    /**
+     * Is the pinned viewer open on THIS card's item? The glyph says which of
+     * §8.1's three outcomes a click will produce, and only "close" needs its
+     * own one — swapping the viewer to another card is the same expand
+     * gesture as opening it.
+     */
+    isViewerItem: boolean
     onEnter: () => void
     onLeave: () => void
     onSelect: () => void
@@ -554,7 +609,9 @@ function PreviewButton({
     return (
         <button
             type="button"
-            aria-label="Preview this item"
+            aria-label={!canToggleViewer
+                ? "Preview this item"
+                : isViewerItem ? "Close the viewer" : "Open this item in the viewer"}
             draggable
             onDragStart={(e) => {
                 e.preventDefault()
@@ -565,7 +622,9 @@ function PreviewButton({
             onMouseLeave={onLeave}
             className="hover:scale-105 absolute top-2 left-1/2 -translate-x-1/2 bg-white rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
         >
-            <Expand className="w-6 h-6 text-gray-800" />
+            {isViewerItem
+                ? <Shrink className="w-6 h-6 text-gray-800" />
+                : <Expand className="w-6 h-6 text-gray-800" />}
         </button>
     )
 }
