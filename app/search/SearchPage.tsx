@@ -36,6 +36,7 @@ import { overscanItemsFor, topRowHighlightItem, virtualPageAnchor, virtualPageOf
 import { useSearchParams, type ReadonlyURLSearchParams } from "next/navigation"
 import { ResultCellSkeleton } from "@/components/ResultCellSkeleton"
 import { useItemSelection } from "@/lib/state/itemSelection"
+import { PinboardMaximizedProvider } from "@/components/OpenFileDetails"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { components } from "@/lib/panoptikon"
 import { GRID_SCROLL_ANCHOR_KEY, useGridScrollAnchor } from "@/lib/state/gridScroll"
@@ -491,7 +492,19 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                 const shown =
                     overlayPinned || useSearchOverlayReveal.getState().revealed
                 setOverlayOpen(!shown)
-                void setOverlayPinned(!shown)
+                // GUARDED, because `gso` is history:"push" with
+                // clearOnDefault and nuqs 2.9.0's app-router adapter calls
+                // pushState UNCONDITIONALLY — it has no same-value
+                // short-circuit. Opening with a HANDLE leaves `gso` absent,
+                // so closing with the chord wanted to write false over an
+                // already-false flag: an identical URL pushed onto the
+                // stack, and Back appearing dead for one press per
+                // handle-open/chord-close round. Exactly the defect
+                // documented for `gsv` on the strip's preview button
+                // (SearchOverlay), and every other close path already
+                // guards. The ephemeral open flag above needs no guard —
+                // it is client state and writes no history.
+                if (overlayPinned !== !shown) void setOverlayPinned(!shown)
             }
         }
         window.addEventListener('keydown', handleKeyDown)
@@ -658,8 +671,15 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     }
     const getVirtualPageURL = (base: ReadonlyURLSearchParams | URLSearchParams, newPage: number) =>
         getScrollPositionURL(base, newPage, k, qIndex !== null)
+    // PinboardMaximizedProvider wraps the whole subtree because the answer is
+    // needed PER RESULT ROW — every grid card's Data View button and every
+    // pin's corner checkbox route to a different details pane depending on it
+    // (components/OpenFileDetails.tsx). Deriving it per row meant every one of
+    // them subscribing to `pinboard`, the longest URL parameter the app has;
+    // this component already has the value, so it publishes it instead. See
+    // PinboardMaximizedContext for why context and not a store.
     return (
-        <>
+        <PinboardMaximizedProvider value={pinboardMaximized}>
             <SearchErrorToast noFtsErrors={options.e_iss} isError={isError} error={error} />
             {!fs && <div className={cn("mb-4 2xl:mx-auto",
                 sidebarOpen ? '2xl:w-2/3' : '2xl:w-1/2'
@@ -819,13 +839,19 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                 />
             )}
             {/* The left-edge sidebar dock — the same model rotated
-                (design §9). Self-contained (the sidebar content reads
-                everything from hooks), so no props. The page <SideBar/> is
-                unmounted while maximized (SearchPageContent gates it on
-                !pinboardMaximized), so this is the only mount of the
-                sidebar content — the two can never double-mount. */}
-            {pinboardMaximized && <SidebarOverlay />}
-        </>
+                (design §9). The sidebar CONTENT reads everything from
+                hooks; the one prop is the same `largeImageHosted` the
+                bottom dock gets one block up, because this dock's Esc
+                yields to the viewer and only this component can say whether
+                a viewer surface is actually mounted to consume the key
+                (§8.3). The page <SideBar/> is unmounted while maximized
+                (SearchPageContent gates it on !pinboardMaximized), so this
+                is the only mount of the sidebar content — the two can never
+                double-mount. */}
+            {pinboardMaximized && (
+                <SidebarOverlay largeImageHosted={largeImageHosted} />
+            )}
+        </PinboardMaximizedProvider>
     )
 }
 

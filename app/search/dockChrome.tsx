@@ -1,7 +1,6 @@
 "use client"
-import { useEffect, type ReactNode } from "react"
+import { useEffect, useRef, type ReactNode } from "react"
 import { cn, hasOpenLayer } from "@/lib/utils"
-import { useSearchViewerOpen } from "@/lib/state/gallery"
 
 // Chrome shared by the maximized workspace's two docks — the bottom search
 // dock (SearchOverlay) and the left sidebar dock (SidebarOverlay). Both use
@@ -51,9 +50,16 @@ export function DockHandle({
     shape: string
     /**
      * Hidden while the panel it opens is on screen (the panel covers it),
-     * and — for the bottom dock's LEFT handle — while the 26rem sidebar
-     * covers it. Opacity alone would leave an invisible click target under
-     * a panel, so this also removes it from hit-testing.
+     * and — for the bottom dock's LEFT and BOTTOM-CENTRE handles — while the
+     * sidebar panel covers them. Opacity alone would leave an invisible
+     * click target under a panel, so this also removes it from hit-testing
+     * AND from the tab order (`inert`, below).
+     *
+     * Not to be confused with a handle that must not EXIST: the sidebar's
+     * own handle is rendered only while the bottom dock is shown (§9), and
+     * that one is a conditional render at the call site, because the claim
+     * there is about the left edge belonging to the other dock the rest of
+     * the time, not about a covered target.
      */
     hidden: boolean
     onOpen: () => void
@@ -68,6 +74,13 @@ export function DockHandle({
         >
             <button
                 type="button"
+                // `inert` while hidden, because `pointer-events-none` +
+                // `opacity-0` hide from the POINTER and from the eye but not
+                // from the TAB ORDER. Without this, Tab on a cold maximized
+                // board walks into invisible handles and Enter pops a dock
+                // open from nowhere. React 19 passes the boolean through as
+                // the real HTML attribute.
+                inert={hidden}
                 onClick={onOpen}
                 title={title}
                 aria-label={label}
@@ -84,12 +97,20 @@ export function DockHandle({
     )
 }
 
-// Not "outside": the docks' own chrome (either dock — dismissal means going
-// back to the BOARD, and the two docks are one workspace's chrome), and any
-// portaled Radix layer. The latter is load-bearing: the dock's search-type
-// selector, tag autocomplete and view-mode menu all render into a body
-// portal, so without it choosing an item from the dock's own menu would
-// dismiss the dock underneath it.
+// Not "outside", for BOTH docks: the docks' own chrome (either dock —
+// dismissal means going back to the BOARD, and the two docks are one
+// workspace's chrome) and any portaled Radix layer.
+//
+// The Radix exemption is load-bearing: the dock's search-type selector, tag
+// autocomplete and view-mode menu all render into a body portal, so without
+// it choosing an item from the dock's own menu would dismiss the dock
+// underneath it.
+//
+// Board-side exemptions do NOT belong here — this list is shared by both
+// `useDockDismiss` instances, so anything added to it exempts a board
+// control from dismissing the SEARCH dock as well. That is the
+// `extraNotOutside` parameter's whole reason for existing; see the
+// sidebar's `[data-opens-data-view]` there.
 const NOT_OUTSIDE =
     '[data-search-overlay], [data-radix-popper-content-wrapper],'
     + ' [role="dialog"], [role="menu"]'
@@ -103,20 +124,48 @@ const NOT_OUTSIDE =
  *
  * `dismiss` must be stable (the effect depends on it); callers pass the
  * zustand setter or a useCallback over it.
+ *
+ * `viewerOpen` is the EFFECTIVE viewer flag, never the raw `gsv`, and the
+ * distinction was a dead-Esc bug. Esc stands down here because the viewer's
+ * own window-capture handler (PreviewSurface's useViewerEscape) is going to
+ * consume the press — but that handler only exists while a PreviewSurface is
+ * MOUNTED, and the surface stands down whenever the gallery host is showing
+ * its large image under a stale `gpb` (`largeImageHosted`, §8.3). `gsv` is
+ * deliberately never cleared on that stand-down, so the raw flag stayed
+ * true with nothing behind it and ONE Esc press closed nothing anywhere: not
+ * the viewer (no surface), not the dock (yielded to it). Both docks
+ * therefore take the effective value from their caller rather than reading
+ * the URL for themselves — only MultiSearchView can compute it.
+ *
+ * `escYield` stands THIS dock's Esc down while the OTHER dock is going to
+ * consume the same press — see the Esc-layering note on the key handler.
+ *
+ * `extraNotOutside` adds a selector to the outside-click exemptions FOR
+ * THIS DOCK ONLY. The shared NOT_OUTSIDE list is consumed by both
+ * instances, so a board-side control exempted there would stop dismissing
+ * the search dock too — which is the asymmetry this parameter fixes (only
+ * the sidebar has a board-side opener).
  */
 export function useDockDismiss(
     shown: boolean,
     pinned: boolean,
     dismiss: () => void,
+    viewerOpen: boolean,
+    {
+        escYield = false,
+        extraNotOutside,
+    }: { escYield?: boolean; extraNotOutside?: string } = {},
 ) {
-    // `gsv`, the RAW flag rather than the dock's effective viewerOpen: both
-    // docks ask this question and only one of them can compute the effective
-    // value (it also carries largeImageHosted). Yielding in the rare
-    // stood-down state costs only the Esc path — the close button and an
-    // outside click still work.
-    const viewerOpen = useSearchViewerOpen()[0]
+    // Did the CURRENT pointer gesture START inside an exempt subtree? Set by
+    // the capture-phase pointerdown below and read by the click handler; see
+    // the ORIGIN GUARD note there for why a click's own target is not enough.
+    // Written only from an event handler, never during render.
+    const originExemptRef = useRef(false)
     useEffect(() => {
         if (!shown || pinned) return
+        const notOutside = extraNotOutside
+            ? `${NOT_OUTSIDE}, ${extraNotOutside}`
+            : NOT_OUTSIDE
         // Esc is LAST in the chain, so it stands down wherever the key
         // already belongs to someone else. Deliberately a plain window
         // BUBBLE listener with no preventDefault and no stopPropagation:
@@ -131,8 +180,24 @@ export function useDockDismiss(
         // the key here would need stopImmediatePropagation plus a
         // registration-order guarantee we do not have. Both acting on one
         // press is the accepted behavior (§7).
+        //
+        // ESC PEELS ONE LAYER AT A TIME (§7), and for the same reason as
+        // above — no listener here consumes the key — the layering is done
+        // by STANDING DOWN rather than by claiming it. Both docks register
+        // this listener, so with both panels up one press would otherwise
+        // close BOTH. The bottom dock passes escYield while the sidebar is
+        // shown-and-unpinned, i.e. exactly when the sidebar's own copy of
+        // this handler is going to act; one Esc closes the sidebar, the next
+        // closes the dock. The gate is "will the other dock actually consume
+        // it", not merely "is it shown": a PINNED sidebar ignores Esc
+        // entirely, and yielding to it would make the key dead for both.
+        //
+        // Outside-click deliberately does NOT layer — a click on the board
+        // dismisses BOTH docks. The asymmetry is intended: an outside click
+        // means "back to the board", Esc means "back out one step".
         const onKey = (e: KeyboardEvent) => {
             if (e.key !== "Escape" || e.defaultPrevented) return
+            if (escYield) return
             // A text field's Esc is that field's own key — the tag
             // autocomplete blurs its input on it. Typing in the dock's
             // search bar and pressing Esc must not yank the dock away.
@@ -153,40 +218,131 @@ export function useDockDismiss(
         // Swallowing it would make dismissing the dock cost an extra click
         // for every board action.
         //
+        // `click`, NOT `pointerdown`, and this is a bug fix rather than a
+        // preference. The bottom dock's reservation is SHOWN-scoped: hiding
+        // it removes --pinboard-bottom-inset and collapses the board's scroll
+        // range in the same commit. Dismissing on pointerdown therefore did
+        // that MID-GESTURE — the board lurched under a pointer that was
+        // already down on a pin, and because `click` only fires on the common
+        // ancestor of the pointerdown and pointerup targets, the click
+        // frequently never fired at all and the pin was not selected. Every
+        // board action inside an open dock cost two presses.
+        //
+        // Keeping the reservation shown-scoped is the deliberate half of
+        // that trade: a mount-scoped one would leave a permanent dock-height
+        // dead band under the board whenever the dock is closed, which is
+        // worse and always visible. ACCEPTED, and inherent to reclaiming the
+        // band: when the dock closes while the board is scrolled to the very
+        // bottom, the content shifts up by the dock's height. That is the
+        // reservation being given back, not a jump.
+        //
+        // WHAT THE `click` MODEL ACTUALLY COSTS, corrected — an earlier
+        // version of this comment (and of design §5.1) claimed a marquee
+        // drag does not dismiss "because it produces no click". That is
+        // FALSE. Both marquee starters call `preventDefault()` on
+        // `pointerdown` (GalleryPinBoard's frame listener and the grid
+        // area's own onPointerDown), and per the pointer-events
+        // compatibility mapping that suppresses the compatibility MOUSE
+        // events (mousedown/mouseup) — never `click`, which is dispatched
+        // from the pointerup regardless. So a marquee that starts and ends
+        // on the board DOES dismiss. The behavior is right (a marquee is a
+        // board gesture and the chrome retreating with it is the contract);
+        // only the reasoning was wrong. What genuinely produces no click is
+        // an HTML5 pin DRAG: a native drag session cancels the click, so
+        // dragging a pin out of the board leaves an open dock up.
+        //
+        // ORIGIN GUARD — `click` is dispatched at the nearest common
+        // inclusive ANCESTOR of the mousedown and mouseup targets, so a
+        // gesture that starts inside a panel and ends outside it has a click
+        // target that is NEITHER. Here the docks are fixed children of the
+        // search page's content column and the board sits in a
+        // [data-pinboard-frame] panel inside that same column, so the
+        // ancestor is the column div: it matches no exemption and is neither
+        // <html> nor <body>, so the dock dismissed itself. Drag-selecting
+        // text in the dock's search input and releasing a few pixels above
+        // the panel edge closed the dock — and since the bottom dock's
+        // reservation is shown-scoped, the board's scroll range collapsed in
+        // the same commit. Impossible under the old pointerdown model, which
+        // is why it arrived with the switch. The fix is a capture-phase
+        // `pointerdown` that records whether the gesture ORIGINATED in an
+        // exempt subtree; the click handler bails when it did. Still no
+        // preventDefault and no stopPropagation anywhere.
+        //
+        // The origin ref has exactly ONE writer (that pointerdown), so it is
+        // reset by every new gesture and cannot go stale across them. The
+        // one case it cannot describe is a click with no pointerdown of its
+        // own — Enter/Space on a focused control — and those are recognised
+        // by `detail === 0` and skip the guard rather than inheriting the
+        // previous gesture's answer.
+        //
         // CAPTURE phase on document, the board's own deselect precedent:
         // bubble delivery is not guaranteed — anything between the target
-        // and the document may stop propagation on pointerdown — and a
-        // listener that silently stops firing over certain targets is the
-        // worst failure mode a dismissal can have. Capture is about
-        // DELIVERY here, not priority; nothing is consumed either way.
+        // and the document may stop propagation — and a listener that
+        // silently stops firing over certain targets is the worst failure
+        // mode a dismissal can have. Capture is about DELIVERY here, not
+        // priority; nothing is consumed either way.
         //
         // SELF-DISMISS RACE: the click that OPENS a dock must not be seen by
         // the listener that click causes to be registered. It cannot be —
-        // this effect runs after the state commit, by which time the
-        // opening pointerdown has already been dispatched, and a listener
-        // added mid-dispatch does not receive the event in flight anyway.
-        // The NOT_OUTSIDE exemption covers it a second time, since every
-        // opening control (the handles, the overlay row's settings toggle)
-        // lives inside a [data-search-overlay] element.
-        const onPointerDown = (e: PointerEvent) => {
-            const t = e.target
-            if (!(t instanceof Element)) return
+        // this effect runs after the state commit, by which time the opening
+        // click has already been dispatched, and a listener added
+        // mid-dispatch does not receive the event in flight anyway. The
+        // NOT_OUTSIDE exemption covers it a second time, since every opening
+        // control (the handles, the overlay row's settings toggle) lives
+        // inside a [data-search-overlay] element, and the board-side one —
+        // the pin's corner checkbox — is passed in as this dock's
+        // `extraNotOutside` by the sidebar, the only dock it opens.
+        const isOutside = (t: EventTarget | null) => {
+            if (!(t instanceof Element)) return false
             // A press dismissing a MODAL Radix layer hit-tests to
             // <html>/<body> — Radix puts pointer-events:none on the body —
-            // so it cannot be matched against the exemptions below. It is
+            // so it cannot be matched against the exemptions. It is
             // consuming the dismissal, not aiming past the panel: the same
             // guard the board's deselect carries, for the same reason.
-            if (t === document.documentElement || t === document.body) return
-            if (t.closest(NOT_OUTSIDE)) return
-            dismiss()
+            if (t === document.documentElement || t === document.body) return false
+            return t.closest(notOutside) === null
+        }
+        const onPointerDown = (e: PointerEvent) => {
+            const t = e.target
+            originExemptRef.current =
+                t instanceof Element && t.closest(notOutside) !== null
+        }
+        const onClick = (e: MouseEvent) => {
+            // `detail === 0` is a click with no pointer gesture behind it —
+            // Enter/Space on a focused control. Those DO dismiss, and that
+            // is deliberate: activating a board control is a genuine "back
+            // to the board" gesture, and there is no half-open state to
+            // protect (nothing was dragged). They skip the origin guard
+            // because they have no origin of their own.
+            if (e.detail !== 0 && originExemptRef.current) return
+            if (isOutside(e.target)) dismiss()
+        }
+        // RIGHT-CLICK DISMISSES TOO. `click` fires for the primary button
+        // only, so switching off pointerdown silently stopped a right-press
+        // on the board — opening a pin's context menu — from retreating the
+        // chrome, while every other way of reaching the board still did.
+        // The board's context menu is emphatically "back to the board", so
+        // it gets its own listener with the same exemptions and the same
+        // origin guard. `contextmenu` rather than `auxclick`: it is the
+        // event the gesture actually means, it fires whether or not a menu
+        // is shown, and it leaves middle-click (which is not a board verb)
+        // alone. The Radix menu it opens portals to <body> and is exempt, so
+        // the menu itself survives the dismissal that revealed it.
+        const onContextMenu = (e: MouseEvent) => {
+            if (originExemptRef.current) return
+            if (isOutside(e.target)) dismiss()
         }
         window.addEventListener("keydown", onKey)
         document.addEventListener("pointerdown", onPointerDown, true)
+        document.addEventListener("click", onClick, true)
+        document.addEventListener("contextmenu", onContextMenu, true)
         return () => {
             window.removeEventListener("keydown", onKey)
             document.removeEventListener("pointerdown", onPointerDown, true)
+            document.removeEventListener("click", onClick, true)
+            document.removeEventListener("contextmenu", onContextMenu, true)
         }
-    }, [shown, pinned, viewerOpen, dismiss])
+    }, [shown, pinned, viewerOpen, escYield, extraNotOutside, dismiss])
 }
 
 // The interactive-ancestor test behind "double-click on genuine panel

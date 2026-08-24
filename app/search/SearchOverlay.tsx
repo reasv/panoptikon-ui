@@ -32,16 +32,22 @@ import { components } from "@/lib/panoptikon"
 // (lib/state/searchOverlayReveal.ts) and `pinned` is `gso` in the URL.
 //
 // CLICK-TO-OPEN, not hover. The dock is opened by clicking one of THREE
-// always-visible edge handles — bottom-center, low-left, low-right — and
-// nothing else on the screen edge is hot. Three because one is not enough:
-// an auto-hide taskbar pops over the browser at the bottom edge and steals
-// the gesture there, and side handles are out of its reach. The handles
+// always-visible edge handles — bottom-center, left-center, right-center —
+// and nothing else on the screen edge is hot. Three because one is not
+// enough: an auto-hide taskbar pops over the browser at the bottom edge and
+// steals the gesture there, and side handles are out of its reach. On a
+// board with everything closed these are the ONLY edge controls, and all
+// three open THIS dock (§5.1): the sidebar is not an entry point from a
+// cold board, so its handle appears only once this panel is shown (§9). The
+// handles
 // highlight on hover but never open on it (see DockHandle in dockChrome.tsx
 // for why that signalling matters, and for the hot bands this replaced).
 //
 // Dismissal of an open, UNPINNED panel: Esc, a click outside it, or the
 // panel's own X (the handles are covered by the open panel, so the panel
-// must carry its own close affordance). Rules in useDockDismiss.
+// must carry its own close affordance). Rules in useDockDismiss — including
+// why the outside dismissal listens for `click` and not `pointerdown`, and
+// how Esc peels the sidebar first and this dock second.
 //
 // Pinning, and ONLY these: the pin toggle, Ctrl+Shift+F (registered by
 // MultiSearchView), and a double-click on genuine panel background. Single
@@ -57,12 +63,16 @@ import { components } from "@/lib/panoptikon"
 // the panel out from under its own open menu, and the keyboard/pointer
 // auto-pins existed largely to prevent that. Nothing replaced them.
 //
-// Hiding is CSS-only (translate/opacity + pointer-events-none): the panel
-// and its contents stay MOUNTED for the whole maximized session. This is
-// load-bearing, not a styling choice — a strip card serving as the HTML5
-// drag source must survive its own panel hiding mid-drag by whatever path
-// remains (Esc, an outside click). Never convert the hide to a conditional
-// unmount (design §5.1). Drags themselves need no special case any more:
+// Hiding is CSS-only (translate/opacity + pointer-events-none + `inert`):
+// the panel and its contents stay MOUNTED for the whole maximized session.
+// This is load-bearing, not a styling choice — a strip card serving as the
+// HTML5 drag source must survive its own panel hiding mid-drag by whatever
+// path remains (Esc, an outside click). Never convert the hide to a
+// conditional unmount (design §5.1). `inert` is compatible with that rule
+// and necessary alongside it: it removes the hidden panel from the TAB ORDER
+// and from hit-testing, which the three CSS properties do not, without
+// unmounting anything or cancelling a drag already in flight.
+// Drags themselves need no special case any more:
 // nothing hides on pointer exit, so dragging out of an OPEN unpinned panel
 // leaves it open and multi-item drag sessions work unpinned.
 //
@@ -236,14 +246,27 @@ export function SearchOverlay({
     const panelRef = useRef<HTMLDivElement>(null)
     const shown = open || pinned
     // Whether the SIDEBAR dock is on screen — the one thing this dock needs
-    // to know about the other one. Its 26rem panel covers this dock's
-    // low-LEFT handle, and an invisible click target under a panel is a bug,
-    // so that handle stands down while the sidebar shows (§9).
+    // to know about the other one. Its panel covers this dock's LEFT handle,
+    // and an invisible click target under a panel is a bug, so that handle
+    // stands down while the sidebar shows (§9).
     const sidebarPinned = useSidebarOverlayOpen()[0]
     const sidebarOpen = useSearchOverlayReveal((s) => s.sidebarRevealed)
     const sidebarShown = sidebarOpen || sidebarPinned
     const dismiss = useCallback(() => setOpen(false), [setOpen])
-    useDockDismiss(shown, pinned, dismiss)
+    // Esc peels one layer at a time (§7): this dock stands its Esc down
+    // while the sidebar is shown AND unpinned — precisely when the sidebar's
+    // own handler is going to consume the press — so one Esc closes the
+    // sidebar and the next closes this dock. A PINNED sidebar ignores Esc,
+    // so yielding to it would make the key dead for both, which is why the
+    // pin is in the test. An outside click still dismisses both, by design.
+    //
+    // `viewerOpen`, the EFFECTIVE flag, not `gsv`: the hook stands Esc down
+    // for the viewer, and in the stood-down state (`largeImageHosted`) there
+    // is no PreviewSurface mounted to consume the key — see the hook's own
+    // note. Passing the raw flag made one Esc press close nothing at all.
+    useDockDismiss(shown, pinned, dismiss, viewerOpen, {
+        escYield: sidebarShown && !sidebarPinned,
+    })
 
     // The hover preview's subject (design §8): the strip card under the
     // pointer, debounced 200ms on open so a sweep across cards doesn't
@@ -440,46 +463,86 @@ export function SearchOverlay({
     // useDockDismiss exempts it too, so the chrome never dismisses itself.
     return (
         <>
-            {/* THREE handles, one panel. The center one is the toolbar's
-                top-center handle upside down and keeps its chevron; the two
-                side handles are the sidebar's handle shape mirrored and
-                carry a SEARCH glyph instead, because they do not sit
-                adjacent to the direction a chevron would imply. They exist
-                so an auto-hide taskbar — which pops over the browser at the
-                bottom edge and swallows the gesture there — can never gate
-                the feature. All three hide while the panel is shown, since
-                the panel covers them. */}
+            {/* THREE handles, one panel, and a COLD BOARD SHOWS NOTHING
+                ELSE: every edge control on a closed board opens THIS dock
+                (§5.1). The sidebar has no handle of its own until this one
+                is shown — it is never an entry point from a cold board,
+                because it only makes sense beside the search panel or as
+                the destination of a per-item Data View press (§9).
+                Each handle sits CENTRALLY on its own side: bottom-center,
+                left-center, right-center. Three of them so an auto-hide
+                taskbar — which pops over the browser at the bottom edge and
+                swallows the gesture there — can never gate the feature; the
+                center one is the toolbar's top-center handle upside down and
+                keeps its chevron, while the two side handles carry a SEARCH
+                glyph instead, because they do not sit adjacent to the
+                direction a chevron would imply. All three hide while the
+                panel is shown, since the panel covers them.
+
+                The centre one ALSO stands down while the sidebar is shown,
+                for the same reason the left one does. It spans 50vw ± 56px
+                and the sidebar is min(26rem,90vw) rising to 50vw at `lg`,
+                and the sidebar renders after this dock at the same z-50 — so
+                between 1024px and 1280px the sidebar covers the handle's
+                left half, and on a window at or under ~920px it covers the
+                handle entirely. The state is reachable (the viewer header's
+                Data View button, a re-clicked checkbox), and an invisible
+                click target under a panel is the bug this prop exists for.
+                Standing it down rather than offsetting it by
+                --pinboard-left-inset, because with the sidebar up the RIGHT
+                handle is uncovered at every width — the sidebar is a left-
+                edge panel — so a reachable path to this dock survives, and
+                one nudged handle sliding around under a panel edge is worse
+                than a handle that is simply not there. */}
             <DockHandle
                 position="bottom-0 left-1/2 -translate-x-1/2"
                 shape="h-4 w-28 rounded-t-md border-b-0 hover:h-5 hover:w-32"
-                hidden={shown}
+                hidden={shown || sidebarShown}
                 onOpen={() => setOpen(true)}
                 title="Open the search dock"
-                label="Open search dock"
+                label="Open search dock (bottom edge)"
             >
                 <ChevronUp className="h-3 w-3" />
             </DockHandle>
-            {/* Low-left, and additionally out of the way of the sidebar
-                panel that covers this spot. bottom-24 keeps it clear of the
-                sidebar's own handle, which owns the UPPER third of the left
-                edge (§9) — at 1080p the two are ~450px apart. */}
+            {/* Vertically centred, and additionally stood down while the
+                sidebar panel covers this spot. There is no collision left to
+                arrange with the sidebar's own handle: that one exists ONLY
+                while this dock is SHOWN (§9), which is exactly when all
+                three of these are hidden, so the left edge never carries two
+                handles at once. The `|| sidebarShown` is still load-bearing
+                for the other order — the sidebar can be shown over a HIDDEN
+                dock (the viewer header's Data View button, a re-clicked
+                select checkbox), and an invisible click target under a panel
+                is a bug. */}
             <DockHandle
-                position="bottom-24 left-0"
+                position="left-0 top-1/2 -translate-y-1/2"
                 shape="h-28 w-4 rounded-r-md border-l-0 hover:w-5 hover:h-32"
                 hidden={shown || sidebarShown}
                 onOpen={() => setOpen(true)}
                 title="Open the search dock"
-                label="Open search dock"
+                label="Open search dock (left edge)"
             >
                 <Search className="h-3 w-3" />
             </DockHandle>
+            {/* The RIGHT handle never stands down for the sidebar: the
+                sidebar is a left-edge panel and its WIDEST rung is 90vw, not
+                50vw — 50vw is the `lg` rung and every rung above it is
+                narrower still (down to 18vw), but BELOW `lg` the width is
+                `min(26rem, 90vw)` and the 90vw floor binds on any window
+                under ~462px. That still leaves 10vw of the right edge clear,
+                which is wider than this 16px handle on any viewport over
+                160px, so the conclusion is unchanged: uncovered at every
+                width the app is usable at. It is
+                therefore the guaranteed way back to the search dock in the
+                {dock hidden, sidebar shown} state, which is what lets the
+                other two stand down there. */}
             <DockHandle
-                position="bottom-24 right-0"
+                position="right-0 top-1/2 -translate-y-1/2"
                 shape="h-28 w-4 rounded-l-md border-r-0 hover:w-5 hover:h-32"
                 hidden={shown}
                 onOpen={() => setOpen(true)}
                 title="Open the search dock"
-                label="Open search dock"
+                label="Open search dock (right edge)"
             >
                 <Search className="h-3 w-3" />
             </DockHandle>
@@ -490,6 +553,19 @@ export function SearchOverlay({
                 <div
                     ref={panelRef}
                     data-search-overlay
+                    // INERT WHILE HIDDEN. The panel is hidden with opacity +
+                    // translate + pointer-events-none and stays MOUNTED (the
+                    // CSS-only-hide rule, §5.1 — a strip card serving as an
+                    // HTML5 drag source has to survive its own panel hiding
+                    // mid-drag). None of that touches the TAB ORDER, so on a
+                    // cold maximized board Tab walked into the invisible
+                    // search input, tag combobox, pagination links and
+                    // view-mode toggle with no visible focus ring, and typing
+                    // silently rewrote query params. `inert` affects focus
+                    // and hit-testing ONLY — it does not unmount, does not
+                    // hide, and does not abort an in-flight drag — so the
+                    // drag-source guarantee is untouched.
+                    inert={!shown}
                     // The only pointer gesture on the panel body: a
                     // DOUBLE-click on genuine background pins, one way —
                     // never unpin, so a stray double-click can only make the
@@ -546,7 +622,6 @@ export function SearchOverlay({
                             click, which is exactly what "unpinned" now
                             means. */}
                         <Toggle
-                            data-overlay-pin-toggle
                             pressed={pinned}
                             onClick={() => {
                                 if (pinned) setOpen(true)

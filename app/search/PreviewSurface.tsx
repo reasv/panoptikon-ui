@@ -6,13 +6,12 @@ import { OpenDetailsButton } from "@/components/OpenFileDetails"
 import { Button } from "@/components/ui/button"
 import { GalleryImageLarge, isPlayableVideo } from "@/components/gallery/ImageGallery"
 import { useItemSelection } from "@/lib/state/itemSelection"
-import { useSidebarOverlayOpen } from "@/lib/state/gallery"
 import { usePinboardCarry } from "@/lib/state/pinboardCarry"
 import { scanLoadedForward } from "@/lib/scrollMode"
 import { cn, getLocale, hasOpenLayer } from "@/lib/utils"
 import type { ResultsSource } from "@/lib/searchHooks"
 import { PeekLayer } from "./PeekLayer"
-import { fittedBoxStyle, PREVIEW_BOUNDS } from "./previewBox"
+import { fittedBoxStyle, PREVIEW_BOUNDS, UNFITTED_BOX_STYLE } from "./previewBox"
 
 // The maximized board's PREVIEW SURFACE
 // (docs/maximized-pinboard-search-overlay-design.md §8). ONE box, two
@@ -630,13 +629,19 @@ export function PreviewSurface({
                 className={cn(
                     "relative overflow-hidden rounded-md border bg-background shadow-xl",
                     interactive ? "pointer-events-auto" : "pointer-events-none",
-                    animateSwap && "transition-[width,aspect-ratio] duration-150 ease-out",
-                    // No fit: the subject carries no dimensions (rows from
-                    // older scans), so the box spans the bounds and
-                    // object-contain letterboxes — §8.2's unprobed fallback.
-                    !fitted && "h-full w-full",
+                    // `transform` rides along with the width: the sidebar
+                    // clearance (previewBox.ts) narrows AND shifts in the
+                    // same commit, so animating one without the other would
+                    // slide the box instantly and then resize it. Both are
+                    // still peek-only (see animateSwap).
+                    animateSwap && "transition-[width,aspect-ratio,transform] duration-150 ease-out",
                 )}
-                style={fitted ?? undefined}
+                // No fit: the subject carries no dimensions (rows from older
+                // scans), so the box spans the bounds and object-contain
+                // letterboxes — §8.2's unprobed fallback, which carries its
+                // own width because it takes the same sidebar clearance the
+                // fitted box does.
+                style={fitted ?? UNFITTED_BOX_STYLE}
             >
                 {/* SLOT ORDER IS LOAD-BEARING. The player is child 0 and the
                     peek child 1, for the whole life of this surface: React
@@ -754,14 +759,15 @@ function ViewerHeader({
     showControls: boolean
     onClose: () => void
 }) {
-    // The details button points at the SIDEBAR OVERLAY, not the page sidebar:
-    // that one is unmounted for the whole maximized session, so the default
-    // `sb` write would open nothing here and would strand a flag that pops the
-    // page sidebar open on restore. `gsb` is the overlay's PIN, which is the
-    // right lever — pressing a "show me the data" button is exactly the intent
-    // to keep the panel around, and unpinning while the pointer is still over
-    // the panel hides it on the next leave, per that dock's show formula.
-    const [sidebarPinned, setSidebarPinned] = useSidebarOverlayOpen()
+    // The details button points at the SIDEBAR OVERLAY, not the page sidebar
+    // — that one is unmounted for the whole maximized session — and it works
+    // that out for itself now: the routing lives in useDataViewPane
+    // (components/OpenFileDetails.tsx), keyed on pinboardMaximized, so the
+    // `target` prop this header used to hand down is gone. It also no longer
+    // drives the `gsb` PIN: opening sets the dock's ephemeral open flag (a
+    // glance at the data dismisses like any other open dock) and closing
+    // clears the pin too, which is what a "Close Data View" press over a
+    // PINNED sidebar needs to do to be anything but a dead button (§9.1).
     return (
         <div className="pointer-events-none absolute inset-x-0 top-0 z-40">
             <div
@@ -793,10 +799,6 @@ function ViewerHeader({
                     {showControls && <OpenDetailsButton
                         item={item}
                         className="pointer-events-auto text-white hover:bg-white/15 hover:text-white"
-                        target={{
-                            open: sidebarPinned,
-                            setOpen: (open) => void setSidebarPinned(open),
-                        }}
                     />}
                 </div>
                 {/* pointer-events-auto on the label itself and not on its

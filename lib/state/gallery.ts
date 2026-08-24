@@ -70,14 +70,11 @@ const useGalleryThumbnail = () =>
       history: "push",
     })
   )
-const useGalleryFullscreen = () =>
-  useQueryState(
-    "gf",
-    parseAsBoolean.withDefault(false).withOptions({
-      clearOnDefault: false,
-      history: "push",
-    })
-  )
+const gfParser = parseAsBoolean.withDefault(false).withOptions({
+  clearOnDefault: false,
+  history: "push",
+})
+const useGalleryFullscreen = () => useQueryState("gf", gfParser)
 
 // The maximized board's bottom search overlay PINNED flag
 // (docs/maximized-pinboard-search-overlay-design.md §2): pinned means the
@@ -132,14 +129,11 @@ const useSearchViewerOpen = () =>
 // consume results, so opening it enables nothing (useSearchSuppressed
 // below stays gso-only). Its ephemeral OPEN half lives in
 // lib/state/searchOverlayReveal.ts beside the bottom dock's.
-const useSidebarOverlayOpen = () =>
-  useQueryState(
-    "gsb",
-    parseAsBoolean.withDefault(false).withOptions({
-      history: "push",
-      clearOnDefault: true,
-    })
-  )
+const gsbParser = parseAsBoolean.withDefault(false).withOptions({
+  history: "push",
+  clearOnDefault: true,
+})
+const useSidebarOverlayOpen = () => useQueryState("gsb", gsbParser)
 
 // BOARD FLAG DEFAULTS ARE WIRE FORMAT: the withDefault values on the
 // pinboard flags below define what an ABSENT parameter means in every
@@ -149,14 +143,11 @@ const useSidebarOverlayOpen = () =>
 // as explicit parameters when the first pin creates a board (see
 // usePinBoard). New flags added later follow the same split: codec default
 // = the legacy implicit behavior, creation default = the opinionated one.
-const useGalleryHidePinBoard = () =>
-  useQueryState(
-    "ghp",
-    parseAsBoolean.withDefault(false).withOptions({
-      clearOnDefault: false,
-      history: "push",
-    })
-  )
+const ghpParser = parseAsBoolean.withDefault(false).withOptions({
+  clearOnDefault: false,
+  history: "push",
+})
+const useGalleryHidePinBoard = () => useQueryState("ghp", ghpParser)
 export type ViewMode = "pages" | "scroll"
 
 // THE VIEW MODE DEFAULT IS WIRE FORMAT, exactly like the board flags above:
@@ -190,14 +181,11 @@ const useViewMode = () =>
 // board's lifetime: unpinning the last item destroys the board and clears
 // it (see usePinBoard), so a future first pin can never context-switch
 // the grid into a board the user didn't ask to see.
-const useGridPinboardTab = () =>
-  useQueryState(
-    "gpb",
-    parseAsBoolean.withDefault(false).withOptions({
-      clearOnDefault: true,
-      history: "push",
-    })
-  )
+const gpbParser = parseAsBoolean.withDefault(false).withOptions({
+  clearOnDefault: true,
+  history: "push",
+})
+const useGridPinboardTab = () => useQueryState("gpb", gpbParser)
 // The grid results view's Library tab: true shows the pinboard-library
 // search (boards whose images match the current search) in place of the
 // results. Unlike gpb this flag is board-lifecycle-INDEPENDENT — the
@@ -280,14 +268,13 @@ const useGalleryPinResizeHandles = () =>
       history: "push",
     })
   )
-const useGalleryPinBoardLayout = () =>
-  useQueryState(
-    "pinboard",
-    parseAsArrayOf(parseAsString).withDefault([]).withOptions({
-      clearOnDefault: true,
-      history: "push",
-    })
-  )
+const pinboardParser = parseAsArrayOf(parseAsString)
+  .withDefault([])
+  .withOptions({
+    clearOnDefault: true,
+    history: "push",
+  })
+const useGalleryPinBoardLayout = () => useQueryState("pinboard", pinboardParser)
 // The saved-pinboard id the current board was loaded from (or last saved
 // to). Save updates this board; absent means Save creates a new one. Lives
 // in the URL like all board state, so refresh and back/forward keep the
@@ -304,13 +291,10 @@ const useGalleryPinBoardId = () =>
 // with pbid. Links (library cards, history rows) carry it so boards open in
 // new tabs without the layout being known up front; usePinboardURLLoader
 // resolves it to a layout and clears it (see lib/pinboardLinks.ts).
-const useGalleryPinBoardLoad = () =>
-  useQueryState(
-    "pbl",
-    parseAsString.withOptions({
-      history: "replace",
-    })
-  )
+const pblParser = parseAsString.withOptions({
+  history: "replace",
+})
+const useGalleryPinBoardLoad = () => useQueryState("pbl", pblParser)
 
 // The gallery's playback trim for the video being watched, keyed by the
 // item's sha256 prefix. THE VALUE'S GRAMMAR IS WIRE FORMAT — it is frozen
@@ -408,6 +392,7 @@ export {
   useGalleryPinResizeHandles,
   useGalleryTrim,
   usePinboardMaximized,
+  gsbParser,
   useSearchOverlayOpen,
   useSearchViewerOpen,
   useSidebarOverlayOpen,

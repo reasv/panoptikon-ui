@@ -2208,8 +2208,47 @@ export function PinBoard(
             reappear as a hover-revealed bar at the top of the viewport */}
         {fs && <PinboardFullscreenBar />}
         {/* data-pinboard-area: the version-history panel docks into this
-            box's corners (PinboardHistory measures it by this attribute) */}
-        <ScrollArea ref={scrollAreaRef} data-pinboard-area className="overflow-y-auto">
+            box's corners (PinboardHistory measures it by this attribute)
+
+            h-[97vh] WHILE MAXIMIZED IS LOAD-BEARING AND SUBTLE — do not
+            remove it as redundant with the wrapper's own h-[97vh] below.
+            Without a DEFINITE height on this Root the bottom-dock scroll
+            reservation (the two spacers further down) adds exactly ZERO net
+            range, and it corrupts every measurement taken off this element.
+            Why: Radix's Viewport is `h-full`, so with an auto-height Root
+            (this box is a flex item in an auto-height [data-pinboard-frame])
+            the percentage resolves against an auto containing block and the
+            Viewport is auto too — it then GROWS by the spacer's height 1:1,
+            cancelling the reservation term for term, and drags this Root's
+            own clientHeight up with it. That clientHeight is consumed by
+            hooks/pinboardLayout.ts (the fill/mosaic FOLD, which is
+            PERSISTED), PinboardExportMenu / PinboardMosaicMenu /
+            lib/pinboardAnimatedExport (export height — a dock-height empty
+            band in the output), and PinboardHistory's corner docking; the
+            Viewport's rect drives the drag autoscroll edge and the selection
+            toolbar's viewport cap. Measured at 1920x1080 with a 400px dock,
+            in a static harness reproducing this exact chain:
+
+              auto Root + spacers: Root clientHeight 1448 (was 1048),
+                                   range 600 tall / 0 fits — no gain at all
+              97vh Root + spacers: Root clientHeight 1048 (unchanged),
+                                   range 1000 tall / 400 fits — +inset, no
+                                   double count
+
+            NOT h-full on the grid wrapper below either: Radix wraps the
+            Viewport's children in a `display:table; min-width:100%` div, so
+            a percentage height there resolves against an auto table box and
+            collapses the wrapper to its content (measured: wrapper 2048
+            instead of 1048, range double-counted at 1400). The wrapper keeps
+            its own 97vh, which is the same number this Root now has.
+
+            Non-maximized is untouched: no class is added, and the Root goes
+            back to being sized by its content. */}
+        <ScrollArea
+            ref={scrollAreaRef}
+            data-pinboard-area
+            className={cn("overflow-y-auto", fs && "h-[97vh]")}
+        >
             <div
                 ref={gridAreaRef}
                 // Rubber-band start from the board background (presses on
@@ -2679,6 +2718,16 @@ export function PinBoard(
                     absolutely positioned spacer relies on abspos overflow
                     reaching the Radix viewport's scrollable area — the
                     engine-dependent propagation that already bit the floor.
+
+                    THIS ONLY WORKS BECAUSE THE SCROLLAREA ROOT HAS A DEFINITE
+                    HEIGHT while maximized (see the long note on the Root
+                    above). Radix's Viewport is `h-full`; against an
+                    auto-height Root it is auto too and simply GROWS by the
+                    spacer, so the reservation nets to zero and the Root's
+                    clientHeight — which the fold, the exporters and the
+                    history panel all measure — inflates by a dock height.
+                    Both spacers and the Root's height class are one
+                    mechanism; removing any of the three breaks the other two.
 
                     Nothing here feeds the grid's math. The grid's width comes
                     from the WRAPPER (useContainerWidth's ResizeObserver on
@@ -3758,10 +3807,16 @@ function PinBoardPin({
             >
                 <Ruler className="w-6 h-6 text-gray-800" />
             </button>
+            {/* `?? null` is load-bearing: null means PENDING, undefined
+                means "this call site has no files". Passing `data?.files`
+                raw collapsed the two, and inside the loading window the
+                button fell back to the sha CONTENT test — which opens the
+                Data View on the wrong row for a duplicate or hardlink of
+                the selected file (see SelectButton's isReClick). */}
             <SelectButton
                 sha256={sha256}
                 item={data?.item}
-                files={data?.files}
+                files={data?.files ?? null}
             />
             {/* S0 only: the play button is the last overlay verb ("become a
                 player"), and it sits bottom-LEFT so the cursor is already on
