@@ -493,6 +493,20 @@ function ViewerHeader({
             "border-b px-2",
             HEADER_CLASS,
         )}>
+            {/* One control per side, so the two sides weigh the same and
+                the label between them is centered by construction. Close
+                takes the right, where every close in this UI (and every
+                window) lives; the remaining control takes the left rather
+                than doubling up beside it. */}
+            <div className="col-start-1 flex items-center justify-start">
+                <OpenDetailsButton
+                    item={item}
+                    target={{
+                        open: sidebarPinned,
+                        setOpen: (open) => void setSidebarPinned(open),
+                    }}
+                />
+            </div>
             <div className="col-start-2 min-w-0 px-2 text-center">
                 {item && <>
                     <FilePathComponent path={item.path} />
@@ -502,13 +516,6 @@ function ViewerHeader({
                 </>}
             </div>
             <div className="col-start-3 flex items-center justify-end">
-                <OpenDetailsButton
-                    item={item}
-                    target={{
-                        open: sidebarPinned,
-                        setOpen: (open) => void setSidebarPinned(open),
-                    }}
-                />
                 <Button
                     onClick={onClose}
                     variant="ghost"
