@@ -519,7 +519,17 @@ export function SearchOverlay({
                         if (!pinned) setPinned(true)
                     }}
                     className={cn(
-                        "border-t bg-background/95 px-4 py-3 shadow-md transition-all duration-150",
+                        // pb-8, not py-3: the browser's own link-target
+                        // bubble is anchored to the VIEWPORT's bottom edge,
+                        // and nothing a page can do suppresses it — every
+                        // control in this dock's bottom row is a real link
+                        // (page hrefs, card hrefs), so hovering one pops a
+                        // ~21px bubble that landed straight across the
+                        // pagination buttons. The panel's own bottom padding
+                        // is the only lever that does not cost link
+                        // semantics: it lifts the controls clear and the
+                        // bubble lands in dead space. Keep it above ~24px.
+                        "border-t bg-background/95 px-4 pt-3 pb-8 shadow-md transition-all duration-150",
                         shown
                             ? "pointer-events-auto opacity-100 translate-y-0"
                             : "opacity-0 translate-y-2",
