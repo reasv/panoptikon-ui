@@ -317,6 +317,16 @@ export function VirtualGalleryHorizontalScroll({
     return (
         <ScrollAreaPrimitive.Root
             onWheel={onWheel}
+            // The peek's clear while the viewer is open (§8.1). Per-CARD
+            // leaves cannot own it: card→card would clear in the gap before
+            // the next card's 200ms dwell lands, and the surface falls back
+            // to the fixed item for that gap — the picture strobes as you
+            // sweep the strip. The strip's own leave is the event that
+            // actually means "stop peeking", and it fires wherever the
+            // pointer goes: the board, the viewer, the pagination row.
+            // Unconditional, like the card handlers: a clear that exists only
+            // in some states is the stranded-subject trap (see bodyPeeks).
+            onMouseLeave={onItemHover ? () => onItemHover(null, -1) : undefined}
             className="relative overflow-hidden w-full whitespace-nowrap rounded-md border"
         >
             <ScrollAreaPrimitive.Viewport
@@ -537,15 +547,36 @@ function VirtualHorizontalScrollElement({
                 // Present or absent with the PROP, which is fixed per mount
                 // (the page gallery never passes it and is untouched), never
                 // with the viewer's open state — see the trap on bodyPeeks.
-                // Leave reports null unconditionally: "the pointer is off this
-                // card" is true whichever half of it owned the trigger, and it
-                // is the only clear that survives the viewer closing under a
-                // pointer that never moves.
+                // Leave clears only while the BUTTON owns the trigger, i.e.
+                // with the viewer closed. With it open the peek is STICKY
+                // across the strip and the clear belongs to the strip's own
+                // leave (see onMouseLeave on the scroller): clearing per card
+                // made the fixed item FLASH in the gap between two cards —
+                // leaving A clears instantly, arriving at B waits out the
+                // 200ms dwell, and the surface falls back to `fixed` for the
+                // ~200ms in between, so sweeping across the strip strobed the
+                // picture. The handlers themselves are present or absent with
+                // the PROP, which is fixed per mount (the page gallery never
+                // passes it and is untouched), NEVER with the viewer's open
+                // state — see the trap on bodyPeeks.
                 onMouseEnter={reportHover
                     ? () => { if (bodyPeeks) reportHover(item) }
                     : undefined}
                 onMouseLeave={reportHover
-                    ? () => reportHover(null)
+                    ? () => {
+                        // The card's CLAIM on the subject ends whenever the
+                        // pointer leaves it, even in the sticky case where
+                        // the peek itself stays — `ownsHoverRef` answers
+                        // "does the dock's subject belong to me", and only
+                        // `reportHover` writes it. Left set, every card the
+                        // pointer had ever visited would still believe it
+                        // owned the peek, and the unmount clear below would
+                        // fire for a card that owns nothing: a keep-in-view
+                        // scroll or a wheel pan recycles it and wipes the
+                        // peek some OTHER card is holding.
+                        ownsHoverRef.current = false
+                        if (!bodyPeeks) reportHover(null)
+                    }
                     : undefined}
             >
                 <Link href={imageLink} onClick={onClick}>

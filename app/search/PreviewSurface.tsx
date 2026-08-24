@@ -547,21 +547,40 @@ export function PreviewSurface({
             ? painted
             : codedRatio
     const fitted = fittedBoxStyle(ratio, displayed?.width, displayed?.height)
-    // May the box ANIMATE into the peek's shape? Only when both shapes the
-    // swap runs between are fitted ones. `aspect-ratio` interpolates between
-    // two ratios and NOT between a ratio and `auto`, so a swap involving
-    // §8.2's unprobed fallback (a row from an older scan carries no
-    // dimensions, and the box then spans the bounds) animated the width over
-    // 150ms while the height jumped in the first frame — a shear, and worse
-    // than the honest snap a transitionless swap gives.
+    // May the box ANIMATE into the shape it is changing to? Only when BOTH
+    // shapes the swap runs between are fitted ones. `aspect-ratio`
+    // interpolates between two ratios and NOT between a ratio and `auto`, so
+    // a swap involving §8.2's unprobed fallback (a row from an older scan
+    // carries no dimensions, and the box then spans the bounds) animates the
+    // width over 150ms while the height jumps in the first frame — a shear,
+    // and worse than the honest snap a transitionless swap gives.
     //
-    // The other shape is always the FIXED one: peek→peek cannot happen
-    // directly, since leaving a card clears the subject instantly while
-    // arriving at the next waits out the 200ms dwell, so the fixed item is
-    // displayed in between. With no fixed item there is nothing to animate
-    // from — the surface mounts with the peek, and a first computed style
-    // never transitions.
-    const animateSwap = !!peek && !!fitted && !!fixed?.width && !!fixed?.height
+    // The shape being animated FROM has to be remembered, and cannot be
+    // inferred from the fixed item: peeks are STICKY across the strip
+    // (§8.1), so peek→peek with no fixed item in between is the ordinary
+    // case while browsing by hover. Adjusted during render — the decision
+    // has to survive INTO the commit that applies the new style, which a
+    // value recomputed after the state settles would not.
+    const [swap, setSwap] = useState({
+        sha: displayed?.sha256,
+        fitted: !!fitted,
+        animate: false,
+    })
+    if (swap.sha !== displayed?.sha256) {
+        setSwap({
+            sha: displayed?.sha256,
+            fitted: !!fitted,
+            animate: swap.fitted && !!fitted,
+        })
+    }
+    // `!!peek` is not redundant with the remembered from-shape: it is what
+    // keeps the transition PEEK-ONLY. Without it the box also animates on
+    // peek→fixed (the pointer leaving the strip) and on fixed→fixed (the
+    // arrow keys, the click halves, a scrubber jump, auto-advance) — 150ms
+    // of re-laying-out a frame around a playing <video>, which is the whole
+    // thing §8.2's stable bounds exist to prevent. A first computed style
+    // never transitions, so the surface's own mount needs no special case.
+    const animateSwap = swap.animate && !!peek && !!fitted
 
     // Nothing on this surface takes input while a peek is displayed. It is a
     // GLANCE: the picture under it belongs to a different file, so a click
@@ -678,12 +697,20 @@ export function PreviewSurface({
                         onAspect={noteAspect}
                     />
                 )}
-                {/* Chrome ON the picture, and only for the FIXED subject
-                    (§8.3): during a peek its controls would act on an item
-                    the user is not looking at, and its absence is the honest
-                    signal that this is a glance rather than a selection. */}
-                {viewerOpen && !peek && (
-                    <ViewerHeader item={fixed} onClose={onClose} />
+                {/* Chrome ON the picture. The LABEL follows whatever is
+                    displayed — a peek that told you nothing about the file
+                    you are looking at would be a worse peek, and the two
+                    subjects are meant to look alike (§8: one surface). The
+                    CONTROLS are the part that is fixed-only: during a peek
+                    they would act on an item the user is not looking at, and
+                    their arrival on click is the signal that the glance
+                    became a selection, plus the nudge toward the way out. */}
+                {displayed && (
+                    <ViewerHeader
+                        item={displayed}
+                        showControls={viewerOpen && !peek}
+                        onClose={onClose}
+                    />
                 )}
             </div>
         </div>
@@ -718,9 +745,13 @@ export function PreviewSurface({
 // this one's never will.
 function ViewerHeader({
     item,
+    showControls,
     onClose,
 }: {
-    item: SearchResult | undefined
+    /** The DISPLAYED subject — the peek when there is one, else the fixed. */
+    item: SearchResult
+    /** Fixed subject on screen: only then do the controls mean anything. */
+    showControls: boolean
     onClose: () => void
 }) {
     // The details button points at the SIDEBAR OVERLAY, not the page sidebar:
@@ -759,29 +790,35 @@ function ViewerHeader({
                     already had it right, for the same reason: the empty space
                     beside a control is picture, not chrome. */}
                 <div className="col-start-1 flex items-center justify-start">
-                    <OpenDetailsButton
+                    {showControls && <OpenDetailsButton
                         item={item}
                         className="pointer-events-auto text-white hover:bg-white/15 hover:text-white"
                         target={{
                             open: sidebarPinned,
                             setOpen: (open) => void setSidebarPinned(open),
                         }}
-                    />
+                    />}
                 </div>
                 {/* pointer-events-auto on the label itself and not on its
                     track: the path is a copy-to-clipboard control
                     (FilePathComponent), while the empty space beside it in a
-                    1fr grid is picture. */}
+                    1fr grid is picture. Gated on showControls for the same
+                    reason the buttons are, and one more: a peek is displayed
+                    over a surface the caller has made inert, and a descendant
+                    re-enabling pointer events under a `pointer-events-none`
+                    ancestor is exactly how a live control ends up floating
+                    over the board. The surface's inertness must not depend on
+                    the strip clearing the peek in time. */}
                 <div className="col-start-2 min-w-0 px-2 text-center">
-                    {item && <div className="pointer-events-auto">
+                    <div className={showControls ? "pointer-events-auto" : undefined}>
                         <FilePathComponent path={item.path} />
                         <p className="text-xs text-white/70 truncate">
                             {getLocale(new Date(item.last_modified))}
                         </p>
-                    </div>}
+                    </div>
                 </div>
                 <div className="col-start-3 flex items-center justify-end">
-                    <Button
+                    {showControls && <Button
                         onClick={onClose}
                         variant="ghost"
                         size="icon"
@@ -790,7 +827,7 @@ function ViewerHeader({
                         className="pointer-events-auto text-white hover:bg-white/15 hover:text-white"
                     >
                         <X className="h-4 w-4" />
-                    </Button>
+                    </Button>}
                 </div>
             </div>
         </div>
