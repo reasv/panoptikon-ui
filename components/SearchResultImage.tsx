@@ -4,6 +4,7 @@ import { BookmarkBtn, FileActionCluster, FilePathComponent } from "@/components/
 import { memo, useCallback, useMemo } from "react";
 import { cn, getFileURL } from "@/lib/utils";
 import { ItemMetaLine } from "@/components/ItemMetaLine";
+import { PlayableBadge, isPlayableItem } from "@/components/PlayableBadge";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { useSearchParams } from 'next/navigation';
 import { getGalleryOptionsSerializer } from '@/lib/state/gallery';
@@ -97,6 +98,17 @@ export const SearchResultImage = memo(function SearchResultImage({
                             imageClassName)}
                         unoptimized
                     />
+                    {/* INSIDE the anchor, not beside it: the anchor is
+                        exactly the picture box (`block relative h-96`, with
+                        the Image filling it), while the wrapper around it is
+                        taller by the anchor's own `mb-2` — centring on the
+                        wrapper would sit the badge a few pixels low. (The
+                        wrapper's `pb-full` is a dead class and generates no
+                        CSS, so it is not squaring anything off either.)
+                        Harmless inside the link because the badge takes no
+                        pointer events, so the click and the drag still belong
+                        to the anchor. */}
+                    {isPlayableItem(result) && <PlayableBadge />}
                 </a>
                 {showLoadingSpinner && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-white bg-opacity-50">

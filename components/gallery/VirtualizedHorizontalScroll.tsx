@@ -16,6 +16,7 @@ import { useItemSelection } from "@/lib/state/itemSelection"
 import { PinButton } from './PinButton'
 import { FindButton } from './FindButton'
 import { blurHashToDataURL } from '@/lib/state/blurHashDataURL'
+import { PlayableBadge, isPlayableItem } from '@/components/PlayableBadge'
 import { useSearchLoading } from '@/lib/state/zust'
 import { topRowHighlightItem, virtualPageOf } from '@/lib/scrollMode'
 import type { ResultsSource } from '@/lib/searchHooks'
@@ -593,6 +594,9 @@ function VirtualHorizontalScrollElement({
                         />
                     </div>
                 </Link>
+                {/* Same stacking rule as the grid card's copy: after the
+                    link, before the spinner and the hover verbs. */}
+                {isPlayableItem(item) && <PlayableBadge />}
                 {searchLoading && (
                     <div className="absolute inset-0 z-10 flex items-center rounded-md justify-center bg-white bg-opacity-50">
                         <Image
