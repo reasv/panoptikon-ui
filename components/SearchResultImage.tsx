@@ -2,7 +2,8 @@
 import Image from 'next/image'
 import { BookmarkBtn, FileActionCluster, FilePathComponent } from "@/components/imageButtons"
 import { memo, useCallback, useMemo } from "react";
-import { cn, getFileURL, getLocale } from "@/lib/utils";
+import { cn, getFileURL } from "@/lib/utils";
+import { ItemMetaLine } from "@/components/ItemMetaLine";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { useSearchParams } from 'next/navigation';
 import { getGalleryOptionsSerializer } from '@/lib/state/gallery';
@@ -40,7 +41,6 @@ export const SearchResultImage = memo(function SearchResultImage({
 }) {
     const fileUrl = overrideURL ? overrideURL : getFileURL(dbs, "file", "sha256", result.sha256)
     const thumbnailUrl = getFileURL(dbs, "thumbnail", "sha256", result.sha256)
-    const dateString = getLocale(new Date(result.last_modified))
     const params = useSearchParams()
 
     const imageLink = useMemo(() => {
@@ -114,9 +114,7 @@ export const SearchResultImage = memo(function SearchResultImage({
                 <PinButton sha256={result.sha256} />
             </div>
             <FilePathComponent path={result.path} />
-            <p className="text-xs text-gray-500">
-                {dateString}
-            </p>
+            <ItemMetaLine item={result} className="text-gray-500" />
         </div>
     )
 })
