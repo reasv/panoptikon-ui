@@ -580,12 +580,29 @@ export function ImageGallery({
     galleryShareRef.current = { share: galleryShare, hasItem: !!currentItem }
 
     const [fs, setFs] = useGalleryFullscreen()
+    // Read at KEYPRESS time, not captured by the listener: the effect below
+    // registers once for the component's life, so a closure over `pinboard`
+    // would freeze whichever board existed at mount.
+    const hasBoardRef = useRef(pinboard.length > 0)
+    hasBoardRef.current = pinboard.length > 0
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
             // Check for Ctrl + Shift + M
             if (event.ctrlKey && event.shiftKey && event.code === 'KeyM') {
                 event.preventDefault();
-                setFs((f) => !f)
+                // ASYMMETRIC, and deliberately so. Entering needs a board:
+                // this chord means "maximize the pinboard", and with no
+                // pinboard it produced a chromeless fullscreen large image
+                // with nothing on screen to escape it — the same dead end
+                // that removing the last pin used to leave behind (see the
+                // destruction branch in lib/state/pinboard.ts). LEAVING is
+                // always allowed, so the chord stays a way out of any such
+                // state a future path manages to reach.
+                //
+                // The grid host's copy of this chord is already gated, by
+                // being registered only while its board is shown
+                // (app/search/SearchPage.tsx).
+                setFs((f) => (f ? false : hasBoardRef.current))
             }
         }
         window.addEventListener('keydown', handleKeyDown);

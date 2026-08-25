@@ -1,5 +1,6 @@
 import { useMemo } from "react"
 import {
+  useGalleryFullscreen,
   useGalleryHidePinBoard,
   useGalleryPinAutoCrop,
   useGalleryPinAutoLayout,
@@ -94,6 +95,7 @@ export function usePinBoard() {
   const [savedLayout, setSavedLayout] = useGalleryPinBoardLayout()
   const setHidePinBoard = useGalleryHidePinBoard()[1]
   const setGridPinboardTab = useGridPinboardTab()[1]
+  const setFullscreen = useGalleryFullscreen()[1]
   // Creation stamps the board-scoped flags, destruction clears them (see
   // updateRecords)
   const flagSetters = usePinboardFlagSetters()
@@ -134,6 +136,16 @@ export function usePinBoard() {
     if (board.records.length > 0 && mutated.length === 0) {
       void setGridPinboardTab(null)
       void setHidePinBoard(null)
+      // `gf` too, and this one is not tidiness — leaving it set STRANDS THE
+      // USER. Fullscreen is "maximize the pinboard": every control that sets
+      // it lives on the board (the tab chip's button, the board menus, the
+      // fullscreen toolbar), and the toolbar itself is rendered BY the board.
+      // So removing the last pin while maximized unmounts the board and its
+      // toolbar, while `gf` goes on hiding the gallery header and the grid's
+      // tab band — a fullscreen large image with no chrome at all, and no
+      // visible way back. (Ctrl+Shift+M still worked, which is not a way out
+      // a user can be expected to find.)
+      void setFullscreen(null)
       for (const key of PINBOARD_DEFAULTABLE_KEYS) {
         void flagSetters[key](null)
       }
