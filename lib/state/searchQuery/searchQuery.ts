@@ -460,6 +460,13 @@ export function queryFromState(
       // backfill window.
       "video_codec",
       "audio_codec",
+      // The gallery header's size line. A `files` column, so it costs the
+      // query one more int64 per row and no join. Requested on the RESULT
+      // ROW rather than fetched per item: the header already has the row in
+      // hand, and the /api/items/item round trip the Data View makes for the
+      // same number would put a spinner (or a reflowing line) in a header
+      // that changes on every arrow press.
+      "size",
     ],
     entity: "file",
 
@@ -615,6 +622,13 @@ export function sbSimilarityQueryFromState(
       // backfill window.
       "video_codec",
       "audio_codec",
+      // The gallery header's size line. A `files` column, so it costs the
+      // query one more int64 per row and no join. Requested on the RESULT
+      // ROW rather than fetched per item: the header already has the row in
+      // hand, and the /api/items/item round trip the Data View makes for the
+      // same number would put a spinner (or a reflowing line) in a header
+      // that changes on every arrow press.
+      "size",
     ],
     entity: "file",
     // Never random-ordered, so never seeded — but the key must be *present*

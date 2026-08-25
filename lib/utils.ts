@@ -55,6 +55,35 @@ export function prettyPrintBytes(bytes: number): string {
   return `${bytes.toFixed(2)} ${units[unitIndex]}`
 }
 
+// The same number for a place that is GLANCED at rather than read: the
+// gallery headers, where the size shares a line with the timestamp and every
+// character it spends is one the path does not get.
+//
+// Its own function rather than a parameter on the one above, because the
+// callers there want the opposite thing. A download link and an export toast
+// are quoting a file size as a fact, and "42.13 MB" is the honest form; a
+// header is answering "roughly how big is this?", where two decimals on a
+// half-kilobyte thumbnail ("988.00 B") is noise in the one place there is no
+// room for it.
+//
+// Precision by magnitude: whole units below MB (a byte count with a decimal
+// point is spurious, and nobody needs 412.4 KB), one decimal above, trailing
+// ".0" dropped so a round number stays short.
+export function prettyPrintBytesCompact(bytes: number): string {
+  const units = ["B", "KB", "MB", "GB", "TB", "PB"]
+  let value = bytes
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex++
+  }
+  const text =
+    unitIndex < 2
+      ? String(Math.round(value))
+      : value.toFixed(1).replace(/\.0$/, "")
+  return `${text} ${units[unitIndex]}`
+}
+
 export function prettyPrintVideoDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)

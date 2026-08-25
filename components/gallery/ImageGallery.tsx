@@ -11,7 +11,7 @@ import { X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal, Download } from "luc
 import { Button } from "@/components/ui/button"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useShallow } from "zustand/react/shallow"
-import { cn, consumesArrowKeys, downloadFileName, fileNameFromPath, getFileURL, getLocale, hasOpenLayer } from "@/lib/utils"
+import { cn, consumesArrowKeys, downloadFileName, fileNameFromPath, getFileURL, getLocale, hasOpenLayer, prettyPrintBytesCompact } from "@/lib/utils"
 import { itemEquals, OpenDetailsButton } from "@/components/OpenFileDetails"
 import { useFileShare } from "@/hooks/fileShare"
 import { useItemSelection } from "@/lib/state/itemSelection"
@@ -565,6 +565,18 @@ export function ImageGallery({
             ? galleryItem
             : selectedItem ? selectedItem : galleryItem
     const dateString = currentItem ? getLocale(new Date(currentItem.last_modified)) : null
+    // Appended to the DATE line rather than given one of its own: this header
+    // is two lines by construction (path, then metadata) and both the loading
+    // skeleton and the maximized viewer's height budget are built on that
+    // count. A third line costs the picture its height in the viewer and
+    // makes the band jump here.
+    //
+    // Absent (not "0 B", not "—") when the column is null: a row scanned
+    // before sizes were recorded has no size, and inventing one is worse than
+    // the line simply reading as it did before.
+    const sizeString = currentItem?.size != null
+        ? prettyPrintBytesCompact(currentItem.size)
+        : null
 
     // The gallery's own share verb, for the header Download button and the
     // Ctrl+C accelerator. The button surface renders its own ShareButton.
@@ -1077,6 +1089,7 @@ export function ImageGallery({
                         <FilePathComponent path={currentItem.path} />
                         <p className="text-xs text-gray-500 truncate">
                             {dateString}
+                            {sizeString && <span className="ml-2">· {sizeString}</span>}
                         </p>
                     </> : <>
                         {/* Path and date lines with nothing in them yet: the

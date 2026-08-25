@@ -11,6 +11,14 @@ interface SearchResult {
   type: string
   width?: number | null
   height?: number | null
+  /**
+   * The file's size in bytes, requested by the gallery's search select and
+   * shown on the gallery headers' metadata line (both the page gallery and
+   * the maximized board's viewer). Nullable because rows built from a
+   * selection rather than a search result may not carry one — the headers
+   * omit the size entirely rather than printing a made-up zero.
+   */
+  size?: number | null
   blurhash?: string
   /**
    * The item's indexed duration in seconds (ffprobe's), requested by the

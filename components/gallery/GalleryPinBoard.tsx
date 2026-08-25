@@ -3398,6 +3398,12 @@ function PinBoardPin({
             type: data.item.type,
             width: data.item.width,
             height: data.item.height,
+            // The gallery headers read this off the selection when the item
+            // is not in the current result page, exactly as they read the
+            // fields below — without it, the size line vanishes for
+            // pin-selected items and reads as a bug rather than as a
+            // missing value.
+            size: data.item.size,
             // The gallery's own player needs these for outro skip, and this
             // snapshot is what it renders when the item is not in the
             // current result page (see currentItem in ImageGallery).

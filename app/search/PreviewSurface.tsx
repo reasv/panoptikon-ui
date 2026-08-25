@@ -8,7 +8,7 @@ import { GalleryImageLarge, isPlayableVideo } from "@/components/gallery/ImageGa
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { usePinboardCarry } from "@/lib/state/pinboardCarry"
 import { scanLoadedForward } from "@/lib/scrollMode"
-import { cn, getLocale, hasOpenLayer } from "@/lib/utils"
+import { cn, getLocale, hasOpenLayer, prettyPrintBytesCompact } from "@/lib/utils"
 import type { ResultsSource } from "@/lib/searchHooks"
 import { PeekLayer } from "./PeekLayer"
 import { fittedBoxStyle, PREVIEW_BOUNDS, UNFITTED_BOX_STYLE } from "./previewBox"
@@ -825,8 +825,19 @@ function ViewerHeader({
             </div>
             <div className="col-start-2 min-w-0 px-2 text-center">
                 <FilePathComponent path={item.path} />
+                {/* Size shares the metadata line with the timestamp, and must
+                    keep doing so: this row's height is a CONSTANT the picture
+                    budget subtracts (VIEWER_HEADER_PX), so a third line here
+                    silently overflows the frame unless that constant moves
+                    with it. The gallery header carries the same pair in the
+                    same order — the two headers are meant to read alike. */}
                 <p className="text-xs text-muted-foreground truncate">
                     {getLocale(new Date(item.last_modified))}
+                    {item.size != null && (
+                        <span className="ml-2">
+                            · {prettyPrintBytesCompact(item.size)}
+                        </span>
+                    )}
                 </p>
             </div>
             <div className="col-start-3 flex items-center justify-end">

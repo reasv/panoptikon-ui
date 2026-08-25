@@ -131,6 +131,11 @@ export function SelectButton({
                 type: item.type,
                 width: item.width,
                 height: item.height,
+                // Same reason as every field below: this snapshot is what
+                // the gallery headers paint when the item is not in the
+                // current result page, and a size missing only here would
+                // make the line flicker between pins and search rows.
+                size: item.size,
                 // Same payload the pin's double-click builds
                 // (GalleryPinBoard's selectAsCurrentItem) — the gallery's
                 // player reads this snapshot for outro skip whenever the
