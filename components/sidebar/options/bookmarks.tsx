@@ -70,19 +70,45 @@ export function SwitchBookmarkNs() {
                     <Bookmark className="h-4 w-4" />
                 </Toggle>
             </div>
-            <div className="flex flex-row items-center space-x-2 mt-3 w-full justify-center">
-                <ComboBoxResponsive
-                    options={mergedNamespaces.map((ns) => ({ value: ns, label: ns }))}
-                    currentValue={namespace}
-                    onChangeValue={onSelectOption}
-                    placeholder="Groups..."
-                />
+            {/* THE TWO CONTROLS COMPETE, and left alone the input wins
+                outright: `Input` carries `w-full`, so as a flex item it asks
+                for the entire row, while the combobox trigger is
+                content-sized and carries `min-w-0` — so the trigger gave up
+                everything and rendered the group name as "def…" with room to
+                spare beside it.
+
+                Fixed here rather than in ComboBoxResponsive: this is the only
+                one of its thirteen call sites that puts an Input next to it,
+                so the squeeze is this row's problem and not the component's.
+                The `min-w-0`/`max-w-full` on the trigger are right for the
+                twelve rows where it stands alone.
+
+                The combobox states what it needs — its label's own width,
+                capped so a long group name cannot eat the row (the trigger
+                truncates past that) — and the input takes what is left:
+                `flex-1` sets a 0% basis, which is what finally overrides that
+                `w-full`, and `min-w-0` lets it shrink rather than push.
+
+                No `min-w` on the wrapper, deliberately: the trigger is an
+                `inline-flex` Button and does not stretch, so a floor wider
+                than a short group name would sit the control against dead
+                space instead of widening it. Content width IS the fix. */}
+            <div className="flex flex-row items-center space-x-2 mt-3 w-full">
+                <div className="shrink-0 max-w-[45%]">
+                    <ComboBoxResponsive
+                        options={mergedNamespaces.map((ns) => ({ value: ns, label: ns }))}
+                        currentValue={namespace}
+                        onChangeValue={onSelectOption}
+                        placeholder="Groups..."
+                    />
+                </div>
                 <Input
+                    className="min-w-0 flex-1"
                     onChange={(e) => setInputValue(e.target.value)}
                     value={inputValue}
                     onKeyDown={handleKeyPress}
                     placeholder="Type a new name and press Enter" />
-                <Button title="Add new group name" onClick={onClickAdd} variant="ghost" size="icon">
+                <Button className="shrink-0" title="Add new group name" onClick={onClickAdd} variant="ghost" size="icon">
                     <Plus className="h-4 w-4" />
                 </Button>
             </div>
