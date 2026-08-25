@@ -1089,7 +1089,16 @@ export function ImageGallery({
                         <FilePathComponent path={currentItem.path} />
                         <p className="text-xs text-gray-500 truncate">
                             {dateString}
-                            {sizeString && <span className="ml-2">· {sizeString}</span>}
+                            {sizeString && <>
+                                {/* The separator carries the space on BOTH
+                                    sides itself. A margin on one side plus a
+                                    literal space on the other is not the same
+                                    gap, and at this size the dot visibly sits
+                                    against the size instead of between the
+                                    two values. */}
+                                <span className="mx-2">·</span>
+                                {sizeString}
+                            </>}
                         </p>
                     </> : <>
                         {/* Path and date lines with nothing in them yet: the

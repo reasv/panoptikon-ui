@@ -3,7 +3,7 @@ import { cn, downloadFileName, getFileURL } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid, useGalleryPinProportional, useGalleryPinResizeHandles, useGalleryPinSelectionCrop, useGalleryTrim } from '@/lib/state/gallery'
 import { newPinHField } from '@/lib/galleryTrim'
-import { consumePinboardExplicitPlacement, consumePinboardNavigation, consumePinboardPendingEdit, markPinboardExplicitPlacement } from '@/lib/pinboardNavigation'
+import { consumePinboardExplicitPlacement, consumePinboardMaximizeRequest, consumePinboardNavigation, consumePinboardPendingEdit, markPinboardExplicitPlacement } from '@/lib/pinboardNavigation'
 import { usePinBoard } from '@/lib/state/pinboard'
 import { GridParams, effectiveGrid, gridScale, minPinUnits, rowStep, v1ScaleFactors } from '@/lib/pinboardGrid'
 import { placeNearest, placeNewPin } from '@/lib/pinboardPlace'
@@ -2123,6 +2123,7 @@ export function PinBoard(
         const wasNavigation = consumePinboardNavigation()
         const pendingEdit = consumePinboardPendingEdit()
         const explicitPlacement = consumePinboardExplicitPlacement()
+        const maximizeRequest = consumePinboardMaximizeRequest()
         if (prev === null) {
             // First observation is normally just the baseline — but a
             // pending-edit mark means pins were added/removed from outside
@@ -2131,8 +2132,8 @@ export function PinBoard(
             // takes precedence: a restored version replaced those records.
             if (pendingEdit && !wasNavigation && count > 0 && autoLayoutRef.current) {
                 void fillViewportRef.current(false)
-            } else if (variant === "grid" && !wasNavigation && count > 0
-                && autoLayoutRef.current) {
+            } else if ((maximizeRequest || variant === "grid") && !wasNavigation
+                && count > 0 && autoLayoutRef.current) {
                 // Opening the board in the grid host is an intent to expand:
                 // its viewport is the gallery's with the thumbnail row gone,
                 // so the fill targets the bigger fold and ratchets the high
@@ -2142,6 +2143,16 @@ export function PinBoard(
                 // Not in the gallery: a tab switch back there is navigation,
                 // not a layout request. (The pending-edit fill above already
                 // targets the current fold, so it subsumes this trigger.)
+                //
+                // `maximizeRequest` is the SAME intent arriving by a route
+                // the viewport-growth effect below cannot see: the tab
+                // chip's maximize button activates the tab and sets `fs` in
+                // one tick, so the board mounts already fullscreen and that
+                // effect's baseline reads "was already maximized" (see
+                // lib/pinboardNavigation.ts). Handled HERE rather than
+                // there so the grid host cannot fill twice for one press —
+                // both routes share this single branch, and skipIfCovered
+                // makes a second attempt a no-op anyway.
                 void fillViewportRef.current(false, true)
             }
             return

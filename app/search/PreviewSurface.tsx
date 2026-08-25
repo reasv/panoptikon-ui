@@ -834,9 +834,12 @@ function ViewerHeader({
                 <p className="text-xs text-muted-foreground truncate">
                     {getLocale(new Date(item.last_modified))}
                     {item.size != null && (
-                        <span className="ml-2">
-                            · {prettyPrintBytesCompact(item.size)}
-                        </span>
+                        <>
+                            {/* Symmetric by construction — see the same pair
+                                in the gallery header. */}
+                            <span className="mx-2">·</span>
+                            {prettyPrintBytesCompact(item.size)}
+                        </>
                     )}
                 </p>
             </div>

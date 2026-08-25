@@ -59,6 +59,7 @@ import {
     useGalleryPinResizeHandles,
 } from "@/lib/state/gallery"
 import { usePinboardBoardApi } from "@/lib/state/pinboardBoardApi"
+import { markPinboardMaximizeRequest } from "@/lib/pinboardNavigation"
 import { PinboardLibraryDialog } from "./PinboardLibrary"
 import { PinboardHistoryPanel } from "./PinboardHistory"
 import {
@@ -457,7 +458,16 @@ export function PinboardFullscreenButton({
     return (
         <button
             onClick={() => {
-                if (!active) onActivate()
+                if (!active) {
+                    // Mark BEFORE the writes: the board mounts in the commit
+                    // they produce, and its auto-layout trigger consumes the
+                    // mark on that mount. Only on the inactive path — with
+                    // the tab already showing, the board is mounted and its
+                    // own viewport-growth effect sees the `fs` transition, so
+                    // marking as well would be a second claim on one press.
+                    markPinboardMaximizeRequest()
+                    onActivate()
+                }
                 void setFs(true)
             }}
             aria-label="Maximize pinboard"
