@@ -22,7 +22,7 @@ import {
     type PinboardMosaicLength,
 } from "@/lib/state/pinboardMosaicPrefs"
 import { prettyPrintBytes } from "@/lib/utils"
-import type { MenuKit } from "./PinboardGlobalMenu"
+import { SectionLabel, type MenuKit } from "./PinboardGlobalMenu"
 
 // "Save Mosaic Image": the board composited client-side into one JPEG and
 // downloaded. Two surfaces offer it — the pinboard tab's chevron menu (as
@@ -204,12 +204,15 @@ function AnimatedRows({ kit, set }: { kit: MenuKit; set: AnimatedRowSet }) {
                     <Item
                         key={preset.id}
                         disabled={set.busy}
+                        title={`Render the board as ${label} — the same picture`
+                            + " as the still mosaic, moving"}
                         onClick={() => set.save(preset, label)}
                     >
                         {label}
                     </Item>
                 ))}
                 <Separator />
+                <SectionLabel kit={kit} />
                 {/* Radio rows drawn with the kit's checkboxes, exactly like the
                     extent pair above: clicking the checked one keeps it, so the
                     choice can never be emptied. */}
@@ -309,11 +312,21 @@ export function MosaicMenuItems({
     const { Item, CheckboxItem, Separator } = kit
     return (
         <>
-            <Item disabled={busy} onClick={() => void save(null)}>
+            <Item
+                disabled={busy}
+                title={"Save at the board's own width — exactly the picture on"
+                    + " screen, at 1:1"}
+                onClick={() => void save(null)}
+            >
                 Window Size
             </Item>
             {MOSAIC_PRESETS.map((w) => (
-                <Item key={w} disabled={busy} onClick={() => void save(w)}>
+                <Item
+                    key={w}
+                    disabled={busy}
+                    title={`Upscale the board to ${w} px wide`}
+                    onClick={() => void save(w)}
+                >
                     {`${w} px Wide`}
                 </Item>
             ))}
@@ -322,6 +335,7 @@ export function MosaicMenuItems({
                 compositions and something on the board is a video. */}
             <AnimatedMosaicRows kit={kit} />
             <Separator />
+            <SectionLabel kit={kit} />
             {/* Radio pair, drawn with the kit's checkbox rows (Radix's
                 radio items aren't in the shared kit, and the check mark
                 reads the same): clicking the checked one keeps it, so the

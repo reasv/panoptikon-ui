@@ -613,9 +613,13 @@ export function PreviewSurface({
                 selection (§8.4). Reused rather than a new attribute — it
                 keeps both hand-maintained lists short.
 
-                The frame IS the picture: width and aspect on one element, so
-                the chrome laid over it has nothing else to line up with, and
-                so no chrome can take height out of the fit (§8.3).
+                The frame is a COLUMN: a solid header row, then the picture.
+                The width and the sidebar-clearance transform go here; the
+                item's aspect goes on the picture inside (previewBox.ts),
+                whose height budget has the header row subtracted from it.
+                The header therefore costs the picture its own height and
+                nothing else — it cannot overlap the media, and the media
+                cannot letterbox inside its area.
 
                 The size transition runs only while a PEEK is displayed, and
                 only between two FITTED shapes (see animateSwap). That is the
@@ -627,22 +631,52 @@ export function PreviewSurface({
             <div
                 data-search-overlay
                 className={cn(
-                    "relative overflow-hidden rounded-md border bg-background shadow-xl",
+                    "flex flex-col overflow-hidden rounded-md border bg-background shadow-xl",
                     interactive ? "pointer-events-auto" : "pointer-events-none",
                     // `transform` rides along with the width: the sidebar
                     // clearance (previewBox.ts) narrows AND shifts in the
                     // same commit, so animating one without the other would
                     // slide the box instantly and then resize it. Both are
-                    // still peek-only (see animateSwap).
-                    animateSwap && "transition-[width,aspect-ratio,transform] duration-150 ease-out",
+                    // still peek-only (see animateSwap). `aspect-ratio` is
+                    // animated on the picture below, where it now lives.
+                    animateSwap && "transition-[width,transform] duration-150 ease-out",
                 )}
                 // No fit: the subject carries no dimensions (rows from older
                 // scans), so the box spans the bounds and object-contain
                 // letterboxes — §8.2's unprobed fallback, which carries its
                 // own width because it takes the same sidebar clearance the
                 // fitted box does.
-                style={fitted ?? UNFITTED_BOX_STYLE}
+                style={(fitted ?? UNFITTED_BOX_STYLE).frame}
             >
+                {/* Chrome ABOVE the picture, in flow, opaque. The LABEL
+                    follows whatever is displayed — a peek that told you
+                    nothing about the file you are looking at would be a
+                    worse peek, and the two subjects are meant to look alike
+                    (§8: one surface). The CONTROLS are the part that is
+                    fixed-only: during a peek they would act on an item the
+                    user is not looking at, and their arrival on click is the
+                    signal that the glance became a selection, plus the nudge
+                    toward the way out.
+
+                    FIRST CHILD, and its slot is reserved whether or not it
+                    paints: the height budget subtracts the row
+                    unconditionally (previewBox.ts), so a peek being fixed —
+                    which is what makes the controls appear — still does not
+                    resize the box. */}
+                {displayed && (
+                    <ViewerHeader
+                        item={displayed}
+                        showControls={viewerOpen && !peek}
+                        onClose={onClose}
+                    />
+                )}
+                <div
+                    className={cn(
+                        "relative overflow-hidden",
+                        animateSwap && "transition-[aspect-ratio] duration-150 ease-out",
+                    )}
+                    style={(fitted ?? UNFITTED_BOX_STYLE).picture}
+                >
                 {/* SLOT ORDER IS LOAD-BEARING. The player is child 0 and the
                     peek child 1, for the whole life of this surface: React
                     reconciles these two by POSITION, so putting the peek
@@ -664,18 +698,19 @@ export function PreviewSurface({
                         thumbnailsOpen={false}
                         showPagination={false}
                         heightClass="absolute inset-0"
-                        // This surface owns the picture's top band (the header
-                        // below is laid OVER the frame), and its close button
-                        // lands on the very corner the player's download
-                        // control and its native-controls escape kebab anchor
-                        // to. Both were buried — and the kebab is the ONLY way
-                        // back out of native controls, so that one trapped the
-                        // user in S2 until they closed and reopened the item.
-                        // 3.5rem clears the close button's 2.5rem box and the
-                        // header's 0.5rem padding with room to spare, and the
-                        // two controls are never mounted at once, so one
-                        // offset serves both.
-                        playerTopRightClass="right-14"
+                        // NO top-right offset, and its absence is the point.
+                        // While this surface laid its header OVER the frame,
+                        // the header's close button sat on the very corner
+                        // the player's download control and its
+                        // native-controls escape kebab anchor to, and both
+                        // were buried — the kebab is the ONLY way back out of
+                        // native controls, so that one trapped the user in S2
+                        // until they closed and reopened the item. A header
+                        // that owns its own row does not reach into the
+                        // picture at all, so the corner is free and this host
+                        // renders the player exactly as the page gallery
+                        // does.
+                        //
                         // The element-confirmed rung of §8.2's ladder for the
                         // FIXED subject — see `confirmed`. The element
                         // reporting there paints the very same `thumbnail`
@@ -702,21 +737,7 @@ export function PreviewSurface({
                         onAspect={noteAspect}
                     />
                 )}
-                {/* Chrome ON the picture. The LABEL follows whatever is
-                    displayed — a peek that told you nothing about the file
-                    you are looking at would be a worse peek, and the two
-                    subjects are meant to look alike (§8: one surface). The
-                    CONTROLS are the part that is fixed-only: during a peek
-                    they would act on an item the user is not looking at, and
-                    their arrival on click is the signal that the glance
-                    became a selection, plus the nudge toward the way out. */}
-                {displayed && (
-                    <ViewerHeader
-                        item={displayed}
-                        showControls={viewerOpen && !peek}
-                        onClose={onClose}
-                    />
-                )}
+                </div>
             </div>
         </div>
     )
@@ -731,17 +752,26 @@ export function PreviewSurface({
 // dock unpinned and hidden the card is off-screen, so acting on the item
 // means bringing the dock back first.
 //
-// OVERLAID, never a row above the picture. A header in flow takes its height
-// out of the fit budget, so the picture re-fitted smaller the instant it
-// appeared — the shrink the user rejected. Nothing added here may acquire a
-// height the box has to give back.
+// A SOLID ROW ABOVE THE PICTURE, not an overlay on it. This was tried the
+// other way — absolutely positioned, a from-black/60 gradient scrim under
+// white glyphs — on the reasoning that a row in flow takes its height out of
+// the fit budget and shrinks the picture. It does; the cost is now paid
+// deliberately (see VIEWER_HEADER_PX in previewBox.ts), because an overlay
+// failed at both of the things a header has to do:
 //
-// Legibility over arbitrary picture content follows VideoPlayerSurface's
-// idiom rather than a new one: a gradient scrim under white glyphs with a
-// drop-shadow, no opaque boxes. And its pointer rule with it — the band is
-// pointer-TRANSPARENT and only the controls take events, because the band
-// spans the picture's whole top edge and its empty part would otherwise be a
-// dead zone over the click-to-navigate half beneath it.
+//   - it sat on top of the video player's own copy and download controls,
+//     which anchor to the same top corners;
+//   - a scrim is a bet about the picture underneath, and over light content
+//     the white glyphs were simply not readable.
+//
+// Neither is fixable by tuning the scrim, and both vanish the moment the
+// header stops sharing space with the media.
+//
+// The row being opaque and in flow also retires two rules the overlay
+// needed: the pointer-transparent band (its empty part was a dead zone over
+// the click-to-navigate half beneath it — there is no picture beneath it
+// now), and the top-right offset the player had to be pushed by, which was a
+// prop on GalleryImageLarge and has been deleted with its only caller.
 //
 // The path sits in the middle track of a symmetric 1fr grid rather than a
 // flex `flex-1`, so it is centered on the FRAME, not on whatever space the
@@ -769,68 +799,46 @@ function ViewerHeader({
     // clears the pin too, which is what a "Close Data View" press over a
     // PINNED sidebar needs to do to be anything but a dead button (§9.1).
     return (
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-40">
-            <div
-                aria-hidden
-                className="pointer-events-none absolute inset-0 bg-linear-to-b from-black/60 to-transparent"
-            />
-            <div className={cn(
-                "relative grid h-12 grid-cols-[1fr_minmax(0,auto)_1fr] items-center px-2",
-                "text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]",
-            )}>
-                {/* One control per side, so the two sides weigh the same and
-                    the label between them is centered by construction. Close
-                    takes the right, where every close in this UI (and every
-                    window) lives; the remaining control takes the left rather
-                    than doubling up beside it.
-
-                    TRAP: pointer-events-auto goes on the BUTTONS, never on
-                    these tracks. The rule is three paragraphs up and the code
-                    still broke it: a 1fr track under `justify-items: stretch`
-                    is as wide as its third of the frame, so each of these was
-                    a ~390x40px opaque slab on a 1200px viewer. That buried the
-                    player's own top-right controls (its download control, and
-                    the native-controls escape kebab that is the only way back
-                    from S2) and killed the top 44px of BOTH click-to-navigate
-                    halves — a band the user reads as picture. The middle track
-                    already had it right, for the same reason: the empty space
-                    beside a control is picture, not chrome. */}
-                <div className="col-start-1 flex items-center justify-start">
-                    {showControls && <OpenDetailsButton
-                        item={item}
-                        className="pointer-events-auto text-white hover:bg-white/15 hover:text-white"
-                    />}
-                </div>
-                {/* pointer-events-auto on the label itself and not on its
-                    track: the path is a copy-to-clipboard control
-                    (FilePathComponent), while the empty space beside it in a
-                    1fr grid is picture. Gated on showControls for the same
-                    reason the buttons are, and one more: a peek is displayed
-                    over a surface the caller has made inert, and a descendant
-                    re-enabling pointer events under a `pointer-events-none`
-                    ancestor is exactly how a live control ends up floating
-                    over the board. The surface's inertness must not depend on
-                    the strip clearing the peek in time. */}
-                <div className="col-start-2 min-w-0 px-2 text-center">
-                    <div className={showControls ? "pointer-events-auto" : undefined}>
-                        <FilePathComponent path={item.path} />
-                        <p className="text-xs text-white/70 truncate">
-                            {getLocale(new Date(item.last_modified))}
-                        </p>
-                    </div>
-                </div>
-                <div className="col-start-3 flex items-center justify-end">
-                    {showControls && <Button
-                        onClick={onClose}
-                        variant="ghost"
-                        size="icon"
-                        title="Close viewer (Esc)"
-                        aria-label="Close viewer"
-                        className="pointer-events-auto text-white hover:bg-white/15 hover:text-white"
-                    >
-                        <X className="h-4 w-4" />
-                    </Button>}
-                </div>
+        // h-12 must equal VIEWER_HEADER_PX (previewBox.ts), which is what the
+        // picture's height budget subtracts. `shrink-0` so a long path can
+        // never squeeze the row and put the two out of step.
+        //
+        // No pointer rules anywhere in here. The row is chrome over nothing,
+        // so the empty space beside a control is background, not picture, and
+        // the frame's own `pointer-events` (interactive ? auto : none) is
+        // exactly right for everything inside it: during a peek the frame is
+        // inert AND showControls is false, so there is nothing live to leak.
+        // The overlay needed pointer-events-auto per control precisely
+        // because its tracks were transparent slabs lying across the
+        // click-to-navigate halves — a hazard that does not exist in flow.
+        <div className={cn(
+            "grid h-12 shrink-0 grid-cols-[1fr_minmax(0,auto)_1fr] items-center",
+            "border-b bg-background px-2",
+        )}>
+            {/* One control per side, so the two sides weigh the same and the
+                label between them is centered by construction. Close takes
+                the right, where every close in this UI (and every window)
+                lives; the remaining control takes the left rather than
+                doubling up beside it. */}
+            <div className="col-start-1 flex items-center justify-start">
+                {showControls && <OpenDetailsButton item={item} />}
+            </div>
+            <div className="col-start-2 min-w-0 px-2 text-center">
+                <FilePathComponent path={item.path} />
+                <p className="text-xs text-muted-foreground truncate">
+                    {getLocale(new Date(item.last_modified))}
+                </p>
+            </div>
+            <div className="col-start-3 flex items-center justify-end">
+                {showControls && <Button
+                    onClick={onClose}
+                    variant="ghost"
+                    size="icon"
+                    title="Close viewer (Esc)"
+                    aria-label="Close viewer"
+                >
+                    <X className="h-4 w-4" />
+                </Button>}
             </div>
         </div>
     )

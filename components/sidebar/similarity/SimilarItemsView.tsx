@@ -10,7 +10,9 @@ import { useItemSelection } from "@/lib/state/itemSelection"
 import { useBookmarkNs, useInstantSearch } from "@/lib/state/zust"
 import { COUNT_QUERY_PAGE_SIZE, prefetchRowsFor } from "@/lib/searchHooks"
 import { SimilaritySideBarComponents } from "@/lib/state/searchQuery/searchQueryKeyMaps"
-import { serializers } from "@/lib/state/searchQuery/serializers"
+import { clearSearchQueryParams, serializers } from "@/lib/state/searchQuery/serializers"
+import { GRID_SCROLL_ANCHOR_KEY } from "@/lib/state/gridScroll"
+import { useSearchParams } from "next/navigation"
 import { useMemo } from "react"
 import { PartitionBy, partitionBySerializer, usePartitionBy } from "@/lib/state/partitionBy"
 
@@ -59,6 +61,7 @@ export function SimilarItemsView({
 
 }) {
     const [dbs, ___] = useSelectedDBs()
+    const searchParams = useSearchParams()
     const [partitionBy] = usePartitionBy()
     const bookmarkNs = useBookmarkNs((state) => state.namespace)
     const { data, error, isError, refetch, isFetching, isLoading } = $api.useQuery(
@@ -173,7 +176,22 @@ export function SimilarItemsView({
         distance_function: "COSINE" | "L2",
         partition_by: PartitionBy
     ) => {
-        let fullURL = serializers.itemSimilaritySearch({
+        // Built on top of the CURRENT URL with only the search-query params
+        // cleared, which is the link twin of what `onImageClick` above does
+        // (resetSearch, then write the new query). Built from an EMPTY base —
+        // as this was — the link carried the similarity query and nothing
+        // else, so opening a result in a new tab from the maximized board's
+        // sidebar landed on a bare search page: no `pinboard`, so no board;
+        // no `fs`, so nothing maximized; no dock or tab state either. Every
+        // one of those lives in the URL and every one of them survives now,
+        // because the only things removed are the ones being replaced.
+        const base = clearSearchQueryParams(searchParams)
+        // Position, not query, so clearSearchQueryParams leaves it — but this
+        // is a different result set, and an anchor into the old one would
+        // scroll the new results to an unrelated row. `gi` is written per
+        // result below; the anchor simply goes.
+        base.delete(GRID_SCROLL_ANCHOR_KEY)
+        let fullURL = serializers.itemSimilaritySearch(base, {
             ...filter,
             target,
             model: simModel,
@@ -215,7 +233,10 @@ export function SimilarItemsView({
             partitionBy
         )
         return shownResults.map((_, index) => getSimilarityModeImageLink(baseLink, index))
-    }, [shownResults, query.page_size, filter, srcFilter, model, sha256, distance_function, partitionBy])
+        // `searchParams`: these links are now built ON the current URL, so
+        // they go stale the moment any of it changes — a link still carrying
+        // a board the user has since cleared would restore it on click.
+    }, [shownResults, query.page_size, filter, srcFilter, model, sha256, distance_function, partitionBy, searchParams])
 
     return (
         <div className="mt-4">

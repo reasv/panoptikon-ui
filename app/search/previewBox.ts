@@ -198,13 +198,28 @@ function clearanceShift(w: string): string {
 // directly, while `calc(…) * ratio` would nest one math function inside
 // another for nothing.
 //
-// NOTHING is subtracted from this for chrome. The viewer's header is
-// absolutely positioned OVER the picture (§8.3), which is precisely what
-// makes fixing a peek a no-op for the box: a header in flow takes its height
-// out of this budget, so the picture re-fitted smaller the instant it
-// appeared — the shrink the user rejected. If a control ever needs a row of
-// its own here, that shrink comes back with it.
 const BOUNDS_HEIGHT = "92vh - var(--pinboard-dock-height, 0px)"
+
+// The viewer header's row height (h-12 in ViewerHeader), subtracted from the
+// picture's height budget below.
+//
+// The header used to be absolutely positioned OVER the picture, on the
+// reasoning that a row in flow takes its height out of the fit and so
+// shrinks the picture. It does, and that cost is now PAID deliberately: an
+// overlaid header sat on top of the video player's own copy and download
+// controls, and over light picture content its glyphs were unreadable
+// however heavy the scrim. A solid row that owns its own height collides
+// with nothing and is legible over everything.
+//
+// Because it is reserved UNCONDITIONALLY — not only while a header is
+// actually painted — fixing a peek stays a no-op for the box, which was the
+// property the overlay was protecting. The budget is the same whether the
+// header is showing or not, so nothing re-fits when it appears.
+const VIEWER_HEADER_PX = 48
+// What the PICTURE gets: the bounds less the header row. Every fit operand
+// below measures against this, never against BOUNDS_HEIGHT — the bounds are
+// the region the whole frame occupies, header included.
+const PICTURE_HEIGHT = `${BOUNDS_HEIGHT} - ${VIEWER_HEADER_PX}px`
 
 /** The region the surface occupies, whichever subject it is displaying. */
 export const PREVIEW_BOUNDS: CSSProperties = {
@@ -212,6 +227,19 @@ export const PREVIEW_BOUNDS: CSSProperties = {
     left: BOUNDS_LEFT,
     right: BOUNDS_RIGHT,
     height: `calc(${BOUNDS_HEIGHT})`,
+}
+
+/**
+ * The frame is a COLUMN — header row, then picture — so the geometry comes
+ * in two halves and they must be applied to the two different elements.
+ * Returned together so no caller can pair a frame width with the wrong
+ * picture rule.
+ */
+export interface PreviewBoxStyle {
+    /** The outer frame: width, and the sidebar-clearance transform. */
+    frame: CSSProperties
+    /** The picture area under the header row. */
+    picture: CSSProperties
 }
 
 /**
@@ -223,20 +251,33 @@ export const PREVIEW_BOUNDS: CSSProperties = {
  * it — a bounds-spanning box is the WIDEST case there is, so it is the one
  * most certain to overlap an open sidebar. `100%` would have said the same
  * thing about the width, but the shift has to restate it.
+ *
+ * The picture takes the leftover column height rather than an aspect: with
+ * no ratio there is nothing to fit, so the header gets its row and the rest
+ * is picture. `minHeight: 0` because a flex item's default `min-height:
+ * auto` refuses to shrink below its content, which for a <video> is its
+ * intrinsic height — that is what would push the frame past the bounds.
  */
-export const UNFITTED_BOX_STYLE: CSSProperties = {
-    width: `min(${BOUNDS_WIDTH}, ${CLEARED_WIDTH})`,
-    height: "100%",
-    transform: clearanceShift(`min(${BOUNDS_WIDTH}, ${CLEARED_WIDTH})`),
+export const UNFITTED_BOX_STYLE: PreviewBoxStyle = {
+    frame: {
+        width: `min(${BOUNDS_WIDTH}, ${CLEARED_WIDTH})`,
+        height: "100%",
+        transform: clearanceShift(`min(${BOUNDS_WIDTH}, ${CLEARED_WIDTH})`),
+    },
+    picture: { flex: "1 1 0%", minHeight: 0 },
 }
 
 /**
  * The largest box at the given aspect that fits the bounds, capped at the
  * item's natural size (§8.2: a 400px-wide image must not be blown up to the
  * full bounds on a surface whose whole promise is showing it properly),
- * floored as above, and clamped to clear an open sidebar. `width` and
- * `aspectRatio` go on the SAME element — the frame — so the box is exactly
- * the picture and the chrome over it has nothing else to line up with.
+ * floored as above, and clamped to clear an open sidebar. The width goes on
+ * the FRAME and the aspect on the PICTURE inside it: the frame is a column
+ * of header-plus-picture, so it is the picture that carries the item's
+ * shape, and the frame's own height is that plus the header row. Putting
+ * both on one element (which is what this did while the header was
+ * overlaid) would make the ITEM's aspect the whole frame's aspect and
+ * letterbox the picture inside the leftover space.
  *
  * Expressed in CSS rather than resolved in JS because the bounds' height
  * rides a custom property the dock publishes from a ResizeObserver, and the
@@ -259,7 +300,7 @@ export function fittedBoxStyle(
     ratio: number | null,
     width: number | null | undefined,
     height: number | null | undefined,
-): CSSProperties | null {
+): PreviewBoxStyle | null {
     if (!ratio || !width || !height) return null
     const longSide = Math.max(MIN_PREVIEW_PX, Math.max(width, height))
     // Clamped to 1px: this operand is a WIDTH, and an aspect extreme enough
@@ -277,10 +318,12 @@ export function fittedBoxStyle(
     // still centred, and still overlaps — so the same expression drives the
     // shift that moves it clear.
     const w =
-        `min(${BOUNDS_WIDTH}, (${BOUNDS_HEIGHT}) * ${ratio}, ${capPx}px, ${CLEARED_WIDTH})`
+        `min(${BOUNDS_WIDTH}, (${PICTURE_HEIGHT}) * ${ratio}, ${capPx}px, ${CLEARED_WIDTH})`
     return {
-        width: w,
-        aspectRatio: ratio,
-        transform: clearanceShift(w),
+        frame: {
+            width: w,
+            transform: clearanceShift(w),
+        },
+        picture: { aspectRatio: ratio },
     }
 }

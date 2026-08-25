@@ -604,7 +604,29 @@ export function SearchOverlay({
                     )}
                 >
                     <div className="flex items-center gap-2">
-                        <div className="min-w-0 flex-1">
+                        {/* The SAME width rule the page header gives this
+                            row (SearchPage: `2xl:mx-auto` plus the
+                            sidebar-dependent fraction), so the search bar
+                            reads identically in both mounts instead of
+                            stretching the full width of the screen here.
+                            The fraction widens with the sidebar for the
+                            same reason it does on the page: the sidebar
+                            eats the width the bar would otherwise be
+                            centred in.
+
+                            `flex-none` has to come with it. Below 2xl this
+                            is a flex ITEM with flex-1, so a width class
+                            alone would lose to the flex basis and change
+                            nothing — the page's wrapper has no flex parent
+                            and needs no such release. `mx-auto` then
+                            centres the shrunk box in the row's free space
+                            (the pin and close buttons stay at the right
+                            edge, as they must). */}
+                        <div className={cn(
+                            "min-w-0 flex-1",
+                            "2xl:mx-auto 2xl:flex-none",
+                            sidebarShown ? "2xl:w-2/3" : "2xl:w-1/2",
+                        )}>
                             <SearchBarRow
                                 variant="overlay"
                                 onRefresh={onRefresh}

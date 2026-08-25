@@ -7,9 +7,11 @@ import {
     Grid2x2Plus,
     Grid3x3,
     History,
+    LayoutDashboard,
     LayoutGrid,
     LibraryBig,
     Magnet,
+    Maximize2,
     Minimize2,
     PenLine,
     Proportions,
@@ -63,7 +65,9 @@ import {
     BoardGlobalMenuItems,
     DESTRUCTIVE_MENU_ITEM,
     LayoutMenuItems,
+    NewBoardDefaultsItems,
     dropdownMenuKit,
+    useToggleUniform,
 } from "./PinboardGlobalMenu"
 import { MosaicMenuItems, MosaicSubmenu } from "./PinboardMosaicMenu"
 
@@ -424,6 +428,94 @@ export function AutoLayoutToggle({
     )
 }
 
+// Maximize, as a permanent segment of the Pinboard tab rather than a row
+// buried in the chevron menu. Deliberately NOT gated on the tab being
+// active, unlike every other segment: it activates the tab itself on the
+// way in. Maximizing a board the host is not showing would otherwise
+// produce a fullscreen view of nothing — so the two writes go together, in
+// one tick, which also makes them one history entry and one Back press.
+//
+// `onActivate` rather than a flag read here because the two hosts select
+// their pinboard tab differently (ghp for the gallery header, gpb plus the
+// library flag for the grid strip); reading either one directly would
+// wire the wrong host's tab. Same reason AutoLayoutToggle takes `active`.
+//
+// Only ever means "maximize": both tab strips are unmounted while
+// fullscreen (the gallery header hides whole, the grid strip is behind
+// `!fs`), so this button cannot be pressed to restore. The toolbar's own
+// Minimize button and Ctrl+Shift+M are the way back.
+export function PinboardFullscreenButton({
+    className,
+    active,
+    onActivate,
+}: {
+    className?: string
+    active: boolean
+    onActivate: () => void
+}) {
+    const setFs = useGalleryFullscreen()[1]
+    return (
+        <button
+            onClick={() => {
+                if (!active) onActivate()
+                void setFs(true)
+            }}
+            aria-label="Maximize pinboard"
+            title={active
+                ? "Maximize the pinboard (Ctrl+Shift+M)"
+                : "Show the pinboard and maximize it (Ctrl+Shift+M)"}
+            className={cn(
+                "inline-flex shrink-0 items-center justify-center px-1.5 transition-colors hover:bg-foreground/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+                className,
+            )}
+        >
+            <Maximize2 className="h-4 w-4" />
+        </button>
+    )
+}
+
+// The auto-layout ALGORITHM switch, as a tab segment next to the wand.
+//
+// Drawn as a MODE button, not a lit/unlit toggle: both states are equally
+// "on" (one packs a mosaic, the other identical cells), so the icon says
+// which one is in force and pressing it switches. The toolbar and the menu
+// keep their lit-when-uniform look instead — there the button sits in a row
+// of genuine on/off toggles, and a second icon that changes shape would
+// read as a different control rather than the same one in another state.
+export function UniformLayoutToggle({
+    className,
+    disabled = false,
+}: {
+    className?: string
+    disabled?: boolean
+}) {
+    const { uniform, records } = usePinBoard()
+    const toggleUniform = useToggleUniform()
+    // Same gate as the menu row: the switch rides in the layout token, so
+    // with no pins there is nothing to write it to.
+    const hasPins = records.length > 0
+    return (
+        <button
+            onClick={() => toggleUniform(!uniform)}
+            disabled={disabled || !hasPins}
+            aria-label="Toggle uniform auto-layout"
+            title={!hasPins
+                ? "Pin something first — the algorithm choice is stored in the board layout"
+                : uniform
+                    ? "Uniform Auto-Layout: pins are arranged in identical cells. Click to compose a mosaic instead."
+                    : "Mosaic Auto-Layout: pins are composed into a mosaic. Click to arrange them in identical cells instead."}
+            className={cn(
+                "inline-flex shrink-0 items-center justify-center px-1.5 transition-colors hover:bg-foreground/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
+                className,
+            )}
+        >
+            {uniform
+                ? <LayoutGrid className="h-4 w-4" />
+                : <LayoutDashboard className="h-4 w-4" />}
+        </button>
+    )
+}
+
 // Toggled-on state for toolbar/tab toggles: the app's blue "active" chip
 // (see the selection toolbar), in theme-aware form. A filled state is what
 // separates an off toggle from a disabled button — off toggles keep the
@@ -502,10 +594,11 @@ export function PinboardFullscreenBar() {
     // "Scale With Window" is a flag whose two edges both write the token,
     // so it is gated on a board existing for the same reason.
     const [proportional] = useGalleryPinProportional()
-    const { float, setFloat, uniform, setUniform, setProportional, records } =
+    const { float, setFloat, uniform, setProportional, records } =
         usePinBoard()
     const hasPins = records.length > 0
     const boardApi = usePinboardBoardApi(s => s.api)
+    const toggleUniform = useToggleUniform(boardApi)
     const { save, pbid, board, openLibrary, openHistory, openRename, dialogs } =
         usePinboardDialogs()
     const [hover, setHover] = useState(false)
@@ -516,11 +609,12 @@ export function PinboardFullscreenBar() {
     // second menu — and once that menu registers as the topmost modal
     // layer, the first menu's own outside-press dismissal is suppressed.
     // One controlled slot makes opening either menu close the other.
-    const [openMenu, setOpenMenu] = useState<"layout" | "mosaic" | null>(null)
+    const [openMenu, setOpenMenu] =
+        useState<"layout" | "mosaic" | "defaults" | null>(null)
     // Functional update: when a press moves from one menu to the other,
     // the loser's close and the winner's open land in the same batch in
     // either order — the close must only clear its own slot.
-    const menuProps = (id: "layout" | "mosaic") => ({
+    const menuProps = (id: "layout" | "mosaic" | "defaults") => ({
         open: openMenu === id,
         onOpenChange: (o: boolean) =>
             setOpenMenu(prev => (o ? id : prev === id ? null : prev)),
@@ -671,7 +765,7 @@ export function PinboardFullscreenBar() {
                                 : "Uniform Auto-Layout off: Fill Viewport and auto-layout compose a mosaic. Click to arrange in identical cells instead"}
                         active={hasPins && uniform}
                         disabled={!hasPins}
-                        onClick={() => setUniform(!uniform)}
+                        onClick={() => toggleUniform(!uniform)}
                     >
                         <LayoutGrid className="h-5 w-5" />
                     </ToolbarButton>
@@ -746,6 +840,33 @@ export function PinboardFullscreenBar() {
                                 kit={dropdownMenuKit}
                                 boardName={board?.name}
                             />
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                    {/* The one thing from the board menu this bar had no
+                        path to. Its own dropdown, like Layout and Mosaic —
+                        not a mirror of the whole chevron menu, which would
+                        put a second copy of every verb already sitting in
+                        this bar one row away from the original. Needs no
+                        board: the rows write the CREATION defaults, which
+                        is a preference about future boards, and the flags
+                        they capture all read fine on an empty one. */}
+                    <DropdownMenu {...menuProps("defaults")}>
+                        <DropdownMenuTrigger asChild>
+                            <button
+                                title={"What new pinboards start with — save"
+                                    + " this board's settings as the default,"
+                                    + " or go back to the built-in ones"}
+                                className={cn(
+                                    "inline-flex shrink-0 items-center gap-1 px-2.5 text-sm transition-colors hover:bg-foreground/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+                                    "data-[state=open]:bg-blue-500/15 data-[state=open]:text-blue-600 dark:data-[state=open]:text-blue-400",
+                                )}
+                            >
+                                Defaults
+                                <ChevronDown className="h-4 w-4" />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-64">
+                            <NewBoardDefaultsItems kit={dropdownMenuKit} />
                         </DropdownMenuContent>
                     </DropdownMenu>
                     <ToolbarDivider />

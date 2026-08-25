@@ -27,7 +27,12 @@ import { chunkStartOf, scanLoadedForward } from '@/lib/scrollMode'
 import { serializers } from '@/lib/state/searchQuery/serializers'
 import { VirtualGalleryHorizontalScroll } from './VirtualizedHorizontalScroll'
 import { PinBoard } from './GalleryPinBoard'
-import { AutoLayoutToggle, PinboardMenu } from './PinboardMenu'
+import {
+    AutoLayoutToggle,
+    PinboardFullscreenButton,
+    PinboardMenu,
+    UniformLayoutToggle,
+} from './PinboardMenu'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { useSearchLoading } from '@/lib/state/zust'
 import { MediaControls } from './PlayButton'
@@ -1263,7 +1268,16 @@ function galleryPanelHeight(showPagination: boolean, thumbnailsOpen: boolean) {
 // auto-layout toggle, the "pins" trigger and the board menu as one chip.
 // Shared by the gallery header tabs below and the grid view's tabs — must
 // be rendered inside a <Tabs> whose pinboard value is "pins".
-export function PinboardTabChip({ active }: { active: boolean }) {
+export function PinboardTabChip({
+    active,
+    onActivate,
+}: {
+    active: boolean
+    // Selects THIS strip's pinboard tab. Only the maximize button uses it,
+    // and only because maximizing a board the host isn't showing would
+    // fill the screen with nothing — see PinboardFullscreenButton.
+    onActivate: () => void
+}) {
     return (
         <div
             className={cn(
@@ -1280,12 +1294,19 @@ export function PinboardTabChip({ active }: { active: boolean }) {
                 className="rounded-sm rounded-r-none"
                 disabled={!active}
             />
+            {/* Which packer the wand next to it will use. Gated like the
+                wand: it writes the board's layout token, so it belongs to
+                whichever strip is actually showing the board. */}
+            <UniformLayoutToggle disabled={!active} />
             <TabsTrigger
                 value="pins"
                 className="shrink-0 rounded-none px-2 data-[state=active]:shadow-none"
             >
                 Pinboard
             </TabsTrigger>
+            {/* The one segment that works from an inactive tab, because it
+                activates the tab itself */}
+            <PinboardFullscreenButton active={active} onActivate={onActivate} />
             <PinboardMenu />
         </div>
     )
@@ -1302,7 +1323,10 @@ export function PinboardTabs({ itemPath }: { itemPath: string }) {
             className="w-full"
         >
             <TabsList className="flex w-full">
-                <PinboardTabChip active={!hidePinBoard} />
+                <PinboardTabChip
+                    active={!hidePinBoard}
+                    onActivate={() => void setHidePinBoard(false)}
+                />
                 {/* The truncated path is a tab trigger, so plain click can't
                     copy it the way FilePathComponent's does — right-click
                     provides the copy actions instead. The menu wraps the
@@ -1405,7 +1429,6 @@ export function GalleryImageLarge(
         advanceToNextVideo,
         cancelPendingAdvance,
         heightClass,
-        playerTopRightClass,
         onMediaAspect,
     }: {
         item: SearchResult,
@@ -1442,23 +1465,6 @@ export function GalleryImageLarge(
          * renders exactly as before.
          */
         heightClass?: string
-        /**
-         * Where the video's TOP-RIGHT controls anchor — the download control
-         * (S1) and the native-controls escape kebab (S2), which share that
-         * corner because only one of them is ever mounted. Absent, they sit at
-         * `top-2 right-2` of the picture, as they always have.
-         *
-         * It exists because a host may own the picture's top band itself: the
-         * maximized board's viewer lays its header OVER the frame (§8.3 — a
-         * header in flow would take height out of the fit budget and shrink
-         * the picture), and its close button lands on exactly that corner. The
-         * kebab is the ONLY way back from the native controls, so burying it
-         * traps the user in S2 until they close and reopen the item. Same
-         * lever as `heightClass`: a class a host substitutes for a layout
-         * decision that is only correct inside the gallery shell. The page
-         * gallery passes nothing and renders exactly as before.
-         */
-        playerTopRightClass?: string
         /**
          * Report the aspect an ELEMENT here has actually painted, for a host
          * that fits its own box around this component
@@ -2169,23 +2175,19 @@ export function GalleryImageLarge(
                             >
                                 <NativeControlsEscape
                                     videoState={videoState}
-                                    // A host that owns the picture's top band
-                                    // moves this out from under its own chrome
-                                    // — see playerTopRightClass. This kebab is
-                                    // the only way out of S2.
-                                    //
-                                    // Forked on fullscreen for the same reason
-                                    // VideoDownloadControl below is, and it has
-                                    // to be the SAME answer: the two share this
-                                    // corner and only one is ever mounted. In
-                                    // element fullscreen the fullscreen element
-                                    // is the player host, so the host's own
-                                    // chrome is not painted at all and the
-                                    // corner is free.
-                                    className={cn(
-                                        "pointer-events-auto",
-                                        !player.isFullscreen && playerTopRightClass,
-                                    )}
+                                    // Top-right of the picture, unconditionally.
+                                    // There used to be a host override here
+                                    // (`playerTopRightClass`) for a host that
+                                    // laid its own header OVER this corner —
+                                    // the maximized board's viewer — because
+                                    // burying this kebab traps the user in S2,
+                                    // it being the only way back out of the
+                                    // native controls. That header now owns a
+                                    // row of its own instead of the picture's
+                                    // top band (app/search/PreviewSurface.tsx),
+                                    // so no host covers this corner and the
+                                    // override went with it.
+                                    className="pointer-events-auto"
                                 />
                             </div>
                             // The surface's own box, laid over the displayed
@@ -2255,15 +2257,9 @@ export function GalleryImageLarge(
                                 style={player.isFullscreen ? undefined : pictureBox ?? undefined}
                             >
                                 <VideoDownloadControl
-                                    // Shares the escape kebab's corner, and
-                                    // therefore the host's override for it —
-                                    // except in fullscreen, where the host's
-                                    // own chrome is not painted at all (the
-                                    // fullscreen element is the player host
-                                    // BELOW it), so the corner is free and the
-                                    // button belongs where it always sits.
-                                    // Same fork as the box above.
-                                    className={player.isFullscreen ? undefined : playerTopRightClass}
+                                    // Shares the escape kebab's corner above:
+                                    // only one of the two is ever mounted, so
+                                    // they can and do sit in the same place.
                                     controller={player}
                                     download={{
                                         url: fileURL,

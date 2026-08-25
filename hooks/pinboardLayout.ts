@@ -504,8 +504,18 @@ export function usePinboardLayoutActions({
         visibleOnly: boolean,
         skipIfCovered = false,
         history?: "push" | "replace",
+        // Force a packer instead of routing by the board's `uniform`
+        // switch. Exists for ONE caller: the Uniform Auto-Layout toggle,
+        // which re-fills the board in the same handler that flips the
+        // switch. `uniform` reaches this hook as a render-time ARGUMENT
+        // parsed out of the `pinboard` URL param, so at that moment it
+        // still holds the pre-toggle value — routing by it would fill with
+        // the algorithm the user just turned OFF. (The layout write itself
+        // is safe without this: updateRecords re-parses `prev`
+        // functionally and carries the freshly written switch forward.)
+        algorithm?: "mosaic" | "uniform",
     ) {
-        return doFill({ visibleOnly, skipIfCovered, history })
+        return doFill({ visibleOnly, skipIfCovered, history, algorithm })
     }
 
     // The one-shot uniform fill: Fill Viewport's semantics exactly, with

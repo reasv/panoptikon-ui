@@ -88,6 +88,86 @@ export const serializers = {
   ),
 }
 
+/**
+ * Every search-query param family, as a [serializer, key map] pair.
+ *
+ * The serializer-side twin of `useResetSearchQueryState`'s setter list
+ * (lib/state/searchQuery/clientHooks.ts), and deliberately the SAME list
+ * rather than a better one: a link and the click handler beside it must land
+ * on identical state, so if that hook forgets a family this must forget it
+ * too. (It does forget one today — the `at.sa` audio pair has no setter
+ * there — and copying the omission is the correct behaviour until the hook
+ * gains it.)
+ *
+ * Pairs rather than serializers alone because a serializer cannot say which
+ * keys it owns; the key map can, and taking the names from the map itself is
+ * what stops this list from drifting as families gain and lose params.
+ */
+const SEARCH_QUERY_FAMILIES: [
+  (base: URLSearchParams, values: Record<string, null>) => string,
+  (p: typeof def) => Record<string, unknown>
+][] = (
+  [
+    [serializers.matchText, matchTextKeyMap],
+    [serializers.matchPath, matchPathKeyMap],
+    [serializers.orderArgs, orderParamsKeyMap],
+    [serializers.matchTags, tagFiltersKeyMap],
+    [serializers.fileFilters, fileFiltersKeyMap],
+    [serializers.inBookmarks, inBookmarksKeyMap],
+    [serializers.inPinboards, inPinboardsKeyMap],
+    [serializers.semanticTextSearch, semanticTextSearchKeyMap],
+    [serializers.semanticImageSearch, semanticImageSearchKeyMap],
+    [serializers.queryOptions, queryOptionsKeyMap],
+    [serializers.atMatchText, matchTextKeyMap],
+    [serializers.atMatchPath, matchPathKeyMap],
+    [serializers.atSemanticText, semanticTextSearchKeyMap],
+    [serializers.atSemanticTextSource, sourceTextKeyMap],
+    [serializers.atSemanticImage, semanticImageSearchKeyMap],
+    [serializers.semanticTextSource, sourceTextKeyMap],
+    [serializers.itemSimilaritySearch, itemSimilarityKeyMap],
+    [serializers.itemSimilarityTextSource, sourceTextKeyMap],
+    [serializers.atTextRRF, rrfKeyMap],
+    [serializers.atPathRRF, rrfKeyMap],
+    [serializers.atSemanticTextRRF, rrfKeyMapSemanticText],
+    [serializers.atSemanticImageRRF, rrfKeyMapSemanticImage],
+  ] as unknown
+) as [
+  (base: URLSearchParams, values: Record<string, null>) => string,
+  (p: typeof def) => Record<string, unknown>
+][]
+
+/**
+ * The current URL with every search-query param stripped, and everything
+ * else left alone.
+ *
+ * For links that REPLACE the search rather than adjust it — the similarity
+ * sidebar's result links, whose click-handler twin calls
+ * `useResetSearchQueryState()` and then writes the new query. Building such
+ * a link from an EMPTY base instead is what made those links drop the whole
+ * workspace: `fs`, the `pinboard` itself, the dock pins, the tab flags and
+ * the view mode all live in the URL, so a from-scratch link opened in a new
+ * tab landed on a bare search page — no board to maximize, and therefore no
+ * maximized view either.
+ *
+ * Position params are NOT cleared here (this function is about the query,
+ * not about where you are in its results); callers that are building a fresh
+ * result set have to drop the scroll anchor themselves.
+ */
+export const clearSearchQueryParams = (
+  base: ReadonlyURLSearchParams | URLSearchParams
+): URLSearchParams => {
+  let params = new URLSearchParams(base)
+  for (const [serialize, keyMap] of SEARCH_QUERY_FAMILIES) {
+    const cleared = Object.fromEntries(
+      Object.keys(keyMap(def)).map((key) => [key, null])
+    )
+    // Each pass returns a "?a=1&b=2" string; URLSearchParams strips the
+    // leading "?" itself, and an emptied one round-trips as "".
+    params = new URLSearchParams(serialize(params, cleared))
+  }
+  return params
+}
+
 export const getSearchPageURL = (
   base: ReadonlyURLSearchParams | URLSearchParams,
   newPage: number

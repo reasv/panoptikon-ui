@@ -1,5 +1,27 @@
 "use client"
-import { Grid2x2Plus, Maximize2, Minimize2, Trash2 } from "lucide-react"
+import {
+    AlignHorizontalJustifyCenter,
+    AlignVerticalJustifyStart,
+    ArrowLeft,
+    ArrowRight,
+    Columns3,
+    Crop,
+    Eraser,
+    Expand,
+    Eye,
+    FlipHorizontal2,
+    FlipVertical2,
+    Frame,
+    Grid2x2Plus,
+    LayoutDashboard,
+    LayoutGrid,
+    Maximize2,
+    Minimize2,
+    Ratio,
+    Rows3,
+    Shuffle,
+    Trash2,
+} from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import {
     useGalleryFullscreen,
@@ -16,10 +38,14 @@ import {
     saveUserDefaults,
 } from "@/lib/pinboardDefaults"
 import { usePinBoard } from "@/lib/state/pinboard"
-import type { PinboardBoardApi } from "@/lib/state/pinboardBoardApi"
+import {
+    usePinboardBoardApi,
+    type PinboardBoardApi,
+} from "@/lib/state/pinboardBoardApi"
 import {
     ContextMenuCheckboxItem,
     ContextMenuItem,
+    ContextMenuLabel,
     ContextMenuSeparator,
     ContextMenuShortcut,
     ContextMenuSub,
@@ -29,6 +55,7 @@ import {
 import {
     DropdownMenuCheckboxItem,
     DropdownMenuItem,
+    DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuShortcut,
     DropdownMenuSub,
@@ -50,6 +77,11 @@ export interface MenuKit {
         className?: string
         inset?: boolean
         disabled?: boolean
+        // Forwarded to the row element, same as CheckboxItem's below — and
+        // with the same caveat: Radix puts pointer-events-none on a
+        // DISABLED row, so a title there is never hoverable and the reason
+        // has to go in the visible label instead.
+        title?: string
         onClick?: () => void
     }>
     CheckboxItem: React.ComponentType<{
@@ -73,6 +105,12 @@ export interface MenuKit {
         className?: string
     }>
     Shortcut: React.ComponentType<{ children?: React.ReactNode }>
+    // Radix's Label: a non-focusable, non-selectable row. Used only
+    // through SectionLabel below, never directly.
+    Label: React.ComponentType<{
+        children?: React.ReactNode
+        className?: string
+    }>
 }
 
 // Destructive menu rows are styled like the destructive BUTTON — same
@@ -110,6 +148,7 @@ export const contextMenuKit: MenuKit = {
     SubTrigger: ContextMenuSubTrigger,
     SubContent: ContextMenuSubContent,
     Shortcut: ContextMenuShortcut,
+    Label: ContextMenuLabel,
 }
 
 export const dropdownMenuKit: MenuKit = {
@@ -120,6 +159,27 @@ export const dropdownMenuKit: MenuKit = {
     SubTrigger: DropdownMenuSubTrigger,
     SubContent: DropdownMenuSubContent,
     Shortcut: DropdownMenuShortcut,
+    Label: DropdownMenuLabel,
+}
+
+// The header over a run of toggle rows, marking where a menu stops
+// offering VERBS (do a thing, close the menu) and starts offering
+// SETTINGS (answer a question in place, menu stays open — see the
+// KeepOpen wrappers above). Every menu that has such a run gets one, so
+// the boundary reads the same everywhere.
+//
+// Styled deliberately UNLIKE a row: the kits' Label default is
+// `text-sm font-semibold`, i.e. the size and weight of an enabled item,
+// which is exactly the confusion to avoid. Small, uppercase and muted
+// reads as a caption instead — and Radix's Label is neither focusable nor
+// selectable, so it can't be arrowed onto or clicked either.
+export function SectionLabel({ kit }: { kit: MenuKit }) {
+    const { Label } = kit
+    return (
+        <Label className="px-2 pt-2 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Options
+        </Label>
+    )
 }
 
 // Layout verbs report refusals (anchored items that can't travel,
@@ -132,6 +192,132 @@ function useRunVerb() {
             if (err) toast({ title: label, description: err, duration: 4000 })
         })
     }
+}
+
+/**
+ * Flip the Uniform Auto-Layout switch, and — when auto-layout is on —
+ * immediately re-pack the board with the algorithm just chosen.
+ *
+ * Shared by every surface offering the switch (this menu's checkbox, the
+ * fullscreen toolbar's button, the pinboard tab's button) so they cannot
+ * disagree about what the toggle does. Without the re-fill, flipping it on
+ * an auto-laid-out board changed nothing visible until the next pin was
+ * added or removed — the mode says "the board re-packs itself", so the
+ * board has to re-pack when the packer changes.
+ *
+ * The algorithm is passed EXPLICITLY rather than left to the board's own
+ * routing: `uniform` reaches the layout hook as a render-time argument, so
+ * in this handler it is still the pre-toggle value (see fillViewport in
+ * hooks/pinboardLayout.ts).
+ *
+ * `api` comes from props where the caller has one (the context menu lives
+ * inside the board) and from the registry otherwise.
+ */
+export function useToggleUniform(api?: PinboardBoardApi | null) {
+    const { setUniform } = usePinBoard()
+    const [autoLayout] = useGalleryPinAutoLayout()
+    const registered = usePinboardBoardApi((s) => s.api)
+    const runVerb = useRunVerb()
+    const board = api ?? registered
+    return (next: boolean) => {
+        setUniform(next)
+        if (autoLayout && board) {
+            runVerb("Fill Viewport", board.fillViewport(
+                false, false, undefined, next ? "uniform" : "mosaic"))
+        }
+    }
+}
+
+/**
+ * The user layer of the creation-defaults system (see
+ * lib/pinboardDefaults.ts): Save captures the current board's flags as what
+ * NEW boards start with; Reset returns to the built-in defaults. Existing
+ * boards — the current one included — are never touched, because defaults
+ * only apply when a first pin creates a board.
+ *
+ * Its own component, reading every flag itself, so the rows can be rendered
+ * both as a submenu of the board menus and at the top level of the
+ * fullscreen toolbar's own dropdown (the same split MosaicMenuItems /
+ * MosaicSubmenu makes). Duplicating them per surface is what this avoids:
+ * `saveUserDefaults` takes the whole flag set, so a flag added to the
+ * registry must reach every copy or one surface starts saving a subset.
+ */
+export function NewBoardDefaultsItems({ kit }: { kit: MenuKit }) {
+    const [showGrid] = useGalleryPinGrid()
+    const [autoLayout] = useGalleryPinAutoLayout()
+    const [autoLayoutCrop] = useGalleryPinAutoCrop()
+    const [selectionCrop] = useGalleryPinSelectionCrop()
+    const [proportional] = useGalleryPinProportional()
+    const [allHandles] = useGalleryPinResizeHandles()
+    const { float, uniform } = usePinBoard()
+    const { toast } = useToast()
+    const { Item } = kit
+    return (
+        <>
+            <Item
+                title={"Capture this board's current settings as the ones NEW"
+                    + " pinboards start with. Existing boards, including this"
+                    + " one, are untouched"}
+                onClick={() => {
+                    saveUserDefaults({
+                        pba: autoLayout,
+                        pbc: autoLayoutCrop,
+                        psc: selectionCrop,
+                        pg: showGrid,
+                        pbp: proportional,
+                        prh: allHandles,
+                        gravity: !float,
+                        uniform,
+                    })
+                    toast({
+                        title: "New-Board Defaults Saved",
+                        // Named from the registry, so a flag added there
+                        // can't quietly go unmentioned here. Gravity and
+                        // Uniform Auto-Layout are spelled out because they
+                        // are the creation defaults that aren't registry
+                        // flags (they ride the layout token) — same
+                        // on-screen names as their menu rows, like every
+                        // registry label.
+                        description: "New pinboards will start with this"
+                            + ` board's current ${defaultableFlagLabels()
+                                .join(", ")}, Gravity and Uniform`
+                            + " Auto-Layout settings.",
+                        duration: 4000,
+                    })
+                }}
+            >
+                Save Current Settings as Default
+            </Item>
+            <Item
+                title={"Forget the saved defaults; new pinboards go back to"
+                    + " the app's built-in settings"}
+                onClick={() => {
+                    clearUserDefaults()
+                    toast({
+                        title: "Built-in Defaults Restored",
+                        description: "New pinboards will start with the app's"
+                            + " built-in settings again.",
+                        duration: 4000,
+                    })
+                }}
+            >
+                Reset to Built-in Defaults
+            </Item>
+        </>
+    )
+}
+
+/** The same rows as a submenu, for the board menus. */
+export function NewBoardDefaultsSubmenu({ kit }: { kit: MenuKit }) {
+    const { Sub, SubTrigger, SubContent } = kit
+    return (
+        <Sub>
+            <SubTrigger inset>New-Board Defaults</SubTrigger>
+            <SubContent className="w-64">
+                <NewBoardDefaultsItems kit={kit} />
+            </SubContent>
+        </Sub>
+    )
 }
 
 export function BoardGlobalMenuItems({
@@ -151,7 +337,6 @@ export function BoardGlobalMenuItems({
     const [showGrid, setShowGrid] = useGalleryPinGrid()
     const [autoLayout, setAutoLayout] = useGalleryPinAutoLayout()
     const [autoLayoutCrop, setAutoLayoutCrop] = useGalleryPinAutoCrop()
-    const [selectionCrop] = useGalleryPinSelectionCrop()
     const [proportional] = useGalleryPinProportional()
     const [allHandles, setAllHandles] = useGalleryPinResizeHandles()
     // Gravity and uniform auto-layout ride in the layout token rather than
@@ -160,11 +345,11 @@ export function BoardGlobalMenuItems({
     // either switch — the setters no-op and the read would claim whatever
     // the user's creation default isn't — so both toggles are disabled
     // until a first pin.
-    const { float, setFloat, uniform, setUniform, setProportional, records } =
+    const { float, setFloat, uniform, setProportional, records } =
         usePinBoard()
     const hasPins = records.length > 0
-    const { toast } = useToast()
     const runVerb = useRunVerb()
+    const toggleUniform = useToggleUniform(api)
     const { Item, CheckboxItem, Separator, Sub, SubTrigger, SubContent, Shortcut } = kit
     return (
         <>
@@ -179,8 +364,12 @@ export function BoardGlobalMenuItems({
                 {fs ? "Restore Pinboard Size" : maximizeLabel}
                 <Shortcut>Ctrl+Shift+M</Shortcut>
             </Item>
+            <Separator />
+            <SectionLabel kit={kit} />
             <CheckboxItem
                 checked={showGrid}
+                title={"Draw the board's cell grid behind the pins, so"
+                    + " sizes and gaps line up with what the packers use"}
                 onCheckedChange={(checked) => setShowGrid(!!checked)}
             >
                 Show Grid
@@ -241,6 +430,9 @@ export function BoardGlobalMenuItems({
                 layout request, so it applies immediately. */}
             <CheckboxItem
                 checked={autoLayout}
+                title={"Re-pack the board to fill the viewport whenever pins"
+                    + " are added or removed, instead of leaving them where"
+                    + " you put them"}
                 onCheckedChange={(checked) => {
                     setAutoLayout(!!checked)
                     if (checked) runVerb("Fill Viewport", api.fillViewport(false))
@@ -259,12 +451,16 @@ export function BoardGlobalMenuItems({
             <CheckboxItem
                 checked={autoLayoutCrop}
                 disabled={!autoLayout}
+                title={"Each auto relayout also fits every item to its cell,"
+                    + " so no pin letterboxes inside its box"}
                 onCheckedChange={(checked) => {
                     setAutoLayoutCrop(!!checked)
                     if (checked) void api.autoCropToCells(false)
                 }}
             >
-                Auto-Crop to Cells
+                {autoLayout
+                    ? "Auto-Crop to Cells"
+                    : "Auto-Crop to Cells (requires Auto-Layout)"}
             </CheckboxItem>
             {/* The auto-layout ALGORITHM: on, the fill verbs and the
                 auto-layout trigger tile identical cells instead of
@@ -276,68 +472,24 @@ export function BoardGlobalMenuItems({
                 checked={uniform}
                 disabled={!hasPins}
                 title={"Fill Viewport and auto-layout arrange items in"
-                    + " identical cells instead of a mosaic"}
-                onCheckedChange={(checked) => setUniform(!!checked)}
+                    + " identical cells instead of a mosaic. With Auto-Layout"
+                    + " on, switching re-packs the board straight away"}
+                onCheckedChange={(checked) => toggleUniform(!!checked)}
             >
                 {hasPins
                     ? "Uniform Auto-Layout"
                     : "Uniform Auto-Layout (pin something first)"}
             </CheckboxItem>
-            {api.isV1 && <Item onClick={api.upgradeGrid}>
+            <Separator />
+            {api.isV1 && <Item
+                title={"Convert this board to the current grid resolution,"
+                    + " which allows finer sizes and positions"}
+                onClick={api.upgradeGrid}
+            >
                 <Grid2x2Plus className="mr-2 h-4 w-4" />
                 Upgrade Board Grid
             </Item>}
-            {/* User layer of the creation-defaults system (see
-                lib/pinboardDefaults.ts): Save captures the current board
-                flags as what NEW boards start with; Reset returns to the
-                built-in defaults. Existing boards — this one included —
-                are never touched: defaults apply only when a first pin
-                creates a board. */}
-            <Sub>
-                <SubTrigger inset>New-Board Defaults</SubTrigger>
-                <SubContent className="w-64">
-                    <Item onClick={() => {
-                        saveUserDefaults({
-                            pba: autoLayout,
-                            pbc: autoLayoutCrop,
-                            psc: selectionCrop,
-                            pg: showGrid,
-                            pbp: proportional,
-                            prh: allHandles,
-                            gravity: !float,
-                            uniform,
-                        })
-                        toast({
-                            title: "New-Board Defaults Saved",
-                            // Named from the registry, so a flag added there
-                            // can't quietly go unmentioned here. Gravity and
-                            // Uniform Auto-Layout are spelled out because
-                            // they are the creation defaults that aren't
-                            // registry flags (they ride the layout token) —
-                            // same on-screen names as their menu rows, like
-                            // every registry label.
-                            description: "New pinboards will start with this"
-                                + ` board's current ${defaultableFlagLabels()
-                                    .join(", ")}, Gravity and Uniform`
-                                + " Auto-Layout settings.",
-                            duration: 4000,
-                        })
-                    }}>
-                        Save Current Settings as Default
-                    </Item>
-                    <Item onClick={() => {
-                        clearUserDefaults()
-                        toast({
-                            title: "Built-in Defaults Restored",
-                            description: "New pinboards will start with the"
-                                + " app's built-in settings again.",
-                            duration: 4000,
-                        })
-                    }}>
-                        Reset to Built-in Defaults
-                    </Item>
-                </SubContent>
-            </Sub>
+            <NewBoardDefaultsSubmenu kit={kit} />
             <Separator />
             {/* Purges the staging band under the board's working area — where
                 evictions and region sends park what didn't fit. Destructive,
@@ -350,6 +502,9 @@ export function BoardGlobalMenuItems({
                     <Item
                         className={below ? DESTRUCTIVE_MENU_ITEM : undefined}
                         disabled={!below}
+                        title={"Delete the pins parked in the staging band"
+                            + " under the board — where evictions and region"
+                            + " sends put whatever didn't fit"}
                         onClick={api.removeBelowViewport}
                     >
                         <Trash2 className="mr-2 h-4 w-4" />
@@ -383,35 +538,117 @@ export function LayoutMenuItems({
     const { Item, Separator, Sub, SubTrigger, SubContent } = kit
     return (
         <>
-            <Item onClick={() => runVerb("Fill Viewport", api.fillViewport(false))}>Fill Viewport</Item>
-            <Item onClick={() => runVerb("Fill Viewport", api.fillViewport(true))}>Fill Viewport (Visible Only)</Item>
+            {/* Icons on the VERB rows only: the submenu triggers below keep
+                their chevron as the affordance, the same rule the board menu
+                follows for its checkbox rows. The "(Visible Only)" variants
+                share one icon — the eye — so the pairs read as one verb with
+                a scope, rather than as four unrelated commands. */}
+            <Item
+                title={"Re-pack every pin to fill the board, composing a"
+                    + " mosaic (or identical cells with Uniform on)"}
+                onClick={() => runVerb("Fill Viewport", api.fillViewport(false))}
+            >
+                <LayoutDashboard className="mr-2 h-4 w-4" />
+                Fill Viewport
+            </Item>
+            <Item
+                title={"Fill using only the pins currently above the fold,"
+                    + " leaving everything below it where it is"}
+                onClick={() => runVerb("Fill Viewport", api.fillViewport(true))}
+            >
+                <Eye className="mr-2 h-4 w-4" />
+                Fill Viewport (Visible Only)
+            </Item>
             {/* Fill Viewport with identical cells, whatever the board's
                 algorithm flag says (the flag routes Fill Viewport itself) */}
-            <Item onClick={() => runVerb("Uniform Layout", api.uniformLayout())}>Uniform Layout</Item>
+            <Item
+                title={"Fill with identical cells this once, whatever the"
+                    + " board's Uniform Auto-Layout setting says"}
+                onClick={() => runVerb("Uniform Layout", api.uniformLayout())}
+            >
+                <LayoutGrid className="mr-2 h-4 w-4" />
+                Uniform Layout
+            </Item>
             {/* Cycle through the packer's near-best alternative
                 compositions; later auto-fills keep the chosen one */}
-            <Item onClick={() => runVerb("Reroll Layout", api.rerollLayout())}>Reroll Layout</Item>
+            <Item
+                title={"Cycle to the next near-best composition of the same"
+                    + " pins. Later auto-fills keep the one you land on"}
+                onClick={() => runVerb("Reroll Layout", api.rerollLayout())}
+            >
+                <Shuffle className="mr-2 h-4 w-4" />
+                Reroll Layout
+            </Item>
             {/* Re-solve sizes only: the arrangement keeps its
                 structure and grows to fill the viewport. With locks
                 inside the target it degrades to a proportional
                 reflow around them. */}
-            <Item onClick={() => runVerb("Grow to Fill", api.growInPlace())}>Grow to Fill (In Place)</Item>
+            <Item
+                title={"Keep the arrangement you have and only grow the pins"
+                    + " until they fill the board"}
+                onClick={() => runVerb("Grow to Fill", api.growInPlace())}
+            >
+                <Expand className="mr-2 h-4 w-4" />
+                Grow to Fill (In Place)
+            </Item>
             {/* Reflow freely but keep each item's current share of
                 the board area */}
-            <Item onClick={() => runVerb("Reflow", api.reflowKeepProportions())}>Reflow (Keep Proportions)</Item>
+            <Item
+                title={"Rearrange freely, but aim every pin at the share of"
+                    + " the board it already occupies — your sizing survives"}
+                onClick={() => runVerb("Reflow", api.reflowKeepProportions())}
+            >
+                <Ratio className="mr-2 h-4 w-4" />
+                Reflow (Keep Proportions)
+            </Item>
             {/* Reset the layout-height ratchet to the current
                 viewport (see pinboardGrid.ts) and fill it */}
             {api.highWater > 0 && (
-                <Item onClick={() => runVerb("Refit", api.refitToView())}>Refit to Current View</Item>
+                <Item
+                    title={"This board grew taller than the window at some"
+                        + " point. Drop it back to what fits now and fill that"}
+                    onClick={() => runVerb("Refit", api.refitToView())}
+                >
+                    <Frame className="mr-2 h-4 w-4" />
+                    Refit to Current View
+                </Item>
             )}
             {/* Justify re-stacks rows from the top, which only an
                 anchor breaks; size-locked members keep their size
                 and their row justifies around them */}
-            <Item disabled={api.hasAnchors} onClick={() => runVerb("Justify Rows", api.justifyCurrentRows())}>Justify Rows</Item>
+            <Item
+                disabled={api.hasAnchors}
+                title={"Re-stack the rows you have from the top, closing"
+                    + " vertical gaps without re-composing anything"}
+                onClick={() => runVerb("Justify Rows", api.justifyCurrentRows())}
+            >
+                <AlignVerticalJustifyStart className="mr-2 h-4 w-4" />
+                Justify Rows
+            </Item>
             <Separator />
-            <Item onClick={() => void api.autoCropToCells(false)}>Auto-Crop to Cells</Item>
-            <Item onClick={() => void api.autoCropToCells(true)}>Auto-Crop to Cells (Visible Only)</Item>
-            <Item onClick={() => void api.clearAutoCrops()}>Clear Auto-Crops</Item>
+            <Item
+                title={"Crop every pin to exactly fill its cell, removing the"
+                    + " letterboxing left by aspect mismatches"}
+                onClick={() => void api.autoCropToCells(false)}
+            >
+                <Crop className="mr-2 h-4 w-4" />
+                Auto-Crop to Cells
+            </Item>
+            <Item
+                title="Fit-to-cell crops for the pins above the fold only"
+                onClick={() => void api.autoCropToCells(true)}
+            >
+                <Eye className="mr-2 h-4 w-4" />
+                Auto-Crop to Cells (Visible Only)
+            </Item>
+            <Item
+                title={"Drop every fit-to-cell crop. Crops you drew by hand"
+                    + " are kept"}
+                onClick={() => void api.clearAutoCrops()}
+            >
+                <Eraser className="mr-2 h-4 w-4" />
+                Clear Auto-Crops
+            </Item>
             <Separator />
             {/* Items-per-Row rebuilds whole rows and cannot hold a
                 locked item in place, so it greys out while any lock
@@ -424,9 +661,14 @@ export function LayoutMenuItems({
             <Sub>
                 <SubTrigger disabled={api.hasLocks}>Items per Row</SubTrigger>
                 <SubContent className="w-48">
-                    {[3, 4, 5, 6].map(n => (
-                        <Item key={n} onClick={() => void api.changeLayout(n)}>
-                            {n} Items per Row
+                    {[1, 2, 3, 4, 5, 6].map(n => (
+                        <Item
+                            key={n}
+                            title={`Rebuild the board as rows of ${n}`}
+                            onClick={() => void api.changeLayout(n)}
+                        >
+                            <Columns3 className="mr-2 h-4 w-4" />
+                            {n === 1 ? "1 Item per Row" : `${n} Items per Row`}
                         </Item>
                     ))}
                 </SubContent>
@@ -434,8 +676,14 @@ export function LayoutMenuItems({
             <Sub>
                 <SubTrigger>Rows</SubTrigger>
                 <SubContent className="w-48">
-                    {[1, 2, 3, 4].map(n => (
-                        <Item key={n} onClick={() => runVerb("Rows", api.fillViewportRows(n))}>
+                    {[1, 2, 3, 4, 5, 6].map(n => (
+                        <Item
+                            key={n}
+                            title={`Split the board's height evenly among ${n}`
+                                + (n === 1 ? " row" : " rows")}
+                            onClick={() => runVerb("Rows", api.fillViewportRows(n))}
+                        >
+                            <Rows3 className="mr-2 h-4 w-4" />
                             {n} {n === 1 ? "Row" : "Rows"}
                         </Item>
                     ))}
@@ -444,12 +692,45 @@ export function LayoutMenuItems({
             <Sub>
                 <SubTrigger>Shift</SubTrigger>
                 <SubContent className="w-48">
-                    <Item onClick={() => api.shiftLayout("left")}>Shift Left</Item>
-                    <Item disabled={api.hasAnchors} onClick={() => api.shiftLayout("center")}>Center</Item>
-                    <Item onClick={() => api.shiftLayout("right")}>Shift Right</Item>
+                    <Item
+                        title="Push the whole arrangement against the left edge"
+                        onClick={() => api.shiftLayout("left")}
+                    >
+                        <ArrowLeft className="mr-2 h-4 w-4" />
+                        Shift Left
+                    </Item>
+                    <Item
+                        disabled={api.hasAnchors}
+                        title="Centre each row's pins horizontally"
+                        onClick={() => api.shiftLayout("center")}
+                    >
+                        <AlignHorizontalJustifyCenter className="mr-2 h-4 w-4" />
+                        Center
+                    </Item>
+                    <Item
+                        title="Push the whole arrangement against the right edge"
+                        onClick={() => api.shiftLayout("right")}
+                    >
+                        <ArrowRight className="mr-2 h-4 w-4" />
+                        Shift Right
+                    </Item>
                     <Separator />
-                    <Item disabled={api.hasAnchors} onClick={() => api.mirrorLayout("horizontal")}>Mirror Horizontally</Item>
-                    <Item disabled={api.hasAnchors} onClick={() => api.mirrorLayout("vertical")}>Mirror Vertically</Item>
+                    <Item
+                        disabled={api.hasAnchors}
+                        title="Flip the arrangement left-to-right"
+                        onClick={() => api.mirrorLayout("horizontal")}
+                    >
+                        <FlipHorizontal2 className="mr-2 h-4 w-4" />
+                        Mirror Horizontally
+                    </Item>
+                    <Item
+                        disabled={api.hasAnchors}
+                        title="Flip the arrangement top-to-bottom"
+                        onClick={() => api.mirrorLayout("vertical")}
+                    >
+                        <FlipVertical2 className="mr-2 h-4 w-4" />
+                        Mirror Vertically
+                    </Item>
                 </SubContent>
             </Sub>
             {(api.hasLocks || api.hasAnchors) && (

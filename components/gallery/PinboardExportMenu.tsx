@@ -29,7 +29,7 @@ import {
     AnimatedMosaicRows,
     LosslessMenuItem,
 } from "./PinboardMosaicMenu"
-import type { MenuKit } from "./PinboardGlobalMenu"
+import { SectionLabel, type MenuKit } from "./PinboardGlobalMenu"
 
 // Saving the SELECTION as an image, from the selection toolbar and from a
 // pin's own context menu.
@@ -317,15 +317,31 @@ export function SelectionExportMenuItems({
     return (
         <>
             {one && (
-                <Item disabled={busy} onClick={() => void save({ kind: "native" })}>
+                <Item
+                    disabled={busy}
+                    title={"Save the file at its own resolution, cropped and"
+                        + " oriented as the board shows it"}
+                    onClick={() => void save({ kind: "native" })}
+                >
                     Original Size
                 </Item>
             )}
-            <Item disabled={busy} onClick={() => void save({ kind: "window" })}>
+            <Item
+                disabled={busy}
+                title={one
+                    ? "Save at the size this pin occupies on screen"
+                    : "Save at the board's own width — the selection at 1:1"}
+                onClick={() => void save({ kind: "window" })}
+            >
                 Window Size
             </Item>
             {EXPORT_PRESETS.map((w) => (
-                <Item key={w} disabled={busy} onClick={() => void save({ kind: "px", px: w })}>
+                <Item
+                    key={w}
+                    disabled={busy}
+                    title={`Scale the result to ${w} px wide`}
+                    onClick={() => void save({ kind: "px", px: w })}
+                >
                     {`${w} px Wide`}
                 </Item>
             ))}
@@ -340,6 +356,7 @@ export function SelectionExportMenuItems({
                 ? <AnimatedItemRows kit={kit} itemKey={keys[0] ?? null} />
                 : <AnimatedMosaicRows kit={kit} keys={keys} />}
             <Separator />
+            <SectionLabel kit={kit} />
             {/* Seamless is a mosaic's business only — one item has no
                 gutters to close. It only closes the GUTTERS at that: an
                 unselected item between two selected ones still leaves its

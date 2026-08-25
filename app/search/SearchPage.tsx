@@ -1048,7 +1048,19 @@ export function GridPanel({
                         }}
                     >
                         <TabsList className="flex">
-                            {pinboard.length > 0 && <PinboardTabChip active={showPinboard} />}
+                            {pinboard.length > 0 && (
+                                <PinboardTabChip
+                                    active={showPinboard}
+                                    // The same pair of writes the strip's
+                                    // own onValueChange makes for "pins":
+                                    // one tab wins, the other flag stands
+                                    // down, same tick, one URL update.
+                                    onActivate={() => {
+                                        setPinboardTab(true)
+                                        setLibraryTab(false)
+                                    }}
+                                />
+                            )}
                             {libraryHasBoards && (
                                 <TabsTrigger value="library" className="shrink-0 px-3">
                                     Library
