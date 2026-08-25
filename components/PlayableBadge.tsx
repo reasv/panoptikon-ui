@@ -63,26 +63,53 @@ export function PlayableBadge({ className }: { className?: string }) {
             aria-hidden
             className={cn(
                 "pointer-events-none absolute inset-0 flex items-center justify-center",
+                // Its own container, so the glyph below can size itself
+                // against THIS box — which is the picture box, since the
+                // badge spans it. `container-type: size` (not inline-size)
+                // because the unit that matters is cqmin, and cqmin needs a
+                // queryable height as well as a width. Safe here in a way it
+                // would not be on a content-sized element: this box is
+                // absolutely positioned to inset-0, so its size never
+                // depended on its contents in the first place.
+                "[container-type:size]",
                 "transition-opacity duration-200 group-hover:opacity-0",
                 className,
             )}
         >
+            {/* PROPORTIONAL to the thumbnail, not a fixed 48px: the same
+                badge has to sit on a 150px strip card and on a 5xl grid cell
+                several times that, and one size cannot read the same on
+                both — it was overbearing on the small ones and lost on the
+                large.
+
+                cqmin, so it is the SHORT side that scales it: on a tall
+                narrow thumbnail a width-derived size would overflow the
+                frame, and on a wide short one it would swamp it. The clamp
+                is the two ends the ratio alone gets wrong — a thumbnail
+                small enough to make 22% illegible, and one large enough to
+                make it a target rather than a hint. */}
             <svg
                 viewBox="0 0 48 48"
-                className="h-12 w-12 drop-shadow-[0_1px_3px_rgba(0,0,0,0.55)]"
+                className="w-[clamp(28px,22cqmin,96px)] h-[clamp(28px,22cqmin,96px)] drop-shadow-[0_1px_3px_rgba(0,0,0,0.45)]"
             >
+                {/* The four alphas are one ghost, tuned together — the disc
+                    carries the contrast, the ring the edge, the glyph the
+                    reading, the shadow the pale-on-pale case. Scale them as
+                    a set: dropping one alone (a fainter glyph over the same
+                    disc, say) stops looking translucent and starts looking
+                    like a rendering fault. */}
                 <circle
                     cx="24"
                     cy="24"
                     r="22"
-                    fill="rgba(15,23,42,0.42)"
-                    stroke="rgba(255,255,255,0.85)"
+                    fill="rgba(15,23,42,0.34)"
+                    stroke="rgba(255,255,255,0.68)"
                     strokeWidth="2"
                 />
                 {/* Optically centred, not geometrically: a triangle's visual
                     mass sits behind its leading point, so a glyph centred on
                     the disc's real middle reads as leaning left. */}
-                <path d="M20 15.5 L34.5 24 L20 32.5 Z" fill="rgba(255,255,255,0.92)" />
+                <path d="M20 15.5 L34.5 24 L20 32.5 Z" fill="rgba(255,255,255,0.75)" />
             </svg>
         </div>
     )
