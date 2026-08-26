@@ -839,6 +839,11 @@ export function VideoPlayerSurface({
                                     step={0.01}
                                     value={muted ? 0 : volume}
                                     onChange={(e) => videoState.setVolume(parseFloat(e.target.value))}
+                                    // Release is the transition: setVolume runs
+                                    // per hundredth crossed, the snapshot write
+                                    // happens once per gesture
+                                    onPointerUp={videoState.commitVolume}
+                                    onKeyUp={videoState.commitVolume}
                                     // Collapsed to zero width: still in the DOM
                                     // (it animates open), never in the tab order
                                     tabIndex={volumeOpen ? 0 : -1}
@@ -861,6 +866,10 @@ export function VideoPlayerSurface({
                                         step={0.01}
                                         value={muted ? 0 : volume}
                                         onChange={(e) => videoState.setVolume(parseFloat(e.target.value))}
+                                        // Same commit-on-release contract as the
+                                        // full tier's slider above
+                                        onPointerUp={videoState.commitVolume}
+                                        onKeyUp={videoState.commitVolume}
                                         className="h-1 w-20 -rotate-90 cursor-pointer accent-blue-400"
                                     />
                                 </div>

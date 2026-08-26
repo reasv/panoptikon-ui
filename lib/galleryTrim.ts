@@ -100,6 +100,7 @@ export function newPinHField(
     trim,
     lock: null,
     orient: null,
+    audio: null,
   }
   return packHField(h, extras)
 }

@@ -19,7 +19,7 @@ const {
   parseGalleryTrim,
   trimForSha,
 } = await import("../lib/galleryTrim.ts")
-const { decodeTime, encodeTime, parseHField } = await import(
+const { decodeTime, encodeTime, packHField, parseHField } = await import(
   "../lib/pinboardCrop.ts"
 )
 
@@ -225,6 +225,105 @@ check(
 // produced before the bridge existed — a bare integer, no suffix.
 check("no matching trim -> bare height", newPinHField(37, OTHER, slot) === "37")
 check("no slot -> bare height", newPinHField(37, SHA, null) === "37")
+
+// ---- playback-snapshot segment ----------------------------------------
+
+// Wire bytes pinned like the trim's above: the h field is frozen format.
+// Flags digit = playing(1) | muted(2); volume = round(v*100) in two base36
+// chars.
+const AUDIO_EXTRAS = {
+  crop: null,
+  autoCrop: null,
+  trim: null,
+  lock: null,
+  orient: null,
+}
+const audioField = packHField(12, {
+  ...AUDIO_EXTRAS,
+  audio: { playing: true, muted: false, volume: 1 },
+})
+check("audio segment wire bytes", audioField === "12A12s", audioField)
+check(
+  "audio segment round-trips",
+  (() => {
+    const p = parseHField(audioField)
+    return (
+      p.h === 12 &&
+      p.audio?.playing === true &&
+      p.audio?.muted === false &&
+      p.audio?.volume === 1
+    )
+  })(),
+  audioField
+)
+check(
+  "stopped muted snapshot round-trips",
+  (() => {
+    const f = packHField(8, {
+      ...AUDIO_EXTRAS,
+      audio: { playing: false, muted: true, volume: 0.35 },
+    })
+    const p = parseHField(f)
+    return (
+      // flags 2 = stopped+muted, "0z" = 35 hundredths in base36
+      f === "8A20z" &&
+      p.audio?.playing === false &&
+      p.audio?.muted === true &&
+      p.audio?.volume === 0.35
+    )
+  })()
+)
+check(
+  "audio segment coexists with every earlier segment",
+  (() => {
+    const f = packHField(12, {
+      crop: { x: 0, y: 0, w: 0.5, h: 1 },
+      autoCrop: null,
+      trim: { start: 2, end: 10 },
+      lock: "anchor",
+      orient: { quarterTurns: 1, flipped: true },
+      audio: { playing: true, muted: true, volume: 0 },
+    })
+    const p = parseHField(f)
+    return (
+      p.h === 12 &&
+      p.trim?.start === 2 &&
+      p.lock === "anchor" &&
+      p.orient?.quarterTurns === 1 &&
+      p.audio?.playing === true &&
+      p.audio?.muted === true &&
+      p.audio?.volume === 0
+    )
+  })()
+)
+// Absent segment parses to null — old URLs keep pre-snapshot behavior
+check("no audio segment -> null", parseHField("37t5k.7ps").audio === null)
+// Volume clamps into [0, 1] on both sides of the codec
+check(
+  "audio volume clamps",
+  (() => {
+    const f = packHField(3, {
+      ...AUDIO_EXTRAS,
+      audio: { playing: true, muted: false, volume: 4 },
+    })
+    return parseHField(f).audio?.volume === 1
+  })()
+)
+// A non-finite volume must not poison the field: NaN.toString(36) is
+// "NaN", which would fail the whole-field regex and wipe every other
+// extra on the next parse
+check(
+  "non-finite volume encodes as a valid segment",
+  (() => {
+    const f = packHField(3, {
+      ...AUDIO_EXTRAS,
+      trim: { start: 2, end: null },
+      audio: { playing: true, muted: false, volume: NaN },
+    })
+    const p = parseHField(f)
+    return p.audio?.volume === 1 && p.trim?.start === 2
+  })()
+)
 
 console.log(all ? "\nALL PASS" : "\nFAILURES")
 process.exit(all ? 0 : 1)

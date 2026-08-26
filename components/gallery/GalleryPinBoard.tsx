@@ -25,7 +25,7 @@ import { $api } from '@/lib/api'
 import { MediaControls } from './PlayButton'
 import React from 'react'
 import { useOutroSkipEnabled, useVideoPlayerState } from '@/lib/videoPlayerState'
-import { CropRect, PinLock, PinOrientation, TrimRange, clampCrop, composeCrops, isEmptyTrim, isIdentityOrientation, packHField, parseHField } from '@/lib/pinboardCrop'
+import { CropRect, PinAudioState, PinLock, PinOrientation, TrimRange, clampCrop, composeCrops, isEmptyTrim, isIdentityOrientation, packHField, parseHField } from '@/lib/pinboardCrop'
 import { effectiveVideoTrim, outroCutPoint, outroProbeEligible, outroSkipGoverns, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
 import { useVideoEndProbe } from '@/lib/videoEndProbe'
 import { noteVideoPlaybackError, shouldDowngradeOnError, useVideoPlayability } from '@/lib/videoPlayability'
@@ -534,7 +534,7 @@ export function PinBoard(
     })
     // Orientation is decoded alongside the other extras so every per-pin map
     // is keyed by the same layout key.
-    const [layout, pinnedFiles, crops, autoCrops, trims, itemLocks, orients]: [
+    const [layout, pinnedFiles, crops, autoCrops, trims, itemLocks, orients, audios]: [
         LayoutItem[],
         [string, string, string, string][],
         Record<string, CropRect | null>,
@@ -542,6 +542,7 @@ export function PinBoard(
         Record<string, TrimRange | null>,
         Record<string, PinLock>,
         Record<string, PinOrientation | null>,
+        Record<string, PinAudioState | null>,
     ] = useMemo(() => {
         const newLayout: LayoutItem[] = []
         const pinned: [string, string, string, string][] = []
@@ -550,6 +551,7 @@ export function PinBoard(
         const trimsMap: Record<string, TrimRange | null> = {}
         const locksMap: Record<string, PinLock> = {}
         const orientsMap: Record<string, PinOrientation | null> = {}
+        const audiosMap: Record<string, PinAudioState | null> = {}
         // Minimum-size floors for resize gestures. RGL applies minW/minH
         // through gesture-time constraints only — the layout sync never
         // clamps — so records already below the minimum (legacy boards,
@@ -565,12 +567,13 @@ export function PinBoard(
         for (let i = 0; i < records.length; i += 5) {
             const [sha256, x, y, w, hField] = records.slice(i, i + 5)
             const index = `${i}-${sha256}`
-            const { h, crop, autoCrop, trim, lock, orient } = parseHField(hField)
+            const { h, crop, autoCrop, trim, lock, orient, audio } = parseHField(hField)
             cropsMap[index] = crop
             autoCropsMap[index] = autoCrop
             trimsMap[index] = trim
             locksMap[index] = lock
             orientsMap[index] = orient
+            audiosMap[index] = audio
             newLayout.push({
                 i: index,
                 x: parseInt(x),
@@ -619,7 +622,7 @@ export function PinBoard(
                 getFileURL(dbs, "file", "sha256", sha256),
             ])
         }
-        return [newLayout, pinned, cropsMap, autoCropsMap, trimsMap, locksMap, orientsMap]
+        return [newLayout, pinned, cropsMap, autoCropsMap, trimsMap, locksMap, orientsMap, audiosMap]
     }, [records, cropKey, dbs, effGrid, gridWidth, allHandles, float])
 
     // Rebuilds the packed records from RGL's reported layout, in the EXISTING
@@ -680,7 +683,7 @@ export function PinBoard(
                 next.push(...prev.slice(i, i + 5))
                 continue
             }
-            const { crop, autoCrop, trim, lock, orient } = parseHField(prev[i + 4])
+            const { crop, autoCrop, trim, lock, orient, audio } = parseHField(prev[i + 4])
             const hasManual = manualCropOverrides && key in manualCropOverrides
             const hasAuto = autoCropOverrides && key in autoCropOverrides
             const nextCrop = hasManual ? manualCropOverrides[key] : crop
@@ -697,14 +700,15 @@ export function PinBoard(
                 item.x.toString(),
                 item.y.toString(),
                 item.w.toString(),
-                // Crop/trim/lock/orientation suffixes stored in the h field
-                // survive box moves/resizes
+                // Crop/trim/lock/orientation/audio suffixes stored in the h
+                // field survive box moves/resizes
                 packHField(item.h, {
                     crop: nextCrop,
                     autoCrop: nextAuto,
                     trim,
                     lock,
                     orient: nextOrient,
+                    audio,
                 }),
             )
         }
@@ -993,6 +997,24 @@ export function PinBoard(
             }
             return next
         })
+    }
+
+    // Playback-snapshot writes REPLACE rather than push: pressing play or
+    // dragging a volume slider must not become a back-button entry — Back
+    // through a viewing session should walk the layout edits, not every
+    // mute toggle between them.
+    const onItemAudioChange = (key: string, audio: PinAudioState | null) => {
+        updateRecords((prev) => {
+            const next = [...prev]
+            for (let i = 0; i < prev.length; i += 5) {
+                if (`${i}-${prev[i]}` === key) {
+                    const { h, ...extras } = parseHField(prev[i + 4])
+                    next[i + 4] = packHField(h, { ...extras, audio })
+                    break
+                }
+            }
+            return next
+        }, { history: "replace" })
     }
 
     const [fs, setFs] = useGalleryFullscreen()
@@ -2675,6 +2697,8 @@ export function PinBoard(
                                     trim={trims[i] ?? null}
                                     lock={itemLocks[i] ?? null}
                                     orientation={orients[i] ?? null}
+                                    audio={audios[i] ?? null}
+                                    onAudioChange={(audio) => onItemAudioChange(i, audio)}
                                     lockBadgesVisible={lockBadgesVisible}
                                     onLockChange={(lock) => setLockForKeys([i], lock)}
                                     cropKey={cropKey}
@@ -3256,6 +3280,8 @@ function PinBoardPin({
     trim,
     lock,
     orientation,
+    audio,
+    onAudioChange,
     lockBadgesVisible,
     onLockChange,
     cropKey,
@@ -3307,6 +3333,11 @@ function PinBoardPin({
     lock: PinLock
     // This pin's D4 orientation; null is identity
     orientation: PinOrientation | null
+    // This pin's stored playback snapshot (null = never stamped) and its
+    // record writer. The writer is a replace-history URL write; it fires on
+    // every user playback transition (see onUserTransition below).
+    audio: PinAudioState | null
+    onAudioChange: (audio: PinAudioState) => void
     // While true (the board was recently hovered), ACTIVE lock toggles are
     // shown on every locked pin so locks are visible at a glance
     lockBadgesVisible: boolean
@@ -3369,10 +3400,33 @@ function PinBoardPin({
         videoRef.current = el
         setVideoEl(el)
     }, [])
+    // The stored snapshot as READ-ONCE state, captured at mount: the parsed
+    // prop's identity churns with every board write (the extras maps
+    // rebuild wholesale), and a restore keyed on the live prop would re-fire
+    // into playback the user has since changed. A remount (the pin keys
+    // embed record offsets, so unpinning a neighbour remounts this pin, and
+    // its <video> with it) re-seeds from the then-current record — which is
+    // exactly the restore that keeps the pin playing across the remount.
+    const [audioAtMount] = React.useState(audio)
+    // Set when the autoplay policy refused the restore's unmuted play():
+    // the pin plays muted until the first user gesture applies the stored
+    // unmuted state (see the listener effect below). Cleared by any user
+    // transition on the pin — once the user has spoken, the fallback must
+    // not stomp their choice.
+    const blockedUnmuteRef = React.useRef(false)
     const videoState = useVideoPlayerState({
         videoRef,
         element: videoEl,
         persistVolume: true,
+        // Every user playback transition snapshots the pin's FULL effective
+        // state into its record — pressing play stamps the muted/volume it
+        // just inherited, so the pin restores identically even after the
+        // global preference drifts. Heuristic starts and restores go
+        // through the raw setters/applyAudioState and never stamp.
+        onUserTransition: (snap) => {
+            blockedUnmuteRef.current = false
+            onAudioChange(snap)
+        },
     })
     // The pin's content layer: the only element containing BOTH the <video>
     // (which lives inside the .drag-handle layer) and the player surface
@@ -3441,7 +3495,21 @@ function PinBoardPin({
         ? { w: data.item.width, h: data.item.height }
         : mediaDims
 
+    // Precedence: record > heuristic > global preference. Any stored
+    // snapshot — a stopped one included — stands the heuristic down: a
+    // short video the user explicitly closed must not loop back to life on
+    // reload, and one they unmuted restores through the restore effect
+    // below, not through this. The MOUNT snapshot plus a one-shot latch,
+    // never the live prop: records influence playback at mount only, the
+    // same invariant the restore effects hold. A live gate would re-fire on
+    // Back/Forward — audio stamps are replace writes, so Back can revert
+    // the segment to absent under a still-mounted pin, and a re-armed
+    // heuristic would mute the video the user is watching. The latch also
+    // keeps `data` identity churn (query refetches) from re-running the
+    // start against a pin the user has since paused.
+    const heuristicFiredRef = React.useRef(false)
     useEffect(() => {
+        if (audioAtMount || heuristicFiredRef.current) return
         // `playable` ONLY, never the tri-state: a board that laid out a
         // dozen unplayable pins would otherwise queue a dozen encodes by
         // merely existing. A transcode is started by a deliberate press and
@@ -3449,12 +3517,13 @@ function PinBoardPin({
         if (playability === "playable") {
             // Autoplay short videos
             if (data?.item?.duration && data?.item.duration <= 10) {
+                heuristicFiredRef.current = true
                 videoState.setShowVideo(true)
                 videoState.setVideoIsPlaying(true)
                 videoState.setVideoIsMuted(true)
             }
         }
-    }, [data, playability])
+    }, [data, playability, audioAtMount])
 
     useEffect(() => {
         if (!cropMode) return
@@ -3481,6 +3550,88 @@ function PinBoardPin({
         dbs,
     })
     const playbackURL = playback.url
+
+    // Restoring the stored snapshot, in three read-only steps (none of them
+    // stamps — a load must leave the record byte-identical):
+    //
+    // 1. The audio fields apply at mount, playing or stopped: a dormant
+    //    record still seeds the muted/volume the next play uses, overriding
+    //    the global-preference seed the hook's own mount effect applied
+    //    (this one runs after it — hook effects run in call order).
+    useEffect(() => {
+        if (audioAtMount) {
+            videoState.applyAudioState(audioAtMount.muted, audioAtMount.volume)
+        }
+        // Mount-only: audioAtMount is the mount capture by construction
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+    // 2. A playing record starts playback once the item's verdict arrives
+    //    (`unsupported` doubles as "no item data yet", so waiting out that
+    //    verdict IS waiting for the query; a genuinely unsupported item
+    //    simply never restores). One-shot: the latch, not the effect deps,
+    //    decides — later verdict flips (the in-session downgrade) must not
+    //    re-run a restore the user has since overridden.
+    const restoredRef = React.useRef(false)
+    const pendingUnmutedPlayRef = React.useRef(false)
+    useEffect(() => {
+        if (restoredRef.current || !audioAtMount?.playing) return
+        if (playability === "unsupported") return
+        restoredRef.current = true
+        // A playing needs-transcode pin auto-starts its job on load — the
+        // one deliberate exception to "a transcode starts only from a
+        // press": the stored playing state IS the press, made last session,
+        // and the disk cache usually still holds the artifact.
+        if (playability === "needs-transcode") playback.start()
+        // Unmuted restores need an explicit play() probe: the autoplay
+        // policy may refuse them, and the autoPlay attribute fails
+        // silently. Armed here, run by the element effect below.
+        if (!audioAtMount.muted) pendingUnmutedPlayRef.current = true
+        videoState.setShowVideo(true)
+        videoState.setVideoIsPlaying(true)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [playability])
+    // 3. The unmuted-play probe, once the element exists. A NotAllowedError
+    //    is the policy asking for a gesture: fall back to muted playback
+    //    (always allowed) and leave the finish to the gesture listener
+    //    below. Any other rejection (AbortError on a src swap,
+    //    NotSupportedError racing onError) resolves through its own
+    //    channel, exactly as in setPlaying.
+    useEffect(() => {
+        if (!videoEl || !pendingUnmutedPlayRef.current) return
+        pendingUnmutedPlayRef.current = false
+        videoEl.muted = false
+        videoEl.play().catch((err: unknown) => {
+            if ((err as DOMException)?.name !== "NotAllowedError") return
+            videoEl.muted = true
+            videoState.setVideoIsMuted(true)
+            blockedUnmuteRef.current = true
+            videoEl.play().catch(() => {})
+        })
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [videoEl])
+    // The finishing gesture for blocked restores: the first user gesture
+    // anywhere (the same gesture that unlocks audio for the page) applies
+    // the stored unmuted state — zero added gestures, the user was about to
+    // interact anyway. Applying stored state is not a user transition, so
+    // it goes through the raw setter and never stamps. The raw setter's
+    // identity is stable, so the mount-time closure stays valid for the
+    // pin's life.
+    useEffect(() => {
+        const onGesture = () => {
+            if (!blockedUnmuteRef.current) return
+            blockedUnmuteRef.current = false
+            const el = videoRef.current
+            if (el) el.muted = false
+            videoState.setVideoIsMuted(false)
+        }
+        window.addEventListener("pointerdown", onGesture, true)
+        window.addEventListener("keydown", onGesture, true)
+        return () => {
+            window.removeEventListener("pointerdown", onGesture, true)
+            window.removeEventListener("keydown", onGesture, true)
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
     const showVideo = isPlayable && videoState.showVideo && playbackURL != null
     // A detected TikTok end card is a playback-time DEFAULT for the end
     // bound, never a stored one: the pin's h field keeps carrying the user's

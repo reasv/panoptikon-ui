@@ -231,6 +231,7 @@ export function useVideoPlayerState({
   videoRef,
   element,
   persistVolume = false,
+  onUserTransition,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>
   /**
@@ -249,6 +250,22 @@ export function useVideoPlayerState({
    */
   element?: HTMLVideoElement | null
   persistVolume?: boolean
+  /**
+   * Fired with the FULL effective playback state after every user-initiated
+   * transition this hook mediates: play, pause, stop, mute, unmute, a
+   * volume release (commitVolume), and the native-controls resync. The
+   * pinboard snapshots it into the pin's record; hosts that don't pass it
+   * are untouched. The full state rather than the delta on purpose — a
+   * value merely inherited from the global preference is captured too, so
+   * the caller's snapshot stays truthful after the global drifts. Never
+   * fired by the raw setters or applyAudioState, which is what keeps
+   * heuristic starts and restores from stamping.
+   */
+  onUserTransition?: (snap: {
+    playing: boolean
+    muted: boolean
+    volume: number
+  }) => void
 }) {
   const [showVideo, setShowVideo] = React.useState(false)
   const [videoIsPlaying, setVideoIsPlaying] = React.useState(false)
@@ -305,6 +322,28 @@ export function useVideoPlayerState({
     }
     if (persistVolume) writeStoredVolume({ volume: clamped, muted: clamped === 0 })
   }
+  // The volume transition fires on RELEASE, not per slider input event:
+  // setVolume runs for every hundredth crossed during a drag, and a caller
+  // writing URL state per call would push a record write per pixel. The
+  // sliders call this on pointer/key release; by then the change events
+  // have committed, so the closed-over state is the final value.
+  const commitVolume = () => {
+    onUserTransition?.({ playing: videoIsPlaying, muted: videoIsMuted, volume })
+  }
+  // Raw application of a stored snapshot's audio fields: state and element,
+  // but neither the global preference (a board restore must not clobber the
+  // browser-level default) nor the transition callback (a restore is not a
+  // user transition — stamping it would dirty every board on open).
+  const applyAudioState = (muted: boolean, v: number) => {
+    const clamped = Math.max(0, Math.min(1, v))
+    setVolumeState(clamped)
+    setVideoIsMuted(muted)
+    const el = element ?? videoRef.current
+    if (el) {
+      el.volume = clamped
+      el.muted = muted
+    }
+  }
   const setPlaybackRate = (rate: number) => {
     setPlaybackRateState(rate)
     if (videoRef.current) {
@@ -316,32 +355,44 @@ export function useVideoPlayerState({
       // If the video is not playing, show the video
       setShowVideo(true)
       setVideoIsPlaying(true)
+      // The press is the write: the snapshot captures the muted/volume the
+      // pin is about to play with, inherited or not
+      onUserTransition?.({ playing: true, muted: videoIsMuted, volume })
       return
     }
     if (videoRef.current) {
       if (state) {
-        videoRef.current.play()
+        // Never rejection-free: AbortError when a src swap interrupts the
+        // request, NotSupportedError racing the error event. Both resolve
+        // through their own channels (autoplay retries on the new source,
+        // onError runs the downgrade ladder) — an unhandled rejection is
+        // the only thing this would add.
+        videoRef.current.play().catch(() => {})
         setVideoIsPlaying(true)
       } else {
         videoRef.current.pause()
         setVideoIsPlaying(false)
       }
+      onUserTransition?.({ playing: state, muted: videoIsMuted, volume })
     }
   }
   const stopVideo = () => {
     setShowVideo(false)
     setVideoIsPlaying(false)
+    onUserTransition?.({ playing: false, muted: videoIsMuted, volume })
   }
   const setMuted = (state: boolean) => {
     if (videoRef.current) {
       // Unmuting at volume zero would be silence with a "sound on" icon
       if (!state && volume === 0) {
         setVolume(0.5)
+        onUserTransition?.({ playing: videoIsPlaying, muted: false, volume: 0.5 })
         return
       }
       videoRef.current.muted = state
       setVideoIsMuted(state)
       if (persistVolume) writeStoredVolume({ volume, muted: state })
+      onUserTransition?.({ playing: videoIsPlaying, muted: state, volume })
     }
   }
   const setControls = (state: boolean) => {
@@ -358,6 +409,13 @@ export function useVideoPlayerState({
       if (persistVolume) writeStoredVolume({
         volume: videoRef.current.volume,
         muted: videoRef.current.muted,
+      })
+      // ...and of play/pause, so the resync is also a transition: it is the
+      // one point where changes made through the native UI reach a snapshot
+      onUserTransition?.({
+        playing: !videoRef.current.paused,
+        muted: videoRef.current.muted,
+        volume: videoRef.current.volume,
       })
     }
   }
@@ -376,6 +434,8 @@ export function useVideoPlayerState({
     setControls,
     volume,
     setVolume,
+    commitVolume,
+    applyAudioState,
     playbackRate,
     setPlaybackRate,
   }

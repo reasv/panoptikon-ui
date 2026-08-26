@@ -28,22 +28,31 @@
 // independent of it — both crop slots are stored in DISPLAY (oriented)
 // space, so the layout/fit math never maps coordinates.
 //
+// A playback snapshot records what the user last left a video pin doing:
+// playing or stopped, muted or not, and at what volume. It exists so a
+// reloaded board restores itself instead of demanding a play/mute/volume
+// dance per pin. Presence is semantic even when stopped — a stored
+// snapshot outranks the short-video autoplay heuristic (precedence:
+// snapshot > heuristic > global player preference; an absent segment is
+// exactly the pre-snapshot behavior).
+//
 // Serialization piggybacks on the existing pinboard layout query param,
 // which is a flat array of 5-string records [sha256, x, y, w, h]. All are
 // appended to the `h` slot:
-// "<h>[c<8>][a<8>][t<start>.<end>][L<a|s>][O<1-7>]" — "c" + 8 chars for the
-// manual crop, "a" + 8 chars for the auto crop (same encoding), then
-// "t<start>.<end>" for the trim (either side empty when unset), then "L"
-// plus a flag for the layout lock ("a" = anchored in place, "s" = size
-// locked; "p" is accepted as a legacy alias of "a" from before the anchor
-// rename), then "O" plus the orientation code (identity omitted), e.g.
-// "12c00zzzz00a0899zz0it5k.8aLaO5".
-// The flag prefixes L and O are UPPERCASE on purpose: the trim bounds are
-// variable-length base36, so a lowercase prefix appended after them would
-// be swallowed as another trim digit — "t5k.8ao5" is genuinely ambiguous
-// (end = "8ao5" vs end = "8a" plus an orientation), and both old and new
-// parsers would resolve it wrongly. Uppercase is outside the base36
-// alphabet, so every suffix segment stays self-delimiting.
+// "<h>[c<8>][a<8>][t<start>.<end>][L<a|s>][O<1-7>][A<0-3><2>]" — "c" + 8
+// chars for the manual crop, "a" + 8 chars for the auto crop (same
+// encoding), then "t<start>.<end>" for the trim (either side empty when
+// unset), then "L" plus a flag for the layout lock ("a" = anchored in
+// place, "s" = size locked; "p" is accepted as a legacy alias of "a" from
+// before the anchor rename), then "O" plus the orientation code (identity
+// omitted), then "A" plus a playing/muted flags digit and two base36 chars
+// of volume (see encodeAudio), e.g. "12c00zzzz00a0899zz0it5k.8aLaO5A12s".
+// The flag prefixes L, O and A are UPPERCASE on purpose: the trim bounds
+// are variable-length base36, so a lowercase prefix appended after them
+// would be swallowed as another trim digit — "t5k.8ao5" is genuinely
+// ambiguous (end = "8ao5" vs end = "8a" plus an orientation), and both old
+// and new parsers would resolve it wrongly. Uppercase is outside the
+// base36 alphabet, so every suffix segment stays self-delimiting.
 //
 // parseInt() reads the leading digits and ignores the suffix, so old
 // clients see the correct height and simply drop the suffixes, while new
@@ -332,6 +341,49 @@ export function orientedSize(
   return orientation && orientation.quarterTurns % 2 === 1 ? [h, w] : [w, h]
 }
 
+// Per-pin playback snapshot: the FULL effective state at the user's last
+// playback transition on the pin (play, pause/stop, mute, unmute, volume
+// release), inherited global values included — never a delta, so a pin
+// that merely inherited the global mute still restores it after the global
+// preference drifts. `playing: false` means stopped: the pin restores as a
+// thumbnail and the audio fields lie dormant until the next play.
+export interface PinAudioState {
+  playing: boolean
+  muted: boolean
+  volume: number
+}
+
+// Volume is stored as round(v * 100) in two base36 chars (0.."2s"): the
+// sliders step in hundredths, so the 0..100 lattice is exact for every
+// value they can produce.
+const VOLUME_SCALE = 100
+
+function encodeAudio(a: PinAudioState | null): string {
+  if (!a) return ""
+  const flags = (a.playing ? 1 : 0) | (a.muted ? 2 : 0)
+  // A non-finite volume must never reach the wire: NaN.toString(36) is
+  // "NaN", which fails the whole-field regex on the next parse — wiping
+  // every OTHER extra with it. No writer produces one (they all clamp),
+  // so this is a backstop, mirroring decodeAudio's.
+  const v = Number.isFinite(a.volume) ? a.volume : 1
+  const vol = Math.max(0, Math.min(VOLUME_SCALE, Math.round(v * VOLUME_SCALE)))
+  return `A${flags}${vol.toString(36).padStart(2, "0")}`
+}
+
+function decodeAudio(
+  flags: string | undefined,
+  vol: string | undefined
+): PinAudioState | null {
+  if (!flags) return null
+  const f = parseInt(flags, 10)
+  const v = parseInt(vol ?? "", 36)
+  return {
+    playing: (f & 1) !== 0,
+    muted: (f & 2) !== 0,
+    volume: Number.isFinite(v) ? Math.min(1, v / VOLUME_SCALE) : 1,
+  }
+}
+
 function encodeOrient(o: PinOrientation | null): string {
   if (!o || (o.quarterTurns === 0 && !o.flipped)) return ""
   return `O${o.quarterTurns + (o.flipped ? 4 : 0)}`
@@ -353,10 +405,11 @@ export interface PinExtras {
   trim: TrimRange | null
   lock: PinLock
   orient: PinOrientation | null
+  audio: PinAudioState | null
 }
 
 export function packHField(h: number, extras: PinExtras): string {
-  const { crop, autoCrop, trim, lock, orient } = extras
+  const { crop, autoCrop, trim, lock, orient, audio } = extras
   let field = h.toString()
   field += encodeCrop("c", crop)
   field += encodeCrop("a", autoCrop)
@@ -367,13 +420,14 @@ export function packHField(h: number, extras: PinExtras): string {
   }
   if (lock) field += `L${lock === "anchor" ? "a" : "s"}`
   field += encodeOrient(orient)
+  field += encodeAudio(audio)
   return field
 }
 
 export function parseHField(field: string): { h: number } & PinExtras {
   const h = parseInt(field)
   const match =
-    /^\d+(?:c([0-9a-z]{8}))?(?:a([0-9a-z]{8}))?(?:t([0-9a-z]*)\.([0-9a-z]*))?(?:L([aps]))?(?:O([1-7]))?$/.exec(
+    /^\d+(?:c([0-9a-z]{8}))?(?:a([0-9a-z]{8}))?(?:t([0-9a-z]*)\.([0-9a-z]*))?(?:L([aps]))?(?:O([1-7]))?(?:A([0-3])([0-9a-z]{2}))?$/.exec(
       field
     )
   if (!match) {
@@ -384,6 +438,7 @@ export function parseHField(field: string): { h: number } & PinExtras {
       trim: null,
       lock: null,
       orient: null,
+      audio: null,
     }
   }
   const crop = decodeCrop(match[1])
@@ -393,5 +448,13 @@ export function parseHField(field: string): { h: number } & PinExtras {
     trim = { start: decodeTime(match[3]), end: decodeTime(match[4]) }
   }
   const lock: PinLock = match[5] === "s" ? "size" : match[5] ? "anchor" : null
-  return { h, crop, autoCrop, trim, lock, orient: decodeOrient(match[6]) }
+  return {
+    h,
+    crop,
+    autoCrop,
+    trim,
+    lock,
+    orient: decodeOrient(match[6]),
+    audio: decodeAudio(match[7], match[8]),
+  }
 }
