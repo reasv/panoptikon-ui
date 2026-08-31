@@ -597,8 +597,9 @@ function VirtualHorizontalScrollElement({
                             // collects them and degrade frame time for the whole
                             // session (see the comment in
                             // components/SearchResultImage.tsx). Do not
-                            // reintroduce. `?? 'empty'` is required: next/image
-                            // throws for any other placeholder string.
+                            // reintroduce. The data-URL template type is the
+                            // real guard (next/image validates only in dev);
+                            // `?? 'empty'` just documents the fallback.
                             placeholder={blurDataURL ?? 'empty'}
                             unoptimized={true}
                             sizes="240px"

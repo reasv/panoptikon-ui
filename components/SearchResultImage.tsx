@@ -126,14 +126,17 @@ export const SearchResultImage = memo(function SearchResultImage({
                         // isolated Document (own style resolver, own layout
                         // tree), so a virtualized grid mints one Document per
                         // cell mount — ~12/s at scroll speed, faster than GC
-                        // reclaims them. Measured: live Documents 31 -> 901 over
-                        // a 180 s scroll and p90 frame time 8.4 -> 33.6 ms, while
-                        // passing the data URL straight through (plain
-                        // `background-image: url(<png>)`, no SVG, no Document)
-                        // holds Documents at 1 and the frame time flat.
-                        // `?? 'empty'` is load-bearing: next/image THROWS at
-                        // render for any placeholder string that is not 'blur',
-                        // 'empty' or a `data:image/…` URL.
+                        // reclaims them. Measured (F3 investigation, 180 s
+                        // stdtest scroll): live Documents 31 -> 901 and bucket
+                        // p90 8.4 -> 33.6 ms; with the data URL passed straight
+                        // through (plain `background-image: url(<png>)`, no SVG,
+                        // no Document) Documents hold at 1 and the curve is flat.
+                        // The type of `blurDataURL` (`data:image/png;base64,…`
+                        // template literal) is the real guard here: next/image
+                        // only validates the placeholder string in dev builds —
+                        // in production an invalid string silently becomes a
+                        // garbage background. `?? 'empty'` is equivalent to
+                        // omitting the prop; it is kept as documentation.
                         placeholder={blurDataURL ?? 'empty'}
                         // draggable={true}
                         className={cn(

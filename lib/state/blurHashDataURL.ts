@@ -28,9 +28,10 @@ const cache = new Map<string, PlaceholderDataURL>()
  * next/image's `placeholder` prop (never as `blurDataURL` alongside
  * `placeholder="blur"` — see the comment in components/SearchResultImage.tsx
  * for why the 'blur' path is banned on churning surfaces), and that prop's type
- * is `'blur' | 'empty' | \`data:image/${string}\``. next/image THROWS at render
- * for anything else, so the template-literal type is what makes the direct
- * hand-off type-safe rather than a runtime landmine.
+ * is `'blur' | 'empty' | \`data:image/${string}\``. next/image validates the
+ * string at render only in DEV builds — in production an invalid value silently
+ * becomes a garbage background — so this template-literal type is the actual
+ * guard, not a belt over a runtime check.
  */
 export type PlaceholderDataURL = `data:image/png;base64,${string}`
 
