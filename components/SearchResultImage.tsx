@@ -22,7 +22,6 @@ export const SearchResultImage = memo(function SearchResultImage({
     imageContainerClassName,
     className,
     onImageClick,
-    nItems,
     galleryLink,
     overrideURL,
     showLoadingSpinner
@@ -34,7 +33,6 @@ export const SearchResultImage = memo(function SearchResultImage({
     imageContainerClassName?: string
     className?: string
     onImageClick?: (index?: number) => void
-    nItems?: number
     galleryLink?: boolean
     overrideURL?: string
     showLoadingSpinner?: boolean
@@ -57,6 +55,12 @@ export const SearchResultImage = memo(function SearchResultImage({
         }
     }, [onImageClick, index])
     const blurDataURL = useMemo(() => result.blurhash ? blurHashToDataURL(result.blurhash) : undefined, [result.blurhash])
+    // The one refresh for the anchor's href — see the comment on the anchor.
+    const refreshHref = galleryLink
+        ? (event: React.SyntheticEvent<HTMLAnchorElement>) => {
+            event.currentTarget.href = galleryHref(index)
+        }
+        : undefined
     const handleDragStart = (event: React.DragEvent<HTMLImageElement | HTMLAnchorElement | HTMLDivElement>): void => {
         if (!fileUrl) return;
         event.dataTransfer.effectAllowed = 'copy';
@@ -74,17 +78,33 @@ export const SearchResultImage = memo(function SearchResultImage({
                 <a
                     href={imageLink}
                     target="_blank"
-                    // The card no longer re-renders on every URL write (that
-                    // is the whole point), so the href it rendered with can be
-                    // one presentation-param write behind — a stale `top`,
-                    // say. Refreshed here because hover PRECEDES every gesture
-                    // that can consume an href: middle click, "open in new
-                    // tab", copy link address, drag. The plain click below
-                    // never reads it (preventDefault + onImageClick), and the
-                    // next real render recomputes it from the live params.
-                    onMouseEnter={galleryLink
-                        ? (e) => { e.currentTarget.href = galleryHref(index) }
-                        : undefined}
+                    // COMPUTED ONCE, refreshed only by the handlers below.
+                    // `galleryHref` has a fixed identity and `index` is stable
+                    // for a mounted card, so the value rendered here never
+                    // recomputes on its own — the card deliberately does not
+                    // re-render on a URL write (that is the whole point), and
+                    // there is NO fallback recompute behind these handlers.
+                    // Between them they cover every gesture that can consume an
+                    // href: mouseenter (hover, which precedes middle click,
+                    // "open in new tab", copy link address and drag), mousedown
+                    // (a middle click after a wheel scroll that crossed no
+                    // hover boundary — mousedown precedes the default action),
+                    // contextmenu (including the keyboard menu key, which fires
+                    // no mouse event) and focus (keyboard navigation). The
+                    // plain left click never reads the href at all
+                    // (preventDefault + onImageClick).
+                    //
+                    // ACCEPTED RESIDUAL: writing `currentTarget.href` is an
+                    // imperative DOM write React does not know about, so a
+                    // later render whose RENDERED href is unchanged may skip
+                    // the attribute write and leave our value standing. Not
+                    // reachable in practice — every navigation path is preceded
+                    // by one of these handlers, each of which writes the
+                    // current value.
+                    onMouseEnter={refreshHref}
+                    onMouseDown={refreshHref}
+                    onContextMenu={refreshHref}
+                    onFocus={refreshHref}
                     onClick={(e) => {
                         e.preventDefault()
                         onClick()

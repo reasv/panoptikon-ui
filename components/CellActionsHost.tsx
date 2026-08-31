@@ -158,6 +158,10 @@ export function CellActionsHost({
         searchParams,
     }
     const latest = useRef(snapshot)
+    // Written in the render body, so an abandoned concurrent render can leave
+    // its snapshot in the box: safe because every write a callback performs
+    // goes through a functional update, and the one pre-commit READ (togglePin's
+    // precomputation) only reads values that render itself was rendering with.
     latest.current = snapshot
 
     const callbacks = useMemo<CellCallbacks>(() => {

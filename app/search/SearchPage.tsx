@@ -1792,7 +1792,6 @@ export function ResultGrid({
                                                 // the gallery resolves it
                                                 // against this same source.
                                                 galleryLink
-                                                nItems={itemCount}
                                                 showLoadingSpinner={isLoading}
                                             />
                                         )

@@ -4,7 +4,8 @@ const PLACEHOLDER_WIDTH = 32
 const PLACEHOLDER_HEIGHT = 32
 
 /**
- * Decoded placeholders, keyed by `hash|w|h`.
+ * Decoded placeholders, keyed by the blurhash string alone — the placeholder
+ * dimensions are module constants, so they can never vary between two entries.
  *
  * A blurhash is decoded AND PNG-encoded in pure JS — 4096 `String.fromCharCode`
  * calls, a hand-rolled deflate-store and a CRC pass — and a grid cell does it
@@ -26,16 +27,15 @@ export function blurHashToDataURL(
   hash: string | undefined
 ): string | undefined {
   if (!hash) return undefined
-  const key = `${hash}|${PLACEHOLDER_WIDTH}|${PLACEHOLDER_HEIGHT}`
-  const hit = cache.get(key)
+  const hit = cache.get(hash)
   if (hit !== undefined) {
-    cache.delete(key)
-    cache.set(key, hit)
+    cache.delete(hash)
+    cache.set(hash, hit)
     return hit
   }
   const pixels = decode(hash, PLACEHOLDER_WIDTH, PLACEHOLDER_HEIGHT)
   const dataURL = parsePixels(pixels, PLACEHOLDER_WIDTH, PLACEHOLDER_HEIGHT)
-  cache.set(key, dataURL)
+  cache.set(hash, dataURL)
   if (cache.size > CACHE_LIMIT) {
     const oldest = cache.keys().next()
     if (!oldest.done) cache.delete(oldest.value)

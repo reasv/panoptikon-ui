@@ -988,6 +988,38 @@ export function useChunkedResults({
       }
     })
   }
+  // The chunk-request key for a MISS, memoized per chunk for the life of one
+  // committed query. A screenful of skeletons is dozens of cells asking about
+  // the SAME two or three chunks, and each miss otherwise rebuilt the chunk
+  // request object and had react-query hash it again — per cell, per render, in
+  // the hottest loop in the app.
+  //
+  // A REF, not a bare `new Map()` in the render body: under the React Compiler
+  // such an allocation becomes a memoized slot with NO dependency of its own,
+  // so the map is minted once per hook instance and survives a change of
+  // `parts` — handing `getQueryData` keys built from the PREVIOUS search, and
+  // growing without bound for the life of the page. A ref escapes that
+  // memoization, so the invalidation can be written by hand: the box is reset
+  // whenever `parts` moves, checked at USE so it holds for callers that run
+  // outside a render pass too (`retryRange`). The reset is idempotent and
+  // derived from nothing but `parts`, so a render React discards leaves behind
+  // a valid — merely empty — map for those same parts.
+  const missKeys = useRef<{
+    parts: SearchRequestParts
+    map: Map<number, unknown[]>
+  }>({ parts, map: new Map() })
+  const missKeyFor = (chunkIndex: number) => {
+    if (missKeys.current.parts !== parts) {
+      missKeys.current = { parts, map: new Map() }
+    }
+    const map = missKeys.current.map
+    let key = map.get(chunkIndex)
+    if (!key) {
+      key = ["post", "/api/search/pql", buildChunkRequest(parts, chunkIndex)]
+      map.set(chunkIndex, key)
+    }
+    return key
+  }
   /**
    * Restart the failed chunks in a range. `resetQueries` rather than
    * `refetchQueries`, for one reason: reset returns the query to its initial
@@ -1014,7 +1046,7 @@ export function useChunkedResults({
       if (!erroredChunks.has(chunkIndex)) continue
       reset = true
       void queryClient.resetQueries({
-        queryKey: ["post", "/api/search/pql", buildChunkRequest(parts, chunkIndex)],
+        queryKey: missKeyFor(chunkIndex),
         exact: true,
       })
     }
@@ -1035,23 +1067,9 @@ export function useChunkedResults({
   // set, the react-query cache (a chunk pushed out by LRU is still there;
   // without that read, evicting a chunk the user is looking at would flash
   // skeletons over rows that are in memory), and the main query's page-1
-  // fallback — can never answer the two differently.
-  //
-  // The MISS path's request body is memoized per chunk for the life of this
-  // render pass. A screenful of skeletons is dozens of cells asking about the
-  // SAME two or three chunks, and each miss otherwise rebuilt the chunk
-  // request object and had react-query hash it again — per cell, per render,
-  // in the hottest loop in the app. A plain Map is enough because `parts` is
-  // fixed within a render pass by construction.
-  const missKeys = new Map<number, unknown[]>()
-  const missKeyFor = (chunkIndex: number) => {
-    let key = missKeys.get(chunkIndex)
-    if (!key) {
-      key = ["post", "/api/search/pql", buildChunkRequest(parts, chunkIndex)]
-      missKeys.set(chunkIndex, key)
-    }
-    return key
-  }
+  // fallback — can never answer the two differently. The MISS path's key comes
+  // from `missKeyFor` above, which caches it per chunk for the life of one
+  // committed query.
   const blockAt = (
     index: number
   ): { start: number; rows: SearchResult[] } | undefined => {
