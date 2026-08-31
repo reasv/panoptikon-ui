@@ -1254,6 +1254,19 @@ export function ResultGrid({
         () => dbsState,
         [dbsState.index_db, dbsState.user_data_db]
     )
+    // The cards' click handler, made referentially stable HERE rather than
+    // trusted from above. It is the one prop the host mints per render (an
+    // inline arrow over a nuqs setter), and it is enough on its own to defeat
+    // `React.memo` on every visible card — which is exactly what a `top` write
+    // was doing after the per-cell subscriptions were hoisted out: zero cells
+    // subscribed to anything, and all thirty still re-rendered because their
+    // callback prop was new. A ref, not a `useCallback` over the prop: the
+    // point is that the identity NEVER changes, whatever the caller does.
+    const imageClickRef = useRef(onImageClick)
+    imageClickRef.current = onImageClick
+    const handleImageClick = useCallback((index?: number) => {
+        imageClickRef.current?.(index)
+    }, [])
     const parentRef = useRef<HTMLDivElement>(null)
     const [sidebarOpen] = useSideBarOpen()
     const { columns, rowEstimate } = useResultGridLayout(sidebarOpen)
@@ -1772,7 +1785,7 @@ export function ResultGrid({
                                                 result={result}
                                                 index={index}
                                                 dbs={dbs}
-                                                onImageClick={onImageClick}
+                                                onImageClick={handleImageClick}
                                                 // Every card in the set opens
                                                 // the gallery, in both modes:
                                                 // `gi` is a global index and
