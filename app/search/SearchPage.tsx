@@ -356,7 +356,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     // which is now a working operation rather than a fresh random draw.
     const orderedRandomly = useOrderBy().order_by === "random"
     const setSeed = useRandomSeed()[1]
-    const onRefresh = async () => {
+    const runRefresh = async () => {
         if (!searchEnabled) {
             toast({
                 title: "Error",
@@ -381,6 +381,20 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
             duration: 2000
         })
     }
+    // …and it is handed down with a FIXED identity. The closure above is
+    // rebuilt on every render of this component (it reads the seed setter, the
+    // toast and react-query's refetch), and this component re-renders on every
+    // scroll stop — it owns the URL scroll anchor. Passed straight through,
+    // that churning identity re-rendered the whole search-bar row, and
+    // everything mounted in it, once per stop for a callback nobody had
+    // invoked. Same reasoning as the grid cards' click handler (see
+    // ResultGrid's imageClickRef), with one difference: the ref is filled from
+    // an EFFECT rather than during render, because a render-phase ref write
+    // opts this whole component out of the React Compiler — the very trade the
+    // three extracted mount hooks above exist to avoid.
+    const refreshRef = useRef(runRefresh)
+    useEffect(() => { refreshRef.current = runRefresh })
+    const onRefresh = useCallback(() => { void refreshRef.current() }, [])
     // Self-heals random-ordered links that predate seeds (see the hook)
     useStampRandomSeed()
     const instantSearch = useInstantSearch((state) => state.enabled)
@@ -1444,19 +1458,18 @@ export function ResultGrid({
     //
     // In scroll mode this same listener also drives the pagination bar's live
     // highlight — the ONLY live source of it (see MultiSearchView's derived
-    // page). Same listener, not a second one: both answers come from the same
-    // visible range seen at two different moments (continuously for the
-    // indicator, on the 350ms stop for the URL), and reading that range in two
-    // places is how they would come to disagree about WHEN.
+    // page). Same listener, and in scroll mode the same ROW: the stop write
+    // takes the row the highlight last spoke for rather than reading the
+    // virtualizer again 350ms later (see `highlightedRow` below, and the drift
+    // that second reading produced).
     //
-    // What they deliberately do NOT share is WHICH item they speak for. The
-    // anchor is the FIRST item of the top row — a position, and the codec's
+    // What they deliberately do NOT share is WHICH item of that row they speak
+    // for. The anchor is the FIRST item — a position, and the codec's
     // documented contract (lib/state/gridScroll.ts) — while the highlight is
-    // derived from the LAST item of that row, because it answers a different
-    // question: which virtual page am I looking at. See topRowHighlightItem
-    // for why the two cannot be the same expression. The anchor written here
-    // is GLOBAL by construction — the rows are global — so nothing about the
-    // write changes.
+    // derived from the LAST item, because it answers a different question:
+    // which virtual page am I looking at. See topRowHighlightItem for why the
+    // two cannot be the same expression. The anchor written here is GLOBAL by
+    // construction — the rows are global — so nothing about the write changes.
     useEffect(() => {
         const element = parentRef.current
         if (!element || columns <= 0) return
@@ -1467,8 +1480,27 @@ export function ResultGrid({
         // above.)
         lastDerivedPage.current = null
         let timer: ReturnType<typeof setTimeout> | undefined
+        // The row the live highlight last spoke for. In scroll mode the stop
+        // write below takes its anchor from THIS, rather than reading the
+        // virtualizer a second time — one row, two questions, never two rows.
+        //
+        // Two readings is a drift, not a rounding error. `scrollToIndex` lands
+        // on a MEASURED row height and can finish a quarter of a pixel above
+        // the row it aimed at, at which point the virtualizer's range honestly
+        // reports the row ABOVE as the top one — while the highlight, derived
+        // from the same range one event earlier, still speaks for the row
+        // filling the viewport. The bar then shows page N while the URL records
+        // page N-1, a mode switch commits the URL's answer, re-entering scroll
+        // mode re-asserts the position one row higher, and the next switch does
+        // it again: one page per round trip, without bound (56 -> 55 -> 54).
+        //
+        // Pages mode keeps the fresh read. It has no highlight for the anchor
+        // to disagree with, and its rows are measured progressively as they
+        // mount, so a reading taken when scrolling has actually stopped is the
+        // more accurate one there.
+        let highlightedRow: number | null = null
         const onScrollStop = () => {
-            const startRow = virtualizer.range?.startIndex ?? 0
+            const startRow = highlightedRow ?? virtualizer.range?.startIndex ?? 0
             const anchor = startRow > 0 ? startRow * columns : null
             if (anchor === lastWrittenAnchor.current) return
             lastWrittenAnchor.current = anchor
@@ -1483,8 +1515,12 @@ export function ResultGrid({
                 // only through this branch (see topRowHighlightItem).
                 const lastRowVisible =
                     range !== null && range.endIndex >= live.rowCount - 1
+                // Recorded even when the derived page is unchanged: what the
+                // stop write needs is the row the bar is CURRENTLY speaking
+                // for, not the one that last moved the number.
+                highlightedRow = range?.startIndex ?? 0
                 const item = topRowHighlightItem(
-                    range?.startIndex ?? 0,
+                    highlightedRow,
                     columns,
                     live.itemCount,
                     lastRowVisible

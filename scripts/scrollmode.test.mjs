@@ -664,74 +664,73 @@ const of = (url) => new URLSearchParams(url)
   )
 }
 
-// ---- the mode switch, as the BAR sees it -------------------------------
+// ---- the mode switch, as the GRID sees it ------------------------------
 //
-// The invariant above is arithmetic; this is the same claim asserted through
-// the values the pagination bar is actually built from. Switching pages ->
-// scroll writes `top = scrollAnchorFromPage(...)` and seeds the box with
-// `virtualPageOf(top, k)` (useDerivedVirtualPage's seed expression), and the
-// highlighted number must not move across either direction of the switch.
+// The invariant above is arithmetic over the URL alone. What the grid holds
+// is a ROW, and it turns that one row into two different numbers: the anchor
+// it writes into `top` (the row's FIRST item — gridScroll.ts's documented
+// contract) and the number it highlights (topRowHighlightItem — the row's
+// LAST item). A mode switch commits the anchor, so the relationship between
+// those two is what decides whether the bar's number survives a toggle.
+//
+// They are allowed to differ about the ITEM. What they may never do is put
+// the highlight BEHIND the position: that is the lattice flip
+// topRowHighlightItem exists to remove, and it is what makes a round trip
+// through pages mode walk the number DOWN instead of leaving it alone. A
+// highlight one page ahead is the straddling row reported honestly (the row
+// starts on page N-1 and ends on page N), and it costs at most that one page
+// on the toggle — the position it lands on then highlights itself, so it
+// cannot compound.
+//
+// The other half of the guarantee is not arithmetic and is not asserted here:
+// both numbers must come from ONE reading of the row. The grid's scroll-stop
+// write reuses the row the last scroll event derived the highlight from
+// rather than re-reading the virtualizer 350 ms later (ResultGrid's
+// onScrollStop) — two readings is how the bar came to show one page while the
+// toggle committed another, once per round trip, without bound.
 
 {
   let ok = true
   let firstBad = ""
+  const itemCount = 100_000
   for (const k of [1, 7, 10, 25, 100]) {
-    for (const page of [1, 2, 3, 17, 37, 1000]) {
-      for (const local of [0, 1, k - 1]) {
-        if (local < 0 || local >= k) continue
-        // pages -> scroll: what the switch writes, and what the bar then
-        // shows for it.
-        const top = scrollAnchorFromPage({ page, pageSize: k, anchor: local })
-        const shown = createDerivedPageStore(virtualPageOf(top, k)).get()
-        // scroll -> pages: the page number the switch lands the URL on.
-        const back = pageStateFromScrollAnchor({ anchor: top, pageSize: k })
-        const good = shown === page && back.page === page
+    for (const columns of [1, 2, 3, 4, 5]) {
+      // A row wider than a virtual page spans several of them, so "one page
+      // ahead" is not the right bound for it; that degenerate geometry is
+      // asserted on its own terms further below.
+      if (columns > k) continue
+      for (const startRow of [0, 1, 7, 40, 137, 999]) {
+        // The two numbers the grid derives from the SAME row.
+        const anchor = startRow * columns
+        const shown = virtualPageOf(
+          topRowHighlightItem(startRow, columns, itemCount, false),
+          k
+        )
+        // …and what a toggle to pages mode and back does with the anchor: the
+        // page it commits, and the number the bar shows on the way back (the
+        // box is seeded with `virtualPageOf(top, k)` — useDerivedVirtualPage).
+        const committed = pageStateFromScrollAnchor({ anchor, pageSize: k })
+        const shownAfterReturn = virtualPageOf(
+          scrollAnchorFromPage({
+            page: committed.page,
+            pageSize: k,
+            anchor: committed.index,
+          }),
+          k
+        )
+        const delta = shown - committed.page
+        const good =
+          (delta === 0 || delta === 1) && shownAfterReturn === committed.page
         if (!good && !firstBad) {
-          firstBad = `k=${k} page=${page} local=${local} top=${top} shown=${shown} back=${back.page}`
+          firstBad = `k=${k} cols=${columns} row=${startRow} shown=${shown} committed=${committed.page} again=${shownAfterReturn}`
         }
         ok &&= good
       }
     }
   }
   check(
-    "the highlighted page number survives a mode switch in both directions",
+    "the row's highlight is its anchor's page or the next one, never behind",
     ok,
-    firstBad
-  )
-}
-
-{
-  // A grid scrolled to an arbitrary row, switched to pages mode and back:
-  // the row's own highlight (topRowHighlightItem -> virtualPageOf) is what
-  // the bar shows in scroll mode, and pages mode must agree about it. The
-  // anchor the grid WRITES is the top row's first item, so this is also the
-  // case where the two expressions deliberately differ (see the section
-  // below) — they may differ about the ITEM, never about the PAGE, once the
-  // switch has re-expressed the position.
-  let agrees = true
-  let firstBad = ""
-  for (const k of [10, 25]) {
-    for (const columns of [1, 3, 5]) {
-      for (const startRow of [0, 1, 7, 40, 137]) {
-        const itemCount = 5000
-        const anchor = startRow * columns
-        const back = pageStateFromScrollAnchor({ anchor, pageSize: k })
-        const shownAfterReturn = virtualPageOf(
-          scrollAnchorFromPage({ page: back.page, pageSize: k, anchor: back.index }),
-          k
-        )
-        const shownNow = virtualPageOf(anchor, k)
-        const good = shownAfterReturn === shownNow && back.page === shownNow
-        if (!good && !firstBad) {
-          firstBad = `k=${k} cols=${columns} row=${startRow} now=${shownNow} back=${back.page} again=${shownAfterReturn}`
-        }
-        agrees &&= good
-      }
-    }
-  }
-  check(
-    "a grid position round-trips through pages mode with the same number",
-    agrees,
     firstBad
   )
 }
