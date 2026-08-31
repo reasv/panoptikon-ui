@@ -164,8 +164,9 @@ export function ImageGallery({
      */
     queryEnabled: boolean
     /**
-     * The scrubber's live highlight setter, scroll mode only — the host's
-     * setDerivedPage, stable by construction (a useState setter), which the
+     * The scrubber's live highlight write, scroll mode only — the host's
+     * derived-page box (lib/state/derivedPage.ts), stable by construction
+     * (minted once per mount, so it is not a per-render callback), which the
      * strip's scroll listener depends on. Threaded to the thumbnail strip so
      * the pagination bar under the open gallery finally tracks a strip PAN
      * (docs/maximized-pinboard-search-overlay-design.md §6) — navigation was

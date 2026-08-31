@@ -8,21 +8,58 @@ import {
     PaginationPrevious,
 } from "@/components/ui/pagination"
 import { useMediaQuery } from "@/hooks/use-media-query";
+import type { DerivedPageStore } from "@/lib/state/derivedPage";
 import { useSideBarOpen } from "@/lib/state/sideBar";
 import { ReadonlyURLSearchParams, useSearchParams } from "next/navigation";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
+
+/**
+ * What the bar highlights: a plain page number, or — in scroll mode — the
+ * derived-page box the grid writes to (lib/state/derivedPage.ts).
+ *
+ * A union rather than two components, so every call site keeps ONE four-prop
+ * switch (`totalPages`/`currentPage`/`setPage`/`getPageURL`, chosen by mode)
+ * and every surface that merely forwards those props — SearchOverlay's dock
+ * bar does — needs to know nothing about where the number comes from.
+ */
+export type PageIndicator = number | DerivedPageStore
+
+/**
+ * The indicator's current value, subscribed to when it is a box.
+ *
+ * The whole point of the box lives in this one line: a virtual-page crossing
+ * re-renders THIS component and nothing above it, where the same crossing used
+ * to re-render MultiSearchView, GridPanel and every grid row. The number
+ * branch is a `useSyncExternalStore` that can never fire — the value is already
+ * a render input, so it arrives by re-render as it always has — which is what
+ * keeps the hook order unconditional.
+ */
+const NEVER_NOTIFIES = () => () => { }
+function useIndicatedPage(indicator: PageIndicator): number {
+    const store = typeof indicator === "number" ? null : indicator
+    const subscribe = store ? store.subscribe : NEVER_NOTIFIES
+    // Both snapshots are the same function: the server render has no box to
+    // read either way, and a fixed number is the honest answer on both sides.
+    const snapshot = useCallback(
+        () => (store ? store.get() : (indicator as number)),
+        [store, indicator]
+    )
+    return useSyncExternalStore(subscribe, snapshot, snapshot)
+}
 
 const range = (start: number, end: number) => Array.from({ length: end - start + 1 }, (_, i) => start + i);
 export function PageSelect({
     totalPages,
-    currentPage,
+    currentPage: indicator,
     setPage,
     getPageURL
 }: {
     totalPages: number;
-    currentPage: number;
+    currentPage: PageIndicator;
     setPage: (page: number) => void;
     getPageURL: (base: ReadonlyURLSearchParams | URLSearchParams, newPage: number) => string
 }) {
+    const currentPage = useIndicatedPage(indicator)
     const [sidebarOpen, _] = useSideBarOpen()
     const isMobile = useMediaQuery("(max-width: 768px)")
     const isTablet = useMediaQuery("(max-width: 1024px)")
@@ -68,6 +105,25 @@ export function PageSelect({
     }
 
     const params = useSearchParams()
+    // One URL build per page number, kept for as long as the URL and the link
+    // builder stand still. The bar renders up to 35 links, each of which
+    // copies the whole search URL (`new URLSearchParams(base)` over a query
+    // string that routinely carries dozens of filter parameters) — and in
+    // scroll mode it re-renders on every virtual-page crossing, where at most
+    // two of those 35 numbers are new. Correct because the builder is a pure
+    // function of `(params, page)`: `getScrollPositionURL` closes over k and
+    // the gallery flag, and `getPageURL`'s identity moves when those do.
+    const hrefFor = useMemo(() => {
+        const cache = new Map<number, string>()
+        return (page: number) => {
+            let href = cache.get(page)
+            if (href === undefined) {
+                href = getPageURL(params, page)
+                cache.set(page, href)
+            }
+            return href
+        }
+    }, [params, getPageURL])
 
     return (
         <Pagination className="mt-4">
@@ -75,7 +131,7 @@ export function PageSelect({
                 {/* Previous Button */}
                 <PaginationItem>
                     <PaginationPrevious
-                        href={getPageURL(params, Math.max(1, currentPage - 1))}
+                        href={hrefFor(Math.max(1, currentPage - 1))}
                         onClick={(e) => {
                             e.preventDefault();
                             if (currentPage > 1) setPage(currentPage - 1);
@@ -86,7 +142,7 @@ export function PageSelect({
                 {/* First Page */}
                 <PaginationItem>
                     <PaginationLink
-                        href={getPageURL(params, 1)}
+                        href={hrefFor(1)}
                         isActive={1 === currentPage}
                         onClick={(e) => {
                             e.preventDefault();
@@ -108,7 +164,7 @@ export function PageSelect({
                 {range(startPage, endPage).map((page) => (
                     <PaginationItem key={page}>
                         <PaginationLink
-                            href={getPageURL(params, page)}
+                            href={hrefFor(page)}
                             isActive={page === currentPage}
                             onClick={(e) => {
                                 e.preventDefault();
@@ -130,7 +186,7 @@ export function PageSelect({
                 {/* Last Page */}
                 <PaginationItem>
                     <PaginationLink
-                        href={getPageURL(params, totalPages)}
+                        href={hrefFor(totalPages)}
                         isActive={totalPages === currentPage}
                         onClick={(e) => {
                             e.preventDefault();
@@ -144,7 +200,7 @@ export function PageSelect({
                 {/* Next Button */}
                 <PaginationItem>
                     <PaginationNext
-                        href={getPageURL(params, Math.min(totalPages, currentPage + 1))}
+                        href={hrefFor(Math.min(totalPages, currentPage + 1))}
                         onClick={(e) => {
                             e.preventDefault();
                             if (currentPage < totalPages) setPage(currentPage + 1);

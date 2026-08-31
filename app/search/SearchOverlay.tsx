@@ -5,7 +5,7 @@ import type { ReadonlyURLSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Toggle } from "@/components/ui/toggle"
 import { Button } from "@/components/ui/button"
-import { PageSelect } from "@/components/pageselect"
+import { PageSelect, type PageIndicator } from "@/components/pageselect"
 import { ViewModeToggle } from "@/components/ViewModeToggle"
 import { VirtualGalleryHorizontalScroll } from "@/components/gallery/VirtualizedHorizontalScroll"
 import { useDelayedHover } from "@/components/gallery/PinboardPreviewPopover"
@@ -133,8 +133,9 @@ export function SearchOverlay({
      */
     fallbackAnchor: number | null
     /**
-     * Scroll mode: the host's setDerivedPage, stable by construction (a
-     * useState setter) — the strip's scroll listener depends on it (§6).
+     * Scroll mode: the host's derived-page write, stable by construction
+     * (a box member minted once per mount, lib/state/derivedPage.ts) — the
+     * strip's scroll listener depends on it (§6).
      */
     onDerivedPageChange?: (page: number) => void
     /** k, the virtual-page size, for the strip's derived page number. */
@@ -146,7 +147,13 @@ export function SearchOverlay({
     // scroll mode. Only one PageSelect is ever on screen: the page-level bar
     // is gated `!fs`, and this overlay only mounts while maximized.
     totalPages: number
-    currentPage: number
+    /**
+     * A page number in pages mode, and in scroll mode the derived-page BOX
+     * itself (components/pageselect.tsx's PageIndicator) — forwarded either
+     * way, so a virtual-page crossing re-renders the bar inside this dock and
+     * not the dock.
+     */
+    currentPage: PageIndicator
     setPage: (page: number) => void
     getPageURL: (base: ReadonlyURLSearchParams | URLSearchParams, newPage: number) => string
     /**

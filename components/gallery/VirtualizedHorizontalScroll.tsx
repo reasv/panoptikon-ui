@@ -92,7 +92,8 @@ export function VirtualGalleryHorizontalScroll({
      * of the leading visible card, and ONLY when that number changes, so
      * panning doesn't re-render the host per frame. Must be referentially
      * stable — it is a dependency of the scroll listener below (both mounts
-     * pass a useState setter). Comes with `pageSize`.
+     * pass the derived-page box's `set`, minted once per mount). Comes with
+     * `pageSize`.
      */
     onDerivedPageChange?: (page: number) => void
     /** k, the virtual-page size, for the derived page number. */

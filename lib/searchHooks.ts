@@ -19,7 +19,7 @@ import {
 import type { components } from "./panoptikon"
 import { getSearchPageURL } from "./state/searchQuery/serializers"
 import { usePartitionBy } from "./state/partitionBy"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useThrottledValue } from "./useThrottledValue"
 import {
   useGalleryIndex,
@@ -93,7 +93,19 @@ function useCommittedQuery<T>(
 ): { key: string; value: T } {
   const committed = useRef({ key: liveKey, value: liveValue })
   const seenToken = useRef(commitToken)
-  if (instantSearch || seenToken.current !== commitToken) {
+  // `committed.current.key !== liveKey` is not an optimization of the
+  // instant-search branch, it IS the branch: `liveKey` is a content hash of a
+  // SUPERSET of `liveValue`'s fields, so an unchanged key means the frozen
+  // value's content is already the live one and replacing it would publish a
+  // new object saying the same thing. Everything downstream keys on this
+  // reference — the chunk store's throttle and its `parts`-keyed memos, the
+  // Library tab's `committedQuery` prop — and with instant search on (the
+  // default) this used to mint a fresh one on every single render, which is
+  // what made all of them miss.
+  if (
+    (instantSearch && committed.current.key !== liveKey) ||
+    seenToken.current !== commitToken
+  ) {
     committed.current = { key: liveKey, value: liveValue }
   }
   seenToken.current = commitToken
@@ -146,15 +158,20 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     partitionBy: partitionBy.partition_by,
     page,
   }
-  const throttledRequest = useThrottledValue(liveRequest, throttleMs)
+  // Gated on the *live* request, not the throttled one: the throttle trails
+  // by a render, and during that render the query key is still the previously
+  // committed one — already in cache, so leaving it enabled costs nothing.
+  //
+  // Hoisted above the throttle so it can BE the throttle's content key: the
+  // two were serializing the identical object every render (`hashKey` is a
+  // key-sorted `JSON.stringify`), and one serialization of the search query
+  // per render is enough.
+  const liveKey = hashKey([liveRequest])
+  const throttledRequest = useThrottledValue(liveRequest, throttleMs, liveKey)
   const request = throttleMs > 0 ? throttledRequest : liveRequest
   // page_size is optional in the spec (server default 10); the query
   // builders always set it, but the type can't promise that.
   const pageSize = request.searchQuery.page_size ?? 10
-  // Gated on the *live* request, not the throttled one: the throttle trails
-  // by a render, and during that render the query key is still the previously
-  // committed one — already in cache, so leaving it enabled costs nothing.
-  const liveKey = hashKey([liveRequest])
   // The frozen value is taken from the *live* request, not the throttled one:
   // a commit lands on the render that bumps the token, and the throttle is
   // still a render behind then — freezing the trailing value would leave the
@@ -282,6 +299,11 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     // consumer that needs only part of it takes a `Pick` and is unaffected.
     // See useCommittedQuery.
     committedQuery,
+    // Its content hash — the same string this hook keys its own query gate
+    // on. Handed out so a consumer that throttles `committedQuery` can pass
+    // it as the throttle's content key instead of serializing the search a
+    // second time per render (see useThrottledValue's `contentKey`).
+    committedKey,
     resultsAreStale,
     nResults,
     countIsPlaceholder,
@@ -722,12 +744,25 @@ function idOf(rows: object): number {
  */
 export function useChunkedResults({
   committedQuery,
+  committedKey,
   enabled,
   fallbackResults,
   resultsAreStale,
   count,
 }: {
   committedQuery: SearchRequestParts
+  /**
+   * `useSearch`'s hash of that same committed request, used as the throttle's
+   * content key (see `useThrottledValue`'s `contentKey`) instead of
+   * serializing the whole search a second time on every render of the search
+   * page. It hashes a SUPERSET of `committedQuery` — the live `page` is in it
+   * — which is sound in both directions: the content cannot move without the
+   * key moving, and the one extra field that can move on its own is `page`,
+   * which scroll mode does not have (and which every chunk request overrides
+   * regardless, so a spurious propagation would re-mint `parts` without
+   * moving `partsKey`, refetching nothing).
+   */
+  committedKey: string
   /**
    * `searchEnabled && !searchSuppressed` — NOT `useSearch`'s `queryEnabled`.
    *
@@ -790,7 +825,11 @@ export function useChunkedResults({
   // anything is gated the same way, so that session pays ~nothing per render.
   const throttledQuery = useThrottledValue(
     enabled ? committedQuery : NO_CHUNK_QUERY,
-    throttleMs
+    throttleMs,
+    // The disabled key is the placeholder request's own identity and must
+    // differ from every real hash the same way NO_PARTS_KEY does — a hash is
+    // JSON, so a bare word cannot collide with one.
+    enabled ? committedKey : NO_PARTS_KEY
   )
   // `throttledQuery` is state that only moves when its content does, so
   // `parts` (and everything keyed on it below) sits still between committed
@@ -829,7 +868,18 @@ export function useChunkedResults({
   // construction (see NO_PARTS_KEY), which is exactly right: the first enabled
   // render rebuilds the wanted window from the consumers' own `ensureRange`
   // rather than inheriting one.
-  const partsKey = enabled ? hashKey([buildChunkRequest(parts, 0)]) : NO_PARTS_KEY
+  //
+  // Memoized on `parts`, which is the throttle's state and therefore sits
+  // still between committed searches: building a request body and hashing it
+  // is the single most expensive expression in this hook's render path, and
+  // it has no business re-running for a chunk that landed or a row that
+  // moved. (`parts` falls back to `committedQuery` for the throttle's opening
+  // window and when throttling is off — that reference is stable too, per
+  // useCommittedQuery.)
+  const partsKey = useMemo(
+    () => (enabled ? hashKey([buildChunkRequest(parts, 0)]) : NO_PARTS_KEY),
+    [enabled, parts]
+  )
   // The observed chunk set, oldest request first — a plain array rather than
   // a Set because the order IS the eviction order — tagged with the query it
   // was collected for. Reading it back through that tag is what stops a query

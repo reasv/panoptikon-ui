@@ -40,6 +40,7 @@ import { CellActionsHost } from "@/components/CellActionsHost"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { components } from "@/lib/panoptikon"
 import { GRID_SCROLL_ANCHOR_KEY, useGridScrollAnchor } from "@/lib/state/gridScroll"
+import { createDerivedPageStore } from "@/lib/state/derivedPage"
 import { DesktopUpdateRibbon } from "@/components/DesktopUpdateRibbon"
 import { FindNavigator } from "@/components/gallery/FindButton"
 import { SearchMetricsHoverCard } from "@/components/SearchMetricsCard"
@@ -106,8 +107,16 @@ export function SearchPageContent({ initialQuery, isRestrictedMode }:
 // takes exactly the values its body reads; nothing else moved.
 
 /**
- * The highlighted virtual page: MultiSearchView's own state, plus the effect
- * that seeds it from the URL anchor.
+ * The highlighted virtual page: the subscribable box the number lives in (see
+ * lib/state/derivedPage.ts for why it is not `useState`), plus the effect that
+ * seeds it from the URL anchor.
+ *
+ * NOTHING HERE RE-RENDERS ON A CROSSING. The box is created once per mount and
+ * its `set` is what the grid, the gallery and the maximized strip are handed;
+ * the only subscriber is the pagination bar (components/pageselect.tsx). A
+ * crossing therefore re-renders the bar and nothing else — where the same
+ * crossing used to re-render this component, GridPanel and the whole grid,
+ * every `page_size` items scrolled.
  *
  * The LIVE value comes from the grid, which is the only place it can be
  * computed correctly: the highlight is derived from the top visible ROW (see
@@ -141,7 +150,12 @@ function useDerivedVirtualPage({ scrollMode, scrollAnchor, k, galleryOpen }: {
      */
     galleryOpen: boolean,
 }) {
-    const [derivedPage, setDerivedPage] = useState(() => virtualPageOf(scrollAnchor ?? 0, k))
+    // Seeded on the FIRST render, from that render's anchor — the same moment
+    // the `useState` initializer this replaces took its value. That is what
+    // makes a deep link (and the server render of one) paint the page number
+    // it arrived with instead of flashing page 1 until an effect runs.
+    const [store] = useState(() =>
+        createDerivedPageStore(virtualPageOf(scrollAnchor ?? 0, k)))
     // …which is why `scrollAnchor` is deliberately NOT a trigger WHILE THE GRID
     // IS MOUNTED, only a value read when something else fires. The grid WRITES
     // that anchor on every scroll stop, and it writes the first item of the top
@@ -191,10 +205,12 @@ function useDerivedVirtualPage({ scrollMode, scrollAnchor, k, galleryOpen }: {
         wasGalleryOpen.current = galleryOpen
         if (!scrollMode) return
         if (galleryOpen !== previouslyOpen) return
-        setDerivedPage(virtualPageOf(scrollAnchor ?? 0, k))
+        // A write of the number already held notifies nobody, exactly as the
+        // `setDerivedPage` this replaces bailed out on an unchanged value.
+        store.set(virtualPageOf(scrollAnchor ?? 0, k))
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [scrollMode, scrollAnchor === null, galleryOpen, galleryOpen ? scrollAnchor : null])
-    return [derivedPage, setDerivedPage] as const
+    return store
 }
 
 /**
@@ -330,7 +346,7 @@ function useSearchCreationStamp({ urlParams, setViewMode, setPageSizeRaw }: {
 
 export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVisible = false }:
     { initialQuery: SearchQueryArgs, isRestrictedMode: boolean, updateRibbonVisible?: boolean }) {
-    const { data, error, isError, refetch, isFetching, resultsAreStale, nResults, countIsPlaceholder, page, pageSize, setPage, searchEnabled, getPageURL, committedQuery, queryEnabled } = useSearch({ initialQuery })
+    const { data, error, isError, refetch, isFetching, resultsAreStale, nResults, countIsPlaceholder, page, pageSize, setPage, searchEnabled, getPageURL, committedQuery, committedKey, queryEnabled } = useSearch({ initialQuery })
     const { toast } = useToast()
     // Random ordering is now a stable shuffle pinned by a seed, so refetching
     // deliberately returns the *same* results — that stability is the point.
@@ -408,6 +424,10 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     const searchSuppressed = useSearchSuppressed()
     const chunkSource = useChunkedResults({
         committedQuery,
+        // The hash useSearch already computed for the same request — the
+        // store's throttle takes it instead of serializing the search again
+        // per render (see the prop).
+        committedKey,
         enabled: scrollMode && searchEnabled && !searchSuppressed,
         // The fallback reads `results[i]` AS global item i, which is only true
         // while the main query is on page 1 — scroll mode's own invariant, but
@@ -624,7 +644,14 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     // keep-in-view scroll is programmatic and stands down (see
     // VirtualizedHorizontalScroll), so the anchor write here is the sole —
     // and exact — source.
-    const [derivedPage, setDerivedPage] = useDerivedVirtualPage({
+    //
+    // A BOX, not a state value: the number moves every k items scrolled, and
+    // the only thing that needs to see it move is the pagination bar itself
+    // (lib/state/derivedPage.ts). `derivedPage.set` is stable for the life of
+    // the mount — the contract the grid's and the strip's scroll listeners
+    // depend on, previously satisfied by a `useState` setter — and
+    // `derivedPage` itself is what the bar subscribes to.
+    const derivedPage = useDerivedVirtualPage({
         scrollMode,
         scrollAnchor,
         k,
@@ -744,22 +771,25 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                         // when the live query is being withheld — see the prop
                         // (docs/video-end-action-design.md §3).
                         queryEnabled={queryEnabled}
-                        // Stable by construction (a useState setter) — the
-                        // strip's scroll listener depends on it, same
-                        // contract as the grid's. Scroll mode only: what it
-                        // reports is a virtual-page number.
-                        onDerivedPageChange={scrollMode ? setDerivedPage : undefined}
+                        // Stable by construction (a box member, minted once
+                        // per mount) — the strip's scroll listener depends on
+                        // it, same contract as the grid's. Scroll mode only:
+                        // what it reports is a virtual-page number.
+                        onDerivedPageChange={scrollMode ? derivedPage.set : undefined}
                     />
                     :
                     <GridPanel
                         source={resultsSource}
                         mode={viewMode}
                         pageSize={k}
-                        // Stable by construction (a useState setter), which the
-                        // grid's scroll-listener effect depends on: a callback
-                        // minted per render would re-subscribe that listener
-                        // and reset its 350ms scroll-stop timer.
-                        onDerivedPageChange={scrollMode ? setDerivedPage : undefined}
+                        // Stable by construction (a box member, minted once per
+                        // mount), which the grid's scroll-listener effect
+                        // depends on: a callback minted per render would
+                        // re-subscribe that listener and reset its 350ms
+                        // scroll-stop timer. Writing it re-renders the
+                        // pagination bar alone — never this component, never
+                        // this panel, never the grid.
+                        onDerivedPageChange={scrollMode ? derivedPage.set : undefined}
                         // See the restore effect for what the grid does with
                         // it: a position past a number that is still growing
                         // must not be mistaken for a position past the end of
@@ -823,16 +853,17 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                     // Scroll mode only: in pages mode `top` is a within-page
                     // index the grid owns, not a strip position (§5.3).
                     fallbackAnchor={scrollMode ? scrollAnchor : null}
-                    // Stable by construction (a useState setter) — the
-                    // strip's scroll listener depends on it. The division of
-                    // labor: USER pans push through this (leading-card
-                    // derivation), while anchor/selection-driven moves are
+                    // Stable by construction (a box member, minted once per
+                    // mount) — the strip's scroll listener depends on it. The
+                    // division of labor: USER pans push through this
+                    // (leading-card derivation), while anchor/selection-driven
+                    // moves are
                     // reported by useDerivedVirtualPage's anchor-trigger
                     // branch (its `galleryOpen` flag covers the maximized
                     // board) — the strip suppresses its own programmatic
                     // keep-in-view scrolls, whose 'auto' alignment can put a
                     // previous-page card in the lead (§5.4, §6).
-                    onDerivedPageChange={scrollMode ? setDerivedPage : undefined}
+                    onDerivedPageChange={scrollMode ? derivedPage.set : undefined}
                     pageSize={k}
                     // The exact four-prop switch the page-level bar gets —
                     // that one is gated `!fs`, so only one PageSelect is
