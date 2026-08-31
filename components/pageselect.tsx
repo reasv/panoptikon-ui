@@ -38,8 +38,13 @@ const NEVER_NOTIFIES = () => () => { }
 function useIndicatedPage(indicator: PageIndicator): number {
     const store = typeof indicator === "number" ? null : indicator
     const subscribe = store ? store.subscribe : NEVER_NOTIFIES
-    // Both snapshots are the same function: the server render has no box to
-    // read either way, and a fixed number is the honest answer on both sides.
+    // Both snapshots are the same function, and the server one deliberately
+    // READS THE BOX. The box exists during the server render — it is minted in
+    // a `useState` initializer (useDerivedVirtualPage) and seeded from that
+    // render's URL anchor — so reading it is what puts the page number a deep
+    // link arrived with into the server HTML, instead of hydrating over a
+    // hardcoded page 1. Nothing can notify on the server, so a snapshot is the
+    // whole story there.
     const snapshot = useCallback(
         () => (store ? store.get() : (indicator as number)),
         [store, indicator]
