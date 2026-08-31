@@ -21,11 +21,22 @@ const PLACEHOLDER_HEIGHT = 32
  * exactly the accumulation this work is trying not to add to.
  */
 const CACHE_LIMIT = 512
-const cache = new Map<string, string>()
+const cache = new Map<string, PlaceholderDataURL>()
+
+/**
+ * Narrower than `string` ON PURPOSE. Callers pass this value STRAIGHT into
+ * next/image's `placeholder` prop (never as `blurDataURL` alongside
+ * `placeholder="blur"` — see the comment in components/SearchResultImage.tsx
+ * for why the 'blur' path is banned on churning surfaces), and that prop's type
+ * is `'blur' | 'empty' | \`data:image/${string}\``. next/image THROWS at render
+ * for anything else, so the template-literal type is what makes the direct
+ * hand-off type-safe rather than a runtime landmine.
+ */
+export type PlaceholderDataURL = `data:image/png;base64,${string}`
 
 export function blurHashToDataURL(
   hash: string | undefined
-): string | undefined {
+): PlaceholderDataURL | undefined {
   if (!hash) return undefined
   const hit = cache.get(hash)
   if (hit !== undefined) {
@@ -44,16 +55,23 @@ export function blurHashToDataURL(
 }
 
 // thanks to https://github.com/wheany/js-png-encoder
-function parsePixels(pixels: Uint8ClampedArray, width: number, height: number) {
+function parsePixels(
+  pixels: Uint8ClampedArray,
+  width: number,
+  height: number
+): PlaceholderDataURL {
   const pixelsString = [...pixels]
     .map((byte) => String.fromCharCode(byte))
     .join("")
   const pngString = generatePng(width, height, pixelsString)
-  const dataURL =
+  const base64 =
     typeof Buffer !== "undefined"
       ? Buffer.from(getPngArray(pngString)).toString("base64")
       : btoa(pngString)
-  return "data:image/png;base64," + dataURL
+  // Template literal, not `"…" + base64`: string concatenation widens to
+  // `string`, which does not satisfy the `data:image/png;base64,${string}`
+  // return type this module exists to guarantee.
+  return `data:image/png;base64,${base64}`
 }
 
 function getPngArray(pngString: string) {

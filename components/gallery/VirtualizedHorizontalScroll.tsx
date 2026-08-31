@@ -587,8 +587,18 @@ function VirtualHorizontalScrollElement({
                             alt={item.path}
                             className="object-cover object-top rounded-md cursor-pointer"
                             fill
-                            placeholder={blurDataURL ? 'blur' : 'empty'}
-                            blurDataURL={blurDataURL}
+                            // Direct data URL, never `placeholder="blur"` — the
+                            // filmstrip virtualizes and remounts a card per item
+                            // exactly like the grid, and 'blur' would emit a
+                            // unique `data:image/svg+xml` blur wrapper per mount,
+                            // each of which Blink instantiates as its own
+                            // isolated Document. Those pile up faster than GC
+                            // collects them and degrade frame time for the whole
+                            // session (see the comment in
+                            // components/SearchResultImage.tsx). Do not
+                            // reintroduce. `?? 'empty'` is required: next/image
+                            // throws for any other placeholder string.
+                            placeholder={blurDataURL ?? 'empty'}
                             unoptimized={true}
                             sizes="240px"
                         />
