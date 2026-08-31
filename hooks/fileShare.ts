@@ -3,7 +3,7 @@
 import { useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { $api } from "@/lib/api"
-import { useToast } from "@/components/ui/use-toast"
+import { toast } from "@/components/ui/use-toast"
 import { getFileURL, downloadFileName } from "@/lib/utils"
 import { downloadURL } from "@/lib/download"
 import { useSelectedDBs } from "@/lib/state/database"
@@ -47,21 +47,30 @@ export function useCopyAvailability(): { canCopyRelay: boolean, canCopyServer: b
   }
 }
 
-// The adaptive share verb (docs/file-sharing-design.md "adaptive share
-// button"). The primary click is Copy where a native path exists (relay paired
-// with the copy feature, or a server whose backend-open actions are enabled)
-// and Download otherwise. Download is always available as the
-// alternate. Copy has no visible effect of its own, so every copy path shows a
-// toast; Download rides the browser's own download UI.
-export function useFileShare({ sha256, path, filename, size }: {
+/** A file a share verb acts on. */
+export type ShareFileRef = {
   sha256: string
   path?: string
   filename?: string
   size?: number
-}) {
+}
+
+// The adaptive share verb (docs/file-sharing-design.md "adaptive share
+// button"), with NO file bound: every verb takes the file it acts on as an
+// argument, and the in-flight guard belongs to the caller.
+//
+// This is the form CellActionsHost mounts — once for the whole page — so that
+// the per-row action clusters need none of the hooks below (a `useQueryStates`
+// for the selected DBs, a mutation observer, the client-config query and a
+// toast listener EACH). `useFileShare` beneath it binds a file and adds the
+// per-button busy state, which is what the single-instance call sites want.
+//
+// The STANDALONE `toast()` rather than `useToast().toast`, for the reason
+// spelled out in hooks/fileOpen.ts: the hook form subscribes to the toast
+// store, and nothing here renders a toast.
+export function useFileShareRunner() {
   const query = useSelectedDBs()[0]
   const queryClient = useQueryClient()
-  const { toast } = useToast()
   const relay = useRelay()
   // Only the pairing affordance for the button's right-click menu — NOT the
   // full useFileOpenActions, whose open/reveal mutations this hook never uses.
@@ -74,25 +83,6 @@ export function useFileShare({ sha256, path, filename, size }: {
   const { canCopyRelay, canCopyServer } = useCopyAvailability()
   const primaryVerb: "copy" | "download" = canCopyRelay || canCopyServer ? "copy" : "download"
 
-  // One invocation at a time. A relay copy of a multi-GB video spends its
-  // whole first leg downloading the original; a user who clicks again because
-  // nothing looks like it happened would start a SECOND full download and
-  // upload under a second action_id. The ref is the guard (synchronous, so two
-  // clicks in the same tick cannot both pass); the state is only what the
-  // button renders (§FIX 1b).
-  const inFlight = useRef(false)
-  const [busy, setBusy] = useState(false)
-  const begin = () => {
-    if (inFlight.current) return false
-    inFlight.current = true
-    setBusy(true)
-    return true
-  }
-  const end = () => {
-    inFlight.current = false
-    setBusy(false)
-  }
-
   // filename + size ride the relay action body; path is the mapping hint; the
   // resolved FULL sha256 is what the relay payload must carry (the pinboard
   // passes only a 10-char prefix — §FIX 1). Any value the caller passed wins,
@@ -101,7 +91,9 @@ export function useFileShare({ sha256, path, filename, size }: {
   // NAS-backed stat round trip (§FIX 9). size is left undefined when unknown
   // rather than coerced to 0, so the relay-eligibility gate can disqualify a
   // copy whose size the relay would hash/size-check-fail on (§FIX 4).
-  const resolveMeta = async (): Promise<ShareMeta> => {
+  const resolveMeta = async (
+    { sha256, path, filename, size }: ShareFileRef
+  ): Promise<ShareMeta> => {
     let fetched: ShareMetaFields = {}
     if (!path || filename === undefined || size === undefined) {
       const data = await fetchItemRecord(queryClient, query, sha256)
@@ -132,9 +124,9 @@ export function useFileShare({ sha256, path, filename, size }: {
   // using the possibly-prefix sha256; the server resolves it. `meta` is passed
   // in on every path that already resolved it, so one invocation never fetches
   // the item twice.
-  const runDownload = async (meta?: ShareMeta) => {
-    const resolved = meta ?? await resolveMeta()
-    downloadURL(getFileURL(query, "file", "sha256", sha256), resolved.filename)
+  const runDownload = async (file: ShareFileRef, meta?: ShareMeta) => {
+    const resolved = meta ?? await resolveMeta(file)
+    downloadURL(getFileURL(query, "file", "sha256", file.sha256), resolved.filename)
   }
 
   // Relay copy. Instant when the mapping resolves or the cache is warm; a
@@ -143,7 +135,7 @@ export function useFileShare({ sha256, path, filename, size }: {
   // over the relay's cache ceiling (413) silently falls back to Download. The
   // caller has already resolved a full-hash, known-size, non-empty-path
   // RelayShareFile through the eligibility gate in execute().
-  const copyViaRelay = async (relayFile: RelayShareFile, meta: ShareMeta) => {
+  const copyViaRelay = async (file: ShareFileRef, relayFile: RelayShareFile, meta: ShareMeta) => {
     const name = relayFile.filename
     // The progress toast is created LAZILY — on the materializing phase, or on
     // the first upload progress event — so an instant mapped/cache-hit copy
@@ -175,12 +167,12 @@ export function useFileShare({ sha256, path, filename, size }: {
       progress.handle?.dismiss()
       if (error instanceof RelayFileTooLargeError) {
         toast({ title: "File too large to copy — downloading instead", duration: 3500 })
-        await runDownload(meta)
+        await runDownload(file, meta)
         return
       }
       if (error instanceof RelayStaleFileError) {
         toast({ title: "This file changed on disk — downloading instead", duration: 3500 })
-        await runDownload(meta)
+        await runDownload(file, meta)
         return
       }
       toast({ title: "Failed to copy file", description: describeError(error), variant: "destructive", duration: 5000 })
@@ -190,10 +182,11 @@ export function useFileShare({ sha256, path, filename, size }: {
   // Server-side copy (desktop-managed local host). The server has the real path
   // and writes its own clipboard; its 500 message is user-presentable (headless
   // host, missing wl-copy/xclip, clipboard busy) and is surfaced verbatim.
-  const copyViaServer = async (meta?: ShareMeta) => {
-    let name = meta?.filename ?? filename
+  const copyViaServer = async (file: ShareFileRef, meta?: ShareMeta) => {
+    const { sha256, path } = file
+    let name = meta?.filename ?? file.filename
     try {
-      if (name === undefined) name = (await resolveMeta()).filename
+      if (name === undefined) name = (await resolveMeta(file)).filename
       const response = await copyOnServer({ params: { path: { sha256 }, query: { ...query, path } } })
       // The server hedges to "Attempting to copy to clipboard: …" when a
       // custom clipboard_command owns the outcome — it spawns the child and
@@ -214,11 +207,11 @@ export function useFileShare({ sha256, path, filename, size }: {
   // relay branch is disqualified and we fall through to server-copy
   // (desktop-managed) or Download — never sending a prefix hash, a bogus
   // size:0 or an empty path the relay would hard-fail on.
-  const runExecute = async () => {
-    const meta = canCopyRelay ? await resolveMeta() : undefined
+  const runExecute = async (file: ShareFileRef) => {
+    const meta = canCopyRelay ? await resolveMeta(file) : undefined
     if (meta && isFullSha256(meta.sha256) && meta.size !== undefined && !!meta.path) {
-      await copyViaRelay({
-        url: getFileURL(query, "file", "sha256", sha256),
+      await copyViaRelay(file, {
+        url: getFileURL(query, "file", "sha256", file.sha256),
         path: meta.path,
         sha256: meta.sha256,
         filename: meta.filename,
@@ -226,39 +219,33 @@ export function useFileShare({ sha256, path, filename, size }: {
       }, meta)
       return
     }
-    if (canCopyServer) { await copyViaServer(meta); return }
+    if (canCopyServer) { await copyViaServer(file, meta); return }
     // The button said "Copy file" and this click will produce a file in
     // Downloads instead — a materially different outcome, so it is announced
     // rather than silently substituted (§FIX 6).
     if (primaryVerb === "copy") {
       toast({ title: "Can't copy this file — downloading instead", duration: 3500 })
     }
-    await runDownload(meta)
+    await runDownload(file, meta)
   }
 
   // resolveMeta lives OUTSIDE the copy paths' own try/catch and fetchClient
   // rejects on a network failure or an abort, so both entry points wrap
   // everything: an unhandled rejection here means no toast, no download and a
   // button that looks dead (§FIX 5).
-  const execute = async () => {
-    if (!begin()) return
+  const execute = async (file: ShareFileRef) => {
     try {
-      await runExecute()
+      await runExecute(file)
     } catch (error) {
       toast({ title: "Failed to copy file", description: describeError(error), variant: "destructive", duration: 5000 })
-    } finally {
-      end()
     }
   }
 
-  const download = async (meta?: ShareMeta) => {
-    if (!begin()) return
+  const download = async (file: ShareFileRef) => {
     try {
-      await runDownload(meta)
+      await runDownload(file)
     } catch (error) {
       toast({ title: "Failed to download file", description: describeError(error), variant: "destructive", duration: 5000 })
-    } finally {
-      end()
     }
   }
 
@@ -266,12 +253,66 @@ export function useFileShare({ sha256, path, filename, size }: {
     primaryVerb,
     execute,
     download,
-    // An invocation is running: the button disables itself so a second click
-    // cannot start a second multi-GB transfer.
-    busy,
     // A relay is on the network but not yet paired: the right-click menu offers
     // to start pairing, a second doorway into the existing flow.
     canPair: pairing.relayDetected && !pairing.relayPaired,
     pairRelay: pairing.pairRelay,
+  }
+}
+
+/**
+ * The file-bound form, with the one-invocation-at-a-time guard.
+ *
+ * A relay copy of a multi-GB video spends its whole first leg downloading the
+ * original; a user who clicks again because nothing looks like it happened
+ * would start a SECOND full download and upload under a second action_id. The
+ * ref is the guard (synchronous, so two clicks in the same tick cannot both
+ * pass); the state is only what the button renders (§FIX 1b). It is PER
+ * BUTTON, which is why it lives here and not in the runner — a shared guard
+ * would let one card's copy disable every other card's.
+ *
+ * Per-row components must not use this: they call the host's `shareFile` /
+ * `downloadFile` and keep their own busy state (lib/state/cellActions.ts).
+ */
+export function useFileShare({ sha256, path, filename, size }: ShareFileRef) {
+  const runner = useFileShareRunner()
+  const inFlight = useRef(false)
+  const [busy, setBusy] = useState(false)
+  const begin = () => {
+    if (inFlight.current) return false
+    inFlight.current = true
+    setBusy(true)
+    return true
+  }
+  const end = () => {
+    inFlight.current = false
+    setBusy(false)
+  }
+  const file: ShareFileRef = { sha256, path, filename, size }
+  const execute = async () => {
+    if (!begin()) return
+    try {
+      await runner.execute(file)
+    } finally {
+      end()
+    }
+  }
+  const download = async () => {
+    if (!begin()) return
+    try {
+      await runner.download(file)
+    } finally {
+      end()
+    }
+  }
+  return {
+    primaryVerb: runner.primaryVerb,
+    execute,
+    download,
+    // An invocation is running: the button disables itself so a second click
+    // cannot start a second multi-GB transfer.
+    busy,
+    canPair: runner.canPair,
+    pairRelay: runner.pairRelay,
   }
 }

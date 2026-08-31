@@ -6,10 +6,9 @@ import { cn, getFileURL } from "@/lib/utils";
 import { ItemMetaLine } from "@/components/ItemMetaLine";
 import { PlayableBadge, isPlayableItem } from "@/components/PlayableBadge";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
-import { useSearchParams } from 'next/navigation';
-import { getGalleryOptionsSerializer } from '@/lib/state/gallery';
 import { PinButton } from './gallery/PinButton';
 import { blurHashToDataURL } from '@/lib/state/blurHashDataURL';
+import { useCellCallbacks } from '@/lib/state/cellActions';
 
 // Memoized: the virtualized grid re-renders on every scroll frame (tanstack
 // virtual mutates state under "use no memo"), and without this each visible
@@ -42,17 +41,15 @@ export const SearchResultImage = memo(function SearchResultImage({
 }) {
     const fileUrl = overrideURL ? overrideURL : getFileURL(dbs, "file", "sha256", result.sha256)
     const thumbnailUrl = getFileURL(dbs, "thumbnail", "sha256", result.sha256)
-    const params = useSearchParams()
-
-    const imageLink = useMemo(() => {
-        if (!galleryLink) return fileUrl
-        const queryParams = new URLSearchParams(params)
-        const indexUrl = getGalleryOptionsSerializer()(
-            queryParams,
-            { gi: index }
-        )
-        return indexUrl
-    }, [index, params, nItems, galleryLink, fileUrl])
+    // Deliberately NOT a `useSearchParams` of its own. This card used to hold
+    // one and rebuild its gallery href behind a `useMemo` keyed on the params
+    // object — i.e. it recomputed on EVERY URL write, for every visible card,
+    // and the subscription alone re-rendered the card body regardless of the
+    // memo. The href now comes from the page's one CellActionsHost through a
+    // callbacks object whose identity never changes, so reading it costs this
+    // card nothing (lib/state/cellActions.ts).
+    const { galleryHref } = useCellCallbacks()
+    const imageLink = galleryLink ? galleryHref(index) : fileUrl
 
     const onClick = useCallback(() => {
         if (onImageClick) {
@@ -75,8 +72,19 @@ export const SearchResultImage = memo(function SearchResultImage({
                 draggable={true}
             >
                 <a
-                    href={galleryLink ? imageLink : fileUrl}
+                    href={imageLink}
                     target="_blank"
+                    // The card no longer re-renders on every URL write (that
+                    // is the whole point), so the href it rendered with can be
+                    // one presentation-param write behind — a stale `top`,
+                    // say. Refreshed here because hover PRECEDES every gesture
+                    // that can consume an href: middle click, "open in new
+                    // tab", copy link address, drag. The plain click below
+                    // never reads it (preventDefault + onImageClick), and the
+                    // next real render recomputes it from the live params.
+                    onMouseEnter={galleryLink
+                        ? (e) => { e.currentTarget.href = galleryHref(index) }
+                        : undefined}
                     onClick={(e) => {
                         e.preventDefault()
                         onClick()

@@ -1036,6 +1036,22 @@ export function useChunkedResults({
   // without that read, evicting a chunk the user is looking at would flash
   // skeletons over rows that are in memory), and the main query's page-1
   // fallback — can never answer the two differently.
+  //
+  // The MISS path's request body is memoized per chunk for the life of this
+  // render pass. A screenful of skeletons is dozens of cells asking about the
+  // SAME two or three chunks, and each miss otherwise rebuilt the chunk
+  // request object and had react-query hash it again — per cell, per render,
+  // in the hottest loop in the app. A plain Map is enough because `parts` is
+  // fixed within a render pass by construction.
+  const missKeys = new Map<number, unknown[]>()
+  const missKeyFor = (chunkIndex: number) => {
+    let key = missKeys.get(chunkIndex)
+    if (!key) {
+      key = ["post", "/api/search/pql", buildChunkRequest(parts, chunkIndex)]
+      missKeys.set(chunkIndex, key)
+    }
+    return key
+  }
   const blockAt = (
     index: number
   ): { start: number; rows: SearchResult[] } | undefined => {
@@ -1046,7 +1062,7 @@ export function useChunkedResults({
     if (rows) return { start, rows }
     const cached = queryClient.getQueryData<{
       results?: SearchResult[] | null
-    }>(["post", "/api/search/pql", buildChunkRequest(parts, chunkIndex)])
+    }>(missKeyFor(chunkIndex))
     if (cached?.results) return { start, rows: cached.results as SearchResult[] }
     // The fallback is page 1 of the main query, so its block starts at item 0
     // and covers only what it holds.

@@ -36,7 +36,7 @@ import { overscanItemsFor, topRowHighlightItem, virtualPageAnchor, virtualPageOf
 import { useSearchParams, type ReadonlyURLSearchParams } from "next/navigation"
 import { ResultCellSkeleton } from "@/components/ResultCellSkeleton"
 import { useItemSelection } from "@/lib/state/itemSelection"
-import { PinboardMaximizedProvider } from "@/components/OpenFileDetails"
+import { CellActionsHost } from "@/components/CellActionsHost"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { components } from "@/lib/panoptikon"
 import { GRID_SCROLL_ANCHOR_KEY, useGridScrollAnchor } from "@/lib/state/gridScroll"
@@ -56,6 +56,13 @@ export function SearchPageContent({ initialQuery, isRestrictedMode }:
     const pinboardMaximized = usePinboardMaximized()
     const sidebarVisible = sidebarOpen && !pinboardMaximized
     return (
+        // The one owner of every URL/store subscription the per-row
+        // components (grid cards, pins, filmstrip cards and their overlay
+        // buttons) used to hold themselves — see
+        // components/CellActionsHost.tsx. It wraps the whole page rather than
+        // just the results panel because the sidebar mounts rows too
+        // (SimilarItemsView, the similarity target card).
+        <CellActionsHost pinboardMaximized={pinboardMaximized}>
         <div className="flex h-screen w-full flex-col">
             {/* The one owner of find-in-folder's URL-state hooks; every
                 FindButton (per cell, per pin, per strip item) calls through
@@ -84,6 +91,7 @@ export function SearchPageContent({ initialQuery, isRestrictedMode }:
                 </div>
             </div>
         </div>
+        </CellActionsHost>
     )
 }
 
@@ -671,15 +679,15 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     }
     const getVirtualPageURL = (base: ReadonlyURLSearchParams | URLSearchParams, newPage: number) =>
         getScrollPositionURL(base, newPage, k, qIndex !== null)
-    // PinboardMaximizedProvider wraps the whole subtree because the answer is
-    // needed PER RESULT ROW — every grid card's Data View button and every
-    // pin's corner checkbox route to a different details pane depending on it
-    // (components/OpenFileDetails.tsx). Deriving it per row meant every one of
-    // them subscribing to `pinboard`, the longest URL parameter the app has;
-    // this component already has the value, so it publishes it instead. See
-    // PinboardMaximizedContext for why context and not a store.
+    // The maximize answer is needed PER RESULT ROW — every grid card's Data
+    // View button and every pin's corner checkbox route to a different details
+    // pane depending on it (components/OpenFileDetails.tsx) — and deriving it
+    // per row would mean every one of them subscribing to `pinboard`, the
+    // longest URL parameter the app has. SearchPageContent computes it once
+    // and hands it to CellActionsHost, which publishes the routed verbs
+    // themselves; nothing below needs to pass it down.
     return (
-        <PinboardMaximizedProvider value={pinboardMaximized}>
+        <>
             <SearchErrorToast noFtsErrors={options.e_iss} isError={isError} error={error} />
             {!fs && <div className={cn("mb-4 2xl:mx-auto",
                 sidebarOpen ? '2xl:w-2/3' : '2xl:w-1/2'
@@ -851,18 +859,29 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
             {pinboardMaximized && (
                 <SidebarOverlay largeImageHosted={largeImageHosted} />
             )}
-        </PinboardMaximizedProvider>
+        </>
     )
 }
 
-// md, lg, xl, 2xl, 4xl, 5xl — the Tailwind breakpoints used by the result grid rows
+// md, lg, xl, 2xl, 4xl, 5xl — the Tailwind breakpoints used by the result grid
+// rows, restated for matchMedia.
+//
+// REM, NOT PX, and the units are the whole point: Tailwind emits these
+// breakpoints in rem (the built-ins by definition, ours by necessity — see the
+// sort-order note at the top of app/globals.css), and `rem` in a media query
+// resolves against the browser's INITIAL font size, not the document's. So a
+// reader who has raised their default font size moves the CSS breakpoints and
+// not these, and the column count this array derives silently stops matching
+// the grid-cols-* classes actually laid out — rows sliced N-wide over a grid
+// showing M. Same numbers as before at the 16px default (768/1024/1280/1536,
+// then our 2200/3000), now expressed the way the stylesheet expresses them.
 const GRID_BREAKPOINTS = [
-    '(min-width: 768px)',
-    '(min-width: 1024px)',
-    '(min-width: 1280px)',
-    '(min-width: 1536px)',
-    '(min-width: 2200px)',
-    '(min-width: 3000px)',
+    '(min-width: 48rem)',
+    '(min-width: 64rem)',
+    '(min-width: 80rem)',
+    '(min-width: 96rem)',
+    '(min-width: 137.5rem)',
+    '(min-width: 187.5rem)',
 ]
 
 /**

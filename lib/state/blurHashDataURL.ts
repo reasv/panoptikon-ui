@@ -1,12 +1,45 @@
 import { decode } from "blurhash"
 
+const PLACEHOLDER_WIDTH = 32
+const PLACEHOLDER_HEIGHT = 32
+
+/**
+ * Decoded placeholders, keyed by `hash|w|h`.
+ *
+ * A blurhash is decoded AND PNG-encoded in pure JS — 4096 `String.fromCharCode`
+ * calls, a hand-rolled deflate-store and a CRC pass — and a grid cell does it
+ * on every mount. Scrolling back up a virtualized grid remounts cells that
+ * were on screen seconds ago, so without this the same twenty hashes are
+ * re-encoded over and over on the warm re-scroll path, which is the direction
+ * that measured WORSE than a cold scroll.
+ *
+ * Insertion-ordered Map as an LRU: a hit re-inserts, and the oldest entry is
+ * evicted past the cap. The cap exists because the cache is module-level and
+ * lives as long as the tab — a long scrolling session would otherwise keep
+ * every data URL it has ever produced (~5.5 KB each) alive forever, which is
+ * exactly the accumulation this work is trying not to add to.
+ */
+const CACHE_LIMIT = 512
+const cache = new Map<string, string>()
+
 export function blurHashToDataURL(
   hash: string | undefined
 ): string | undefined {
   if (!hash) return undefined
-
-  const pixels = decode(hash, 32, 32)
-  const dataURL = parsePixels(pixels, 32, 32)
+  const key = `${hash}|${PLACEHOLDER_WIDTH}|${PLACEHOLDER_HEIGHT}`
+  const hit = cache.get(key)
+  if (hit !== undefined) {
+    cache.delete(key)
+    cache.set(key, hit)
+    return hit
+  }
+  const pixels = decode(hash, PLACEHOLDER_WIDTH, PLACEHOLDER_HEIGHT)
+  const dataURL = parsePixels(pixels, PLACEHOLDER_WIDTH, PLACEHOLDER_HEIGHT)
+  cache.set(key, dataURL)
+  if (cache.size > CACHE_LIMIT) {
+    const oldest = cache.keys().next()
+    if (!oldest.done) cache.delete(oldest.value)
+  }
   return dataURL
 }
 
@@ -31,27 +64,26 @@ function getPngArray(pngString: string) {
   return pngArray
 }
 
-function generatePng(width: number, height: number, rgbaString: string) {
-  const DEFLATE_METHOD = String.fromCharCode(0x78, 0x01)
-  const CRC_TABLE: number[] = []
-  const SIGNATURE = String.fromCharCode(137, 80, 78, 71, 13, 10, 26, 10)
-  const NO_FILTER = String.fromCharCode(0)
-
-  let n, c, k
-
-  // make crc table
-  for (n = 0; n < 256; n++) {
-    c = n
-    for (k = 0; k < 8; k++) {
-      if (c & 1) {
-        c = 0xedb88320 ^ (c >>> 1)
-      } else {
-        c = c >>> 1
-      }
+// The CRC-32 table, built ONCE at module load rather than per call: it is a
+// constant (256 entries, 2048 shift/xor steps) and rebuilding it inside
+// generatePng made every placeholder pay for it.
+const CRC_TABLE: number[] = (() => {
+  const table: number[] = []
+  for (let n = 0; n < 256; n++) {
+    let c = n
+    for (let k = 0; k < 8; k++) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
     }
-    CRC_TABLE[n] = c
+    table[n] = c
   }
+  return table
+})()
 
+const DEFLATE_METHOD = String.fromCharCode(0x78, 0x01)
+const SIGNATURE = String.fromCharCode(137, 80, 78, 71, 13, 10, 26, 10)
+const NO_FILTER = String.fromCharCode(0)
+
+function generatePng(width: number, height: number, rgbaString: string) {
   // Functions
   function inflateStore(data: string) {
     const MAX_STORE_LENGTH = 65535
