@@ -8,7 +8,7 @@ import { ImageSimilarityHeader } from "@/components/ImageSimilarityHeader"
 import { InstantSearchLock } from "@/components/InstantSearchLock"
 import { AnimatedNumber } from "@/components/ui/animatedNumber"
 import { SearchMetricsHoverCard } from "@/components/SearchMetricsCard"
-import { useQueryOptions } from "@/lib/state/searchQuery/clientHooks"
+import { useQueryOptionsValue } from "@/lib/state/searchQuery/clientHooks"
 import { useSideBarOpen } from "@/lib/state/sideBar"
 import { useSidebarOverlayOpen } from "@/lib/state/gallery"
 import { useSearchOverlayReveal } from "@/lib/state/searchOverlayReveal"
@@ -53,7 +53,10 @@ export function SearchBarRow({
     resultMetrics?: components["schemas"]["SearchMetrics"]
     countMetrics?: components["schemas"]["SearchMetrics"]
 }) {
-    const [options] = useQueryOptions()
+    // The READING hook: this row never writes an option, and the setter the
+    // full hook returns would subscribe it to `top` — rewritten on every scroll
+    // stop — through useResetPage. See useQueryOptionsValue.
+    const options = useQueryOptionsValue()
     const [sidebarOpen, setSideBarOpen] = useSideBarOpen()
     // The sidebar dock's two halves. `shown` is what the toggle reflects —
     // the user asked whether the filters are on screen, and pin vs open is
