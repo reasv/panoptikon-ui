@@ -21,6 +21,15 @@ export function cn(...inputs: ClassValue[]) {
  * before the display tier's rule changed — which is what busts the stale
  * long-side-crushed thumbnail for exactly the extreme-aspect items the fix
  * was about.
+ *
+ * `still` forces the STATIC rendition of an animated item — at a grid tier an
+ * animated item above the raw floor otherwise answers `video/mp4`, which an
+ * `<img>` cannot show. The endpoint documents it as a no-op everywhere else
+ * (static items, and animated items at or below the floor, are served the same
+ * bytes either way), so a surface that cannot play video may set it from
+ * `isAnimatedItem` alone — or unconditionally where it has no row to test
+ * (lib/thumbnailTier.ts). It is a distinct URL, hence a distinct cache entry;
+ * that is the whole cost of the no-op case.
  */
 export function getFileURL(
   dbs: { index_db: string | null; user_data_db: string | null },
@@ -29,11 +38,13 @@ export function getFileURL(
   // spec generators, operationIds are not.
   id_type: paths["/api/items/item"]["get"]["parameters"]["query"]["id_type"],
   id: string | number,
-  size?: ThumbnailTier
+  size?: ThumbnailTier,
+  still?: boolean
 ) {
   const index_db_param = dbs.index_db ? `&index_db=${dbs.index_db}` : ""
   const size_param = size ? `&size=${size}` : ""
-  return `/api/items/item/${file_type}?id=${id}&id_type=${id_type}${index_db_param}${size_param}`
+  const still_param = still ? `&still=true` : ""
+  return `/api/items/item/${file_type}?id=${id}&id_type=${id_type}${index_db_param}${size_param}${still_param}`
 }
 
 // Basename of an indexed path. Either separator: the index stores paths as

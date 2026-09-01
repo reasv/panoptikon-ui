@@ -19,7 +19,7 @@ import { blurHashToDataURL } from '@/lib/state/blurHashDataURL'
 import { PlayableBadge, isPlayableItem } from '@/components/PlayableBadge'
 import { useSearchLoading } from '@/lib/state/zust'
 import { topRowHighlightItem, virtualPageOf } from '@/lib/scrollMode'
-import { tierForCellWidth, type ThumbnailTier } from '@/lib/thumbnailTier'
+import { isAnimatedItem, tierForCellWidth, type ThumbnailTier } from '@/lib/thumbnailTier'
 import { useDevicePixelRatio } from '@/hooks/useDevicePixelRatio'
 import type { ResultsSource } from '@/lib/searchHooks'
 
@@ -481,7 +481,22 @@ function VirtualHorizontalScrollElement({
     // exactly the presentation the grid tiers' crop is cut for — so an
     // extreme-aspect item needs no special case here: the crop IS what this
     // card should show, and there is no hover-contain state to swap for.
-    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256, tier)
+    //
+    // ALWAYS THE STILL for an animated item. Adjudicated for F6: the strip
+    // shows POSTERS, never autoplaying video — a row of looping cards under
+    // the gallery is noise, and the strip's job is letting the eye find the
+    // next item. It is also correctness before policy: without the flag an
+    // animated item above the raw floor answers a grid tier with `video/mp4`,
+    // which this <img> would render as a broken picture.
+    //
+    // ONE COMPARISON ON ROW DATA, and deliberately the cheap half of the
+    // decision — a surface that never plays needs no client-config floor, only
+    // "does this item move" (lib/thumbnailTier.ts). `still=true` is documented
+    // as a NO-OP for an animated item at or below the floor: it is served as
+    // its original file either way, and animates in the <img> exactly as it
+    // does today.
+    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256, tier,
+        isAnimatedItem(item.type, item.duration))
     // Every hover report this card makes goes through here, so the card can
     // know whether the dock's hover subject is currently ITS item. Tracked
     // from the reports rather than from raw pointer presence: the unmount

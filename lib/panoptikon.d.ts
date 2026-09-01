@@ -643,12 +643,17 @@ export interface paths {
          *     The thumbnail may be a stored rendition,
          *     the unmodified original image (only for images),
          *     or a placeholder image generated on the fly.
-         *     GIFs are always returned as the original file.
+         *     On the default (`display`) path GIFs are always returned as the original file.
          *     For video thumbnails, the `big` parameter can be used to
          *     select between the 2x2 frame grid (big=True) or the first frame from the grid (big=False).
          *     The `size` parameter selects a rendition tier: `display` (default, unchanged behaviour),
          *     `grid-m` (short side 1024) or `grid-s` (short side 512).
          *     A tier with no stored rendition falls through to the next larger one.
+         *     At a grid tier an **animated** item above the raw floor answers with its H.264 loop as
+         *     `video/mp4` (one rendition serves both grid tiers), and `still=true` answers with the
+         *     static poster for that tier instead. Animated items at or below the floor - at most
+         *     1 MiB with both sides at most 512 px, reported by `/api/client-config` - are answered
+         *     with their original file at every tier.
          */
         get: operations["item_thumbnail"];
         put?: never;
@@ -1624,6 +1629,42 @@ export interface components {
         AndOperator: {
             and_: components["schemas"]["QueryElement"][];
         };
+        /**
+         * @description The animated raw floor, verbatim from
+         *     [`crate::visual_tiers`] (docs/grid-scroll-performance-implementation.md
+         *     §2, step B2).
+         *
+         *     A grid cell decides `<img>` vs `<video>` from four fields of its search
+         *     result — `type` and `duration` say whether the picture moves, `size` and
+         *     `width`/`height` say whether it clears the floor — against these two
+         *     numbers, which is the same rule and the same arithmetic the scan used to
+         *     decide what to store. Surfaced rather than duplicated in the UI so the two
+         *     sides cannot drift.
+         *
+         *     Clearing the floor is necessary but not sufficient: an item above it is
+         *     served a loop *once the backfill has written one*, and an item whose H.264
+         *     encode came out no smaller than its source keeps serving the source
+         *     permanently (the settled keep-the-original edge). A cell that mounts a
+         *     `<video>` must therefore fall back to its poster when playback errors —
+         *     the F6 contract in the plan document.
+         *
+         *     Server-derived constants, not policy-scoped configuration: every policy
+         *     sees the same floor, because it is a property of what the scan wrote.
+         */
+        AnimatedThumbnailFloor: {
+            /**
+             * Format: int64
+             * @description An animated item at or below **both** of these is served as its
+             *     original file at every grid tier: no loop is stored for it, so a cell
+             *     renders it as an image.
+             */
+            max_file_size: number;
+            /**
+             * Format: int32
+             * @description The longer side, in pixels. Both sides must be within it.
+             */
+            max_side: number;
+        };
         ArtifactMissResponse: {
             detail: string;
             job?: null | components["schemas"]["TranscodeJobSnapshot"];
@@ -1814,6 +1855,11 @@ export interface components {
             video_transcode: boolean;
         };
         ClientConfigResponse: {
+            /**
+             * @description The animated raw floor the thumbnail endpoint serves by (see
+             *     [`AnimatedThumbnailFloor`]).
+             */
+            animated_floor: components["schemas"]["AnimatedThumbnailFloor"];
             /** @description Ruleset-derived feature switches (see ClientCapabilities). */
             capabilities: components["schemas"]["ClientCapabilities"];
             /**
@@ -5627,9 +5673,9 @@ export interface operations {
                 size?: components["schemas"]["ThumbnailTier"];
                 /**
                  * @description Animated items: serve the static tier image (the loop's poster)
-                 *     instead of the loop. Accepted now and a no-op for static items, whose
-                 *     renditions are always images; the animated pipeline it selects
-                 *     between is step B2.
+                 *     instead of the loop. A no-op for static items, whose renditions are
+                 *     always images, and for animated items at or below the raw floor,
+                 *     which are served as their original file either way.
                  */
                 still?: boolean;
             };

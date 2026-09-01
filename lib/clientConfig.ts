@@ -1,4 +1,5 @@
 import { components } from "@/lib/panoptikon"
+import type { AnimatedFloor } from "@/lib/thumbnailTier"
 
 // The gateway's GET /api/client-config response: the name of the policy that
 // matched the request, capability booleans derived from that policy's
@@ -22,6 +23,19 @@ export interface ClientConfig {
   pinboardSearchEnabled: boolean
   videoTranscodeEnabled: boolean
   videoComposeEnabled: boolean
+  /**
+   * The raw floor an animated item must clear before the scan stores an H.264
+   * loop for it, verbatim from the server (`animated_floor`). Grid cells decide
+   * `<img>` vs `<video>` against it; it is deliberately NOT duplicated as a
+   * constant on this side, so a backend change to the floor reaches the client
+   * on the next config fetch.
+   *
+   * Null when the server does not report one — an older Server than the one
+   * that ships the loop pipeline. Every consumer reads null as "no loops
+   * exist", which is exactly right for such a server and is also the state
+   * while the config request is still in flight.
+   */
+  animatedFloor: AnimatedFloor | null
 }
 
 // [policies.client] keys are free-form; these are the by-convention keys the
@@ -75,7 +89,27 @@ export function deriveClientConfig(response: ClientConfigResponse): ClientConfig
     // `video_transcode` — they post here, and a client that read the other
     // capability would offer rows whose press 403s.
     videoComposeEnabled: capabilities.video_compose !== false,
+    // NOT a `[policies.client]` key and not capability-derived: the floor is a
+    // property of what the scan wrote, identical for every policy, so it rides
+    // at the top level of the response and is passed through as-is.
+    animatedFloor: normalizeAnimatedFloor(response.animated_floor),
   }
+}
+
+// The two numbers have to be finite and positive to mean anything; anything
+// else is read as "no floor reported", which every consumer treats as "no
+// loops exist" and answers with an <img>. The type says they are numbers, but
+// this value crosses the wire from a server whose version the client does not
+// pin, so the guard is cheap insurance rather than ceremony.
+function normalizeAnimatedFloor(
+  floor: ClientConfigResponse["animated_floor"] | undefined
+): AnimatedFloor | null {
+  if (!floor) return null
+  const { max_file_size: maxFileSize, max_side: maxSide } = floor
+  if (typeof maxFileSize !== "number" || !Number.isFinite(maxFileSize)) return null
+  if (typeof maxSide !== "number" || !Number.isFinite(maxSide)) return null
+  if (maxFileSize < 0 || maxSide < 0) return null
+  return { maxFileSize, maxSide }
 }
 
 // Guard for home_redirect. The value is operator-controlled TOML, so this is

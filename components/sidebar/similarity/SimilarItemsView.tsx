@@ -17,6 +17,7 @@ import { useMemo } from "react"
 import { PartitionBy, partitionBySerializer, usePartitionBy } from "@/lib/state/partitionBy"
 import { tierForCellWidth } from "@/lib/thumbnailTier"
 import { useDevicePixelRatio } from "@/hooks/useDevicePixelRatio"
+import { useAnimatedFloor } from "@/lib/useClientConfig"
 
 // The nominal CSS width of one card in this list, for the rendition it asks
 // for (lib/thumbnailTier.ts). A NOMINAL rather than a measurement, unlike the
@@ -81,6 +82,13 @@ export function SimilarItemsView({
     // One tier for the whole list, like the grid's: chosen here from the
     // card's nominal box rather than inside each card.
     const cardTier = tierForCellWidth(SIMILAR_CARD_CSS_WIDTH, useDevicePixelRatio())
+    // These cards ARE grid cards (SearchResultImage), so they need the same
+    // floor for the same decision. Not optional politeness: they ask for a grid
+    // tier, and a card left without a floor would answer `"still"` for every
+    // animated item — correct, but a still picture where today's endpoint
+    // already serves an animating original. Animation here is preserved
+    // behaviour, not new motion.
+    const animatedFloor = useAnimatedFloor()
     const [partitionBy] = usePartitionBy()
     const bookmarkNs = useBookmarkNs((state) => state.namespace)
     const { data, error, isError, refetch, isFetching, isLoading } = $api.useQuery(
@@ -272,6 +280,7 @@ export function SimilarItemsView({
                             showLoadingSpinner={isLoading || isFetching}
                             overrideURL={indexToLinkMapping ? indexToLinkMapping[index] : undefined}
                             tier={cardTier}
+                            animatedFloor={animatedFloor}
                         />
                     ))}
                 </div>

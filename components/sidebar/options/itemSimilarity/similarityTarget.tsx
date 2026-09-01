@@ -9,6 +9,7 @@ import { useItemSimilaritySearch, useSearchPage } from "@/lib/state/searchQuery/
 import { FilterContainer } from "../../base/FilterContainer";
 import { tierForCellWidth } from "@/lib/thumbnailTier";
 import { useDevicePixelRatio } from "@/hooks/useDevicePixelRatio";
+import { useAnimatedFloor } from "@/lib/useClientConfig";
 
 // The nominal CSS width of this ONE card, which spans the sidebar's whole
 // content width (grid-cols-1): ~350px at a 1280px window, ~700px at 4K. The
@@ -20,6 +21,9 @@ export function SimilarityTarget() {
     const selected = useItemSelection((state) => state.getSelected())
     const [dbs, ___] = useSelectedDBs()
     const cardTier = tierForCellWidth(TARGET_CARD_CSS_WIDTH, useDevicePixelRatio())
+    // A grid-tier request, so it needs the floor for the same reason the
+    // result grid does — see SearchResultImage's `animatedFloor` prop.
+    const animatedFloor = useAnimatedFloor()
     const [filter, setFilter] = useItemSimilaritySearch()
     const [page, setPage] = useSearchPage()
     const currentTargetExists = filter.target.length > 0
@@ -58,6 +62,11 @@ export function SimilarityTarget() {
         // `duration` included, or the cut point loses its end anchor here
         duration: item?.duration,
         content_end_ms: item?.content_end_ms,
+        // The fourth field the animated decision reads (lib/thumbnailTier.ts).
+        // Without it this hand-built row is "size unknown", which answers
+        // `"still"` for every animated target — safe, but a poster where the
+        // card could be showing the loop. The item query already has it.
+        size: item?.size,
     }
     function switchTarget() {
         if (!selected) return
@@ -73,7 +82,7 @@ export function SimilarityTarget() {
             storageKey="similarity-target-details-open"
         >
             {currentTargetExists && <>
-                {resultItem && <SearchResultImage className="mt-4 grid grid-cols-1" result={resultItem} index={0} dbs={dbs} tier={cardTier} />}
+                {resultItem && <SearchResultImage className="mt-4 grid grid-cols-1" result={resultItem} index={0} dbs={dbs} tier={cardTier} animatedFloor={animatedFloor} />}
                 <div className="space-x-2 mt-4">
                     <p className="text-xs text-gray-500 mt-2">
                         {/* Real download, not open-in-tab (same-origin

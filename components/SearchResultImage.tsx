@@ -9,12 +9,26 @@ import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { PinButton } from './gallery/PinButton';
 import { blurHashToDataURL, type PlaceholderDataURL } from '@/lib/state/blurHashDataURL';
 import { useCellCallbacks } from '@/lib/state/cellActions';
-import { isExtremeAspect, type ThumbnailTier } from '@/lib/thumbnailTier';
+import {
+    animatedCellMode,
+    isExtremeAspect,
+    type AnimatedFloor,
+    type ThumbnailTier,
+} from '@/lib/thumbnailTier';
+import { observeAnimatedCell } from '@/lib/state/animatedPlayback';
 
 // The marker the extreme-aspect swap binds its hover listeners to. It is the
 // element that carries `group`, so the JS hover region and the CSS one are the
 // same box by construction — see ExtremeAspectPicture.
 const HOVER_ROOT_ATTR = "data-cell-hover-root"
+
+/**
+ * What next/image's `fill` writes as inline style, spelled as classes for the
+ * one picture element that is not a next/image: the loop's `<video>`. It has to
+ * occupy the card's picture box exactly as the `<img>` it stands in for does,
+ * or the two cell kinds would not be interchangeable on screen.
+ */
+const FILL_CLASSES = "absolute inset-0 h-full w-full"
 
 // Memoized: the virtualized grid re-renders on every scroll frame (tanstack
 // virtual mutates state under "use no memo"), and without this each visible
@@ -35,6 +49,7 @@ export const SearchResultImage = memo(function SearchResultImage({
     showLoadingSpinner,
     tier,
     imageHeightPx,
+    animatedFloor,
 }: {
     result: SearchResult,
     index: number,
@@ -60,6 +75,17 @@ export const SearchResultImage = memo(function SearchResultImage({
      * (design §9). Omitted keeps the breakpoint classes.
      */
     imageHeightPx?: number
+    /**
+     * The server's animated raw floor (`/api/client-config`), read ONCE by the
+     * host next to the tier choice and passed down as a stable object — never
+     * a hook in here, which is the subscription-per-card F1 removed.
+     *
+     * Omitted or null means "no loops exist", which is what an older Server
+     * reports and what holds while the config request is in flight: every card
+     * then renders exactly today's `<img>`, so a host that never passes this is
+     * a host with no animated cells rather than a broken one.
+     */
+    animatedFloor?: AnimatedFloor | null
 }) {
     const fileUrl = overrideURL ? overrideURL : getFileURL(dbs, "file", "sha256", result.sha256)
     // LATCHED AT MOUNT, and that is the whole of F4's no-flash rule for a tier
@@ -78,7 +104,22 @@ export const SearchResultImage = memo(function SearchResultImage({
     // those cards, never a flash — which is the requirement, and the simpler
     // of the two constructions the plan allows.
     const tierRef = useRef(tier)
-    const thumbnailUrl = getFileURL(dbs, "thumbnail", "sha256", result.sha256, tierRef.current)
+    // ONE COMPARISON ON ROW DATA, exactly like `extreme` below and under the
+    // same rule (§2's zero-cost-for-normal invariant): the fields are already
+    // in the search payload, the floor is a prop, and a static card leaves
+    // here with `"static"` having mounted nothing. The three modes are
+    // documented on `animatedCellMode`; what they buy this card is which of
+    // two picture elements it renders and whether its `<img>` has to spell out
+    // `still=true` — a grid tier answers an animated item above the floor with
+    // `video/mp4`, which an `<img>` would show as a broken picture.
+    const animated = animatedCellMode(result, animatedFloor)
+    const thumbnailUrl = getFileURL(dbs, "thumbnail", "sha256", result.sha256, tierRef.current,
+        animated === "still")
+    // Only built for a loop card; for every other card these are the same
+    // string as above and nothing reads them.
+    const loopPosterUrl = animated === "loop"
+        ? getFileURL(dbs, "thumbnail", "sha256", result.sha256, tierRef.current, true)
+        : thumbnailUrl
     // Deliberately NOT a `useSearchParams` of its own. This card used to hold
     // one and rebuild its gallery href behind a `useMemo` keyed on the params
     // object — i.e. it recomputed on EVERY URL write, for every visible card,
@@ -174,12 +215,30 @@ export const SearchResultImage = memo(function SearchResultImage({
                 >
                     {extreme ? (
                         <ExtremeAspectPicture
-                            cropSrc={thumbnailUrl}
+                            crop={animated === "loop"
+                                ? { kind: "loop", src: thumbnailUrl, poster: loopPosterUrl }
+                                : { kind: "image", src: thumbnailUrl }}
                             displaySrc={getFileURL(dbs, "thumbnail", "sha256", result.sha256, "display")}
                             alt={`Result ${result.path}`}
                             blurDataURL={blurDataURL}
                             imageClassName={imageClassName}
                             disabled={!!showLoadingSpinner}
+                        />
+                    ) : animated === "loop" ? (
+                        <AnimatedCellPicture
+                            src={thumbnailUrl}
+                            poster={loopPosterUrl}
+                            alt={`Result ${result.path}`}
+                            blurDataURL={blurDataURL}
+                            // The static card's classes, verbatim, so a loop
+                            // cell is indistinguishable from the picture it
+                            // replaces — including the CSS-only hover contain,
+                            // which works on a <video> exactly as it does on an
+                            // <img> (`object-fit` is not element-specific).
+                            className={cn(
+                                "object-cover object-top",
+                                showLoadingSpinner ? "" : "group-hover:object-contain group-hover:object-center",
+                                imageClassName)}
                         />
                     ) : (
                         <Image
@@ -275,14 +334,20 @@ export const SearchResultImage = memo(function SearchResultImage({
  * the user asked for the right one.
  */
 function ExtremeAspectPicture({
-    cropSrc,
+    crop,
     displaySrc,
     alt,
     blurDataURL,
     imageClassName,
     disabled,
 }: {
-    cropSrc: string
+    /**
+     * The stored grid rendition — a still crop, or the CROPPED LOOP when the
+     * item is animated and above the raw floor. The crop rule is the same
+     * geometry for both (§2 applies it in the encode), so the only thing that
+     * changes here is which element paints it; the swap above it is identical.
+     */
+    crop: CellPictureSource
     displaySrc: string
     alt: string
     blurDataURL: PlaceholderDataURL | undefined
@@ -290,7 +355,15 @@ function ExtremeAspectPicture({
     /** The loading-spinner state, where the card shows no hover at all. */
     disabled: boolean
 }) {
-    const cropRef = useRef<HTMLImageElement | null>(null)
+    // A CALLBACK ref rather than a typed object ref, because the crop layer is
+    // an <img> for a still item and a <video> for an animated one and this only
+    // ever needs "some element of ours, to find the hover root from". Stable
+    // identity, so switching between the two (or the loop's own fallback to its
+    // poster) never re-runs the listener effect below.
+    const cropRef = useRef<HTMLElement | null>(null)
+    const attachCrop = useCallback((element: HTMLElement | null) => {
+        cropRef.current = element
+    }, [])
     const [hovered, setHovered] = useState(false)
     // Sticky: once a hover has asked for the display rendition, the element
     // stays mounted. Unmounting it would make every re-hover a fresh <img>
@@ -326,22 +399,34 @@ function ExtremeAspectPicture({
         }
     }, [disabled])
     const showDisplay = hovered && loaded
+    const cropClassName = cn(
+        "object-cover object-top transition-opacity duration-150",
+        showDisplay ? "opacity-0" : "opacity-100",
+        imageClassName)
     return (
         <>
-            <Image
-                ref={cropRef}
-                src={cropSrc}
-                alt={alt}
-                fill
-                // Same rule as the plain card's: the blurhash PNG goes to
-                // `placeholder` directly, never `placeholder="blur"`.
-                placeholder={blurDataURL ?? 'empty'}
-                className={cn(
-                    "object-cover object-top transition-opacity duration-150",
-                    showDisplay ? "opacity-0" : "opacity-100",
-                    imageClassName)}
-                unoptimized
-            />
+            {crop.kind === "loop" ? (
+                <AnimatedCellPicture
+                    src={crop.src}
+                    poster={crop.poster}
+                    alt={alt}
+                    blurDataURL={blurDataURL}
+                    className={cropClassName}
+                    elementRef={attachCrop}
+                />
+            ) : (
+                <Image
+                    ref={attachCrop}
+                    src={crop.src}
+                    alt={alt}
+                    fill
+                    // Same rule as the plain card's: the blurhash PNG goes to
+                    // `placeholder` directly, never `placeholder="blur"`.
+                    placeholder={blurDataURL ?? 'empty'}
+                    className={cropClassName}
+                    unoptimized
+                />
+            )}
             {requested && (
                 <Image
                     src={displaySrc}
@@ -362,5 +447,122 @@ function ExtremeAspectPicture({
                 />
             )}
         </>
+    )
+}
+
+/**
+ * Which of the two picture elements a card's grid rendition needs. `"loop"`
+ * carries both URLs because the loop and its poster are the same request with
+ * and without `still=true`, and the fallback below needs the second one in hand
+ * the moment the first one fails.
+ */
+type CellPictureSource =
+    | { kind: "image"; src: string }
+    | { kind: "loop"; src: string; poster: string }
+
+/**
+ * The picture of a card whose item MOVES and is above the raw floor, so its
+ * grid rendition is an H.264 loop (§2) that only a `<video>` can show.
+ *
+ * MOUNTED ONLY FOR ANIMATED CARDS, on the same rule as ExtremeAspectPicture and
+ * for the same reason: the playback registration, the fallback state and the
+ * media element live in here, so a static card renders the plain `<Image>` it
+ * always did and mounts none of it.
+ *
+ * Styled to be INDISTINGUISHABLE from that `<img>`: the caller hands down the
+ * card's own object-fit classes verbatim, and `FILL_CLASSES` reproduces what
+ * next/image's `fill` writes as inline style. `object-fit`/`object-position`
+ * apply to a replaced element whatever its kind, so the CSS hover-contain and
+ * the rounded corners work here untouched.
+ *
+ * THE POSTER FALLBACK IS THE POINT, not defensive polish. Two states answer a
+ * grid-tier request for an animated item above the floor with the item's own
+ * IMAGE bytes, and the client cannot tell either apart in advance:
+ *
+ *   - the backfill has not written the loop yet — transitional, and answered
+ *     `no-cache` so it resolves the moment the scan lands;
+ *   - no H.264 encode of this source came out smaller than the source, so the
+ *     settled keep-the-original edge serves the file itself — PERMANENT, and
+ *     answered immutable, so this fallback is the only thing that will ever
+ *     render those items.
+ *
+ * A cell that only ever mounted `<video>` shows an empty box in both. The swap
+ * hangs off the element's own `error` event — NO PROBE REQUEST, which would
+ * double the request count for the common case to save one wasted fetch in the
+ * rare one — and lands on `still=true`, a stored poster for every item above
+ * the floor. It is a one-way latch: `failed` never goes back, so a failure
+ * cannot loop, and the poster is already in cache because the `<video>` was
+ * showing it.
+ */
+function AnimatedCellPicture({
+    src,
+    poster,
+    alt,
+    blurDataURL,
+    className,
+    elementRef,
+}: {
+    /** The grid tier URL — `video/mp4` when a loop exists for this item. */
+    src: string
+    /** The same tier with `still=true`: the loop's poster, and the fallback. */
+    poster: string
+    alt: string
+    blurDataURL: PlaceholderDataURL | undefined
+    /** The card's object-fit/opacity classes, applied to whichever paints. */
+    className?: string
+    /** The extreme-aspect swap's anchor, when this loop is inside one. */
+    elementRef?: (element: HTMLElement | null) => void
+}) {
+    const [failed, setFailed] = useState(false)
+    const videoRef = useRef<HTMLVideoElement | null>(null)
+    // The concurrency policy in one line: the director owns the observer, the
+    // scroll listener and the cap, and this cell owns nothing but its
+    // membership (lib/state/animatedPlayback.ts). Re-runs on the fallback, where
+    // React has already nulled the ref for the unmounted <video>, so the
+    // registration is dropped exactly when the element stops existing.
+    useEffect(() => {
+        const video = videoRef.current
+        if (!video) return
+        return observeAnimatedCell(video)
+    }, [failed])
+    if (failed) {
+        return (
+            <Image
+                ref={elementRef}
+                src={poster}
+                alt={alt}
+                fill
+                // Same rule as every other picture on this card: the blurhash
+                // PNG goes to `placeholder` directly, never `placeholder="blur"`.
+                placeholder={blurDataURL ?? 'empty'}
+                className={className}
+                unoptimized
+            />
+        )
+    }
+    return (
+        // eslint-disable-next-line jsx-a11y/media-has-caption
+        <video
+            ref={(element) => {
+                videoRef.current = element
+                elementRef?.(element)
+            }}
+            src={src}
+            // Shown until the first frame decodes, and shown for good if the
+            // response turns out not to be a video at all — so the cell paints
+            // a correct picture from its first frame in every case.
+            poster={poster}
+            aria-label={alt}
+            // `muted` is intrinsic rather than a setting: a grid of cells that
+            // could make noise is not a grid, and it is also what makes
+            // autoplay permissible without a user gesture in every browser.
+            muted
+            autoPlay
+            loop
+            playsInline
+            disablePictureInPicture
+            onError={() => setFailed(true)}
+            className={cn(FILL_CLASSES, className)}
+        />
     )
 }

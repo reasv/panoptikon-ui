@@ -58,7 +58,7 @@ import { DesktopUpdateRibbon } from "@/components/DesktopUpdateRibbon"
 import { FindNavigator } from "@/components/gallery/FindButton"
 import { SearchMetricsHoverCard } from "@/components/SearchMetricsCard"
 import { $api } from "@/lib/api"
-import { useClientConfig } from "@/lib/useClientConfig"
+import { useAnimatedFloor, useClientConfig } from "@/lib/useClientConfig"
 
 export function SearchPageContent({ initialQuery, isRestrictedMode }:
     { initialQuery: SearchQueryArgs, isRestrictedMode: boolean }) {
@@ -1427,6 +1427,11 @@ export function ResultGrid({
     // a per-cell hook: a measurement or a media query inside the card is a
     // subscription in every card, which is precisely what F1 removed.
     const tier = tierForCellWidth(cellWidth, dpr)
+    // ONE FLOOR FOR THE WHOLE GRID, on the same rule as the tier above it: a
+    // card decides `<img>` vs `<video>` from its own row, but the numbers it
+    // decides against are the server's and identical for every card, so they
+    // are read here and passed down rather than subscribed to per cell.
+    const animatedFloor = useAnimatedFloor()
     const imageHeightPx = explicitSize && cellWidth > 0
         ? imageBoxHeightForCellWidth(cellWidth)
         : undefined
@@ -2181,6 +2186,14 @@ export function ResultGrid({
                                                 // explicit mode that owns it.
                                                 tier={tier}
                                                 imageHeightPx={imageHeightPx}
+                                                // Same rule as the tier: read
+                                                // ONCE for the whole grid and
+                                                // handed down, never a hook
+                                                // per card. react-query keeps
+                                                // the object's identity across
+                                                // renders that change nothing,
+                                                // so the memo still holds.
+                                                animatedFloor={animatedFloor}
                                             />
                                         )
                                     })}

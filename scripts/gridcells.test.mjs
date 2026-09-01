@@ -2,7 +2,8 @@
 // the cell-size slider's arithmetic (lib/gridCellSize.ts), plus the URL the
 // two feed (lib/utils.ts getFileURL). The contracts are
 // docs/grid-scroll-performance-implementation.md §2 (tier thresholds, the
-// extreme-aspect rule) and docs/search-scroll-mode-design.md §9 (the slider).
+// extreme-aspect rule, the animated raw floor and the <img>-vs-<video>
+// decision of §3 F6) and docs/search-scroll-mode-design.md §9 (the slider).
 // No test runner in this repo — run it from the ui root:
 //
 //   node --experimental-strip-types scripts/gridcells.test.mjs
@@ -18,6 +19,9 @@ const {
   EXTREME_ASPECT,
   TIER_SHORT_SIDE,
   TIER_SLACK,
+  animatedCellMode,
+  isAboveAnimatedFloor,
+  isAnimatedItem,
   isExtremeAspect,
   tierForCellWidth,
 } = await import("../lib/thumbnailTier.ts")
@@ -132,6 +136,138 @@ console.log("\n== the URL the tier produces ==")
   check("no index_db still produces a well-formed URL",
     getFileURL({ index_db: null, user_data_db: null }, "thumbnail", "sha256", "abc", "grid-m")
       === "/api/items/item/thumbnail?id=abc&id_type=sha256&size=grid-m")
+  check("still=true appends after the tier",
+    getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-m", true)
+      === "/api/items/item/thumbnail?id=abc&id_type=sha256&index_db=stdtest&size=grid-m&still=true")
+  check("a false still is the same URL as omitting it",
+    getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-m", false)
+      === getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-m"))
+}
+
+console.log("\n== does the picture move (F6) ==")
+{
+  // GIF: animated unless MEASURED still. NULL is "not measured", which is what
+  // a pre-backfill row carries and what today's endpoint already treats as
+  // animated (it serves every GIF as the original file).
+  check("a GIF with no measured duration is animated",
+    isAnimatedItem("image/gif", null) && isAnimatedItem("image/gif", undefined))
+  check("a GIF measured at 0 is a still picture",
+    !isAnimatedItem("image/gif", 0))
+  check("a GIF with a positive duration is animated",
+    isAnimatedItem("image/gif", 1.2))
+  // WebP/AVIF: the opposite default. Most are stills, so only a measurement
+  // moves them into the animated path.
+  check("an unmeasured WebP is NOT animated",
+    !isAnimatedItem("image/webp", null) && !isAnimatedItem("image/webp", undefined))
+  check("a WebP measured at 0 is NOT animated",
+    !isAnimatedItem("image/webp", 0))
+  check("a measured WebP is animated",
+    isAnimatedItem("image/webp", 1.199))
+  check("AVIF follows the WebP rule, not the GIF one",
+    !isAnimatedItem("image/avif", null) && isAnimatedItem("image/avif", 2))
+  check("a mime parameter does not defeat the GIF prefix test",
+    isAnimatedItem("image/gif; charset=binary", null))
+  // Unmeasured stills, which is what nearly every PNG and JPEG row is.
+  check("an unmeasured PNG or JPEG is not animated",
+    !isAnimatedItem("image/png", null) && !isAnimatedItem("image/jpeg", null)
+      && !isAnimatedItem("image/png", 0))
+  // ...but a MEASURED one is, and deliberately so: this mirrors the backend's
+  // `is_animated_image` verbatim, where every non-GIF image container follows
+  // the measurement (APNG is a real animated PNG). The two sides answering
+  // differently is what would make a stored rendition unreachable.
+  check("a measured PNG follows the same rule as WebP (APNG)",
+    isAnimatedItem("image/png", 3))
+  check("a video item is not an animated picture",
+    !isAnimatedItem("video/mp4", 30))
+  check("a missing type is not animated",
+    !isAnimatedItem(null, 3) && !isAnimatedItem(undefined, 3) && !isAnimatedItem("", 3))
+  check("a non-finite duration cannot make a WebP animated",
+    !isAnimatedItem("image/webp", NaN) && !isAnimatedItem("image/webp", Infinity))
+}
+
+console.log("\n== the raw floor (F6) ==")
+{
+  // The server's own numbers, as /api/client-config reports them. Passed in
+  // rather than hardcoded anywhere in the UI — that is the point of the field.
+  const floor = { maxFileSize: 1048576, maxSide: 512 }
+  const above = (size, w, h) => isAboveAnimatedFloor(size, w, h, floor)
+  // The floor is `bytes <= max AND both sides <= max`; clearing EITHER half
+  // puts the item above it.
+  check("at both limits exactly, the item is BELOW the floor",
+    !above(1048576, 512, 512))
+  check("one byte over the size limit clears it",
+    above(1048577, 512, 512))
+  check("one pixel over on either side clears it",
+    above(1000, 513, 100) && above(1000, 100, 513))
+  check("small in both is below it",
+    !above(9793, 200, 150))
+  // The dimension-free shortcut: past the size limit nothing else matters, so
+  // a row with no dimensions is still settled.
+  check("past the size limit, missing dimensions still answer above",
+    above(4 * 1048576, null, null) && above(4 * 1048576, undefined, undefined))
+  // ...and the genuinely unsettleable case answers the CONSERVATIVE way, which
+  // animatedCellMode turns into a poster request rather than a <video>.
+  check("within the size limit and with no dimensions, the answer is below",
+    !above(1000, null, null) && !above(1000, 0, 0))
+  check("an unknown size is never assumed above",
+    !above(null, 9999, 9999) && !above(undefined, 9999, 9999) && !above(NaN, 9999, 9999))
+  check("a non-finite dimension does not clear the floor",
+    !above(1000, NaN, 100) && !above(1000, 100, Infinity))
+  // No floor reported (an older Server, or the config still in flight) means
+  // "no loops exist" — every animated item stays on the <img> path.
+  check("no floor means nothing is above it",
+    !isAboveAnimatedFloor(9e9, 9999, 9999, null)
+      && !isAboveAnimatedFloor(9e9, 9999, 9999, undefined))
+  // A floor the server could conceivably move: the assertions must follow the
+  // reported numbers rather than a constant baked in on this side.
+  check("the arithmetic follows the reported numbers, not constants",
+    isAboveAnimatedFloor(2048, 100, 100, { maxFileSize: 1024, maxSide: 512 })
+      && !isAboveAnimatedFloor(2048, 100, 100, { maxFileSize: 4096, maxSide: 512 }))
+}
+
+console.log("\n== what a grid cell renders (F6) ==")
+{
+  const floor = { maxFileSize: 1048576, maxSide: 512 }
+  const mode = (item) => animatedCellMode(item, floor)
+  // The case that must stay free: a static row leaves with "static", which is
+  // today's <img> at today's URL.
+  check("a PNG is static",
+    mode({ type: "image/png", size: 58809, width: 800, height: 600 }) === "static")
+  check("a video item is static",
+    mode({ type: "video/mp4", duration: 30, size: 9e8, width: 1920, height: 1080 }) === "static")
+  // The loop case: animated AND above the floor.
+  check("a large GIF is a loop",
+    mode({ type: "image/gif", duration: 1.2, size: 540046, width: 800, height: 600 }) === "loop")
+  check("a measured WebP above the floor is a loop",
+    mode({ type: "image/webp", duration: 1.199, size: 40410, width: 800, height: 600 }) === "loop")
+  check("an above-floor GIF that is small in bytes is still a loop",
+    mode({ type: "image/gif", duration: 1, size: 1472, width: 514, height: 260 }) === "loop")
+  // Below the floor: the endpoint serves the original at every tier, so the
+  // <img> path shows an animating GIF exactly as it does today. still=true is
+  // documented as a no-op there, which is what lets one flag cover this and
+  // the ambiguous case below.
+  check("a below-floor GIF asks for the still (a no-op that serves the raw file)",
+    mode({ type: "image/gif", duration: 0.51, size: 9793, width: 200, height: 150 }) === "still")
+  // The ambiguous row: animated, within the size limit, no dimensions. Never
+  // a <video>, because the bytes might not be one.
+  check("an animated row with no dimensions asks for the still",
+    mode({ type: "image/gif", duration: null, size: 1000 }) === "still")
+  check("an animated row with no size asks for the still",
+    mode({ type: "image/gif", duration: 2, width: 4000, height: 3000 }) === "still")
+  // ...but a row over the size limit needs no dimensions to be settled.
+  check("a huge animated row with no dimensions is still a loop",
+    mode({ type: "image/gif", duration: 4, size: 8 * 1048576 }) === "loop")
+  // A measured-still GIF is a static card, not a poster request: it has no
+  // loop and no animation, so it is an ordinary image.
+  check("a GIF measured as still is a static card",
+    mode({ type: "image/gif", duration: 0, size: 540046, width: 800, height: 600 }) === "static")
+  // With no floor (older Server / config in flight) nothing is ever a loop,
+  // and the animated rows fall back to the safe still request.
+  check("with no floor an animated item is a still, never a loop",
+    animatedCellMode({ type: "image/gif", duration: 1.2, size: 540046, width: 800, height: 600 }, null)
+      === "still")
+  check("with no floor a static item is still static",
+    animatedCellMode({ type: "image/png", size: 1, width: 1, height: 1 }, null) === "static")
 }
 
 console.log("\n== columns and row height from an explicit cell width (§9) ==")
