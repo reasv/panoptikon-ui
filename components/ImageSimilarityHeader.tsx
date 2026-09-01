@@ -10,6 +10,7 @@ import { useSelectedDBs } from "@/lib/state/database";
 import { FilePathComponent } from "./imageButtons";
 import { getFileURL } from "@/lib/utils";
 import { useItemSimilaritySearch, useQueryOptions } from "@/lib/state/searchQuery/clientHooks";
+import { isExtremeAspect } from "@/lib/thumbnailTier";
 
 export function ImageSimilarityHeader() {
     const [dbs, ___] = useSelectedDBs()
@@ -80,19 +81,32 @@ export function ImageSimilarityHeader() {
                         side="top"
                         className="w-auto p-2"
                     >
-                        {/* A CONTAIN surface, so `display` and never a grid
-                            tier (§2): past aspect 2 a grid rendition is a CROP
-                            cut for `object-cover`, and contained in this box
-                            it would show a strip's first screenful instead of
-                            the whole picture. The parameter is spelled out
-                            rather than left implicit in the bare URL — same
-                            bytes, NEW URL, so a browser cache holding this
-                            item's pre-tier long-side-crushed thumbnail cannot
-                            answer it (F4). Unconditional because the target is
-                            a sha256 and this component never has the item's
-                            dimensions in hand to test an aspect with. */}
+                        {/* A CONTAIN surface, so it never takes a grid tier
+                            (§2): past aspect 2 a grid rendition is a CROP cut
+                            for `object-cover`, and contained in this box it
+                            would show a strip's first screenful instead of the
+                            whole picture. Gated on the aspect through the same
+                            helper the gallery and the peek layer use, off the
+                            dimensions THIS component's own `/api/items/item`
+                            query already carries — so a normal-aspect target
+                            keeps the bare URL and shares its cache entry with
+                            the gallery's picture of the same item, and only an
+                            extreme-aspect one asks for `?size=display` by name:
+                            same bytes, NEW URL, which is exactly what a browser
+                            cache holding the pre-tier long-side-crushed
+                            thumbnail cannot answer (F4).
+
+                            RESIDUAL, and it is the one every contain surface
+                            here carries: on a first hover the query may not
+                            have resolved, `data` is undefined, the aspect test
+                            answers false and the bare URL is used. The picture
+                            is still the right one — the bare path IS the
+                            display rendition — so only the cache-busting half
+                            is missed, and only until the query settles. */}
                         <img
-                            src={getFileURL(dbs, "thumbnail", "sha256", filter.target, "display")}
+                            src={getFileURL(dbs, "thumbnail", "sha256", filter.target,
+                                isExtremeAspect(data?.item?.width, data?.item?.height)
+                                    ? "display" : undefined)}
                             alt="Similarity search target"
                             className="max-h-[40vh] max-w-[min(24rem,80vw)] rounded object-contain"
                         />
