@@ -296,6 +296,16 @@ export type AnimateMode = "always" | "hover"
  *     fade is unchanged and orthogonal: this decides whether the badge is
  *     MOUNTED, `group-hover:opacity-0` decides whether it is visible while the
  *     pointer is on the card.)
+ *
+ *     WHICH IS WHY A HOVER-PLAYING LOOP STILL SAYS "hover" HERE, and the badge
+ *     over it stays mounted: hover-play IMPLIES `:hover`, so `PlayableBadge`'s
+ *     `group-hover:opacity-0` has already faded it out by the time the loop
+ *     starts. The glyph is invisible over the moving picture without this
+ *     predicate having to know anything about live playback — and knowing
+ *     would cost a state update per cell on every arm and every release, in
+ *     the feature whose whole point is that un-hovered cells cost nothing.
+ *     THIS COUPLES THE TWO: anyone removing or conditioning that fade must
+ *     revisit this branch, or a play glyph will sit on top of a playing loop.
  *   - a `"still"` cell earns none: the endpoint answers it with the item's own
  *     file, which animates natively in the `<img>`. ACCEPTED RESIDUAL — the
  *     mode also covers a row too incomplete to place against the floor
