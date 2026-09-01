@@ -1028,7 +1028,7 @@ export function GridPanel({
     const pinboard = useGalleryPinBoardLayout()[0]
     // The grid's measured cell width, from the one component that can compute
     // it to the one control that reads it, without re-rendering this panel on
-    // the way (lib/state/cellWidthBox.ts). Per mount, never a module
+    // the way (lib/state/gridMetricsBox.ts). Per mount, never a module
     // singleton — the derived-page box's rule, for its reason.
     const [metricsStore] = useState(() => createGridMetricsStore())
     const [pinboardTab, setPinboardTab] = useGridPinboardTab()
@@ -1223,13 +1223,15 @@ export function GridPanel({
 // show skeletons (see overscanItemsFor).
 const GRID_OVERSCAN_ROWS = 3
 
-// Parked in `lastWrittenAnchor` across a view-mode switch so the anchor the
-// switch wrote reads as an ARRIVAL rather than as the echo of one of the
-// grid's own writes. Any value outside the anchor's domain would do — anchors
-// are `null` or a non-negative item index — and −1 is the one that also makes
-// the `null` case (a switch landing on the top of the set) compare unequal,
-// which is the case a plain `null` sentinel would silently skip.
-const MODE_SWITCH_ANCHOR_SENTINEL = -1
+// Parked in `lastWrittenAnchor` across a layout change — a view-mode switch, a
+// column-count change, a row-height change — so the anchor standing in the URL
+// reads as an ARRIVAL rather than as the echo of one of the grid's own writes,
+// and the external-anchor effect applies it instead of skipping it. Any value
+// outside the anchor's domain would do (anchors are `null` or a non-negative
+// item index); −1 is the one that also makes the `null` case — a restore that
+// lands on the top of the set — compare unequal, which is what a plain `null`
+// sentinel would silently skip.
+const RESTORE_ANCHOR_SENTINEL = -1
 
 /**
  * Where the gallery's item sits in the source, for the ensure-visible pass on
@@ -1331,7 +1333,7 @@ export function ResultGrid({
     updateRibbonVisible?: boolean,
     /**
      * Where to publish the measured cell width for the size slider's thumb
-     * (lib/state/cellWidthBox.ts). Optional: the grid is correct without one,
+     * (lib/state/gridMetricsBox.ts). Optional: the grid is correct without one,
      * it just cannot seed a slider that has not been given the box.
      */
     metricsStore?: GridMetricsStore,
@@ -1522,11 +1524,12 @@ export function ResultGrid({
     // must be ignored) from external changes — back/forward navigation and
     // query-change resets — which have to move the actual scroll position
     const lastWrittenAnchor = useRef<number | null>(null)
-    // Set while a view-mode switch has written a position the grid has not
-    // been put on yet, and read by everything that would otherwise speak for
-    // the pre-switch one. Declared here, beside the anchor state it guards;
-    // the effect that raises it and the one that clears it are below.
-    const modeRestorePending = useRef(false)
+    // Set while the grid's LAYOUT has changed under a position it has not been
+    // put back on yet, and read by everything that would otherwise speak for
+    // the position it is standing on meanwhile. Declared here, beside the
+    // anchor state it guards; the effect that raises it and the reading that
+    // clears it are below.
+    const restorePending = useRef(false)
 
     // The last virtual page reported to the host, so the live position
     // indicator fires on a page CROSSING rather than on a scroll frame.
@@ -1634,14 +1637,13 @@ export function ResultGrid({
         // more accurate one there.
         let highlightedRow: number | null = null
         const onScrollStop = () => {
-            // A view-mode switch has written a position in the NEW mode's
-            // coordinates and the grid has not been put on it yet (see the
-            // mode-change layout effect). Whatever is on screen right now is
-            // the OLD mode's position — page-local where the URL is now global,
-            // or the reverse — and publishing it would both lose the user's
-            // place and mark the switch's own anchor as already-written, which
-            // stops the restore that is on its way. Say nothing until it lands.
-            if (modeRestorePending.current) return
+            // The grid's layout has changed and it has not been put back on
+            // the item the URL names yet (see the geometry-change effect
+            // below). Whatever is on screen right now is the position the OLD
+            // layout left, and publishing it would both lose the user's place
+            // and mark the URL's own anchor as already-written — which stops
+            // the restore that is on its way. Say nothing until it lands.
+            if (restorePending.current) return
             const startRow = highlightedRow ?? virtualizer.range?.startIndex ?? 0
             const anchor = startRow > 0 ? startRow * columns : null
             if (anchor === lastWrittenAnchor.current) return
@@ -1697,19 +1699,60 @@ export function ResultGrid({
         }
     }, [columns, virtualizer])
 
+    /**
+     * Has the pending restore finished moving the grid?
+     *
+     * AGREEMENT is the ordinary answer: the reading names the row the restore
+     * aimed at, within the anchor's own row-quantization (hence the one-row
+     * tolerance).
+     *
+     * EXHAUSTION is the other, and it is not an edge case: a target row inside
+     * the last viewport-worth of rows cannot be brought to the TOP, and a
+     * result set shorter than the viewport cannot be scrolled at all, so the
+     * grid comes to rest above the target and agreement never arrives. Without
+     * this the flag would stay raised for the rest of the session and the URL
+     * would stop recording the scroll position entirely — a worse failure, and
+     * a more frequent one, than the drift it exists to prevent.
+     *
+     * `resultsAreStale` and `countSettled` gate it, and that gate is the whole
+     * reason exhaustion is safe: entering scroll mode the chunk store is empty,
+     * so the scroll space is a stub the grid is trivially at the bottom of —
+     * "there is nothing below me" then means "the rows have not arrived", not
+     * "I have gone as far as I can". Waiting for a settled count and unstale
+     * results is what tells those two apart.
+     */
+    const restoreHasLanded = (seen: number): boolean => {
+        if (Math.abs(seen - anchorItem.current) <= columns) return true
+        if (resultsAreStale || !countSettled) return false
+        const element = parentRef.current
+        if (!element) return false
+        // Two pixels of slack for sub-pixel scroll offsets; `scrollHeight ===
+        // clientHeight` (nothing to scroll) satisfies this too.
+        return element.scrollTop + element.clientHeight >= element.scrollHeight - 2
+    }
+
     // Track the first visible item while the layout is stable (runs on every
-    // commit) — and, while a view-mode switch is being restored, decide when
-    // that restore has LANDED.
+    // commit) — and, while a restore is outstanding, decide when it has LANDED.
     //
     // The two jobs are one effect because they are the same reading. What is on
-    // screen during a switch's restore window is the PRE-switch position, in
-    // the coordinate system the URL has just left, and capturing it is not
-    // merely a stale number: the row-height effect below re-asserts
-    // `anchorItem` on the commit that learns the measured height, which in
-    // scroll mode lands AFTER the restore has scrolled — so a reading taken
-    // meanwhile drags the grid straight back off the position the restore had
-    // just put it on, and the scroll-stop then publishes THAT over the anchor
-    // the switch wrote.
+    // screen during a restore window is the position the OLD layout left — in
+    // the coordinate system the URL has left, after a mode switch; over the
+    // wrong number of columns, after a resize or a size-slider commit — and
+    // capturing it is not merely a stale number. The column-change effect ABOVE
+    // and the row-height effect BELOW both re-assert `anchorItem`, on this
+    // commit and on later ones, so a reading taken meanwhile drags the grid
+    // straight back off the position the restore had just put it on, and the
+    // scroll-stop then publishes THAT over the anchor in the URL.
+    //
+    // NOTE the guard this effect cannot rely on: `prevColumns` is owned by the
+    // column-change effect above, which is declared FIRST and therefore updates
+    // it before this runs. On the very commit a column change lands, this
+    // effect's own guard is already satisfied while `virtualizer.range` still
+    // describes the previous geometry — which is exactly how a slider commit in
+    // scroll mode used to preserve the pixel offset instead of the item
+    // (measured: shrinking cells 587 -> 270 moved top=260 to top=970, a
+    // different item). The flag, raised in a LAYOUT effect before either of
+    // them, is what actually closes that window.
     //
     // "Landed" is deliberately a reading, not an event, because
     // `virtualizer.range` LAGS a programmatic scroll by a commit: it is
@@ -1717,81 +1760,95 @@ export function ResultGrid({
     // `scrollToIndex` it still describes where the grid was. Clearing the flag
     // when the restore was ISSUED therefore re-opens this tracker exactly one
     // commit too early, and it captures the old row — measured, and the reason
-    // this test exists. The restore target is reachable by construction (the
-    // external-anchor effect clamps it into the item count before scrolling),
-    // so the range does arrive; one row of tolerance covers the anchor's own
-    // row-quantization.
+    // this test exists.
     useEffect(() => {
         if (prevColumns.current !== columns || !virtualizer.range) return
         const seen = virtualizer.range.startIndex * columns
-        if (modeRestorePending.current) {
-            if (Math.abs(seen - anchorItem.current) > columns) return
-            modeRestorePending.current = false
-            return
+        if (restorePending.current) {
+            if (!restoreHasLanded(seen)) return
+            restorePending.current = false
         }
         anchorItem.current = seen
     })
 
-    // A MODE CHANGE RE-BASES EVERY ITEM INDEX THIS COMPONENT HOLDS, and
-    // `anchorItem` is one of them: it is an index in the CURRENT mode's
-    // coordinate system — PAGE-LOCAL in pages mode, GLOBAL in scroll mode —
-    // while the two effects that re-assert it (the column-count change and the
-    // row-height measurement) only ever divide it by `columns`. Left standing
-    // across a switch, a page-local 25 is re-asserted as a global 25.
+    // ANY LAYOUT CHANGE RE-BASES EVERY ITEM INDEX THIS COMPONENT HOLDS, and
+    // `anchorItem` is one of them. Three inputs move it, and all three are
+    // watched here:
     //
-    // That is not merely a scroll landing in the wrong place. The re-assert
-    // scrolls, the scroll starts the listener's 350ms stop timer, and the stop
-    // write then PUBLISHES that stale position — over the globalized anchor
-    // `useCommitViewMode` wrote in the same URL update that flipped the mode.
-    // Measured on stdtest (k=38, five columns, scroll top=260 → pages
-    // page=7&top=25 → back): the URL held the correct `top=253` for 368ms and
-    // was then overwritten with `top=25`, dropping the pagination bar from
-    // page 7 to page 1. The switch arithmetic was right the whole time; this
-    // component was quoting the previous coordinate system over the top of it.
+    //   - `scroll` — the coordinate system itself. The anchor is PAGE-LOCAL in
+    //     pages mode and GLOBAL in scroll mode, so a page-local 25 left
+    //     standing across a switch is re-asserted as a global 25.
+    //   - `columns` — the divisor. The same item index names a different ROW
+    //     under a different column count, and the re-assert effects only ever
+    //     divide by the current one.
+    //   - `rowEstimate` — the row height, which moves with a breakpoint and
+    //     with every step of the size slider in explicit mode.
     //
-    // The URL anchor is authoritative here, and it is already correct: the
-    // switch computed it in the NEW mode's coordinates and wrote it in the same
-    // update as `vm`, so both arrive on this commit. `lastWrittenAnchor` is
-    // parked on a value no anchor can take, so the external-anchor effect below
-    // treats it as an arrival rather than as an echo of one of our own writes
-    // and actually applies it — including the `null` case (a switch that lands
-    // on the top of the set), where an echo test on `null === null` would
-    // otherwise skip the scroll to the top.
+    // In every case the failure is the same, and it is not merely a scroll
+    // landing in the wrong place: a re-assert scrolls, the scroll starts the
+    // listener's 350ms stop timer, and the stop write then PUBLISHES that stale
+    // position over the anchor standing in the URL. Both halves are measured on
+    // stdtest:
+    //
+    //   - MODE SWITCH (k=38, five columns, scroll top=260 -> pages page=7&top=25
+    //     -> back): the URL held the correct `top=253` for 368ms and was then
+    //     overwritten with `top=25`, dropping the pagination bar from page 7 to
+    //     page 1. The switch arithmetic was right the whole time; this component
+    //     was quoting the previous coordinate system over the top of it.
+    //   - SIZE SLIDER in scroll mode (cells 587 -> 270): the batched write kept
+    //     `top=260` correctly, and the grid then published `top=970` — a
+    //     different item — having preserved the pixel offset instead of the
+    //     item the anchor names. Which is the one thing an item-space anchor
+    //     exists to prevent, in the mode the slider exists for.
+    //
+    // The URL anchor is authoritative for all of them, and it is already
+    // correct: an item index does not depend on the layout, and where a mode
+    // switch does change its meaning, the switch itself wrote it in the new
+    // coordinates in the same URL update that flipped `vm` — so both arrive on
+    // this commit. `lastWrittenAnchor` is parked on a value no anchor can take,
+    // so the external-anchor effect below treats it as an arrival rather than as
+    // an echo of one of our own writes and actually applies it — including the
+    // `null` case (a restore that lands on the top of the set), where an echo
+    // test on `null === null` would otherwise skip the scroll to the top.
     //
     // A LAYOUT effect: it must land before every `useEffect` in this commit,
     // which is exactly the set of effects that would otherwise re-assert the
-    // stale value.
+    // stale value — including the column-change effect above, which updates the
+    // `prevColumns` guard the tracker would otherwise have relied on.
     //
-    // WHY IT DOES NOT SCROLL HERE, having tried: the new mode's own results are
-    // not in hand on this commit. Entering scroll mode, `itemCount` is the
-    // loaded extent of a chunk store with nothing in it, so `rowCount` is a
-    // handful of rows and a `scrollToIndex` at the globalized anchor clamps to
-    // the bottom of that stub. The one place carrying the retry discipline for
-    // this is the external-anchor effect below — it re-runs on `itemCount`,
-    // `countSettled` and `resultsAreStale` precisely so a position can land
-    // once the results it names exist — so the restore stays there and this
-    // hands it the job.
+    // WHY IT DOES NOT SCROLL HERE, having tried: after a mode switch the new
+    // mode's own results are not in hand on this commit. Entering scroll mode,
+    // `itemCount` is the loaded extent of a chunk store with nothing in it, so
+    // `rowCount` is a handful of rows and a `scrollToIndex` at the globalized
+    // anchor clamps to the bottom of that stub. The places carrying the retry
+    // discipline for this are the column-change effect above and the
+    // external-anchor effect below — the latter re-runs on `itemCount`,
+    // `countSettled` and `resultsAreStale` precisely so a position can land once
+    // the results it names exist — so the restore stays there and this hands it
+    // the job.
     //
     // What this does instead is HOLD THE GRID'S TONGUE until that lands.
-    // `modeRestorePending` suppresses the scroll-stop's anchor write and the
+    // `restorePending` suppresses the scroll-stop's anchor write and the
     // tracker's reading, and nothing else. Without it the 350ms timer fires
-    // first, publishes the pre-switch position, and — worse than the wrong
-    // value — records it in `lastWrittenAnchor`, so the anchor the switch wrote
-    // then reads as an echo of one of our own writes and the external-anchor
-    // effect skips it forever. That is the whole failure: not one bad write,
-    // but a bad write that closes the door on the good one.
-    const prevScroll = useRef(scroll)
+    // first, publishes the pre-change position, and — worse than the wrong
+    // value — records it in `lastWrittenAnchor`, so the anchor in the URL then
+    // reads as an echo of one of our own writes and the external-anchor effect
+    // skips it forever. That is the whole failure: not one bad write, but a bad
+    // write that closes the door on the good one.
+    const prevGeometry = useRef({ scroll, columns, rowEstimate })
     useLayoutEffect(() => {
-        if (prevScroll.current === scroll) return
-        prevScroll.current = scroll
+        const previous = prevGeometry.current
+        if (previous.scroll === scroll && previous.columns === columns
+            && previous.rowEstimate === rowEstimate) return
+        prevGeometry.current = { scroll, columns, rowEstimate }
         // Re-based for the effects that re-assert it before the restore lands.
         // The tracker above stands down for the same window, so this value
         // survives to be re-asserted rather than being overwritten by a reading
-        // of the position the switch has just left.
+        // of the position the old layout left.
         anchorItem.current = Math.max(scrollAnchor ?? 0, 0)
-        lastWrittenAnchor.current = MODE_SWITCH_ANCHOR_SENTINEL
-        modeRestorePending.current = true
-    }, [scroll, scrollAnchor])
+        lastWrittenAnchor.current = RESTORE_ANCHOR_SENTINEL
+        restorePending.current = true
+    }, [scroll, columns, rowEstimate, scrollAnchor])
 
     // Fixed rows mean ONE number decides every offset in the set, so a measured
     // height that differs from the breakpoint constant moves every row below

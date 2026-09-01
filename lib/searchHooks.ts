@@ -1234,6 +1234,22 @@ export function arrayResultsSource(results: SearchResult[]): ResultsSource {
  * `setPagePrefetch` discipline): the flip and the results swap should land in
  * the same render. Entering scroll mode needs no prefetch — the rows on
  * screen already cover the viewport and chunk fetches take over from there.
+ *
+ * WHAT A ROUND TRIP STILL LOSES. The arithmetic here is exact, but the anchor
+ * it carries is not the whole position: each mode records the first item of
+ * the TOP VISIBLE ROW, so every crossing re-quantizes to a row, and the
+ * destination can only honour that row if it can actually bring it to the top.
+ * A page (or a set) whose remaining rows do not fill the viewport comes to rest
+ * above the target, and the next crossing records where it came to rest. The
+ * loss per round trip is therefore bounded by the DESTINATION's viewport
+ * measured in rows — not by one row — and it is not confined to a `k` that
+ * misaligns with the column count: measured on stdtest, 2 rows at k=200 over
+ * nine columns, and 1 row at an aligned k=40 whose destination page could not
+ * top-align the target row. It converges rather than accumulating without
+ * bound (the position walks up to a row the destination CAN top-align and then
+ * stops), and the pagination bar — the thing the user reads — stays on the
+ * right page throughout. Recording a within-row offset alongside the anchor is
+ * the fix if this is ever worth one; it would change the anchor's wire format.
  */
 export function useCommitViewMode() {
   const prefetch = usePrefetchPageState()

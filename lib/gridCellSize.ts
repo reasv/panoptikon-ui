@@ -114,6 +114,20 @@ const MAX_PAGE_SIZE = 10000
  * just written on most rows. Snapping k to the nearest whole row keeps the
  * `(prev / next)²` intent to within half a row and restores the invariant.
  *
+ * THE ALIGNMENT HOLDS AT COMMIT TIME ONLY, and that residual is accepted
+ * deliberately. `columns` is a property of the window, not of the page size:
+ * a later resize, a sidebar toggle or a breakpoint crossing changes it while
+ * `page_size` stays where this put it, and k stops being a multiple again. The
+ * symptom is the one this rounding removes at the moment of the commit — the
+ * pagination bar and the URL anchor disagreeing by one page on rows that
+ * straddle a k-boundary — and it returns until the next slider commit
+ * re-derives k.
+ *
+ * The alternative is worse and was rejected: re-writing `page_size` on every
+ * resize would mean a window drag silently renumbering the user's pagination,
+ * changing what a shared link means, and re-keying the search request mid-drag.
+ * A page size is a value the user set; a resize is not permission to change it.
+ *
  * Returns null when there is nothing to write: an unchanged result, an
  * unusable input, or a `page_size` below 1 — which means "no LIMIT" rather
  * than a small page, and scaling it would silently impose one.
