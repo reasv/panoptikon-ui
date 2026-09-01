@@ -34,6 +34,12 @@ const { SCROLL_CHUNK_SIZE, buildChunkRequest, buildResultsRequest } =
 const { getScrollPositionURL, getSearchPageURL } = await import(
   "../lib/state/searchQuery/serializers.ts"
 )
+// The box the derived virtual page lives in — import-free for exactly this
+// reason (lib/state/derivedPage.ts): what the pagination bar displays in
+// scroll mode is this store's value, so the invariant assertions below can be
+// made against the thing the UI actually reads rather than against the
+// arithmetic alone.
+const { createDerivedPageStore } = await import("../lib/state/derivedPage.ts")
 // The storage-free half of the creation-defaults layer: resolution, the
 // stamp derived from it, and the allowlist. loadUserDefaults and its two
 // siblings are the only parts that touch localStorage, and they have no
@@ -604,6 +610,128 @@ const of = (url) => new URLSearchParams(url)
     "the click's anchor and the link's anchor are the same value",
     Number(linked.get("top")) === virtualPageAnchor(37, 10),
     `${linked.get("top")} vs ${virtualPageAnchor(37, 10)}`
+  )
+}
+
+// ---- the derived-page box ---------------------------------------------
+//
+// The virtual page moves every k items scrolled — several times a second on a
+// continuous scroll — so it is published through a subscribable box that only
+// the pagination bar reads (lib/state/derivedPage.ts). Two properties matter:
+// a write of the value already held must notify nobody (the grid, the gallery
+// and the maximized strip all push per scroll event, and the number stands
+// still between crossings), and a notification must reach every subscriber
+// even when one of them unsubscribes as a consequence.
+
+{
+  const store = createDerivedPageStore(4)
+  check("the box starts on the page it was seeded with", store.get() === 4, `${store.get()}`)
+  let notifications = 0
+  const unsubscribe = store.subscribe(() => { notifications += 1 })
+  store.set(4)
+  check(
+    "writing the value already held notifies nobody",
+    notifications === 0 && store.get() === 4,
+    `${notifications} ${store.get()}`
+  )
+  store.set(5)
+  check(
+    "a crossing publishes the new page exactly once",
+    notifications === 1 && store.get() === 5,
+    `${notifications} ${store.get()}`
+  )
+  unsubscribe()
+  store.set(6)
+  check(
+    "an unsubscribed reader stops hearing, and the box keeps moving",
+    notifications === 1 && store.get() === 6,
+    `${notifications} ${store.get()}`
+  )
+}
+
+{
+  // React unsubscribes from inside a notification when the subscriber
+  // unmounts on that very update, so the set must not be iterated live.
+  const store = createDerivedPageStore(1)
+  let second = 0
+  const dropFirst = store.subscribe(() => { dropFirst() })
+  store.subscribe(() => { second += 1 })
+  store.set(2)
+  check(
+    "a subscriber leaving mid-notification does not swallow the next one",
+    second === 1,
+    `${second}`
+  )
+}
+
+// ---- the mode switch, as the GRID sees it ------------------------------
+//
+// The invariant above is arithmetic over the URL alone. What the grid holds
+// is a ROW, and it turns that one row into two different numbers: the anchor
+// it writes into `top` (the row's FIRST item — gridScroll.ts's documented
+// contract) and the number it highlights (topRowHighlightItem — the row's
+// LAST item). A mode switch commits the anchor, so the relationship between
+// those two is what decides whether the bar's number survives a toggle.
+//
+// They are allowed to differ about the ITEM. What they may never do is put
+// the highlight BEHIND the position: that is the lattice flip
+// topRowHighlightItem exists to remove, and it is what makes a round trip
+// through pages mode walk the number DOWN instead of leaving it alone. A
+// highlight one page ahead is the straddling row reported honestly (the row
+// starts on page N-1 and ends on page N), and it costs at most that one page
+// on the toggle — the position it lands on then highlights itself, so it
+// cannot compound.
+//
+// The other half of the guarantee is not arithmetic and is not asserted here:
+// both numbers must come from ONE reading of the row. The grid's scroll-stop
+// write reuses the row the last scroll event derived the highlight from
+// rather than re-reading the virtualizer 350 ms later (ResultGrid's
+// onScrollStop) — two readings is how the bar came to show one page while the
+// toggle committed another, once per round trip, without bound.
+
+{
+  let ok = true
+  let firstBad = ""
+  const itemCount = 100_000
+  for (const k of [1, 7, 10, 25, 100]) {
+    for (const columns of [1, 2, 3, 4, 5]) {
+      // A row wider than a virtual page spans several of them, so "one page
+      // ahead" is not the right bound for it; that degenerate geometry is
+      // asserted on its own terms further below.
+      if (columns > k) continue
+      for (const startRow of [0, 1, 7, 40, 137, 999]) {
+        // The two numbers the grid derives from the SAME row.
+        const anchor = startRow * columns
+        const shown = virtualPageOf(
+          topRowHighlightItem(startRow, columns, itemCount, false),
+          k
+        )
+        // …and what a toggle to pages mode and back does with the anchor: the
+        // page it commits, and the number the bar shows on the way back (the
+        // box is seeded with `virtualPageOf(top, k)` — useDerivedVirtualPage).
+        const committed = pageStateFromScrollAnchor({ anchor, pageSize: k })
+        const shownAfterReturn = virtualPageOf(
+          scrollAnchorFromPage({
+            page: committed.page,
+            pageSize: k,
+            anchor: committed.index,
+          }),
+          k
+        )
+        const delta = shown - committed.page
+        const good =
+          (delta === 0 || delta === 1) && shownAfterReturn === committed.page
+        if (!good && !firstBad) {
+          firstBad = `k=${k} cols=${columns} row=${startRow} shown=${shown} committed=${committed.page} again=${shownAfterReturn}`
+        }
+        ok &&= good
+      }
+    }
+  }
+  check(
+    "the row's highlight is its anchor's page or the next one, never behind",
+    ok,
+    firstBad
   )
 }
 

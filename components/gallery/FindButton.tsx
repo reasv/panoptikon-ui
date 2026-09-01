@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef } from 'react'
 import { FolderSearch } from 'lucide-react'
-import { useToast } from '../ui/use-toast'
+import { toast } from '../ui/use-toast'
 import { getGalleryOptionsSerializer, useGalleryNavigate, usePinboardMaximized, useViewMode } from '@/lib/state/gallery'
 import { gridScrollAnchorSerializer } from '@/lib/state/gridScroll'
 import { useSearchOverlayReveal } from '@/lib/state/searchOverlayReveal'
@@ -398,11 +398,12 @@ export function FindButton({
     buttonVariant?: boolean
     buttonClassName?: string
 }) {
-    const { toast } = useToast()
     // Deliberately NO URL-state hooks here — this component is mounted once
     // per cell/pin/strip item and must stay out of the URL-write blast
     // radius. Everything stateful comes from the navigator's handle at
-    // interaction time.
+    // interaction time. Same reason for the STANDALONE `toast()`: the hook
+    // form registers a listener on the shared toast store per mount, and
+    // re-registers it on every toast.
     const navigatorMissing = () => {
         toast({
             title: "Error",

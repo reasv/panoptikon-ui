@@ -81,11 +81,11 @@ export function SelectButton({
     // The full pane hook, not the open-only one, because the third press
     // CLOSES (see handlePinClick). That costs this button the pane's shown
     // state as a render input, so every pin on the board re-renders when the
-    // pane opens or closes. Accepted, and cheaper than it reads: the routing
-    // hook already holds a useQueryStates over `sb`/`gsb`/`sbt`, so a pin
-    // already re-rendered on the URL half of that state; the addition is the
-    // ephemeral open flag. What must NOT come back is a per-row read of
-    // `pinboard` — see the hook's key budget.
+    // pane opens or closes. Accepted: the hook itself owns no subscriptions —
+    // `sb`/`gsb`/`sbt` and the ephemeral open flags are all held by the page's
+    // one CellActionsHost, and the two booleans read here are the only render
+    // inputs it publishes to this button. What must NOT come back is a per-row
+    // read of `pinboard` — see the hook's key budget.
     const { dataViewOpen, openDataView, closeDataView } = useDataViewPane()
 
     // TWO PRESSES, TWO VERBS: select, then open the Data View. The second

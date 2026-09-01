@@ -4,6 +4,7 @@ import {
   ClientConfigResponse,
   deriveClientConfig,
 } from "./clientConfig"
+import type { AnimatedFloor } from "./thumbnailTier"
 
 // Client-side counterpart of lib/serverApi.ts's getServerClientConfig: a
 // same-origin fetch, so in production the gateway (which serves
@@ -38,3 +39,17 @@ export const useVideoTranscodeEnabled = (): boolean =>
 // the rows that post to /api/video/compose.
 export const useVideoComposeEnabled = (): boolean =>
   useClientConfig().data?.videoComposeEnabled === true
+
+// The animated raw floor a grid host tests its rows against to decide which
+// cells render a <video> (lib/thumbnailTier.ts). Null while the config is in
+// flight, and null against a Server that predates the loop pipeline; both read
+// as "no loops exist", so cells stay on today's <img> path until the real
+// numbers arrive.
+//
+// Read ONCE PER HOST, next to the tier choice, and passed down — never per
+// cell. It is a react-query subscription, i.e. exactly the kind of per-card
+// subscription F1 removed, and the value is the same for every card on the
+// page. `data` keeps a stable identity between refetches that change nothing,
+// so passing the object down does not break the cells' memo.
+export const useAnimatedFloor = (): AnimatedFloor | null =>
+  useClientConfig().data?.animatedFloor ?? null

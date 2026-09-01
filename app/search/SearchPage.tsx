@@ -36,15 +36,29 @@ import { overscanItemsFor, topRowHighlightItem, virtualPageAnchor, virtualPageOf
 import { useSearchParams, type ReadonlyURLSearchParams } from "next/navigation"
 import { ResultCellSkeleton } from "@/components/ResultCellSkeleton"
 import { useItemSelection } from "@/lib/state/itemSelection"
-import { PinboardMaximizedProvider } from "@/components/OpenFileDetails"
+import { CellActionsHost } from "@/components/CellActionsHost"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { components } from "@/lib/panoptikon"
 import { GRID_SCROLL_ANCHOR_KEY, useGridScrollAnchor } from "@/lib/state/gridScroll"
+import { createDerivedPageStore } from "@/lib/state/derivedPage"
+import { createGridMetricsStore, type GridMetricsStore } from "@/lib/state/gridMetricsBox"
+import { useGridCellSize } from "@/lib/state/cellSize"
+import {
+    GRID_GAP_PX,
+    cellWidthForColumns,
+    clampCellWidth,
+    columnsForCellWidth,
+    imageBoxHeightForCellWidth,
+    rowHeightForCellWidth,
+} from "@/lib/gridCellSize"
+import { tierForCellWidth } from "@/lib/thumbnailTier"
+import { useDevicePixelRatio } from "@/hooks/useDevicePixelRatio"
+import { GridCellSizeControl } from "@/components/GridCellSizeControl"
 import { DesktopUpdateRibbon } from "@/components/DesktopUpdateRibbon"
 import { FindNavigator } from "@/components/gallery/FindButton"
 import { SearchMetricsHoverCard } from "@/components/SearchMetricsCard"
 import { $api } from "@/lib/api"
-import { useClientConfig } from "@/lib/useClientConfig"
+import { useAnimatedFloor, useClientConfig } from "@/lib/useClientConfig"
 
 export function SearchPageContent({ initialQuery, isRestrictedMode }:
     { initialQuery: SearchQueryArgs, isRestrictedMode: boolean }) {
@@ -56,6 +70,13 @@ export function SearchPageContent({ initialQuery, isRestrictedMode }:
     const pinboardMaximized = usePinboardMaximized()
     const sidebarVisible = sidebarOpen && !pinboardMaximized
     return (
+        // The one owner of every URL/store subscription the per-row
+        // components (grid cards, pins, filmstrip cards and their overlay
+        // buttons) used to hold themselves — see
+        // components/CellActionsHost.tsx. It wraps the whole page rather than
+        // just the results panel because the sidebar mounts rows too
+        // (SimilarItemsView, the similarity target card).
+        <CellActionsHost pinboardMaximized={pinboardMaximized}>
         <div className="flex h-screen w-full flex-col">
             {/* The one owner of find-in-folder's URL-state hooks; every
                 FindButton (per cell, per pin, per strip item) calls through
@@ -84,6 +105,7 @@ export function SearchPageContent({ initialQuery, isRestrictedMode }:
                 </div>
             </div>
         </div>
+        </CellActionsHost>
     )
 }
 
@@ -98,8 +120,16 @@ export function SearchPageContent({ initialQuery, isRestrictedMode }:
 // takes exactly the values its body reads; nothing else moved.
 
 /**
- * The highlighted virtual page: MultiSearchView's own state, plus the effect
- * that seeds it from the URL anchor.
+ * The highlighted virtual page: the subscribable box the number lives in (see
+ * lib/state/derivedPage.ts for why it is not `useState`), plus the effect that
+ * seeds it from the URL anchor.
+ *
+ * NOTHING HERE RE-RENDERS ON A CROSSING. The box is created once per mount and
+ * its `set` is what the grid, the gallery and the maximized strip are handed;
+ * the only subscriber is the pagination bar (components/pageselect.tsx). A
+ * crossing therefore re-renders the bar and nothing else — where the same
+ * crossing used to re-render this component, GridPanel and the whole grid,
+ * every `page_size` items scrolled.
  *
  * The LIVE value comes from the grid, which is the only place it can be
  * computed correctly: the highlight is derived from the top visible ROW (see
@@ -133,7 +163,12 @@ function useDerivedVirtualPage({ scrollMode, scrollAnchor, k, galleryOpen }: {
      */
     galleryOpen: boolean,
 }) {
-    const [derivedPage, setDerivedPage] = useState(() => virtualPageOf(scrollAnchor ?? 0, k))
+    // Seeded on the FIRST render, from that render's anchor — the same moment
+    // the `useState` initializer this replaces took its value. That is what
+    // makes a deep link (and the server render of one) paint the page number
+    // it arrived with instead of flashing page 1 until an effect runs.
+    const [store] = useState(() =>
+        createDerivedPageStore(virtualPageOf(scrollAnchor ?? 0, k)))
     // …which is why `scrollAnchor` is deliberately NOT a trigger WHILE THE GRID
     // IS MOUNTED, only a value read when something else fires. The grid WRITES
     // that anchor on every scroll stop, and it writes the first item of the top
@@ -183,10 +218,12 @@ function useDerivedVirtualPage({ scrollMode, scrollAnchor, k, galleryOpen }: {
         wasGalleryOpen.current = galleryOpen
         if (!scrollMode) return
         if (galleryOpen !== previouslyOpen) return
-        setDerivedPage(virtualPageOf(scrollAnchor ?? 0, k))
+        // A write of the number already held notifies nobody, exactly as the
+        // `setDerivedPage` this replaces bailed out on an unchanged value.
+        store.set(virtualPageOf(scrollAnchor ?? 0, k))
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [scrollMode, scrollAnchor === null, galleryOpen, galleryOpen ? scrollAnchor : null])
-    return [derivedPage, setDerivedPage] as const
+    return store
 }
 
 /**
@@ -287,10 +324,11 @@ function useScrollURLNormalization({ urlParams, scrollMode, page, k, setScrollAn
  * experience is byte-identical to what it was before this existed (asserted in
  * scripts/scrollmode.test.mjs).
  */
-function useSearchCreationStamp({ urlParams, setViewMode, setPageSizeRaw }: {
+function useSearchCreationStamp({ urlParams, setViewMode, setPageSizeRaw, setCellSize }: {
     urlParams: ReadonlyURLSearchParams,
     setViewMode: ReturnType<typeof useViewMode>[1],
     setPageSizeRaw: ReturnType<typeof usePageSizeRaw>[1],
+    setCellSize: ReturnType<typeof useGridCellSize>[1],
 }) {
     // The same first-render snapshot discipline as the normalization hook's,
     // for the same reason: this decision is about the URL the session STARTED
@@ -314,6 +352,10 @@ function useSearchCreationStamp({ urlParams, setViewMode, setPageSizeRaw }: {
         const replace = { history: "replace" as const }
         if (stamp.vm !== undefined) setViewMode(stamp.vm, replace)
         if (stamp.page_size !== undefined) setPageSizeRaw(stamp.page_size, replace)
+        // Never `null` here — creationStamp only carries keys that DIFFER from
+        // the codec default, and `cs`'s codec default is null (auto). So this
+        // stamps a width or nothing at all.
+        if (stamp.cs != null) setCellSize(stamp.cs, replace)
         // Mount-only, exactly like the normalization effect above: the
         // decision is taken from the snapshot, and the setters churn identity.
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -322,7 +364,7 @@ function useSearchCreationStamp({ urlParams, setViewMode, setPageSizeRaw }: {
 
 export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVisible = false }:
     { initialQuery: SearchQueryArgs, isRestrictedMode: boolean, updateRibbonVisible?: boolean }) {
-    const { data, error, isError, refetch, isFetching, resultsAreStale, nResults, countIsPlaceholder, page, pageSize, setPage, searchEnabled, getPageURL, committedQuery, queryEnabled } = useSearch({ initialQuery })
+    const { data, error, isError, refetch, isFetching, resultsAreStale, nResults, countIsPlaceholder, page, pageSize, setPage, searchEnabled, getPageURL, committedQuery, committedKey, queryEnabled } = useSearch({ initialQuery })
     const { toast } = useToast()
     // Random ordering is now a stable shuffle pinned by a seed, so refetching
     // deliberately returns the *same* results — that stability is the point.
@@ -332,7 +374,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     // which is now a working operation rather than a fresh random draw.
     const orderedRandomly = useOrderBy().order_by === "random"
     const setSeed = useRandomSeed()[1]
-    const onRefresh = async () => {
+    const runRefresh = async () => {
         if (!searchEnabled) {
             toast({
                 title: "Error",
@@ -357,6 +399,20 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
             duration: 2000
         })
     }
+    // …and it is handed down with a FIXED identity. The closure above is
+    // rebuilt on every render of this component (it reads the seed setter, the
+    // toast and react-query's refetch), and this component re-renders on every
+    // scroll stop — it owns the URL scroll anchor. Passed straight through,
+    // that churning identity re-rendered the whole search-bar row, and
+    // everything mounted in it, once per stop for a callback nobody had
+    // invoked. Same reasoning as the grid cards' click handler (see
+    // ResultGrid's imageClickRef), with one difference: the ref is filled from
+    // an EFFECT rather than during render, because a render-phase ref write
+    // opts this whole component out of the React Compiler — the very trade the
+    // three extracted mount hooks above exist to avoid.
+    const refreshRef = useRef(runRefresh)
+    useEffect(() => { refreshRef.current = runRefresh })
+    const onRefresh = useCallback(() => { void refreshRef.current() }, [])
     // Self-heals random-ordered links that predate seeds (see the hook)
     useStampRandomSeed()
     const instantSearch = useInstantSearch((state) => state.enabled)
@@ -400,6 +456,10 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     const searchSuppressed = useSearchSuppressed()
     const chunkSource = useChunkedResults({
         committedQuery,
+        // The hash useSearch already computed for the same request — the
+        // store's throttle takes it instead of serializing the search again
+        // per render (see the prop).
+        committedKey,
         enabled: scrollMode && searchEnabled && !searchSuppressed,
         // The fallback reads `results[i]` AS global item i, which is only true
         // while the main query is on page 1 — scroll mode's own invariant, but
@@ -616,7 +676,14 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     // keep-in-view scroll is programmatic and stands down (see
     // VirtualizedHorizontalScroll), so the anchor write here is the sole —
     // and exact — source.
-    const [derivedPage, setDerivedPage] = useDerivedVirtualPage({
+    //
+    // A BOX, not a state value: the number moves every k items scrolled, and
+    // the only thing that needs to see it move is the pagination bar itself
+    // (lib/state/derivedPage.ts). `derivedPage.set` is stable for the life of
+    // the mount — the contract the grid's and the strip's scroll listeners
+    // depend on, previously satisfied by a `useState` setter — and
+    // `derivedPage` itself is what the bar subscribes to.
+    const derivedPage = useDerivedVirtualPage({
         scrollMode,
         scrollAnchor,
         k,
@@ -630,7 +697,8 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     const setPageRaw = useSearchPageRaw()[1]
     useScrollURLNormalization({ urlParams, scrollMode, page, k, setScrollAnchor, setPageRaw })
     const setPageSizeRaw = usePageSizeRaw()[1]
-    useSearchCreationStamp({ urlParams, setViewMode, setPageSizeRaw })
+    const setCellSize = useGridCellSize()[1]
+    useSearchCreationStamp({ urlParams, setViewMode, setPageSizeRaw, setCellSize })
 
     // The scrubber's three props. Virtual page N covers items [(N-1)k, Nk), so
     // a click is a position write and rides the grid's existing external-anchor
@@ -671,15 +739,15 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     }
     const getVirtualPageURL = (base: ReadonlyURLSearchParams | URLSearchParams, newPage: number) =>
         getScrollPositionURL(base, newPage, k, qIndex !== null)
-    // PinboardMaximizedProvider wraps the whole subtree because the answer is
-    // needed PER RESULT ROW — every grid card's Data View button and every
-    // pin's corner checkbox route to a different details pane depending on it
-    // (components/OpenFileDetails.tsx). Deriving it per row meant every one of
-    // them subscribing to `pinboard`, the longest URL parameter the app has;
-    // this component already has the value, so it publishes it instead. See
-    // PinboardMaximizedContext for why context and not a store.
+    // The maximize answer is needed PER RESULT ROW — every grid card's Data
+    // View button and every pin's corner checkbox route to a different details
+    // pane depending on it (components/OpenFileDetails.tsx) — and deriving it
+    // per row would mean every one of them subscribing to `pinboard`, the
+    // longest URL parameter the app has. SearchPageContent computes it once
+    // and hands it to CellActionsHost, which publishes the routed verbs
+    // themselves; nothing below needs to pass it down.
     return (
-        <PinboardMaximizedProvider value={pinboardMaximized}>
+        <>
             <SearchErrorToast noFtsErrors={options.e_iss} isError={isError} error={error} />
             {!fs && <div className={cn("mb-4 2xl:mx-auto",
                 sidebarOpen ? '2xl:w-2/3' : '2xl:w-1/2'
@@ -736,22 +804,25 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                         // when the live query is being withheld — see the prop
                         // (docs/video-end-action-design.md §3).
                         queryEnabled={queryEnabled}
-                        // Stable by construction (a useState setter) — the
-                        // strip's scroll listener depends on it, same
-                        // contract as the grid's. Scroll mode only: what it
-                        // reports is a virtual-page number.
-                        onDerivedPageChange={scrollMode ? setDerivedPage : undefined}
+                        // Stable by construction (a box member, minted once
+                        // per mount) — the strip's scroll listener depends on
+                        // it, same contract as the grid's. Scroll mode only:
+                        // what it reports is a virtual-page number.
+                        onDerivedPageChange={scrollMode ? derivedPage.set : undefined}
                     />
                     :
                     <GridPanel
                         source={resultsSource}
                         mode={viewMode}
                         pageSize={k}
-                        // Stable by construction (a useState setter), which the
-                        // grid's scroll-listener effect depends on: a callback
-                        // minted per render would re-subscribe that listener
-                        // and reset its 350ms scroll-stop timer.
-                        onDerivedPageChange={scrollMode ? setDerivedPage : undefined}
+                        // Stable by construction (a box member, minted once per
+                        // mount), which the grid's scroll-listener effect
+                        // depends on: a callback minted per render would
+                        // re-subscribe that listener and reset its 350ms
+                        // scroll-stop timer. Writing it re-renders the
+                        // pagination bar alone — never this component, never
+                        // this panel, never the grid.
+                        onDerivedPageChange={scrollMode ? derivedPage.set : undefined}
                         // See the restore effect for what the grid does with
                         // it: a position past a number that is still growing
                         // must not be mistaken for a position past the end of
@@ -815,16 +886,17 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
                     // Scroll mode only: in pages mode `top` is a within-page
                     // index the grid owns, not a strip position (§5.3).
                     fallbackAnchor={scrollMode ? scrollAnchor : null}
-                    // Stable by construction (a useState setter) — the
-                    // strip's scroll listener depends on it. The division of
-                    // labor: USER pans push through this (leading-card
-                    // derivation), while anchor/selection-driven moves are
+                    // Stable by construction (a box member, minted once per
+                    // mount) — the strip's scroll listener depends on it. The
+                    // division of labor: USER pans push through this
+                    // (leading-card derivation), while anchor/selection-driven
+                    // moves are
                     // reported by useDerivedVirtualPage's anchor-trigger
                     // branch (its `galleryOpen` flag covers the maximized
                     // board) — the strip suppresses its own programmatic
                     // keep-in-view scrolls, whose 'auto' alignment can put a
                     // previous-page card in the lead (§5.4, §6).
-                    onDerivedPageChange={scrollMode ? setDerivedPage : undefined}
+                    onDerivedPageChange={scrollMode ? derivedPage.set : undefined}
                     pageSize={k}
                     // The exact four-prop switch the page-level bar gets —
                     // that one is gated `!fs`, so only one PageSelect is
@@ -851,18 +923,29 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
             {pinboardMaximized && (
                 <SidebarOverlay largeImageHosted={largeImageHosted} />
             )}
-        </PinboardMaximizedProvider>
+        </>
     )
 }
 
-// md, lg, xl, 2xl, 4xl, 5xl — the Tailwind breakpoints used by the result grid rows
+// md, lg, xl, 2xl, 4xl, 5xl — the Tailwind breakpoints used by the result grid
+// rows, restated for matchMedia.
+//
+// REM, NOT PX, and the units are the whole point: Tailwind emits these
+// breakpoints in rem (the built-ins by definition, ours by necessity — see the
+// sort-order note at the top of app/globals.css), and `rem` in a media query
+// resolves against the browser's INITIAL font size, not the document's. So a
+// reader who has raised their default font size moves the CSS breakpoints and
+// not these, and the column count this array derives silently stops matching
+// the grid-cols-* classes actually laid out — rows sliced N-wide over a grid
+// showing M. Same numbers as before at the 16px default (768/1024/1280/1536,
+// then our 2200/3000), now expressed the way the stylesheet expresses them.
 const GRID_BREAKPOINTS = [
-    '(min-width: 768px)',
-    '(min-width: 1024px)',
-    '(min-width: 1280px)',
-    '(min-width: 1536px)',
-    '(min-width: 2200px)',
-    '(min-width: 3000px)',
+    '(min-width: 48rem)',
+    '(min-width: 64rem)',
+    '(min-width: 80rem)',
+    '(min-width: 96rem)',
+    '(min-width: 137.5rem)',
+    '(min-width: 187.5rem)',
 ]
 
 /**
@@ -943,6 +1026,11 @@ export function GridPanel({
     committedQuery: Pick<SearchRequestParts, "searchQuery" | "dbs">,
 }) {
     const pinboard = useGalleryPinBoardLayout()[0]
+    // The grid's measured cell width, from the one component that can compute
+    // it to the one control that reads it, without re-rendering this panel on
+    // the way (lib/state/gridMetricsBox.ts). Per mount, never a module
+    // singleton — the derived-page box's rule, for its reason.
+    const [metricsStore] = useState(() => createGridMetricsStore())
     const [pinboardTab, setPinboardTab] = useGridPinboardTab()
     const [libraryTab, setLibraryTab] = useGridLibraryTab()
     const [fs, setFs] = useGalleryFullscreen()
@@ -1084,6 +1172,13 @@ export function GridPanel({
                         the toggle decides how the Results tab presents, and
                         having it appear and disappear with the tab would
                         make it the one header control that moves. */}
+                    {/* Beside the mode toggle rather than inside it: both
+                        are about how the Results tab presents, and the size
+                        slider is the other half of the answer the toggle
+                        starts. Deliberately NOT mounted in the maximized
+                        board's search dock, which shares ViewModeToggle but
+                        renders no result grid for a cell size to describe. */}
+                    <GridCellSizeControl metricsStore={metricsStore} />
                     <ViewModeToggle />
                     <PinboardLibraryButton />
                 </div>
@@ -1114,6 +1209,7 @@ export function GridPanel({
                     showPagination={showPagination}
                     savedScrollOffsetRef={savedScrollOffsetRef}
                     updateRibbonVisible={updateRibbonVisible}
+                    metricsStore={metricsStore}
                 />
             )}
         </div>
@@ -1126,6 +1222,16 @@ export function GridPanel({
 // numbers drifting apart is what would make the overscan rows the ones that
 // show skeletons (see overscanItemsFor).
 const GRID_OVERSCAN_ROWS = 3
+
+// Parked in `lastWrittenAnchor` across a layout change — a view-mode switch, a
+// column-count change, a row-height change — so the anchor standing in the URL
+// reads as an ARRIVAL rather than as the echo of one of the grid's own writes,
+// and the external-anchor effect applies it instead of skipping it. Any value
+// outside the anchor's domain would do (anchors are `null` or a non-negative
+// item index); −1 is the one that also makes the `null` case — a restore that
+// lands on the top of the set — compare unequal, which is what a plain `null`
+// sentinel would silently skip.
+const RESTORE_ANCHOR_SENTINEL = -1
 
 /**
  * Where the gallery's item sits in the source, for the ensure-visible pass on
@@ -1196,6 +1302,7 @@ export function ResultGrid({
     showPagination = true,
     savedScrollOffsetRef,
     updateRibbonVisible = false,
+    metricsStore,
 }: {
     source: ResultsSource,
     mode?: ViewMode,
@@ -1224,6 +1331,12 @@ export function ResultGrid({
     showPagination?: boolean,
     savedScrollOffsetRef?: React.MutableRefObject<number>,
     updateRibbonVisible?: boolean,
+    /**
+     * Where to publish the measured cell width for the size slider's thumb
+     * (lib/state/gridMetricsBox.ts). Optional: the grid is correct without one,
+     * it just cannot seed a slider that has not been given the box.
+     */
+    metricsStore?: GridMetricsStore,
 }) {
     // TanStack Virtual v3 triggers re-renders by mutating internal state,
     // which the React Compiler's memoization breaks — same as the gallery view.
@@ -1235,9 +1348,109 @@ export function ResultGrid({
         () => dbsState,
         [dbsState.index_db, dbsState.user_data_db]
     )
+    // The cards' click handler, made referentially stable HERE rather than
+    // trusted from above. It is the one prop the host mints per render (an
+    // inline arrow over a nuqs setter), and it is enough on its own to defeat
+    // `React.memo` on every visible card — which is exactly what a `top` write
+    // was doing after the per-cell subscriptions were hoisted out: zero cells
+    // subscribed to anything, and all thirty still re-rendered because their
+    // callback prop was new. A ref, not a `useCallback` over the prop: the
+    // point is that the identity NEVER changes, whatever the caller does.
+    const imageClickRef = useRef(onImageClick)
+    imageClickRef.current = onImageClick
+    const handleImageClick = useCallback((index?: number) => {
+        imageClickRef.current?.(index)
+    }, [])
     const parentRef = useRef<HTMLDivElement>(null)
     const [sidebarOpen] = useSideBarOpen()
-    const { columns, rowEstimate } = useResultGridLayout(sidebarOpen)
+    const autoLayout = useResultGridLayout(sidebarOpen)
+    // THE EXPLICIT CELL SIZE (design §9). Absent is "auto" — the breakpoint
+    // policy above, unchanged — and present replaces it wholesale: a target
+    // cell width from which the column count and the row height both follow.
+    // A hard switch, never a blend.
+    const [cellSize] = useGridCellSize()
+    // The row width, measured rather than derived. The auto policy needs no
+    // measurement (its columns come from window-level media queries, the same
+    // engine that applies the grid-cols-* classes), but "as many cells of
+    // width W as fit" is a question about THIS container, and the panel is
+    // narrower than the window by the sidebar, the page padding and the
+    // scrollbar gutter. It is also what turns a column count into a cell
+    // width for the tier choice below.
+    //
+    // Measured on the ROW CONTAINER (the spacer below) rather than on the
+    // scroll viewport, and that is not interchangeable: the viewport carries
+    // `pr-4` for the widened scrollbar, so its border box is 16px wider than
+    // the rows laid out inside it — and `clientWidth` there would include that
+    // padding while `contentRect` would not. The spacer has neither padding
+    // nor border, so every way of measuring it agrees, and what it reports is
+    // exactly the width the row's grid resolves against.
+    const [containerWidth, setContainerWidth] = useState(0)
+    const rowContainerRef = useRef<HTMLDivElement>(null)
+    useLayoutEffect(() => {
+        const element = rowContainerRef.current
+        if (!element) return
+        const publish = (width: number) => setContainerWidth((prev) =>
+            Math.abs(prev - width) < 1 ? prev : width)
+        const observer = new ResizeObserver((entries) => {
+            const entry = entries[entries.length - 1]
+            if (entry) publish(entry.contentRect.width)
+        })
+        observer.observe(element)
+        // Seeded synchronously in the layout pass that arms the observer,
+        // before the browser paints: the first frame that shows cells has to
+        // show them at the right tier, and the observer's own first callback
+        // arrives a frame later.
+        publish(element.clientWidth)
+        return () => observer.disconnect()
+    }, [])
+    // CLAMPED ON READ rather than trusted. `cs` is a hand-editable URL integer
+    // and nothing upstream bounds it: `?cs=0` or `?cs=-5` asks
+    // `columnsForCellWidth` for cells of no width, which answers 0 columns —
+    // and 0 columns is the grid's "not measured yet" state, so the page would
+    // render no cells, no skeletons and no scroll space at all, with no way
+    // back except editing the URL. The clamp is the one the slider itself
+    // applies, so every value the control can produce passes through
+    // unchanged and only an out-of-range URL moves.
+    const explicitCellSize = cellSize === null ? null : clampCellWidth(cellSize)
+    const explicitSize = explicitCellSize !== null && containerWidth > 0
+    const columns = explicitSize
+        ? columnsForCellWidth(containerWidth, explicitCellSize, GRID_GAP_PX)
+        : autoLayout.columns
+    // What a cell is actually WIDE, in either mode: the slider's target is a
+    // target, and the columns it produces then share the container evenly.
+    // 0 while the container is unmeasured, which reads as "unknown" to the
+    // tier choice and answers `display` — the conservative direction.
+    const cellWidth = cellWidthForColumns(containerWidth, columns, GRID_GAP_PX)
+    const dpr = useDevicePixelRatio()
+    // ONE TIER FOR THE WHOLE GRID, computed here from the cell width the grid
+    // already knows and passed down as a stable string prop. Deliberately not
+    // a per-cell hook: a measurement or a media query inside the card is a
+    // subscription in every card, which is precisely what F1 removed.
+    const tier = tierForCellWidth(cellWidth, dpr)
+    // ONE FLOOR FOR THE WHOLE GRID, on the same rule as the tier above it: a
+    // card decides `<img>` vs `<video>` from its own row, but the numbers it
+    // decides against are the server's and identical for every card, so they
+    // are read here and passed down rather than subscribed to per cell.
+    const animatedFloor = useAnimatedFloor()
+    const imageHeightPx = explicitSize && cellWidth > 0
+        ? imageBoxHeightForCellWidth(cellWidth)
+        : undefined
+    const rowEstimate = imageHeightPx !== undefined
+        ? rowHeightForCellWidth(cellWidth)
+        : autoLayout.rowEstimate
+    // Published for the size slider: the width seeds its thumb (so the first
+    // drag off "auto" continues from what the user is looking at), and the
+    // container width and column count are what let it compute the layout a
+    // candidate size WOULD produce — which is what its page-size co-write has
+    // to be measured against, and what that page size must stay a multiple of.
+    // A box write, so this costs the panel no render.
+    useEffect(() => {
+        metricsStore?.set({
+            cellWidth: Math.round(cellWidth),
+            columns,
+            containerWidth: Math.round(containerWidth),
+        })
+    }, [metricsStore, cellWidth, columns, containerWidth])
     const scroll = mode === "scroll"
     // The navigable extent. In pages mode this IS `results.length` (the source
     // wraps the page's array); in scroll mode it is the count query's answer,
@@ -1316,6 +1529,12 @@ export function ResultGrid({
     // must be ignored) from external changes — back/forward navigation and
     // query-change resets — which have to move the actual scroll position
     const lastWrittenAnchor = useRef<number | null>(null)
+    // Set while the grid's LAYOUT has changed under a position it has not been
+    // put back on yet, and read by everything that would otherwise speak for
+    // the position it is standing on meanwhile. Declared here, beside the
+    // anchor state it guards; the effect that raises it and the reading that
+    // clears it are below.
+    const restorePending = useRef(false)
 
     // The last virtual page reported to the host, so the live position
     // indicator fires on a page CROSSING rather than on a scroll frame.
@@ -1381,19 +1600,18 @@ export function ResultGrid({
     //
     // In scroll mode this same listener also drives the pagination bar's live
     // highlight — the ONLY live source of it (see MultiSearchView's derived
-    // page). Same listener, not a second one: both answers come from the same
-    // visible range seen at two different moments (continuously for the
-    // indicator, on the 350ms stop for the URL), and reading that range in two
-    // places is how they would come to disagree about WHEN.
+    // page). Same listener, and in scroll mode the same ROW: the stop write
+    // takes the row the highlight last spoke for rather than reading the
+    // virtualizer again 350ms later (see `highlightedRow` below, and the drift
+    // that second reading produced).
     //
-    // What they deliberately do NOT share is WHICH item they speak for. The
-    // anchor is the FIRST item of the top row — a position, and the codec's
+    // What they deliberately do NOT share is WHICH item of that row they speak
+    // for. The anchor is the FIRST item — a position, and the codec's
     // documented contract (lib/state/gridScroll.ts) — while the highlight is
-    // derived from the LAST item of that row, because it answers a different
-    // question: which virtual page am I looking at. See topRowHighlightItem
-    // for why the two cannot be the same expression. The anchor written here
-    // is GLOBAL by construction — the rows are global — so nothing about the
-    // write changes.
+    // derived from the LAST item, because it answers a different question:
+    // which virtual page am I looking at. See topRowHighlightItem for why the
+    // two cannot be the same expression. The anchor written here is GLOBAL by
+    // construction — the rows are global — so nothing about the write changes.
     useEffect(() => {
         const element = parentRef.current
         if (!element || columns <= 0) return
@@ -1404,8 +1622,34 @@ export function ResultGrid({
         // above.)
         lastDerivedPage.current = null
         let timer: ReturnType<typeof setTimeout> | undefined
+        // The row the live highlight last spoke for. In scroll mode the stop
+        // write below takes its anchor from THIS, rather than reading the
+        // virtualizer a second time — one row, two questions, never two rows.
+        //
+        // Two readings is a drift, not a rounding error. `scrollToIndex` lands
+        // on a MEASURED row height and can finish a quarter of a pixel above
+        // the row it aimed at, at which point the virtualizer's range honestly
+        // reports the row ABOVE as the top one — while the highlight, derived
+        // from the same range one event earlier, still speaks for the row
+        // filling the viewport. The bar then shows page N while the URL records
+        // page N-1, a mode switch commits the URL's answer, re-entering scroll
+        // mode re-asserts the position one row higher, and the next switch does
+        // it again: one page per round trip, without bound (56 -> 55 -> 54).
+        //
+        // Pages mode keeps the fresh read. It has no highlight for the anchor
+        // to disagree with, and its rows are measured progressively as they
+        // mount, so a reading taken when scrolling has actually stopped is the
+        // more accurate one there.
+        let highlightedRow: number | null = null
         const onScrollStop = () => {
-            const startRow = virtualizer.range?.startIndex ?? 0
+            // The grid's layout has changed and it has not been put back on
+            // the item the URL names yet (see the geometry-change effect
+            // below). Whatever is on screen right now is the position the OLD
+            // layout left, and publishing it would both lose the user's place
+            // and mark the URL's own anchor as already-written — which stops
+            // the restore that is on its way. Say nothing until it lands.
+            if (restorePending.current) return
+            const startRow = highlightedRow ?? virtualizer.range?.startIndex ?? 0
             const anchor = startRow > 0 ? startRow * columns : null
             if (anchor === lastWrittenAnchor.current) return
             lastWrittenAnchor.current = anchor
@@ -1420,8 +1664,12 @@ export function ResultGrid({
                 // only through this branch (see topRowHighlightItem).
                 const lastRowVisible =
                     range !== null && range.endIndex >= live.rowCount - 1
+                // Recorded even when the derived page is unchanged: what the
+                // stop write needs is the row the bar is CURRENTLY speaking
+                // for, not the one that last moved the number.
+                highlightedRow = range?.startIndex ?? 0
                 const item = topRowHighlightItem(
-                    range?.startIndex ?? 0,
+                    highlightedRow,
                     columns,
                     live.itemCount,
                     lastRowVisible
@@ -1456,12 +1704,156 @@ export function ResultGrid({
         }
     }, [columns, virtualizer])
 
-    // Track the first visible item while the layout is stable (runs on every commit)
+    /**
+     * Has the pending restore finished moving the grid?
+     *
+     * AGREEMENT is the ordinary answer: the reading names the row the restore
+     * aimed at, within the anchor's own row-quantization (hence the one-row
+     * tolerance).
+     *
+     * EXHAUSTION is the other, and it is not an edge case: a target row inside
+     * the last viewport-worth of rows cannot be brought to the TOP, and a
+     * result set shorter than the viewport cannot be scrolled at all, so the
+     * grid comes to rest above the target and agreement never arrives. Without
+     * this the flag would stay raised for the rest of the session and the URL
+     * would stop recording the scroll position entirely — a worse failure, and
+     * a more frequent one, than the drift it exists to prevent.
+     *
+     * `resultsAreStale` and `countSettled` gate it, and that gate is the whole
+     * reason exhaustion is safe: entering scroll mode the chunk store is empty,
+     * so the scroll space is a stub the grid is trivially at the bottom of —
+     * "there is nothing below me" then means "the rows have not arrived", not
+     * "I have gone as far as I can". Waiting for a settled count and unstale
+     * results is what tells those two apart.
+     */
+    const restoreHasLanded = (seen: number): boolean => {
+        if (Math.abs(seen - anchorItem.current) <= columns) return true
+        if (resultsAreStale || !countSettled) return false
+        const element = parentRef.current
+        if (!element) return false
+        // Two pixels of slack for sub-pixel scroll offsets; `scrollHeight ===
+        // clientHeight` (nothing to scroll) satisfies this too.
+        return element.scrollTop + element.clientHeight >= element.scrollHeight - 2
+    }
+
+    // Track the first visible item while the layout is stable (runs on every
+    // commit) — and, while a restore is outstanding, decide when it has LANDED.
+    //
+    // The two jobs are one effect because they are the same reading. What is on
+    // screen during a restore window is the position the OLD layout left — in
+    // the coordinate system the URL has left, after a mode switch; over the
+    // wrong number of columns, after a resize or a size-slider commit — and
+    // capturing it is not merely a stale number. The column-change effect ABOVE
+    // and the row-height effect BELOW both re-assert `anchorItem`, on this
+    // commit and on later ones, so a reading taken meanwhile drags the grid
+    // straight back off the position the restore had just put it on, and the
+    // scroll-stop then publishes THAT over the anchor in the URL.
+    //
+    // NOTE the guard this effect cannot rely on: `prevColumns` is owned by the
+    // column-change effect above, which is declared FIRST and therefore updates
+    // it before this runs. On the very commit a column change lands, this
+    // effect's own guard is already satisfied while `virtualizer.range` still
+    // describes the previous geometry — which is exactly how a slider commit in
+    // scroll mode used to preserve the pixel offset instead of the item
+    // (measured: shrinking cells 587 -> 270 moved top=260 to top=970, a
+    // different item). The flag, raised in a LAYOUT effect before either of
+    // them, is what actually closes that window.
+    //
+    // "Landed" is deliberately a reading, not an event, because
+    // `virtualizer.range` LAGS a programmatic scroll by a commit: it is
+    // recomputed from the scroll listener, so on the commit that issues
+    // `scrollToIndex` it still describes where the grid was. Clearing the flag
+    // when the restore was ISSUED therefore re-opens this tracker exactly one
+    // commit too early, and it captures the old row — measured, and the reason
+    // this test exists.
     useEffect(() => {
-        if (prevColumns.current === columns && virtualizer.range) {
-            anchorItem.current = virtualizer.range.startIndex * columns
+        if (prevColumns.current !== columns || !virtualizer.range) return
+        const seen = virtualizer.range.startIndex * columns
+        if (restorePending.current) {
+            if (!restoreHasLanded(seen)) return
+            restorePending.current = false
         }
+        anchorItem.current = seen
     })
+
+    // ANY LAYOUT CHANGE RE-BASES EVERY ITEM INDEX THIS COMPONENT HOLDS, and
+    // `anchorItem` is one of them. Three inputs move it, and all three are
+    // watched here:
+    //
+    //   - `scroll` — the coordinate system itself. The anchor is PAGE-LOCAL in
+    //     pages mode and GLOBAL in scroll mode, so a page-local 25 left
+    //     standing across a switch is re-asserted as a global 25.
+    //   - `columns` — the divisor. The same item index names a different ROW
+    //     under a different column count, and the re-assert effects only ever
+    //     divide by the current one.
+    //   - `rowEstimate` — the row height, which moves with a breakpoint and
+    //     with every step of the size slider in explicit mode.
+    //
+    // In every case the failure is the same, and it is not merely a scroll
+    // landing in the wrong place: a re-assert scrolls, the scroll starts the
+    // listener's 350ms stop timer, and the stop write then PUBLISHES that stale
+    // position over the anchor standing in the URL. Both halves are measured on
+    // stdtest:
+    //
+    //   - MODE SWITCH (k=38, five columns, scroll top=260 -> pages page=7&top=25
+    //     -> back): the URL held the correct `top=253` for 368ms and was then
+    //     overwritten with `top=25`, dropping the pagination bar from page 7 to
+    //     page 1. The switch arithmetic was right the whole time; this component
+    //     was quoting the previous coordinate system over the top of it.
+    //   - SIZE SLIDER in scroll mode (cells 587 -> 270): the batched write kept
+    //     `top=260` correctly, and the grid then published `top=970` — a
+    //     different item — having preserved the pixel offset instead of the
+    //     item the anchor names. Which is the one thing an item-space anchor
+    //     exists to prevent, in the mode the slider exists for.
+    //
+    // The URL anchor is authoritative for all of them, and it is already
+    // correct: an item index does not depend on the layout, and where a mode
+    // switch does change its meaning, the switch itself wrote it in the new
+    // coordinates in the same URL update that flipped `vm` — so both arrive on
+    // this commit. `lastWrittenAnchor` is parked on a value no anchor can take,
+    // so the external-anchor effect below treats it as an arrival rather than as
+    // an echo of one of our own writes and actually applies it — including the
+    // `null` case (a restore that lands on the top of the set), where an echo
+    // test on `null === null` would otherwise skip the scroll to the top.
+    //
+    // A LAYOUT effect: it must land before every `useEffect` in this commit,
+    // which is exactly the set of effects that would otherwise re-assert the
+    // stale value — including the column-change effect above, which updates the
+    // `prevColumns` guard the tracker would otherwise have relied on.
+    //
+    // WHY IT DOES NOT SCROLL HERE, having tried: after a mode switch the new
+    // mode's own results are not in hand on this commit. Entering scroll mode,
+    // `itemCount` is the loaded extent of a chunk store with nothing in it, so
+    // `rowCount` is a handful of rows and a `scrollToIndex` at the globalized
+    // anchor clamps to the bottom of that stub. The places carrying the retry
+    // discipline for this are the column-change effect above and the
+    // external-anchor effect below — the latter re-runs on `itemCount`,
+    // `countSettled` and `resultsAreStale` precisely so a position can land once
+    // the results it names exist — so the restore stays there and this hands it
+    // the job.
+    //
+    // What this does instead is HOLD THE GRID'S TONGUE until that lands.
+    // `restorePending` suppresses the scroll-stop's anchor write and the
+    // tracker's reading, and nothing else. Without it the 350ms timer fires
+    // first, publishes the pre-change position, and — worse than the wrong
+    // value — records it in `lastWrittenAnchor`, so the anchor in the URL then
+    // reads as an echo of one of our own writes and the external-anchor effect
+    // skips it forever. That is the whole failure: not one bad write, but a bad
+    // write that closes the door on the good one.
+    const prevGeometry = useRef({ scroll, columns, rowEstimate })
+    useLayoutEffect(() => {
+        const previous = prevGeometry.current
+        if (previous.scroll === scroll && previous.columns === columns
+            && previous.rowEstimate === rowEstimate) return
+        prevGeometry.current = { scroll, columns, rowEstimate }
+        // Re-based for the effects that re-assert it before the restore lands.
+        // The tracker above stands down for the same window, so this value
+        // survives to be re-asserted rather than being overwritten by a reading
+        // of the position the old layout left.
+        anchorItem.current = Math.max(scrollAnchor ?? 0, 0)
+        lastWrittenAnchor.current = RESTORE_ANCHOR_SENTINEL
+        restorePending.current = true
+    }, [scroll, columns, rowEstimate, scrollAnchor])
 
     // Fixed rows mean ONE number decides every offset in the set, so a measured
     // height that differs from the breakpoint constant moves every row below
@@ -1612,10 +2004,20 @@ export function ResultGrid({
         // entry says they were, with no later commit able to correct it.
         if (scroll && !countSettled && scrollAnchor !== null && scrollAnchor >= itemCount) return
         lastWrittenAnchor.current = scrollAnchor
+        // `anchorItem` is re-based to whatever this scrolls to, and that is
+        // what stops the two records of "where the grid is" from fighting.
+        // This effect moves the grid; the row-height and column-count effects
+        // re-assert `anchorItem` on later commits of their own. Leaving it
+        // holding the pre-restore reading makes the next of those re-asserts
+        // undo this scroll — measured across a mode switch as a restore to
+        // scrollTop 28300 followed by a snap back to 2828 — so the writer of
+        // the position is also the writer of the record of it.
         if (scrollAnchor === null || scrollAnchor <= 0) {
+            anchorItem.current = 0
             virtualizer.scrollToOffset(0)
         } else {
             const clamped = Math.min(scrollAnchor, itemCount - 1)
+            anchorItem.current = clamped
             virtualizer.scrollToIndex(Math.floor(clamped / columns), { align: 'start' })
         }
     }, [scrollAnchor, columns, rowCount, itemCount, virtualizer, resultsAreStale, scroll, countSettled])
@@ -1689,6 +2091,7 @@ export function ResultGrid({
                 )}
             >
                 <div
+                    ref={rowContainerRef}
                     className="relative w-full"
                     style={{ height: `${virtualizer.getTotalSize()}px` }}
                 >
@@ -1710,12 +2113,26 @@ export function ResultGrid({
                                 style={{ transform: `translateY(${virtualRow.start}px)` }}
                             >
                                 <div
-                                    // These responsive classes must stay in sync with useGridColumns
-                                    className={cn('grid gap-4 pb-4 grid-cols-1 md:grid-cols-2',
-                                        sidebarOpen ?
-                                            ('lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4 4xl:grid-cols-5') :
-                                            ('lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5')
+                                    // AUTO: the responsive classes, which must
+                                    // stay in sync with useResultGridLayout.
+                                    // EXPLICIT: the column count computed from
+                                    // the slider's target width, plus the gap
+                                    // spelled out in pixels — the same number
+                                    // `columnsForCellWidth` measured against,
+                                    // so the two cannot drift the way a `rem`
+                                    // gap would under a raised root font size.
+                                    className={cn('grid pb-4',
+                                        explicitSize
+                                            ? ''
+                                            : cn('gap-4 grid-cols-1 md:grid-cols-2',
+                                                sidebarOpen ?
+                                                    ('lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4 4xl:grid-cols-5') :
+                                                    ('lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'))
                                     )}
+                                    style={explicitSize ? {
+                                        gap: `${GRID_GAP_PX}px`,
+                                        gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+                                    } : undefined}
                                 >
                                     {/* Cells are addressed by global index and
                                         capped at the item count, so the last
@@ -1745,7 +2162,7 @@ export function ResultGrid({
                                         if (index >= itemCount) return null
                                         const result = source.get(index)
                                         if (!result) {
-                                            return <ResultCellSkeleton key={`pending-${index}`} />
+                                            return <ResultCellSkeleton key={`pending-${index}`} imageHeightPx={imageHeightPx} />
                                         }
                                         return (
                                             <SearchResultImage
@@ -1753,15 +2170,30 @@ export function ResultGrid({
                                                 result={result}
                                                 index={index}
                                                 dbs={dbs}
-                                                onImageClick={onImageClick}
+                                                onImageClick={handleImageClick}
                                                 // Every card in the set opens
                                                 // the gallery, in both modes:
                                                 // `gi` is a global index and
                                                 // the gallery resolves it
                                                 // against this same source.
                                                 galleryLink
-                                                nItems={itemCount}
                                                 showLoadingSpinner={isLoading}
+                                                // Both stable primitives, so
+                                                // React.memo still holds: the
+                                                // tier only moves when the
+                                                // cell crosses a threshold,
+                                                // and the height only in the
+                                                // explicit mode that owns it.
+                                                tier={tier}
+                                                imageHeightPx={imageHeightPx}
+                                                // Same rule as the tier: read
+                                                // ONCE for the whole grid and
+                                                // handed down, never a hook
+                                                // per card. react-query keeps
+                                                // the object's identity across
+                                                // renders that change nothing,
+                                                // so the memo still holds.
+                                                animatedFloor={animatedFloor}
                                             />
                                         )
                                     })}

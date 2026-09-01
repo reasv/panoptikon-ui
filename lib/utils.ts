@@ -4,20 +4,47 @@ import { twMerge } from "tailwind-merge"
 // module the node test scripts cannot resolve (the same rule
 // lib/videoTranscode.ts documents).
 import type { components, paths } from "./panoptikon"
+import type { ThumbnailTier } from "./thumbnailTier"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
+/**
+ * `size` selects a stored rendition tier (`lib/thumbnailTier.ts`) and applies
+ * to `file_type: "thumbnail"` only — the original file has no tiers.
+ *
+ * OMITTING it is the legacy bare URL, which the endpoint answers with the
+ * display rendition. Passing `"display"` explicitly is therefore the same
+ * BYTES and a DIFFERENT URL, and both halves of that are deliberate wherever
+ * a call site spells it out (§2, F4): it keeps the aspect rule visible at the
+ * call site, and a new URL cannot be answered from a cache entry stamped
+ * before the display tier's rule changed — which is what busts the stale
+ * long-side-crushed thumbnail for exactly the extreme-aspect items the fix
+ * was about.
+ *
+ * `still` forces the STATIC rendition of an animated item — at a grid tier an
+ * animated item above the raw floor otherwise answers `video/mp4`, which an
+ * `<img>` cannot show. The endpoint documents it as a no-op everywhere else
+ * (static items, and animated items at or below the floor, are served the same
+ * bytes either way), so a surface that cannot play video may set it from
+ * `isAnimatedItem` alone — or unconditionally where it has no row to test
+ * (lib/thumbnailTier.ts). It is a distinct URL, hence a distinct cache entry;
+ * that is the whole cost of the no-op case.
+ */
 export function getFileURL(
   dbs: { index_db: string | null; user_data_db: string | null },
   file_type: "file" | "thumbnail",
   // Path-derived (not operations[...]): path strings are stable across
   // spec generators, operationIds are not.
   id_type: paths["/api/items/item"]["get"]["parameters"]["query"]["id_type"],
-  id: string | number
+  id: string | number,
+  size?: ThumbnailTier,
+  still?: boolean
 ) {
   const index_db_param = dbs.index_db ? `&index_db=${dbs.index_db}` : ""
-  return `/api/items/item/${file_type}?id=${id}&id_type=${id_type}${index_db_param}`
+  const size_param = size ? `&size=${size}` : ""
+  const still_param = still ? `&still=true` : ""
+  return `/api/items/item/${file_type}?id=${id}&id_type=${id_type}${index_db_param}${size_param}${still_param}`
 }
 
 // Basename of an indexed path. Either separator: the index stores paths as

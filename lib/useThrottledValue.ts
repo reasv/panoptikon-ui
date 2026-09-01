@@ -17,10 +17,30 @@ import { useEffect, useRef, useState } from "react"
  *
  * An `intervalMs` <= 0 propagates every change on the next effect flush, but
  * callers that want throttling fully disabled should just use the input value.
+ *
+ * `contentKey` supplies that content comparison from outside, and the callers
+ * on the search page's hot path all have one already: `useSearch` hashes the
+ * very same request to key its query, and the chunk store is handed that hash.
+ * Passing it turns this hook's per-render cost from a full `JSON.stringify` of
+ * the whole search query into a string compare — twice per render of the
+ * search page, since the two throttles were serializing overlapping halves of
+ * the same object. It must be a pure function of the value's CONTENT and of
+ * nothing else: a key that moves while the content stands still propagates a
+ * new reference (harmless, merely early), and one that stands still while the
+ * content moves loses the change entirely.
+ *
+ * This hook is one of the few the React Compiler skips (the effect below
+ * suppresses exhaustive-deps, which opts out the whole function), so the
+ * serialization it does is done on every render of every caller — which is
+ * exactly why the escape hatch is worth having.
  */
-export function useThrottledValue<T>(value: T, intervalMs: number): T {
+export function useThrottledValue<T>(
+  value: T,
+  intervalMs: number,
+  contentKey?: string
+): T {
   const [throttled, setThrottled] = useState(value)
-  const serialized = JSON.stringify(value)
+  const serialized = contentKey ?? JSON.stringify(value)
   // Initialized from the first render's serialization, matching useState(value)
   const throttledSerialized = useRef(serialized)
   const lastPropagated = useRef<number | null>(null)

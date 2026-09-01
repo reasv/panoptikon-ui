@@ -2820,7 +2820,26 @@ export function PinBoard(
                     >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                            src={getFileURL(dbs, "thumbnail", "sha256", carrySha)}
+                            // An 80x80 box, so the smallest tier covers it to
+                            // beyond any display density (§2 names this ghost
+                            // explicitly: it paints plain centre
+                            // `object-cover`, and a top-crop shown here for an
+                            // extreme-aspect item is accepted as a non-issue).
+                            //
+                            // `still=true` UNCONDITIONALLY, unlike every other
+                            // grid-tier call site: the carry state is a bare
+                            // sha256 with no row behind it, so there is nothing
+                            // here to test for animation, and a grid tier
+                            // answers an animated item above the raw floor with
+                            // `video/mp4` — which this <img> would render as a
+                            // broken picture. The endpoint documents the flag
+                            // as a no-op for static items and for animated ones
+                            // at or below the floor, so the only cost of
+                            // spelling it out for every ghost is a second cache
+                            // entry for an 80x80 thumbnail. A ghost that rides
+                            // the cursor for the length of a drag has no
+                            // business animating anyway.
+                            src={getFileURL(dbs, "thumbnail", "sha256", carrySha, "grid-s", true)}
                             alt=""
                             className="w-20 h-20 object-cover rounded shadow-lg opacity-80 border border-white/40"
                         />

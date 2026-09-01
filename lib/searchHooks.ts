@@ -19,7 +19,7 @@ import {
 import type { components } from "./panoptikon"
 import { getSearchPageURL } from "./state/searchQuery/serializers"
 import { usePartitionBy } from "./state/partitionBy"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useThrottledValue } from "./useThrottledValue"
 import {
   useGalleryIndex,
@@ -93,7 +93,19 @@ function useCommittedQuery<T>(
 ): { key: string; value: T } {
   const committed = useRef({ key: liveKey, value: liveValue })
   const seenToken = useRef(commitToken)
-  if (instantSearch || seenToken.current !== commitToken) {
+  // `committed.current.key !== liveKey` is not an optimization of the
+  // instant-search branch, it IS the branch: `liveKey` is a content hash of a
+  // SUPERSET of `liveValue`'s fields, so an unchanged key means the frozen
+  // value's content is already the live one and replacing it would publish a
+  // new object saying the same thing. Everything downstream keys on this
+  // reference — the chunk store's throttle and its `parts`-keyed memos, the
+  // Library tab's `committedQuery` prop — and with instant search on (the
+  // default) this used to mint a fresh one on every single render, which is
+  // what made all of them miss.
+  if (
+    (instantSearch && committed.current.key !== liveKey) ||
+    seenToken.current !== commitToken
+  ) {
     committed.current = { key: liveKey, value: liveValue }
   }
   seenToken.current = commitToken
@@ -146,15 +158,20 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     partitionBy: partitionBy.partition_by,
     page,
   }
-  const throttledRequest = useThrottledValue(liveRequest, throttleMs)
+  // Gated on the *live* request, not the throttled one: the throttle trails
+  // by a render, and during that render the query key is still the previously
+  // committed one — already in cache, so leaving it enabled costs nothing.
+  //
+  // Hoisted above the throttle so it can BE the throttle's content key: the
+  // two were serializing the identical object every render (`hashKey` is a
+  // key-sorted `JSON.stringify`), and one serialization of the search query
+  // per render is enough.
+  const liveKey = hashKey([liveRequest])
+  const throttledRequest = useThrottledValue(liveRequest, throttleMs, liveKey)
   const request = throttleMs > 0 ? throttledRequest : liveRequest
   // page_size is optional in the spec (server default 10); the query
   // builders always set it, but the type can't promise that.
   const pageSize = request.searchQuery.page_size ?? 10
-  // Gated on the *live* request, not the throttled one: the throttle trails
-  // by a render, and during that render the query key is still the previously
-  // committed one — already in cache, so leaving it enabled costs nothing.
-  const liveKey = hashKey([liveRequest])
   // The frozen value is taken from the *live* request, not the throttled one:
   // a commit lands on the render that bumps the token, and the throttle is
   // still a render behind then — freezing the trailing value would leave the
@@ -282,6 +299,11 @@ export function useSearch({ initialQuery }: { initialQuery: SearchQueryArgs }) {
     // consumer that needs only part of it takes a `Pick` and is unaffected.
     // See useCommittedQuery.
     committedQuery,
+    // Its content hash — the same string this hook keys its own query gate
+    // on. Handed out so a consumer that throttles `committedQuery` can pass
+    // it as the throttle's content key instead of serializing the search a
+    // second time per render (see useThrottledValue's `contentKey`).
+    committedKey,
     resultsAreStale,
     nResults,
     countIsPlaceholder,
@@ -722,12 +744,25 @@ function idOf(rows: object): number {
  */
 export function useChunkedResults({
   committedQuery,
+  committedKey,
   enabled,
   fallbackResults,
   resultsAreStale,
   count,
 }: {
   committedQuery: SearchRequestParts
+  /**
+   * `useSearch`'s hash of that same committed request, used as the throttle's
+   * content key (see `useThrottledValue`'s `contentKey`) instead of
+   * serializing the whole search a second time on every render of the search
+   * page. It hashes a SUPERSET of `committedQuery` — the live `page` is in it
+   * — which is sound in both directions: the content cannot move without the
+   * key moving, and the one extra field that can move on its own is `page`,
+   * which scroll mode does not have (and which every chunk request overrides
+   * regardless, so a spurious propagation would re-mint `parts` without
+   * moving `partsKey`, refetching nothing).
+   */
+  committedKey: string
   /**
    * `searchEnabled && !searchSuppressed` — NOT `useSearch`'s `queryEnabled`.
    *
@@ -790,7 +825,11 @@ export function useChunkedResults({
   // anything is gated the same way, so that session pays ~nothing per render.
   const throttledQuery = useThrottledValue(
     enabled ? committedQuery : NO_CHUNK_QUERY,
-    throttleMs
+    throttleMs,
+    // The disabled key is the placeholder request's own identity and must
+    // differ from every real hash the same way NO_PARTS_KEY does — a hash is
+    // JSON, so a bare word cannot collide with one.
+    enabled ? committedKey : NO_PARTS_KEY
   )
   // `throttledQuery` is state that only moves when its content does, so
   // `parts` (and everything keyed on it below) sits still between committed
@@ -829,7 +868,18 @@ export function useChunkedResults({
   // construction (see NO_PARTS_KEY), which is exactly right: the first enabled
   // render rebuilds the wanted window from the consumers' own `ensureRange`
   // rather than inheriting one.
-  const partsKey = enabled ? hashKey([buildChunkRequest(parts, 0)]) : NO_PARTS_KEY
+  //
+  // Memoized on `parts`, which is the throttle's state and therefore sits
+  // still between committed searches: building a request body and hashing it
+  // is the single most expensive expression in this hook's render path, and
+  // it has no business re-running for a chunk that landed or a row that
+  // moved. (`parts` falls back to `committedQuery` for the throttle's opening
+  // window and when throttling is off — that reference is stable too, per
+  // useCommittedQuery.)
+  const partsKey = useMemo(
+    () => (enabled ? hashKey([buildChunkRequest(parts, 0)]) : NO_PARTS_KEY),
+    [enabled, parts]
+  )
   // The observed chunk set, oldest request first — a plain array rather than
   // a Set because the order IS the eviction order — tagged with the query it
   // was collected for. Reading it back through that tag is what stops a query
@@ -988,6 +1038,38 @@ export function useChunkedResults({
       }
     })
   }
+  // The chunk-request key for a MISS, memoized per chunk for the life of one
+  // committed query. A screenful of skeletons is dozens of cells asking about
+  // the SAME two or three chunks, and each miss otherwise rebuilt the chunk
+  // request object and had react-query hash it again — per cell, per render, in
+  // the hottest loop in the app.
+  //
+  // A REF, not a bare `new Map()` in the render body: under the React Compiler
+  // such an allocation becomes a memoized slot with NO dependency of its own,
+  // so the map is minted once per hook instance and survives a change of
+  // `parts` — handing `getQueryData` keys built from the PREVIOUS search, and
+  // growing without bound for the life of the page. A ref escapes that
+  // memoization, so the invalidation can be written by hand: the box is reset
+  // whenever `parts` moves, checked at USE so it holds for callers that run
+  // outside a render pass too (`retryRange`). The reset is idempotent and
+  // derived from nothing but `parts`, so a render React discards leaves behind
+  // a valid — merely empty — map for those same parts.
+  const missKeys = useRef<{
+    parts: SearchRequestParts
+    map: Map<number, unknown[]>
+  }>({ parts, map: new Map() })
+  const missKeyFor = (chunkIndex: number) => {
+    if (missKeys.current.parts !== parts) {
+      missKeys.current = { parts, map: new Map() }
+    }
+    const map = missKeys.current.map
+    let key = map.get(chunkIndex)
+    if (!key) {
+      key = ["post", "/api/search/pql", buildChunkRequest(parts, chunkIndex)]
+      map.set(chunkIndex, key)
+    }
+    return key
+  }
   /**
    * Restart the failed chunks in a range. `resetQueries` rather than
    * `refetchQueries`, for one reason: reset returns the query to its initial
@@ -1014,7 +1096,7 @@ export function useChunkedResults({
       if (!erroredChunks.has(chunkIndex)) continue
       reset = true
       void queryClient.resetQueries({
-        queryKey: ["post", "/api/search/pql", buildChunkRequest(parts, chunkIndex)],
+        queryKey: missKeyFor(chunkIndex),
         exact: true,
       })
     }
@@ -1035,7 +1117,9 @@ export function useChunkedResults({
   // set, the react-query cache (a chunk pushed out by LRU is still there;
   // without that read, evicting a chunk the user is looking at would flash
   // skeletons over rows that are in memory), and the main query's page-1
-  // fallback — can never answer the two differently.
+  // fallback — can never answer the two differently. The MISS path's key comes
+  // from `missKeyFor` above, which caches it per chunk for the life of one
+  // committed query.
   const blockAt = (
     index: number
   ): { start: number; rows: SearchResult[] } | undefined => {
@@ -1046,7 +1130,7 @@ export function useChunkedResults({
     if (rows) return { start, rows }
     const cached = queryClient.getQueryData<{
       results?: SearchResult[] | null
-    }>(["post", "/api/search/pql", buildChunkRequest(parts, chunkIndex)])
+    }>(missKeyFor(chunkIndex))
     if (cached?.results) return { start, rows: cached.results as SearchResult[] }
     // The fallback is page 1 of the main query, so its block starts at item 0
     // and covers only what it holds.
@@ -1150,6 +1234,22 @@ export function arrayResultsSource(results: SearchResult[]): ResultsSource {
  * `setPagePrefetch` discipline): the flip and the results swap should land in
  * the same render. Entering scroll mode needs no prefetch — the rows on
  * screen already cover the viewport and chunk fetches take over from there.
+ *
+ * WHAT A ROUND TRIP STILL LOSES. The arithmetic here is exact, but the anchor
+ * it carries is not the whole position: each mode records the first item of
+ * the TOP VISIBLE ROW, so every crossing re-quantizes to a row, and the
+ * destination can only honour that row if it can actually bring it to the top.
+ * A page (or a set) whose remaining rows do not fill the viewport comes to rest
+ * above the target, and the next crossing records where it came to rest. The
+ * loss per round trip is therefore bounded by the DESTINATION's viewport
+ * measured in rows — not by one row — and it is not confined to a `k` that
+ * misaligns with the column count: measured on stdtest, 2 rows at k=200 over
+ * nine columns, and 1 row at an aligned k=40 whose destination page could not
+ * top-align the target row. It converges rather than accumulating without
+ * bound (the position walks up to a row the destination CAN top-align and then
+ * stops), and the pagination bar — the thing the user reads — stays on the
+ * right page throughout. Recording a within-row offset alongside the anchor is
+ * the fix if this is ever worth one; it would change the anchor's wire format.
  */
 export function useCommitViewMode() {
   const prefetch = usePrefetchPageState()
@@ -1280,6 +1380,18 @@ export function useCommitViewMode() {
  * it relabels the pagination bar and rescales prev/next while the position,
  * the rows and every request stay exactly where they are — see the scroll
  * branch below.
+ *
+ * `alongside` is for a caller whose OWN parameter write has to land in the
+ * same URL update as this one. The cell-size slider is that caller and the
+ * reason the hook grew a second argument (design §9: cell size and page size
+ * are written "in one tick"). Two ticks are observably wrong rather than
+ * merely untidy: writing `cs` first re-lays the grid out at the OLD page size,
+ * the grid's scroll-stop timer then records an anchor for that intermediate
+ * geometry, and it lands after this commit's carefully remapped `top` —
+ * clobbering it, and putting the user rows away from the item they were
+ * looking at. Called exactly once, inside the write batch and after the
+ * supersession check, on every path that reaches a decision; a superseded
+ * commit runs nothing, because the call that superseded it carries its own.
  */
 export function useCommitPageSize() {
   const prefetch = usePrefetchPageState()
@@ -1297,7 +1409,10 @@ export function useCommitPageSize() {
     pageSize: number
     index: number
   } | null>(null)
-  return async (nextPageSize: number) => {
+  return async (
+    nextPageSize: number,
+    alongside?: () => Promise<unknown> | void
+  ) => {
     if (viewMode === "scroll") {
       // Any pages-mode commit still inside its prefetch is abandoned here:
       // its target is a (page, index) pair for a mode the URL has left, and
@@ -1311,8 +1426,19 @@ export function useCommitPageSize() {
       // So there is nothing to prefetch and nothing to remap: one param to
       // write, skipped when unchanged, in "replace" like every other
       // non-navigation position write.
-      if (nextPageSize === pageSize) return
-      await setPageSize(nextPageSize, { history: "replace" })
+      //
+      // The companion write is NOT skipped with it: "this page size is already
+      // the one you asked for" says nothing about the caller's own parameter,
+      // and dropping it here would silently lose a cell-size change whenever
+      // the co-write happened to land on the current k.
+      if (nextPageSize === pageSize) {
+        await alongside?.()
+        return
+      }
+      await Promise.all([
+        setPageSize(nextPageSize, { history: "replace" }),
+        alongside?.(),
+      ])
       return
     }
     const base = inFlight.current ?? {
@@ -1329,7 +1455,12 @@ export function useCommitPageSize() {
         pageSize
       ),
     }
-    if (nextPageSize === base.pageSize) return
+    // Same rule as the scroll branch's: nothing to remap does not mean nothing
+    // to write, and the caller's own parameter is not this hook's to drop.
+    if (nextPageSize === base.pageSize) {
+      await alongside?.()
+      return
+    }
     const target = remapPageAnchor({
       page: base.page,
       pageSize: base.pageSize,
@@ -1353,6 +1484,11 @@ export function useCommitPageSize() {
     // a page the URL was never on. Skipping on it drops a write that is not a
     // no-op and strands the URL on the old page.
     const writes: Promise<unknown>[] = []
+    // FIRST into the batch, so the companion parameter and the remapped
+    // position are one URL update and one re-layout. Order inside the tick
+    // does not matter to nuqs; being inside it is the whole point.
+    const companion = alongside?.()
+    if (companion) writes.push(companion)
     if (target.page !== page) writes.push(setPage(target.page, replace))
     if (galleryIndex !== null && target.index !== galleryIndex) {
       writes.push(setGalleryIndex(target.index, replace))

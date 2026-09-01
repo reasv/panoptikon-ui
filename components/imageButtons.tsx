@@ -1,62 +1,62 @@
 "use client"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { $api } from "@/lib/api"
-import { useBookmarkNs, } from "@/lib/state/zust"
-import { useQueryClient } from "@tanstack/react-query"
-import { useToast } from "@/components/ui/use-toast"
 import { File, FolderOpen, BookmarkPlus, BookmarkX, Cable, ClipboardCopy, Download, LoaderCircle } from "lucide-react"
 import { Button } from "./ui/button"
 import { Toggle } from "./ui/toggle"
 import { cn } from "@/lib/utils"
-import { useSelectedDBs } from "@/lib/state/database"
-import { updateBookmarkStatusInSearchCache } from "@/lib/bookmarkSearchCache"
-import { useAlwaysShowBookmarkBtn } from "@/lib/state/alwaysShowBookmarks"
+import { toast } from "@/components/ui/use-toast"
 import { FindButton } from "./gallery/FindButton"
 import { FileBookmarksSetter } from "./sidebar/details/FileBookmarks"
 import { ContextMenu, ContextMenuContent, ContextMenuLabel, ContextMenuRadioGroup, ContextMenuRadioItem, ContextMenuTrigger } from "./ui/context-menu"
-import { useFileOpenActions } from "@/hooks/fileOpen"
 import { useFileShare } from "@/hooks/fileShare"
 import { useLastFileAction, type FileActionVerb } from "@/lib/state/fileActionDefault"
+import { useCellCallbacks, useCellFlags } from "@/lib/state/cellActions"
 
-export function RelayTargetSelector({
-    actions,
-}: {
-    actions: ReturnType<typeof useFileOpenActions>
-}) {
-    if (!actions.relayDetected || actions.relayPaired) return null
-    const pairLabel = actions.relayPairing
+// EVERY component in this file is mounted PER ROW — per grid cell, per pin,
+// per filmstrip card — so none of them may own a URL-state hook, a toast
+// listener or a query/mutation observer of its own. They read the page's one
+// CellActionsHost instead (lib/state/cellActions.ts): `useCellCallbacks` for
+// the verbs (a value whose identity never changes, so reading it re-renders
+// nothing) and `useCellFlags` for the handful of values they actually paint.
+
+export function RelayTargetSelector() {
+    const { relayDetected, relayPaired, relayPairing, relayPairingPending } = useCellFlags()
+    const { pairRelay } = useCellCallbacks()
+    if (!relayDetected || relayPaired) return null
+    const pairLabel = relayPairing
         ? "Opening Relay pairing…"
-        : actions.relayPairingPending ? "Review Relay pairing request" : "Pair local Relay"
+        : relayPairingPending ? "Review Relay pairing request" : "Pair local Relay"
     return <Button
         aria-label={pairLabel}
         title={pairLabel}
         variant="ghost"
         size="icon"
         className="invisible absolute -bottom-1 -right-1 z-10 h-4 w-4 rounded-full border border-border bg-background p-0 text-foreground opacity-0 shadow-xs transition-opacity group-hover/file-action:visible group-hover/file-action:opacity-100 group-focus-within/file-action:visible group-focus-within/file-action:opacity-100"
-        disabled={actions.relayPairing}
-        onClick={() => void actions.pairRelay()}
+        disabled={relayPairing}
+        onClick={() => void pairRelay()}
     >
         <Cable className="h-2.5 w-2.5" />
     </Button>
 }
 
 function FileActionTargetMenu({
-    actions,
     existingLabel,
     children,
 }: {
-    actions: ReturnType<typeof useFileOpenActions>
     existingLabel: string
     children: (open: boolean) => ReactNode
 }) {
+    const { relayPaired, actionTarget } = useCellFlags()
+    const { setActionTarget } = useCellCallbacks()
     const [open, setOpen] = useState(false)
     const trigger = children(open)
-    if (!actions.relayPaired) return trigger
+    if (!relayPaired) return trigger
     return <ContextMenu onOpenChange={setOpen}>
         <ContextMenuTrigger asChild>{trigger}</ContextMenuTrigger>
         <ContextMenuContent className="min-w-52">
             <ContextMenuLabel>File action destination</ContextMenuLabel>
-            <ContextMenuRadioGroup value={actions.actionTarget} onValueChange={value => actions.setActionTarget(value as "relay" | "existing")}>
+            <ContextMenuRadioGroup value={actionTarget} onValueChange={value => setActionTarget(value as "relay" | "existing")}>
                 <ContextMenuRadioItem value="relay">This computer</ContextMenuRadioItem>
                 <ContextMenuRadioItem value="existing">{existingLabel}</ContextMenuRadioItem>
             </ContextMenuRadioGroup>
@@ -78,97 +78,27 @@ export const BookmarkBtn = (
         bookmarked?: boolean | null
     }
 ) => {
-    const query = useSelectedDBs()[0]
-    const namespace = useBookmarkNs((state) => state.namespace)
-    const params = {
-        path: { namespace, sha256 },
-        query
-    }
-    const bookmarkPath = "/api/bookmarks/ns/{namespace}/{sha256}"
+    const { dbs: query, bookmarkNamespace: namespace, alwaysShowBookmark: alwaysShow } = useCellFlags()
+    const { toggleBookmark } = useCellCallbacks()
     // The prop gates the query at render time, so a fresh page of enriched
     // results can never fire a per-card volley (an effect-seeded store
     // cannot make that guarantee — children render before parent effects).
     const { data } = $api.useQuery(
         "get",
-        bookmarkPath,
+        "/api/bookmarks/ns/{namespace}/{sha256}",
         {
-            params,
+            params: { path: { namespace, sha256 }, query },
         },
         {
             enabled: bookmarked == null,
         },
     )
 
-    const addBookmark = $api.useMutation(
-        "put",
-        bookmarkPath,
-    )
-
-    const removeBookmark = $api.useMutation(
-        "delete",
-        bookmarkPath,
-    )
-
-    const queryClient = useQueryClient()
-    const { toast } = useToast()
-
     const isBookmarked = bookmarked ?? (data?.exists || false)
-
-    const handleBookmarkClick = () => {
-        const onSuccess = (deleted: boolean) => {
-            // The mutation result is authoritative — patch every cached
-            // search response so this card (and any other card showing the
-            // same item) flips instantly without a refetch.
-            updateBookmarkStatusInSearchCache(
-                queryClient,
-                query.user_data_db,
-                sha256,
-                namespace,
-                !deleted
-            )
-            queryClient.invalidateQueries({
-                queryKey: [
-                    "get",
-                    bookmarkPath,
-                    { params },
-                ]
-            })
-            const multiQueryKey = ["get", "/api/bookmarks/item/{sha256}", {
-                params: {
-                    path: {
-                        sha256,
-                    },
-                    query
-                }
-            }]
-            queryClient.invalidateQueries({
-                queryKey: multiQueryKey
-            })
-            toast({
-                title: `Bookmark ${deleted ? "removed" : "added"}`,
-                description: `File has been ${deleted ? "removed from" : "added to"} the ${namespace} group`,
-                duration: 2000,
-            })
-        }
-        const onError = (error: any) => {
-            toast({
-                title: "Failed to update bookmark",
-                description: error.message,
-                variant: "destructive",
-                duration: 2000,
-            })
-        }
-        if (isBookmarked) {
-            removeBookmark.mutate({ params }, {
-                onSuccess: () => onSuccess(true), onError(error, variables, context) {
-                    onError(error)
-                },
-            })
-        }
-        else
-            addBookmark.mutate({ params }, { onSuccess: () => onSuccess(false), onError: onError })
-    }
-    const alwaysShow = useAlwaysShowBookmarkBtn()[0]
+    // The mutations, the cache patch and the toast all live in the host: a
+    // card that has never been clicked has no business holding two mutation
+    // observers and a toast listener.
+    const handleBookmarkClick = () => toggleBookmark(sha256, isBookmarked)
     return (
         <ContextMenu>
             <ContextMenuTrigger>
@@ -264,14 +194,13 @@ export const OpenFile = (
         onUsed?: () => void
     }
 ) => {
-    const actions = useFileOpenActions({ sha256, path })
-    const { openFile, disableBackendOpen } = actions
-    const handleClick = openFile
-    const buttonTitle = actions.relayPaired && actions.actionTarget === "relay"
+    const { disableBackendOpen, relayPaired, actionTarget } = useCellFlags()
+    const { openFile } = useCellCallbacks()
+    const handleClick = () => openFile({ sha256, path })
+    const buttonTitle = relayPaired && actionTarget === "relay"
         ? "Open file on this computer using Relay"
         : disableBackendOpen ? "Open file in new tab" : "Open file on the Panoptikon server host"
     return <FileActionTargetMenu
-        actions={actions}
         existingLabel={disableBackendOpen ? "Browser" : "Panoptikon server host"}
     >{menuOpen => <span
         onClickCapture={onUsed}
@@ -308,7 +237,7 @@ export const OpenFile = (
                         <path d="M14 2H6C4.9 2 4 2.9 4 4v16c0 1.1 0.9 2 2 2h12c1.1 0 2-0.9 2-2V8l-6-6zm1 7V3.5L18.5 9H15z" />
                     </svg>
                 </button>}
-            <RelayTargetSelector actions={actions} />
+            <RelayTargetSelector />
         </span>}
     </FileActionTargetMenu>
 }
@@ -327,11 +256,11 @@ export const OpenFolder = (
         onUsed?: () => void
     }
 ) => {
-    const actions = useFileOpenActions({ sha256, path })
-    const { showInFolder, disableBackendOpen } = actions
-    const handleClick = showInFolder
-    if (disableBackendOpen && !(actions.relayPaired && actions.actionTarget === "relay")) {
-        return <FileActionTargetMenu actions={actions} existingLabel="Panoptikon search">
+    const { disableBackendOpen, relayPaired, actionTarget } = useCellFlags()
+    const { showInFolder } = useCellCallbacks()
+    const handleClick = () => showInFolder({ sha256, path })
+    if (disableBackendOpen && !(relayPaired && actionTarget === "relay")) {
+        return <FileActionTargetMenu existingLabel="Panoptikon search">
             {menuOpen => <span
             onClickCapture={onUsed}
             className={cn(
@@ -346,11 +275,11 @@ export const OpenFolder = (
                 buttonVariant={buttonVariant}
                 buttonClassName={!buttonVariant ? "static opacity-100" : undefined}
             />
-            <RelayTargetSelector actions={actions} />
+            <RelayTargetSelector />
         </span>}
         </FileActionTargetMenu>
     }
-    return <FileActionTargetMenu actions={actions} existingLabel="Panoptikon server host">
+    return <FileActionTargetMenu existingLabel="Panoptikon server host">
         {menuOpen => <span
         onClickCapture={onUsed}
         className={cn(
@@ -360,7 +289,7 @@ export const OpenFolder = (
     )}>
         {buttonVariant ?
             <Button
-                title={actions.relayPaired && actions.actionTarget === "relay" ? "Show file on this computer using Relay" : "Show file on the Panoptikon server host"}
+                title={relayPaired && actionTarget === "relay" ? "Show file on this computer using Relay" : "Show file on the Panoptikon server host"}
                 onClick={() => handleClick()}
                 variant="ghost"
                 size="icon"
@@ -384,7 +313,7 @@ export const OpenFolder = (
                     <path d="M10 4H4c-1.1 0-2 0.9-2 2v12c0 1.1 0.9 2 2 2h16c1.1 0 2-0.9 2-2V8c0-1.1-0.9-2-2-2h-8l-2-2z" />
                 </svg>
             </button>}
-        <RelayTargetSelector actions={actions} />
+        <RelayTargetSelector />
     </span>}
     </FileActionTargetMenu>
 }
@@ -449,21 +378,24 @@ const CLUSTER_SLOTS = {
 // The grid card's file actions, collapsed to ONE button: the last-used verb
 // (persisted). Hovering it — or tabbing into the cluster — expands the other
 // verbs into the 2x2 corner square, alternates above/beside and the last one
-// diagonal. Copy participates only where useFileShare resolves a native copy
-// path; without one the set is three and the diagonal slot stays empty (a
-// remembered Copy corner degrades to Download, like the old adaptive button).
+// diagonal. Copy participates only where the host resolves a native copy path
+// (`canCopy`); without one the set is three and the diagonal slot stays empty
+// (a remembered Copy corner degrades to Download, like the old adaptive
+// button).
 export const FileActionCluster = ({ sha256, path, anchor = "bottom-left" }: {
     sha256: string
     path?: string
     anchor?: keyof typeof CLUSTER_SLOTS
 }) => {
-    const share = useFileShare({ sha256, path })
+    const { canCopy } = useCellFlags()
+    const { shareFile, downloadFile } = useCellCallbacks()
     const lastVerb = useLastFileAction((state) => state.verb)
     const setLastVerb = useLastFileAction((state) => state.setVerb)
     const [expanded, setExpanded] = useState(false)
     // Which share verb is mid-flight: only that button spins, and it stays
     // pinned visible for a copy that spends minutes materializing.
     const [busyVerb, setBusyVerb] = useState<"copy" | "download" | null>(null)
+    const inFlight = useRef(false)
     const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
     useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current) }, [])
     const open = () => {
@@ -479,7 +411,6 @@ export const FileActionCluster = ({ sha256, path, anchor = "bottom-left" }: {
     }
 
     const slots = CLUSTER_SLOTS[anchor]
-    const canCopy = share.primaryVerb === "copy"
     const verbs: FileActionVerb[] = canCopy ? ["copy", "open", "folder", "download"] : ["open", "folder", "download"]
     const corner: FileActionVerb = verbs.includes(lastVerb) ? lastVerb : "download"
     const slotOf: Partial<Record<FileActionVerb, string>> = { [corner]: slots[0] }
@@ -493,13 +424,24 @@ export const FileActionCluster = ({ sha256, path, anchor = "bottom-left" }: {
             ? cn(slotOf[verb], "opacity-0 transition-opacity duration-300 group-hover:opacity-100", expanded && "opacity-100")
             : cn(slotOf[verb], "transition-opacity duration-300", expanded ? "opacity-100" : "opacity-0 pointer-events-none")
 
+    // `busyVerb` is also the in-flight guard, which is why the buttons below
+    // disable on it: a relay copy of a multi-GB file spends minutes
+    // materializing, and a second click would start a whole second transfer.
+    // Per cluster rather than per page — one card's copy must not disable
+    // every other card's buttons — which is why the host's share verbs carry
+    // no guard of their own (hooks/fileShare.ts).
     const runShare = async (verb: "copy" | "download") => {
+        // The ref is the real guard (synchronous, so two clicks in the same
+        // tick cannot both pass); `busyVerb` is what the buttons render.
+        if (inFlight.current) return
+        inFlight.current = true
         setLastVerb(verb)
         setBusyVerb(verb)
         try {
-            if (verb === "copy") await share.execute()
-            else await share.download()
+            if (verb === "copy") await shareFile({ sha256, path })
+            else await downloadFile({ sha256, path })
         } finally {
+            inFlight.current = false
             setBusyVerb(null)
         }
     }
@@ -514,7 +456,7 @@ export const FileActionCluster = ({ sha256, path, anchor = "bottom-left" }: {
             title={title}
             aria-label={title}
             aria-busy={busy}
-            disabled={share.busy}
+            disabled={busyVerb !== null}
             className={cn(
                 "rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-2 hover:scale-105",
                 position(verb),
@@ -546,46 +488,51 @@ export const FileActionCluster = ({ sha256, path, anchor = "bottom-left" }: {
 // Copy a path (or any text) to the clipboard with a confirmation toast.
 // Shared by the plain file-path header and the pinboard tab header's
 // right-click menu.
-export const useCopyPath = () => {
-    const { toast } = useToast()
-    return (text: string) => {
-        const ok = () => toast({
-            title: "Copied to clipboard",
-            description: text,
+//
+// A module-level function, and the standalone `toast()`: FilePathComponent
+// below is mounted per grid card, and `useToast()` registers a listener on the
+// shared toast store per mount — re-registering it on every toast, its effect
+// being keyed on the toast state. Nothing here renders a toast.
+export const copyPathToClipboard = (text: string) => {
+    const ok = () => toast({
+        title: "Copied to clipboard",
+        description: text,
+        duration: 2000,
+    })
+    const fail = (err?: Error) => {
+        console.error('Failed to copy text: ', err)
+        toast({
+            title: "Failed to copy to clipboard",
+            description: err?.message,
+            variant: "destructive",
             duration: 2000,
         })
-        const fail = (err?: Error) => {
-            console.error('Failed to copy text: ', err)
-            toast({
-                title: "Failed to copy to clipboard",
-                description: err?.message,
-                variant: "destructive",
-                duration: 2000,
-            })
-        }
-        try {
-            // Copied as an explicit text/plain item — this is necessary to
-            // prevent the browser from adding file:// to the path
-            const blob = new Blob([text], { type: 'text/plain' })
-            const data = [new ClipboardItem({ 'text/plain': blob })]
-            navigator.clipboard.write(data).then(ok).catch(fail)
-        } catch {
-            // Insecure origins (plain-http on a LAN) have no clipboard API;
-            // the legacy execCommand path still works there
-            const ta = document.createElement("textarea")
-            ta.value = text
-            document.body.appendChild(ta)
-            ta.select()
-            const copied = document.execCommand("copy")
-            ta.remove()
-            if (copied) ok()
-            else fail()
-        }
+    }
+    try {
+        // Copied as an explicit text/plain item — this is necessary to
+        // prevent the browser from adding file:// to the path
+        const blob = new Blob([text], { type: 'text/plain' })
+        const data = [new ClipboardItem({ 'text/plain': blob })]
+        navigator.clipboard.write(data).then(ok).catch(fail)
+    } catch {
+        // Insecure origins (plain-http on a LAN) have no clipboard API;
+        // the legacy execCommand path still works there
+        const ta = document.createElement("textarea")
+        ta.value = text
+        document.body.appendChild(ta)
+        ta.select()
+        const copied = document.execCommand("copy")
+        ta.remove()
+        if (copied) ok()
+        else fail()
     }
 }
 
+/** Hook-shaped view of the above, for the call sites that read like one. */
+export const useCopyPath = () => copyPathToClipboard
+
 export const FilePathComponent = ({ path }: { path: string }) => {
-    const handleCopyToClipboard = useCopyPath()
+    const handleCopyToClipboard = copyPathToClipboard
     // Remove leading / if it exists
     const displayPath = path[0] === '/' ? path.slice(1) : path
     return (

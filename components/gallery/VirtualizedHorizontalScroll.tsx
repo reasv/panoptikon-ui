@@ -19,7 +19,27 @@ import { blurHashToDataURL } from '@/lib/state/blurHashDataURL'
 import { PlayableBadge, isPlayableItem } from '@/components/PlayableBadge'
 import { useSearchLoading } from '@/lib/state/zust'
 import { topRowHighlightItem, virtualPageOf } from '@/lib/scrollMode'
+import { isAnimatedItem, tierForCellWidth, type ThumbnailTier } from '@/lib/thumbnailTier'
+import { useDevicePixelRatio } from '@/hooks/useDevicePixelRatio'
 import type { ResultsSource } from '@/lib/searchHooks'
+
+// The BINDING EDGE of the strip's card box, in CSS pixels: the LARGER of the
+// `w-[240px] h-80` figure below — its 320px height.
+//
+// The larger edge, not the width, and that is a rule rather than a detail
+// here. The card paints `object-cover`, which scales the rendition until it
+// covers BOTH edges, so crispness is bound by whichever edge asks more of the
+// image. Sizing from the 240px width would request `grid-s` at a device pixel
+// ratio of 2 (480 device px, comfortably inside the 512 tier) for a box that
+// actually needs 640 — a 1.25x upscale, past the ladder's 1.125 slack. The
+// argument handed to `tierForCellWidth` is therefore always the edge that
+// binds; the result grid's cells are square, so its two edges agree and only
+// this surface has to say so out loud.
+//
+// The strip was the single worst offender before tiers existed: it loaded
+// display-class renditions (4096px on the long side, or the original file)
+// into this box, one per card, at virtualized-remount rates.
+const STRIP_CARD_CSS_BINDING_EDGE = 320
 
 // How far past the rendered cards the strip warms rows, in items. The strip
 // renders about a screen's worth of 256px cards at a time, so a couple of
@@ -92,7 +112,8 @@ export function VirtualGalleryHorizontalScroll({
      * of the leading visible card, and ONLY when that number changes, so
      * panning doesn't re-render the host per frame. Must be referentially
      * stable — it is a dependency of the scroll listener below (both mounts
-     * pass a useState setter). Comes with `pageSize`.
+     * pass the derived-page box's `set`, minted once per mount). Comes with
+     * `pageSize`.
      */
     onDerivedPageChange?: (page: number) => void
     /** k, the virtual-page size, for the derived page number. */
@@ -156,6 +177,11 @@ export function VirtualGalleryHorizontalScroll({
             Math.min(scrollWidth - clientWidth, scrollLeft + e.deltaY)
         )
     }, [])
+    // ONE tier for the whole strip, computed here and passed down: the card
+    // box is fixed, so this depends on nothing but the device pixel ratio, and
+    // watching that per card would be a state and an effect in every one of
+    // them.
+    const tier = tierForCellWidth(STRIP_CARD_CSS_BINDING_EDGE, useDevicePixelRatio())
     const [qIndex] = useGalleryIndex()
     // The item the strip must keep in view, and WHICH FILE is currently at it.
     // The second half is the re-assert trigger, and it is deliberately not
@@ -373,6 +399,7 @@ export function VirtualGalleryHorizontalScroll({
                                 onItemHover={onItemHover}
                                 viewerOpen={viewerOpen}
                                 onViewerOpenChange={onViewerOpenChange}
+                                tier={tier}
                             />
                         )
                     })}
@@ -417,6 +444,7 @@ function VirtualHorizontalScrollElement({
     onItemHover,
     viewerOpen,
     onViewerOpenChange,
+    tier,
 }: {
     item: SearchResult
     ownIndex: number
@@ -432,6 +460,8 @@ function VirtualHorizontalScrollElement({
     /** The pinned viewer's open state and setter — see the strip's props. */
     viewerOpen?: boolean
     onViewerOpenChange?: (open: boolean) => void
+    /** The rendition tier for the card box — computed once by the strip. */
+    tier: ThumbnailTier
 }) {
     const [qIndex] = useGalleryIndex()
     // The same mapping the strip scrolls to (see stripTarget): clamped, not
@@ -447,7 +477,26 @@ function VirtualHorizontalScrollElement({
     )
     const [dbs] = useSelectedDBs()
     const setSelected = useItemSelection((state) => state.setItem)
-    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256)
+    // The card paints `object-cover object-top` in a 240x320 box, which is
+    // exactly the presentation the grid tiers' crop is cut for — so an
+    // extreme-aspect item needs no special case here: the crop IS what this
+    // card should show, and there is no hover-contain state to swap for.
+    //
+    // ALWAYS THE STILL for an animated item. Adjudicated for F6: the strip
+    // shows POSTERS, never autoplaying video — a row of looping cards under
+    // the gallery is noise, and the strip's job is letting the eye find the
+    // next item. It is also correctness before policy: without the flag an
+    // animated item above the raw floor answers a grid tier with `video/mp4`,
+    // which this <img> would render as a broken picture.
+    //
+    // ONE COMPARISON ON ROW DATA, and deliberately the cheap half of the
+    // decision — a surface that never plays needs no client-config floor, only
+    // "does this item move" (lib/thumbnailTier.ts). `still=true` is documented
+    // as a NO-OP for an animated item at or below the floor: it is served as
+    // its original file either way, and animates in the <img> exactly as it
+    // does today.
+    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256, tier,
+        isAnimatedItem(item.type, item.duration))
     // Every hover report this card makes goes through here, so the card can
     // know whether the dock's hover subject is currently ITS item. Tracked
     // from the reports rather than from raw pointer presence: the unmount
@@ -587,8 +636,19 @@ function VirtualHorizontalScrollElement({
                             alt={item.path}
                             className="object-cover object-top rounded-md cursor-pointer"
                             fill
-                            placeholder={blurDataURL ? 'blur' : 'empty'}
-                            blurDataURL={blurDataURL}
+                            // Direct data URL, never `placeholder="blur"` — the
+                            // filmstrip virtualizes and remounts a card per item
+                            // exactly like the grid, and 'blur' would emit a
+                            // unique `data:image/svg+xml` blur wrapper per mount,
+                            // each of which Blink instantiates as its own
+                            // isolated Document. Those pile up faster than GC
+                            // collects them and degrade frame time for the whole
+                            // session (see the comment in
+                            // components/SearchResultImage.tsx). Do not
+                            // reintroduce. The data-URL template type is the
+                            // real guard (next/image validates only in dev);
+                            // `?? 'empty'` just documents the fallback.
+                            placeholder={blurDataURL ?? 'empty'}
                             unoptimized={true}
                             sizes="240px"
                         />
