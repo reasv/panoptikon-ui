@@ -1,6 +1,6 @@
 import { Input } from "@/components/ui/input"
 import { useSQLite } from "@/lib/sqliteChecker"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Fts5ToggleButton } from "./FTS5Toggle"
 import { PLACEHOLDERS } from "@/lib/placeholders"
 import { ClearSearch } from "./ClearSearch"
@@ -96,10 +96,14 @@ export function TextSearchInput({
         setTextQuery(inputText)
     }
 
-    const placeholder = useMemo(() => {
-        const currentMinute = new Date().getMinutes()
-        return PLACEHOLDERS[currentMinute % PLACEHOLDERS.length]
-    }, [PLACEHOLDERS])
+    // The rotating placeholder is picked by wall-clock minute, which makes
+    // it client-only state: SSR and hydration can land in different minutes,
+    // and the differing placeholder attribute would fail hydration. Render a
+    // fixed one on the server and first client render, rotate after mount.
+    const [placeholder, setPlaceholder] = useState<string>(PLACEHOLDERS[0])
+    useEffect(() => {
+        setPlaceholder(PLACEHOLDERS[new Date().getMinutes() % PLACEHOLDERS.length])
+    }, [])
 
     const [completionEnabled, _] = useTagCompletionEnabled()
 
