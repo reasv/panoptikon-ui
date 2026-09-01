@@ -19,6 +19,15 @@ import { useCellCallbacks, useCellFlags } from "@/lib/state/cellActions"
 // CellActionsHost instead (lib/state/cellActions.ts): `useCellCallbacks` for
 // the verbs (a value whose identity never changes, so reading it re-renders
 // nothing) and `useCellFlags` for the handful of values they actually paint.
+//
+// The overlay pills below are SIZED BY THE CARD THEY SIT ON, through the
+// `--cell-chrome-*` ramp in app/globals.css (D11): `p-2` became
+// `p-(--cell-chrome-pad)`, `w-6 h-6` became `--cell-chrome-glyph`, and the
+// corner offsets became `--cell-chrome-inset`. At the ramp's top — which is
+// every surface that publishes no `--cell-px`, i.e. everything but the result
+// grid — those resolve to exactly the numbers they replaced, so the filmstrip
+// and the pinboard are untouched. Only the button GEOMETRY rides the ramp; the
+// hover fades, the focus behaviour and the slot order are unchanged.
 
 export function RelayTargetSelector() {
     const { relayDetected, relayPaired, relayPairing, relayPairingPending } = useCellFlags()
@@ -152,7 +161,7 @@ function BookmarksButtonElement({
                     `Remove from current bookmark group (${namespace})`
                     : `Add to current bookmark group (${namespace})`
             }
-            className={cn("hover:scale-105 absolute top-2 right-2 bg-white rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300",
+            className={cn("hover:scale-105 absolute top-(--cell-chrome-inset) right-(--cell-chrome-inset) bg-white rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-(--cell-chrome-pad) opacity-0 group-hover:opacity-100 transition-opacity duration-300",
                 (alwaysShow && isBookmarked) ? 'opacity-100' : 'opacity-0'
             )}
             onClick={handleBookmarkClick}
@@ -163,7 +172,7 @@ function BookmarksButtonElement({
                     xmlns="http://www.w3.org/2000/svg"
                     fill="currentColor"
                     viewBox="0 0 24 24"
-                    className="w-6 h-6 text-gray-800"
+                    className="w-(--cell-chrome-glyph) h-(--cell-chrome-glyph) text-gray-800"
                 >
                     <path d="M5 3v18l7-5 7 5V3H5z" />
                 </svg>
@@ -175,7 +184,7 @@ function BookmarksButtonElement({
                     stroke="currentColor"
                     strokeWidth="2"
                     viewBox="0 0 24 24"
-                    className="w-6 h-6 text-gray-800"
+                    className="w-(--cell-chrome-glyph) h-(--cell-chrome-glyph) text-gray-800"
                 >
                     <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />
                 </svg>
@@ -206,7 +215,7 @@ export const OpenFile = (
         onClickCapture={onUsed}
         className={cn(
             "relative inline-flex group/file-action",
-            !buttonVariant && (overlayClassName ?? "absolute bottom-3 left-1 opacity-0 transition-opacity duration-300 group-hover:opacity-100"),
+            !buttonVariant && (overlayClassName ?? "absolute bottom-(--cell-chrome-fan) left-(--cell-chrome-fan-x) opacity-0 transition-opacity duration-300 group-hover:opacity-100"),
             // pointer-events-auto so an open target menu keeps its (possibly
             // collapsed-away) trigger interactive until it closes.
             !buttonVariant && menuOpen && "opacity-100 pointer-events-auto",
@@ -226,13 +235,13 @@ export const OpenFile = (
                 <button
                     onClick={() => handleClick()}
                     title={buttonTitle}
-                    className="rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-2 hover:scale-105"
+                    className="rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-(--cell-chrome-pad) hover:scale-105"
                 >
                     <svg
                         xmlns="http://www.w3.org/2000/svg"
                         fill="currentColor"
                         viewBox="0 0 24 24"
-                        className="w-6 h-6 text-gray-800"
+                        className="w-(--cell-chrome-glyph) h-(--cell-chrome-glyph) text-gray-800"
                     >
                         <path d="M14 2H6C4.9 2 4 2.9 4 4v16c0 1.1 0.9 2 2 2h12c1.1 0 2-0.9 2-2V8l-6-6zm1 7V3.5L18.5 9H15z" />
                     </svg>
@@ -265,7 +274,7 @@ export const OpenFolder = (
             onClickCapture={onUsed}
             className={cn(
             "relative inline-flex group/file-action",
-            !buttonVariant && (overlayClassName ?? "absolute bottom-3 left-12 opacity-0 transition-opacity duration-300 group-hover:opacity-100"),
+            !buttonVariant && (overlayClassName ?? "absolute bottom-(--cell-chrome-fan) left-[calc(var(--cell-chrome-fan-x)+var(--cell-chrome-step))] opacity-0 transition-opacity duration-300 group-hover:opacity-100"),
             !buttonVariant && menuOpen && "opacity-100 pointer-events-auto",
         )}>
             <FindButton
@@ -284,7 +293,7 @@ export const OpenFolder = (
         onClickCapture={onUsed}
         className={cn(
         "relative inline-flex group/file-action",
-        !buttonVariant && (overlayClassName ?? "absolute bottom-3 left-12 opacity-0 transition-opacity duration-300 group-hover:opacity-100"),
+        !buttonVariant && (overlayClassName ?? "absolute bottom-(--cell-chrome-fan) left-[calc(var(--cell-chrome-fan-x)+var(--cell-chrome-step))] opacity-0 transition-opacity duration-300 group-hover:opacity-100"),
         !buttonVariant && menuOpen && "opacity-100 pointer-events-auto",
     )}>
         {buttonVariant ?
@@ -302,13 +311,13 @@ export const OpenFolder = (
             <button
                 title="Show file in folder"
                 onClick={() => handleClick()}
-                className="rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-2 hover:scale-105"
+                className="rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-(--cell-chrome-pad) hover:scale-105"
             >
                 <svg
                     xmlns="http://www.w3.org/2000/svg"
                     fill="currentColor"
                     viewBox="0 0 24 24"
-                    className="w-6 h-6 text-gray-800"
+                    className="w-(--cell-chrome-glyph) h-(--cell-chrome-glyph) text-gray-800"
                 >
                     <path d="M10 4H4c-1.1 0-2 0.9-2 2v12c0 1.1 0.9 2 2 2h16c1.1 0 2-0.9 2-2V8c0-1.1-0.9-2-2-2h-8l-2-2z" />
                 </svg>
@@ -357,21 +366,29 @@ export const ShareButton = (
 }
 
 // Slot geometry of the 2x2 file action corner, in order [corner, above,
-// beside, diagonal]. Buttons are 2.5rem circles and every gap is 0.25rem;
-// each anchor matches the button inset convention of the surface it serves
+// beside, diagonal]. Buttons are 2.5rem circles and every gap is 0.25rem —
+// which is the 2.75rem `--cell-chrome-step` the offsets below are built from —
+// and each anchor matches the button inset convention of the surface it serves
 // (the search grid's bottom-left, the gallery filmstrip's bottom-right).
+//
+// EVERY OFFSET RIDES THE RAMP (D11), because the fanout is the piece of chrome
+// that fails LOUDLY at small cells: it opens two buttons up and two across, so
+// on a 140px card an unscaled square reaches the opposite corners and covers
+// the buttons already sitting in them. Scaling the step with the button is
+// what keeps the square a square, which is why each offset is computed from
+// the step rather than restated as a number.
 const CLUSTER_SLOTS = {
     "bottom-left": [
-        "absolute bottom-3 left-1",
-        "absolute bottom-14 left-1",
-        "absolute bottom-3 left-12",
-        "absolute bottom-14 left-12",
+        "absolute bottom-(--cell-chrome-fan) left-(--cell-chrome-fan-x)",
+        "absolute bottom-[calc(var(--cell-chrome-fan)+var(--cell-chrome-step))] left-(--cell-chrome-fan-x)",
+        "absolute bottom-(--cell-chrome-fan) left-[calc(var(--cell-chrome-fan-x)+var(--cell-chrome-step))]",
+        "absolute bottom-[calc(var(--cell-chrome-fan)+var(--cell-chrome-step))] left-[calc(var(--cell-chrome-fan-x)+var(--cell-chrome-step))]",
     ],
     "bottom-right": [
-        "absolute bottom-2 right-2",
-        "absolute bottom-13 right-2",
-        "absolute bottom-2 right-13",
-        "absolute bottom-13 right-13",
+        "absolute bottom-(--cell-chrome-inset) right-(--cell-chrome-inset)",
+        "absolute bottom-[calc(var(--cell-chrome-inset)+var(--cell-chrome-step))] right-(--cell-chrome-inset)",
+        "absolute bottom-(--cell-chrome-inset) right-[calc(var(--cell-chrome-inset)+var(--cell-chrome-step))]",
+        "absolute bottom-[calc(var(--cell-chrome-inset)+var(--cell-chrome-step))] right-[calc(var(--cell-chrome-inset)+var(--cell-chrome-step))]",
     ],
 } as const
 
@@ -458,12 +475,12 @@ export const FileActionCluster = ({ sha256, path, anchor = "bottom-left" }: {
             aria-busy={busy}
             disabled={busyVerb !== null}
             className={cn(
-                "rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-2 hover:scale-105",
+                "rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-(--cell-chrome-pad) hover:scale-105",
                 position(verb),
                 busy && "opacity-100 pointer-events-auto cursor-progress",
             )}
         >
-            <Icon className={cn("w-6 h-6 text-gray-800", busy && "animate-spin")} />
+            <Icon className={cn("w-(--cell-chrome-glyph) h-(--cell-chrome-glyph) text-gray-800", busy && "animate-spin")} />
         </button>
     }
 

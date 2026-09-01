@@ -197,6 +197,57 @@
   }
 }
 
+/* GRID CELL CHROME SCALING (docs/grid-hover-animate-implementation.md D11).
+
+   The corner buttons, the file-action fanout and their insets are sized for a
+   card several hundred pixels wide. At the size slider's minimum (140px) the
+   same 40px circles at 8px insets are most of the picture, and the fanout
+   opens straight across the other three corners. So they ride ONE ramp over
+   the cell width the grid publishes as `--cell-px` (app/search/ResultGrid.tsx,
+   written on the row container so it inherits into every card).
+
+   ONE RAMP, THREE CONSUMED VALUES. `--cell-chrome-t` is the normalized
+   position between the slider's minimum and a cell wide enough to want no
+   scaling at all (140 -> 240px); the scale and the inset are linear in it,
+   with their own endpoints because they are not proportional to each other —
+   the inset has to fall further and faster than the button, or the buttons
+   crowd the frame's edge instead of the picture's middle. Everything else
+   about the chrome (the hover fades, the focus-visible rings, the slot ORDER)
+   is untouched.
+
+   The 0.72 floor is where the 40px button lands at 28.8px, comfortably over
+   the 18px minimum hit target the acceptance criteria set.
+
+   DECLARED TWICE, and both are load-bearing. A custom property's `var()`
+   references resolve against the element the DECLARATION applies to, not the
+   one that uses the result — so a single `:root` declaration would resolve
+   `--cell-px` to its fallback everywhere, whatever the row container carries.
+   The `:root` copy is what gives every OTHER surface that mounts these buttons
+   (the filmstrip, the pinboard's pins, the gallery) exactly today's numbers,
+   and the per-card copy is what actually ramps. */
+:root,
+[data-cell-hover-root] {
+  --cell-chrome-t: clamp(0, calc((var(--cell-px, 400) - 140) / 100), 1);
+  --cell-chrome-scale: calc(0.72 + 0.28 * var(--cell-chrome-t));
+  --cell-chrome-inset: calc(2px + 6px * var(--cell-chrome-t));
+  /* The white pill's own three dimensions. At t = 1 they are exactly the
+     `p-2`, `w-6 h-6` and `h-10 w-10` the buttons were written with, which is
+     why every surface that does not publish a `--cell-px` keeps today's
+     chrome to the pixel. */
+  --cell-chrome-pad: calc(0.5rem * var(--cell-chrome-scale));
+  --cell-chrome-glyph: calc(1.5rem * var(--cell-chrome-scale));
+  --cell-chrome-box: calc(2.5rem * var(--cell-chrome-scale));
+  /* The fanout's step between slots: one button plus the 0.25rem gap the
+     cluster's slot table is built on, so the square stays a square as it
+     shrinks (components/imageButtons.tsx CLUSTER_SLOTS). */
+  --cell-chrome-step: calc(2.75rem * var(--cell-chrome-scale));
+  /* The fanout's corner anchor. Tighter than the other three corners' inset
+     and asymmetric between its axes, exactly as the `bottom-3 left-1` it
+     replaces was — it is scaled here, not re-designed. */
+  --cell-chrome-fan: calc(0.75rem * var(--cell-chrome-scale));
+  --cell-chrome-fan-x: calc(0.25rem * var(--cell-chrome-scale));
+}
+
 /* react-grid-layout hydration settling: at hydration, items switch from
    their SSR percentage top/left positions to px transforms, and RGL's
    stylesheet transitions animate that switch as a 200ms fly-in from the

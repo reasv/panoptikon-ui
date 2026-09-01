@@ -25,7 +25,8 @@
     "test:artifactshare": "node --experimental-strip-types scripts/artifactShare.test.mjs",
     "test:scrollmode": "node --experimental-strip-types scripts/scrollmode.test.mjs",
     "test:gridcells": "node --experimental-strip-types scripts/gridcells.test.mjs",
-    "test:playback": "node --experimental-strip-types scripts/playback.test.mjs"
+    "test:playback": "node --experimental-strip-types scripts/playback.test.mjs",
+    "test:hoveranimate": "node --experimental-strip-types scripts/hoveranimate.test.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.1.2",

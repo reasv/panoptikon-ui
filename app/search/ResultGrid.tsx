@@ -30,8 +30,10 @@ import {
     imageBoxHeightForCellWidth,
     rowHeightForCellWidth,
 } from "@/lib/gridCellSize"
-import { tierForCellWidth } from "@/lib/thumbnailTier"
+import { isSmallCell, tierForCellWidth } from "@/lib/thumbnailTier"
 import { useDevicePixelRatio } from "@/hooks/useDevicePixelRatio"
+import { useAnimateMode } from "@/hooks/useAnimateMode"
+import { trackHoverPointer } from "@/lib/state/animatedPlayback"
 import { useAnimatedFloor } from "@/lib/useClientConfig"
 
 // md, lg, xl, 2xl, 4xl, 5xl — the Tailwind breakpoints used by the result grid
@@ -305,12 +307,43 @@ export function ResultGrid({
     // decides against are the server's and identical for every card, so they
     // are read here and passed down rather than subscribed to per cell.
     const animatedFloor = useAnimatedFloor()
+    // ONE ANSWER FOR THE WHOLE GRID again, and the last of the three the cards
+    // are handed: which range this grid's cells fall in decides both the
+    // animate mode the user's preference resolves to (D2) and which of a
+    // video's two thumbnails a cell asks for (D9).
+    const animateMode = useAnimateMode(cellWidth)
+    const smallCell = isSmallCell(cellWidth)
+    // The pointer tracking the hover arming is written in terms of, bound for
+    // as long as this grid is mounted rather than by the cells (which mount by
+    // the hundred, and would each bind it a moment too late to answer the
+    // first `pointerenter` they get). One listener, refcounted with the
+    // filmstrip's — see trackHoverPointer.
+    useEffect(() => trackHoverPointer(), [])
     const imageHeightPx = explicitSize && cellWidth > 0
         ? imageBoxHeightForCellWidth(cellWidth)
         : undefined
     const rowEstimate = imageHeightPx !== undefined
         ? rowHeightForCellWidth(cellWidth)
         : autoLayout.rowEstimate
+    // THE CELL WIDTH, PUBLISHED TO CSS (B1). The overlay chrome inside every
+    // card scales with it — a 40px button pair and 8px corner insets are
+    // right on a 400px cell and swallow a 150px one — and the ramp that does
+    // it is a `clamp()` over this custom property (app/globals.css, the
+    // "grid cell chrome" block). Written on the row container, whose
+    // descendants are every card, so one property write per layout change
+    // reaches all of them.
+    //
+    // A DOM WRITE RATHER THAN A PROP, and that is the whole reason it is CSS:
+    // handing the number down would re-render every visible card on every
+    // resize tick, to move a button by two pixels. No React state, no cell
+    // re-renders, and the value inherits into cards that mount later.
+    //
+    // A layout effect, so the chrome is at its final size in the same frame
+    // the cells first paint at a new width. Unitless, because the ramp does
+    // arithmetic on it.
+    useLayoutEffect(() => {
+        rowContainerRef.current?.style.setProperty("--cell-px", String(Math.round(cellWidth)))
+    }, [cellWidth])
     // Published for the size slider: the width seeds its thumb (so the first
     // drag off "auto" continues from what the user is looking at), and the
     // container width and column count are what let it compute the layout a
@@ -1159,6 +1192,16 @@ export function ResultGrid({
                                                 // renders that change nothing,
                                                 // so the memo still holds.
                                                 animatedFloor={animatedFloor}
+                                                // Two more stable primitives
+                                                // on the same rule as the
+                                                // tier: both move only when
+                                                // the cell crosses the small
+                                                // threshold or the user
+                                                // changes the preference, and
+                                                // the cards latch them at
+                                                // mount either way.
+                                                animateMode={animateMode}
+                                                smallCell={smallCell}
                                             />
                                         )
                                     })}
