@@ -151,22 +151,22 @@ export function SearchPageContent({ initialQuery, isRestrictedMode }:
  * grid as a scroll (the restore's programmatic one included), and that scroll's
  * own event replaces this value with the row-derived one.
  */
-function useDerivedVirtualPage({ scrollMode, scrollAnchor, k, galleryOpen }: {
+function useDerivedVirtualPage({ scrollMode, scrollAnchor, k, anchorIsPosition }: {
     scrollMode: boolean,
     scrollAnchor: number | null,
     k: number,
     /**
-     * The param's real meaning: NO grid is mounted to report scrolls, and
-     * the URL anchor IS the position — so the anchor write is the
-     * authoritative highlight trigger. Two states satisfy it: the gallery
-     * open (`gi !== null` — the gallery is mounted and the grid is not),
-     * and the maximized board (the P0 frozen host keeps the grid unmounted;
-     * the overlay strip is the only scroll surface, and its programmatic
-     * keep-in-view scrolls stand down rather than report — see
-     * VirtualizedHorizontalScroll's programmaticScrollRef — so nothing
-     * competes with the anchor).
+     * NO grid is mounted to report scrolls, and the URL anchor IS the
+     * position — so the anchor write is the authoritative highlight trigger.
+     *
+     * Two states satisfy it, and neither is "the gallery is open" as such:
+     * the gallery open (`gi !== null`, which unmounts the grid), and the
+     * maximized board (the P0 frozen host unmounts it too; the overlay
+     * strip's programmatic keep-in-view scrolls stand down rather than
+     * report — see VirtualizedHorizontalScroll's programmaticScrollRef — so
+     * nothing competes with the anchor).
      */
-    galleryOpen: boolean,
+    anchorIsPosition: boolean,
 }) {
     // Seeded on the FIRST render, from that render's anchor — the same moment
     // the `useState` initializer this replaces took its value. That is what
@@ -184,21 +184,19 @@ function useDerivedVirtualPage({ scrollMode, scrollAnchor, k, galleryOpen }: {
     // scrubber jump, a query reset) moves the grid, and the resulting scroll
     // reports the correct number itself.
     //
-    // WITH THE GALLERY OPEN that reasoning inverts, and the anchor becomes the
-    // only trigger there is: the grid is unmounted, so it can neither perform
-    // the scroll-stop rewrite the exclusion protects against nor report a
-    // number of its own — while the gallery's manual navigation (arrows,
-    // filmstrip, the advance chain) writes the anchor alongside `gi` on every
-    // step. That anchor IS the position, item for item, so `virtualPageOf` on
-    // it is exact rather than a row-quantized approximation, and the scrubber
-    // under the open gallery tracks a binge across the whole set instead of
-    // freezing on the page the gallery was opened at.
+    // UNDER `anchorIsPosition` that reasoning inverts and the anchor becomes
+    // the only trigger there is: no grid means neither the scroll-stop rewrite
+    // the exclusion protects against nor a number of its own, while the
+    // gallery's manual navigation (arrows, filmstrip, the advance chain) writes
+    // the anchor on every step. That anchor IS the position, item for item, so
+    // `virtualPageOf` on it is exact rather than row-quantized — which is what
+    // lets the scrubber track a binge across the whole set.
     //
-    // Neither TRANSITION of `galleryOpen` re-derives, and both exclusions are
-    // load-bearing. Opening is the pullback case above seen from one commit
-    // later: the anchor standing in the URL is the grid's own scroll-stop
-    // write, and adopting it would flip the bar back a page the moment the user
-    // opens an item. Closing needs no run either — the live tracking above has
+    // Neither TRANSITION of the flag re-derives, and both exclusions are
+    // load-bearing. Turning ON is the pullback case above one commit later: the
+    // anchor standing in the URL is the grid's own scroll-stop write, and
+    // adopting it would flip the bar back a page the moment the user opens an
+    // item. Turning OFF needs no run either — the live tracking above has
     // already put the bar where the gallery left it, and the grid's restore
     // scroll reports the row-derived number a frame later.
     //
@@ -212,22 +210,34 @@ function useDerivedVirtualPage({ scrollMode, scrollAnchor, k, galleryOpen }: {
     // would immediately overwrite it — the bar sitting a page low until the
     // next scroll, which is the bug the grid-side trigger exists to remove.
     //
-    // The anchor BECOMING NULL is a trigger — the restore effect clears a stale
-    // anchor without scrolling anything (there is nowhere to scroll to), so no
-    // event would ever walk the bar back from the dead page the stale anchor
-    // placed it on. Only the null transition: a non-null self-write is the
-    // scroll-stop pullback case excluded above.
-    const wasGalleryOpen = useRef(galleryOpen)
+    // The dep array is therefore three named triggers, not four raw values —
+    // the derived two are hoisted so it reads as what it means.
+    const wasAnchorPosition = useRef(anchorIsPosition)
+    /**
+     * The anchor BECOMING NULL, which is a trigger: the restore effect clears
+     * a stale anchor without scrolling anything (there is nowhere to scroll
+     * to), so no event would ever walk the bar back off the dead page that
+     * anchor put it on. Only the null transition — a non-null self-write is
+     * the scroll-stop pullback excluded above, which is why this is the
+     * boolean and not the value.
+     */
+    const anchorCleared = scrollAnchor === null
+    /**
+     * The anchor's VALUE, but only while it IS the position. Under a mounted
+     * grid it is a constant null, which is what keeps the grid's own
+     * scroll-stop writes out of the dep array entirely.
+     */
+    const trackedAnchor = anchorIsPosition ? scrollAnchor : null
     useEffect(() => {
-        const previouslyOpen = wasGalleryOpen.current
-        wasGalleryOpen.current = galleryOpen
+        const previously = wasAnchorPosition.current
+        wasAnchorPosition.current = anchorIsPosition
         if (!scrollMode) return
-        if (galleryOpen !== previouslyOpen) return
+        if (anchorIsPosition !== previously) return
         // A write of the number already held notifies nobody, exactly as the
         // `setDerivedPage` this replaces bailed out on an unchanged value.
         store.set(virtualPageOf(scrollAnchor ?? 0, k))
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [scrollMode, scrollAnchor === null, galleryOpen, galleryOpen ? scrollAnchor : null])
+    }, [scrollMode, anchorCleared, anchorIsPosition, trackedAnchor])
     return store
 }
 
@@ -505,8 +515,8 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     // maximize must stay the cheap in-instance transition it is today
     // (docs/maximized-pinboard-search-overlay-design.md §3). Only the render
     // branch below freezes: every other reader of `qIndex`/`itemCount` (the
-    // gallery's own clamp, useDerivedVirtualPage's `galleryOpen` — position
-    // semantics, not mount semantics) keeps tracking the live values. Not
+    // gallery's own clamp, useDerivedVirtualPage's `anchorIsPosition` —
+    // position semantics, not mount semantics) keeps tracking the live values. Not
     // maximized, the ternary reads the live value directly, so a restore
     // shows the right host in the same render with no wrong-host frame; the
     // effect only re-syncs the latch afterwards. State+effect rather than a
@@ -672,15 +682,12 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     const k = urlPageSize
     const [scrollAnchor, setScrollAnchor] = useGridScrollAnchor()
     // The pagination bar's highlight while the grid has not reported one — and,
-    // with the gallery open, for as long as it stays open (see the hook).
-    // `|| pinboardMaximized`: the flag means "no grid is mounted to report
-    // scrolls, and the anchor IS the position" — which the maximized board
-    // satisfies by construction (frozen host, grid unmounted), whatever `gi`
-    // is. This is what makes an overlay scrubber click with nothing selected
-    // (`gi` null, anchor-only write) move the highlight at all: the strip's
-    // keep-in-view scroll is programmatic and stands down (see
-    // VirtualizedHorizontalScroll), so the anchor write here is the sole —
-    // and exact — source.
+    // under `anchorIsPosition`, for as long as that holds (see the hook).
+    // `|| pinboardMaximized` is why the flag is not called `galleryOpen`: the
+    // maximized board satisfies it by construction (frozen host, grid
+    // unmounted) whatever `gi` is, and that is what makes an overlay scrubber
+    // click with nothing selected (`gi` null, anchor-only write) move the
+    // highlight at all.
     //
     // A BOX, not a state value: the number moves every k items scrolled, and
     // the only thing that needs to see it move is the pagination bar itself
@@ -692,7 +699,7 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
         scrollMode,
         scrollAnchor,
         k,
-        galleryOpen: qIndex !== null || pinboardMaximized,
+        anchorIsPosition: qIndex !== null || pinboardMaximized,
     })
 
     // The two mount-time URL corrections, mutually exclusive by construction —
@@ -1526,6 +1533,89 @@ export function ResultGrid({
         element.addEventListener('scroll', onScroll, { passive: true })
         return () => element.removeEventListener('scroll', onScroll)
     }, [savedScrollOffsetRef])
+
+    // ================= ANCHOR BOOKKEEPING: THE MAP =========================
+    //
+    // Ten pieces of state below answer versions of "where is the grid?", and
+    // the failures they exist to prevent are all one piece speaking for
+    // another's job. Read this before touching any of them.
+    //
+    // THE THREE ANCHOR NAMES, which are not synonyms:
+    //   `scrollAnchor`      — the URL's answer. AUTHORITATIVE, shareable, and
+    //                         layout-independent (an item index).
+    //   `anchorItem`        — the grid's own working copy of the item it is
+    //                         parked on, in the CURRENT layout. What the
+    //                         re-assert effects divide by `columns`.
+    //   `lastWrittenAnchor` — not a position at all: the echo filter. "The
+    //                         last anchor value this component is accountable
+    //                         for", so an arriving `scrollAnchor` equal to it
+    //                         is our own write coming back through nuqs rather
+    //                         than a back/forward or a query reset.
+    //
+    // EACH PIECE — single writer, then readers:
+    //   `scrollAnchor`      W: the scroll-stop write, the stale-anchor drop,
+    //                          and anything outside this component (history,
+    //                          a mode switch, the scrubber).
+    //                       R: the restore effect, the external-anchor effect,
+    //                          the geometry layout effect, chunk warming.
+    //   `anchorItem`        W: the tracker effect (steady state), the geometry
+    //                          layout effect (re-base), the external-anchor
+    //                          effect (the position it just scrolled to).
+    //                       R: the column-change and row-height re-asserts,
+    //                          restoreHasLanded.
+    //   `lastWrittenAnchor` W: scroll-stop, restore, external-anchor, and the
+    //                          geometry effect (which parks the SENTINEL).
+    //                       R: scroll-stop and the external-anchor effect.
+    //   `restorePending`    W: raised by the geometry layout effect, cleared
+    //                          by the tracker once restoreHasLanded.
+    //                       R: scroll-stop (say nothing) and the tracker
+    //                          (read nothing). Nothing else.
+    //   `prevColumns`       W+R: the column-change effect only — the tracker
+    //                          reads it but must NOT rely on it (see there).
+    //   `prevGeometry`      W+R: the geometry layout effect only.
+    //   `restoredScroll`    W: the restore effect, once. R: the external-
+    //                          anchor effect and chunk warming, as "the
+    //                          restore has happened".
+    //   `highlightedRow`    W+R: inside the scroll listener only — a closure
+    //                          variable, deliberately not a ref, so the
+    //                          scroll-stop reuses the SAME reading the
+    //                          highlight came from rather than re-reading the
+    //                          virtualizer 350ms later.
+    //   `lastDerivedPage`   W+R: the scroll listener and the page-size relabel
+    //                          effect. Makes the host fire on a page CROSSING
+    //                          rather than per scroll frame.
+    //   `listenerData`      W: a commit-time effect. R: the scroll listener
+    //                          only — it exists so k and the counts can move
+    //                          WITHOUT re-subscribing the listener (and
+    //                          dropping its 350ms timer with it).
+    //
+    // THE RESTORE LIFECYCLE, in order:
+    //   1. a layout change (scroll/columns/rowEstimate) is seen by the
+    //      geometry LAYOUT effect. It re-bases `anchorItem` from the URL,
+    //      parks `lastWrittenAnchor` on the sentinel, raises `restorePending`.
+    //      It does not scroll.
+    //   2. the window: scroll-stop writes nothing, the tracker reads nothing.
+    //      Anything on screen belongs to the layout that has been left.
+    //   3. someone scrolls the grid — the external-anchor effect (the anchor
+    //      no longer matching the sentinel), or the column/row re-asserts.
+    //   4. the tracker sees the reading agree with `anchorItem` (or the grid
+    //      exhausted), clears `restorePending`, and resumes tracking.
+    //
+    // EFFECT DECLARATION ORDER IS LOAD-BEARING. React runs effects of one
+    // commit in declaration order, so:
+    //   - the geometry effect is a useLayoutEffect and must stay one: it has
+    //     to raise `restorePending` before ANY `useEffect` of this commit,
+    //     including the column-change effect that would otherwise re-assert a
+    //     stale `anchorItem`.
+    //   - the column-change effect must be declared BEFORE the tracker,
+    //     because it updates `prevColumns` — which is precisely why the
+    //     tracker's own `prevColumns` guard is already satisfied on the commit
+    //     a column change lands, and why the flag rather than that guard is
+    //     what closes the window.
+    //   - the restore effect must be declared BEFORE the external-anchor
+    //     effect: it sets `restoredScroll`, which the latter refuses to run
+    //     without.
+    // =======================================================================
 
     // URL scroll anchor: the first item of the topmost visible row, so the
     // position survives refreshes and can be shared (see useGridScrollAnchor)
