@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react"
 import { LayoutGrid } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Slider } from "@/components/ui/slider"
@@ -20,6 +21,9 @@ import {
     columnsForCellWidth,
 } from "@/lib/gridCellSize"
 import { MAX_CELL_WIDTH, MIN_CELL_WIDTH } from "@/lib/searchLimits"
+import { SMALL_CELL_THRESHOLD_PX, type AnimateMode } from "@/lib/thumbnailTier"
+import { cellRange, setAnimateSlot, type CellRange } from "@/lib/state/animatePref"
+import { useAnimateModeForRange } from "@/hooks/useAnimateMode"
 import { useGridCellSize } from "@/lib/state/cellSize"
 import { useCellSizePageLock } from "@/lib/state/cellSizePageLock"
 import { EMPTY_GRID_METRICS, type GridMetricsStore } from "@/lib/state/gridMetricsBox"
@@ -74,6 +78,13 @@ export function GridCellSizeControl({ metricsStore }: {
     )
     const auto = cellSize === null
     const effective = clampCellWidth(cellSize ?? (metrics.cellWidth || DEFAULT_CELL_WIDTH))
+    // The animate toggle is bound to the range the grid is LAID OUT at (D4),
+    // taken from the committed width rather than from the thumb's live
+    // position: while a drag is in flight the cells on screen are still the
+    // old size, and a control that flipped ranges under the pointer would be
+    // describing a grid that does not exist yet.
+    const range = cellRange(effective)
+    const animateMode = useAnimateModeForRange(range)
     // The thumb's live position during a drag. Re-seeded whenever the value it
     // stands for moves underneath it — a commit landing, a switch back to
     // auto, or (in auto) the grid re-measuring after a resize.
@@ -168,6 +179,22 @@ export function GridCellSizeControl({ metricsStore }: {
                         aria-label="Keep page size when the cell size changes"
                     />
                 </div>
+                <div className="mt-4 flex items-center justify-between">
+                    <div className="pr-4">
+                        <Label className="text-sm">Animate</Label>
+                        {/* WHICH RANGE this writes is the one thing the
+                            control has to say out loud (D4): the same popover
+                            shows a different value once the slider crosses the
+                            threshold, and without this that reads as the
+                            toggle having flipped itself. */}
+                        <p className="text-xs text-muted-foreground">
+                            {range === "below"
+                                ? `For cells under ${SMALL_CELL_THRESHOLD_PX}px wide. Larger cells keep their own setting.`
+                                : `For cells ${SMALL_CELL_THRESHOLD_PX}px wide and over. Smaller cells keep their own setting.`}
+                        </p>
+                    </div>
+                    <AnimateModeSegment mode={animateMode} range={range} />
+                </div>
                 {/* The only way back to the automatic policy: an explicit cell
                     size REPLACES it rather than adjusting it, so "auto" is not
                     a position on the track. Page size is deliberately left
@@ -185,6 +212,52 @@ export function GridCellSizeControl({ metricsStore }: {
                 </Button>
             </PopoverContent>
         </Popover>
+    )
+}
+
+/**
+ * The animate toggle (D4): two segments showing the EFFECTIVE mode for the
+ * range on screen, and writing only that range's slot.
+ *
+ * Not a `Switch` like its neighbour, because the two states are named
+ * behaviours rather than an on/off of one: "on hover" is not the absence of
+ * "always", and a switch labelled with either one reads as the wrong question.
+ * `radiogroup`/`radio` rather than a listbox for the same reason a segmented
+ * control is not a select — both options are visible and one is chosen.
+ *
+ * The write goes STRAIGHT to the preference box (lib/state/animatePref.ts):
+ * nothing here touches the URL or the creation-defaults layer, which is the
+ * rule the preference exists under (D3).
+ */
+function AnimateModeSegment({ mode, range }: {
+    mode: AnimateMode
+    range: CellRange
+}) {
+    const segment = (value: AnimateMode, label: string) => (
+        <button
+            type="button"
+            role="radio"
+            aria-checked={mode === value}
+            onClick={() => setAnimateSlot(range, value === "always")}
+            className={cn(
+                "rounded-sm px-2 py-1 text-xs transition-colors",
+                mode === value
+                    ? "bg-background text-foreground shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+            )}
+        >
+            {label}
+        </button>
+    )
+    return (
+        <div
+            role="radiogroup"
+            aria-label="When animated results play"
+            className="flex shrink-0 items-center gap-0.5 rounded-md bg-muted p-0.5"
+        >
+            {segment("always", "Always")}
+            {segment("hover", "On hover")}
+        </div>
     )
 }
 
