@@ -30,7 +30,7 @@
 //     reconcile started itself and ran past the cap forever (measured: 32
 //     visible cells, 32 playing). Dropping `autoplay` closed that route; the
 //     listener stays because a cap that anything can walk around is not a cap.
-//   * ONE bubble-phase `pointermove`, which records where the pointer is and
+//   * ONE capture-phase `pointermove`, which records where the pointer is and
 //     when it last actually moved. It is what the HOVER ARMING below asks its
 //     question of (see canArmHover), and it is the whole standing cost of that
 //     feature on a page nobody hovers: a comparison and two writes per event.
@@ -703,9 +703,14 @@ function bindDocumentListeners(): void {
   document.addEventListener("scroll", onScroll, { capture: true, passive: true })
   document.addEventListener("play", onPlay, { capture: true, passive: true })
   document.addEventListener("pause", onPause, { capture: true, passive: true })
-  // `pointermove` needs no capture (it bubbles), and is listed here so the
-  // whole set has one lifetime. See onPointerMove for what it costs.
-  document.addEventListener("pointermove", onPointerMove, { passive: true })
+  // `pointermove` on the same terms, and capture is not merely for symmetry
+  // (§A3): the listener has to see the move BEFORE anything in the tree can
+  // stop it propagating — a card that swallowed pointer events would otherwise
+  // hide from the arming rule exactly the moves that happen over cards.
+  document.addEventListener("pointermove", onPointerMove, {
+    capture: true,
+    passive: true,
+  })
   listenersBound = true
 }
 
@@ -723,7 +728,12 @@ function maybeTeardown(): void {
     document.removeEventListener("scroll", onScroll, { capture: true })
     document.removeEventListener("play", onPlay, { capture: true })
     document.removeEventListener("pause", onPause, { capture: true })
-    document.removeEventListener("pointermove", onPointerMove)
+    // The same options it was bound with: a capture listener is a different
+    // registration from a bubble one, and removing it without them leaves it
+    // on the document for the life of the page.
+    document.removeEventListener("pointermove", onPointerMove, {
+      capture: true,
+    })
     listenersBound = false
   }
   // Whoever holds the slot is told to stop before the state goes: the cells
