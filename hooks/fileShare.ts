@@ -76,7 +76,7 @@ export function useFileShareRunner() {
   // full useFileOpenActions, whose open/reveal mutations this hook never uses.
   // PinBoardCtx renders once PER PIN and already holds its own
   // useFileOpenActions, so a 200-pin board would otherwise instantiate 200
-  // duplicate mutation pairs (§FIX 11).
+  // duplicate mutation pairs.
   const pairing = useRelayPairing()
   const { mutateAsync: copyOnServer } = $api.useMutation("post", "/api/open/clipboard/{sha256}")
 
@@ -85,12 +85,12 @@ export function useFileShareRunner() {
 
   // filename + size ride the relay action body; path is the mapping hint; the
   // resolved FULL sha256 is what the relay payload must carry (the pinboard
-  // passes only a 10-char prefix — §FIX 1). Any value the caller passed wins,
-  // otherwise one item fetch fills the gaps — served from the TanStack cache
-  // that useFileOpenActions' getPath shares, so a click costs at most one
-  // NAS-backed stat round trip (§FIX 9). size is left undefined when unknown
-  // rather than coerced to 0, so the relay-eligibility gate can disqualify a
-  // copy whose size the relay would hash/size-check-fail on (§FIX 4).
+  // passes only a 10-char prefix). Any value the caller passed wins, otherwise
+  // one item fetch fills the gaps — served from the TanStack cache that
+  // useFileOpenActions' getPath shares, so a click costs at most one NAS-backed
+  // stat round trip. size is left undefined when unknown rather than coerced to
+  // 0, so the relay-eligibility gate can disqualify a copy whose size the relay
+  // would hash/size-check-fail on.
   const resolveMeta = async (
     { sha256, path, filename, size }: ShareFileRef
   ): Promise<ShareMeta> => {
@@ -111,7 +111,7 @@ export function useFileShareRunner() {
       path: merged.path,
       // Over-long names are a hard 400 at the relay (255 BYTES ~ 85 CJK
       // characters); its own cache sanitizer truncates to the same ceiling
-      // anyway, so pre-truncating costs nothing (§FIX 7).
+      // anyway, so pre-truncating costs nothing.
       filename: truncateShareFilename(merged.filename || downloadFileName(merged.path, sha256)),
       size: merged.size,
       sha256: merged.sha256,
@@ -120,10 +120,10 @@ export function useFileShareRunner() {
 
   // Resolves the filename lazily (only on invocation, never per render) so the
   // saved file keeps its real name and extension even where the caller passed
-  // no path — the pinboard's "Download original" (§FIX 5). getFileURL keeps
-  // using the possibly-prefix sha256; the server resolves it. `meta` is passed
-  // in on every path that already resolved it, so one invocation never fetches
-  // the item twice.
+  // no path — the pinboard's "Download original". getFileURL keeps using the
+  // possibly-prefix sha256; the server resolves it. `meta` is passed in on
+  // every path that already resolved it, so one invocation never fetches the
+  // item twice.
   const runDownload = async (file: ShareFileRef, meta?: ShareMeta) => {
     const resolved = meta ?? await resolveMeta(file)
     downloadURL(getFileURL(query, "file", "sha256", file.sha256), resolved.filename)
@@ -140,10 +140,10 @@ export function useFileShareRunner() {
     // The progress toast is created LAZILY — on the materializing phase, or on
     // the first upload progress event — so an instant mapped/cache-hit copy
     // (share resolves without ever reporting either) goes straight to the
-    // success toast and never flashes "Copying…" (§FIX 7 of the previous
-    // round). One handle, updated in place then dismissed and replaced by a
-    // single terminal toast (§0.11 / the PinboardExportMenu pattern) so phase
-    // toasts never stack. Every exit dismisses it if created.
+    // success toast and never flashes "Copying…". One handle, updated in place
+    // then dismissed and replaced by a single terminal toast (§0.11 / the
+    // PinboardExportMenu pattern) so phase toasts never stack. Every exit
+    // dismisses it if created.
     // Held in a container object, not a bare `let`: a variable assigned only
     // inside the callback closures is narrowed back to its `null` initializer
     // by the compiler's flow analysis, but an object property keeps its
@@ -157,7 +157,7 @@ export function useFileShareRunner() {
       await relay.share(relayFile, {
         // The relay has to materialize the file: a full download of the
         // original comes first and reports nothing, so say so now rather than
-        // leaving the UI silent for the entire first leg (§FIX 1a).
+        // leaving the UI silent for the entire first leg.
         onPhase: () => show("Preparing… (reading the file)"),
         onProgress: fraction => show(`${Math.round(fraction * 100)}%`),
       })
@@ -191,15 +191,15 @@ export function useFileShareRunner() {
       // The server hedges to "Attempting to copy to clipboard: …" when a
       // custom clipboard_command owns the outcome — it spawns the child and
       // never observes its exit. Repeating its own words keeps the UI from
-      // asserting a completed copy the server did not confirm (§FIX 13).
+      // asserting a completed copy the server did not confirm.
       toast({ title: response?.message || `Copied ${name} to clipboard`, duration: 2500 })
     } catch (error) {
       toast({ title: "Failed to copy file", description: describeError(error), variant: "destructive", duration: 5000 })
     }
   }
 
-  // FIX 1 + FIX 3 + FIX 4 unified relay-eligibility gate. The relay
-  // hash-verifies and size-checks the upload and rejects an EMPTY path before
+  // The unified relay-eligibility gate. The relay hash-verifies and
+  // size-checks the upload and rejects an EMPTY path before
   // anything else, so a relay copy is only attempted when resolveMeta yields
   // all three of: a full 64-hex sha256 (the pinboard passes a prefix), a known
   // numeric size, and a non-empty server path (an item whose files are all
@@ -222,7 +222,7 @@ export function useFileShareRunner() {
     if (canCopyServer) { await copyViaServer(file, meta); return }
     // The button said "Copy file" and this click will produce a file in
     // Downloads instead — a materially different outcome, so it is announced
-    // rather than silently substituted (§FIX 6).
+    // rather than silently substituted.
     if (primaryVerb === "copy") {
       toast({ title: "Can't copy this file — downloading instead", duration: 3500 })
     }
@@ -232,7 +232,7 @@ export function useFileShareRunner() {
   // resolveMeta lives OUTSIDE the copy paths' own try/catch and fetchClient
   // rejects on a network failure or an abort, so both entry points wrap
   // everything: an unhandled rejection here means no toast, no download and a
-  // button that looks dead (§FIX 5).
+  // button that looks dead.
   const execute = async (file: ShareFileRef) => {
     try {
       await runExecute(file)
@@ -267,9 +267,9 @@ export function useFileShareRunner() {
  * original; a user who clicks again because nothing looks like it happened
  * would start a SECOND full download and upload under a second action_id. The
  * ref is the guard (synchronous, so two clicks in the same tick cannot both
- * pass); the state is only what the button renders (§FIX 1b). It is PER
- * BUTTON, which is why it lives here and not in the runner — a shared guard
- * would let one card's copy disable every other card's.
+ * pass); the state is only what the button renders. It is PER BUTTON, which is
+ * why it lives here and not in the runner — a shared guard would let one card's
+ * copy disable every other card's.
  *
  * Per-row components must not use this: they call the host's `shareFile` /
  * `downloadFile` and keep their own busy state (lib/state/cellActions.ts).

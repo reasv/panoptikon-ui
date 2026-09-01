@@ -28,6 +28,8 @@
  *
  * Import-free on purpose, like the module it mirrors.
  */
+import { createValueBox, type ValueBox } from "./valueBox"
+
 export interface GridMetrics {
   /** The laid-out cell width in CSS pixels; 0 until the grid measures. */
   cellWidth: number
@@ -37,19 +39,14 @@ export interface GridMetrics {
   containerWidth: number
 }
 
-export interface GridMetricsStore {
-  /**
-   * The current metrics. STABLE BETWEEN WRITES — the same object identity
-   * comes back until a field actually changes, which is what makes it a valid
-   * `useSyncExternalStore` snapshot (a fresh object per read would re-render
-   * its reader forever).
-   */
-  get(): GridMetrics
-  /** Publish a measurement. A write of the values already held notifies nobody. */
-  set(next: GridMetrics): void
-  /** Subscribe; the returned function unsubscribes. */
-  subscribe(onChange: () => void): () => void
-}
+/**
+ * A read/write box of measurements, with subscribers.
+ *
+ * Named rather than an alias in the call sites for the same reason
+ * DerivedPageStore is: what it holds and when it notifies is the contract the
+ * slider depends on; `ValueBox<GridMetrics>` is only how it is built.
+ */
+export type GridMetricsStore = ValueBox<GridMetrics>
 
 /** What a control mounted without a grid behind it reads, and the SSR value. */
 export const EMPTY_GRID_METRICS: GridMetrics = {
@@ -58,33 +55,21 @@ export const EMPTY_GRID_METRICS: GridMetrics = {
   containerWidth: 0,
 }
 
+/**
+ * The mechanism is lib/state/valueBox.ts. The CUSTOM equality is the whole
+ * reason this box needs one: the grid publishes a freshly built object on
+ * every measurement, so `Object.is` would treat every resize tick — including
+ * the ones that measured the identical three numbers — as a change and wake
+ * the slider for it. Comparing the fields is what keeps `get()`'s identity
+ * stable between real measurements, which is what makes it a valid
+ * `useSyncExternalStore` snapshot.
+ */
 export function createGridMetricsStore(
   initial: GridMetrics = EMPTY_GRID_METRICS
 ): GridMetricsStore {
-  let metrics = initial
-  const listeners = new Set<() => void>()
-  return {
-    get: () => metrics,
-    set: (next: GridMetrics) => {
-      if (
-        next.cellWidth === metrics.cellWidth &&
-        next.columns === metrics.columns &&
-        next.containerWidth === metrics.containerWidth
-      ) {
-        return
-      }
-      metrics = next
-      // Iterated over a copy: a listener is free to unsubscribe on its own
-      // notification (React does, when the subscribing component unmounts),
-      // and mutating the set under its own iteration is how that turns into a
-      // missed notification for whoever came after it.
-      for (const listener of [...listeners]) listener()
-    },
-    subscribe: (onChange: () => void) => {
-      listeners.add(onChange)
-      return () => {
-        listeners.delete(onChange)
-      }
-    },
-  }
+  return createValueBox(initial, (a, b) =>
+    a.cellWidth === b.cellWidth &&
+    a.columns === b.columns &&
+    a.containerWidth === b.containerWidth
+  )
 }

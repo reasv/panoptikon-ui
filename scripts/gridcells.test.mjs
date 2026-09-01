@@ -1,6 +1,7 @@
-// Assertions for the grid's rendition-tier choice (lib/thumbnailTier.ts) and
-// the cell-size slider's arithmetic (lib/gridCellSize.ts), plus the URL the
-// two feed (lib/utils.ts getFileURL). The contracts are
+// Assertions for the grid's rendition-tier choice (lib/thumbnailTier.ts), the
+// cell-size slider's arithmetic (lib/gridCellSize.ts) and the pin button's
+// record algebra (lib/pinboardPlace.ts togglePinRecords), plus the URL the
+// first two feed (lib/utils.ts getFileURL). The contracts are
 // docs/grid-scroll-performance-implementation.md §2 (tier thresholds, the
 // extreme-aspect rule, the animated raw floor and the <img>-vs-<video>
 // decision of §3 F6) and docs/search-scroll-mode-design.md §9 (the slider).
@@ -8,9 +9,10 @@
 //
 //   node --experimental-strip-types scripts/gridcells.test.mjs
 //
-// Both modules are import-free precisely so this can execute them: the
-// components that call them pull in React, next/image and nuqs, none of which
-// resolve outside a bundler. Exits non-zero on failure.
+// None of these modules import anything a bundler is needed for, which is
+// precisely what lets this execute them: the components that call them pull in
+// React, next/image and nuqs, none of which resolve outside one. Exits
+// non-zero on failure.
 
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
@@ -28,8 +30,6 @@ const {
 const {
   CELL_CHROME_PX,
   GRID_GAP_PX,
-  MAX_CELL_WIDTH,
-  MIN_CELL_WIDTH,
   cellWidthForColumns,
   clampCellWidth,
   coWrittenPageSize,
@@ -37,6 +37,12 @@ const {
   imageBoxHeightForCellWidth,
   rowHeightForCellWidth,
 } = await import("../lib/gridCellSize.ts")
+// The URL-domain bounds those helpers clamp into, from their single source.
+const { MAX_CELL_WIDTH, MIN_CELL_WIDTH } = await import("../lib/searchLimits.ts")
+// The pin button's record algebra, extracted out of CellActionsHost so the
+// five-string splice arithmetic below can be asserted at all.
+const { togglePinRecords } = await import("../lib/pinboardPlace.ts")
+const { V1_GRID, V2_GRID } = await import("../lib/pinboardGrid.ts")
 const { getFileURL } = await import("../lib/utils.ts")
 
 let all = true
@@ -420,6 +426,94 @@ console.log("\n== the co-write snaps to whole rows (design §4's row invariant) 
     coWrittenPageSize(10, 400, 200, 0) === 40
       && coWrittenPageSize(10, 400, 200, NaN) === 40
       && coWrittenPageSize(10, 400, 200, -3) === 40)
+}
+
+// ---- the pin button's record algebra ------------------------------------
+//
+// Pinboard records are a FLAT array of five strings per pin
+// ([sha256, x, y, w, hField]), so every removal is a splice of five at an
+// offset that is an index times five. That arithmetic used to live inline in
+// CellActionsHost with no way to reach it; these are the cases it can get
+// wrong, all of which corrupt the whole board rather than one pin.
+
+{
+  const sha = (n) => `${n}`.repeat(64).slice(0, 64)
+  const A = sha(1), B = sha(2), C = sha(3)
+  const rec = (s, x, y, w, h) =>
+    [s.slice(0, 10), `${x}`, `${y}`, `${w}`, `${h}`]
+  const board = [...rec(A, 0, 0, 5, 5), ...rec(B, 5, 0, 5, 5), ...rec(C, 0, 5, 5, 5)]
+  const opts = { galleryTrim: null }
+
+  check("unpinning the FIRST pin splices the right five fields",
+    togglePinRecords(board, V2_GRID, A, opts).join(",")
+      === [...rec(B, 5, 0, 5, 5), ...rec(C, 0, 5, 5, 5)].join(","),
+    togglePinRecords(board, V2_GRID, A, opts).join(","))
+
+  check("unpinning a MIDDLE pin leaves its neighbours intact",
+    togglePinRecords(board, V2_GRID, B, opts).join(",")
+      === [...rec(A, 0, 0, 5, 5), ...rec(C, 0, 5, 5, 5)].join(","),
+    togglePinRecords(board, V2_GRID, B, opts).join(","))
+
+  check("unpinning the LAST pin splices off the end",
+    togglePinRecords(board, V2_GRID, C, opts).join(",")
+      === [...rec(A, 0, 0, 5, 5), ...rec(B, 5, 0, 5, 5)].join(","),
+    togglePinRecords(board, V2_GRID, C, opts).join(","))
+
+  // The record stores a PREFIX, and the caller passes a full hash. Matching
+  // has to happen on the prefix at both ends or nothing is ever found pinned.
+  check("a full sha256 matches the stored prefix",
+    togglePinRecords(board, V2_GRID, A, opts).length === 10)
+
+  // Every record survives a toggle intact — a splice off by one would shift
+  // every following field by one position and scramble the board.
+  {
+    const out = togglePinRecords(board, V2_GRID, B, opts)
+    check("no record is left straddling a five-field boundary",
+      out.length % 5 === 0 && out[0] === A.slice(0, 10) && out[5] === C.slice(0, 10),
+      out.join(","))
+  }
+}
+
+{
+  const A = "a".repeat(64), B = "b".repeat(64)
+  const opts = { galleryTrim: null }
+  // Duplicates of one image are ordinary, so a board-bound unpin removes the
+  // record at its OWN offset rather than the first prefix match. The layout
+  // key's leading field is that offset.
+  const dupes = [
+    "aaaaaaaaaa", "0", "0", "5", "5",
+    "aaaaaaaaaa", "5", "0", "5", "5",
+    "aaaaaaaaaa", "0", "5", "5", "5",
+  ]
+  const out = togglePinRecords(dupes, V2_GRID, A, { ...opts, layoutKey: "5-x" })
+  check("a layout key removes THAT copy, not the first prefix match",
+    out.length === 10 && out[1] === "0" && out[6] === "0" && out[7] === "5",
+    out.join(","))
+  check("without a layout key the FIRST copy goes",
+    togglePinRecords(dupes, V2_GRID, A, opts).slice(0, 5).join(",")
+      === "aaaaaaaaaa,5,0,5,5",
+    togglePinRecords(dupes, V2_GRID, A, opts).slice(0, 5).join(","))
+
+  // A new pin appends exactly five fields, storing the prefix and a plain
+  // integer h field (no trim in force).
+  const added = togglePinRecords(dupes, V2_GRID, B, opts)
+  check("pinning a new item appends exactly one five-field record",
+    added.length === dupes.length + 5
+      && added.slice(0, dupes.length).join(",") === dupes.join(",")
+      && added[dupes.length] === "bbbbbbbbbb",
+    added.slice(dupes.length).join(","))
+  check("a new pin's h field is a bare integer without a trim",
+    /^[0-9]+$/.test(added[added.length - 1]),
+    added[added.length - 1])
+  // 10x10 v1 units scaled onto the target lattice: V1 is the identity, and a
+  // wider grid gets proportionally more columns.
+  const onV1 = togglePinRecords([], V1_GRID, B, opts)
+  check("a first pin on the v1 grid is 10x10 at the origin",
+    onV1.join(",") === "bbbbbbbbbb,0,0,10,10", onV1.join(","))
+  const onV2 = togglePinRecords([], V2_GRID, B, opts)
+  check("the default size scales onto the board's own lattice",
+    Number(onV2[3]) === Math.round(10 * (V2_GRID.columns / V1_GRID.columns)),
+    onV2.join(","))
 }
 
 console.log(all ? "\nALL PASS" : "\nFAILURES")

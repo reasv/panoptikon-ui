@@ -33,9 +33,16 @@
 // per-setter dispatch in the stamping effect (app/search/SearchPage.tsx),
 // where each key needs its own nuqs setter call. That dispatch is
 // irreducibly manual: the setters are hooks, one per parameter, and this
-// module is deliberately import-free.
+// module deliberately imports no runtime behaviour — only a type and a
+// constants module, both of which strip away under plain node.
 
 import type { ViewMode } from "./state/gallery"
+import {
+  MAX_CELL_WIDTH,
+  MAX_PAGE_SIZE,
+  MIN_CELL_WIDTH,
+  MIN_PAGE_SIZE,
+} from "./searchLimits"
 
 export type SearchDefaultableKey = "vm" | "page_size" | "cs"
 
@@ -110,19 +117,6 @@ export function describeStoredDefaults(stored: SearchUserDefaults): string {
 const STORAGE_KEY = "searchUserDefaults"
 
 export type SearchUserDefaults = Partial<ResolvedSearchDefaults>
-
-// The bounds the Page Size control itself enforces (MIN/MAX_PAGE_SIZE).
-// Restated rather than imported: that module is a React component and this
-// one is deliberately import-free, and these are the bounds of what may be
-// STAMPED, which is a URL question rather than a slider question.
-const MIN_PAGE_SIZE = 1
-const MAX_PAGE_SIZE = 10000
-
-// The bounds the cell-size slider itself enforces (lib/gridCellSize.ts),
-// restated for the same reason as the page-size pair above: this module is
-// deliberately import-free, and these are the bounds of what may be STAMPED.
-const MIN_CELL_WIDTH = 140
-const MAX_CELL_WIDTH = 1200
 
 // Only allowlisted keys with in-domain values survive, so stale or
 // hand-edited localStorage cannot stamp junk into a URL — the discipline

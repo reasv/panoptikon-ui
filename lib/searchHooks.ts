@@ -723,6 +723,31 @@ function idOf(rows: object): number {
 }
 
 /**
+ * THE THREE KEYS, once, because they are easy to mistake for each other:
+ *
+ *   `liveKey`     — `hashKey` of the LIVE request in `useSearch`. Content hash
+ *                   of a SUPERSET of the committed parts: it also carries
+ *                   `page`. Moves on every edit the user makes, committed or
+ *                   not. Its only jobs are the search throttle's content key
+ *                   and the `committedKey === liveKey` half of `queryEnabled`.
+ *   `committedKey`— `liveKey` FROZEN at the last commit (`useCommittedQuery`).
+ *                   Same superset shape, so it too carries a `page`. It is the
+ *                   identity of the query the UI is allowed to run, and it
+ *                   doubles as this store's throttle content key so the whole
+ *                   search is not serialized a second time per render.
+ *   `partsKey`    — `hashKey` of CHUNK 0's request body, built here. Page- and
+ *                   page_size-independent by construction, and byte-identical
+ *                   to what keys a chunk query, so it can never drift from the
+ *                   chunk cache keys it stands for. It is what the wanted-set,
+ *                   the chunk memos and `queryIdentity` key on.
+ *
+ * Which moves when: typing moves `liveKey` alone (until a commit, or always
+ * with instant search on, where committed follows live); turning a page in
+ * pages mode moves `liveKey` and `committedKey` but NOT `partsKey`; a
+ * scroll-mode `page_size` relabel likewise moves the first two and leaves
+ * `partsKey` still, which is exactly why the wanted set survives it; changing
+ * a filter moves all three.
+ *
  * The sparse chunk store behind scroll mode: fixed-size, offset-aligned
  * windows of the committed search, fetched on demand and read by global item
  * index.
@@ -1427,10 +1452,10 @@ export function useCommitPageSize() {
       // write, skipped when unchanged, in "replace" like every other
       // non-navigation position write.
       //
-      // The companion write is NOT skipped with it: "this page size is already
-      // the one you asked for" says nothing about the caller's own parameter,
-      // and dropping it here would silently lose a cell-size change whenever
-      // the co-write happened to land on the current k.
+      // The `alongside` write is NOT skipped with it: "this page size is
+      // already the one you asked for" says nothing about the caller's own
+      // parameter, and dropping it here would silently lose a cell-size change
+      // whenever the co-write happened to land on the current k.
       if (nextPageSize === pageSize) {
         await alongside?.()
         return
@@ -1484,11 +1509,11 @@ export function useCommitPageSize() {
     // a page the URL was never on. Skipping on it drops a write that is not a
     // no-op and strands the URL on the old page.
     const writes: Promise<unknown>[] = []
-    // FIRST into the batch, so the companion parameter and the remapped
+    // FIRST into the batch, so the `alongside` parameter and the remapped
     // position are one URL update and one re-layout. Order inside the tick
     // does not matter to nuqs; being inside it is the whole point.
-    const companion = alongside?.()
-    if (companion) writes.push(companion)
+    const alongsideWrite = alongside?.()
+    if (alongsideWrite) writes.push(alongsideWrite)
     if (target.page !== page) writes.push(setPage(target.page, replace))
     if (galleryIndex !== null && target.index !== galleryIndex) {
       writes.push(setGalleryIndex(target.index, replace))

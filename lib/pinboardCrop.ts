@@ -61,6 +61,27 @@
 // segment with lock: null, without an `O` segment with orient: null =
 // identity).
 
+/**
+ * How much of an item's sha256 a pinboard record's first field holds.
+ *
+ * THE one spelling of it, because every site that slices a sha256 down to a
+ * pin identity has to agree byte for byte or the comparisons silently stop
+ * matching: the record writers (CellActionsHost's togglePin, the board's own
+ * drop handler), the pinned-set membership test PinButton paints from, and
+ * the gallery trim slot's prefix (lib/galleryTrim.ts), which is keyed to this
+ * same length precisely so the two identities compare directly.
+ *
+ * It lives here because this module is where the 5-string record format is
+ * defined (see the header above), and because it is import-free — the node
+ * suites strip types off it directly.
+ *
+ * FROZEN: it is a wire format. Shared pinboard URLs and `vt` links carry
+ * these prefixes, so changing the number invalidates every existing link.
+ * The `vt` grammar spells the same 10 out as a regex quantifier rather than
+ * interpolating this, a frozen pattern being clearer read literally.
+ */
+export const PIN_SHA_PREFIX_LENGTH = 10
+
 export interface CropRect {
   x: number
   y: number

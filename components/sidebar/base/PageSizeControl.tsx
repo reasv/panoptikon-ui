@@ -4,9 +4,8 @@ import { Slider } from "../../ui/slider"
 import { useEffect, useState } from "react"
 import { Button } from "../../ui/button"
 import { PlusCircle, MinusCircle } from "lucide-react"
+import { MAX_PAGE_SIZE, MIN_PAGE_SIZE } from "@/lib/searchLimits"
 
-const MIN_PAGE_SIZE = 1
-const MAX_PAGE_SIZE = 10000
 // The slider works in "position" space and maps logarithmically onto page
 // sizes, so a given amount of thumb travel is roughly a constant *ratio*
 // change. That keeps single-digit precision near the low end while still

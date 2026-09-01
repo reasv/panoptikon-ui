@@ -14,13 +14,12 @@ import {
 import {
     CELL_WIDTH_STEP,
     GRID_GAP_PX,
-    MAX_CELL_WIDTH,
-    MIN_CELL_WIDTH,
     cellWidthForColumns,
     clampCellWidth,
     coWrittenPageSize,
     columnsForCellWidth,
 } from "@/lib/gridCellSize"
+import { MAX_CELL_WIDTH, MIN_CELL_WIDTH } from "@/lib/searchLimits"
 import { useGridCellSize } from "@/lib/state/cellSize"
 import { useCellSizePageLock } from "@/lib/state/cellSizePageLock"
 import { EMPTY_GRID_METRICS, type GridMetricsStore } from "@/lib/state/gridMetricsBox"
@@ -59,8 +58,9 @@ export function GridCellSizeControl({ metricsStore }: {
     // the item the user is looking at and the page holding it is prefetched
     // first, and in scroll mode it is the pure relabel that mode defines (see
     // useCommitPageSize). Both write "replace", which is what keeps a slider
-    // commit off the history stack — and both take the cell-size write as a
-    // companion so the whole change is ONE URL update (see `commit`).
+    // commit off the history stack — and both take the cell-size write as
+    // their `alongside` write, so the whole change is ONE URL update (see
+    // `commit`).
     const commitPageSize = useCommitPageSize()
     const locked = useCellSizePageLock((state) => state.locked)
     const setLocked = useCellSizePageLock((state) => state.setLocked)
@@ -86,11 +86,11 @@ export function GridCellSizeControl({ metricsStore }: {
         const target = clampCellWidth(next)
         if (target === cellSize) return
         // ONE TICK for the whole change (design §9). The cell-size write is
-        // handed to the page-size commit as a companion rather than awaited
-        // first, because two ticks are observably wrong in pages mode: `cs`
-        // alone re-lays the grid out at the OLD page size, and the scroll-stop
-        // anchor that layout produces lands after — and on top of — the
-        // position this commit remapped.
+        // handed to the page-size commit as its `alongside` write rather than
+        // awaited first, because two ticks are observably wrong in pages mode:
+        // `cs` alone re-lays the grid out at the OLD page size, and the
+        // scroll-stop anchor that layout produces lands after — and on top of
+        // — the position this commit remapped.
         const writeCellSize = () => setCellSize(target, { history: "replace" })
         // The RATIO is measured between the widths actually LAID OUT, not
         // between the targets: a target of 500px in a 2473px row lays out as

@@ -12,8 +12,12 @@
 // moved: an already-compacted layout is a fixed point of the compactor, so
 // with gravity on the only item compaction can still move is the new one.
 
-import { parseHField } from "./pinboardCrop"
-import { GridParams } from "./pinboardGrid"
+// Type-only imports are spelled out: node's --experimental-strip-types (how
+// scripts/gridcells.test.mjs exercises togglePinRecords below) cannot erase a
+// type hiding in a value import list.
+import { PIN_SHA_PREFIX_LENGTH, parseHField } from "./pinboardCrop"
+import { v1ScaleFactors, type GridParams } from "./pinboardGrid"
+import { newPinHField, type GalleryTrimSlot } from "./galleryTrim"
 
 interface Rect {
   x: number
@@ -108,4 +112,78 @@ export function placeNearest(
     }
   }
   return { x: best.x, y: best.y }
+}
+
+/**
+ * The default size of a new pin, in v1 grid units, before it is scaled onto
+ * the board's own lattice.
+ */
+const NEW_PIN_V1_SIZE = 10
+
+/**
+ * Pin or unpin `sha256`, as a function from one record array to the next.
+ *
+ * THE WHOLE OF THE RECORD ALGEBRA behind the pin button, in the shape
+ * `updateRecords` wants: `(prev, grid) => next`. It was inline in
+ * CellActionsHost, which owns URL subscriptions rather than the record format,
+ * and where the splice arithmetic — a flat array of FIVE-string records, so
+ * every offset is an index times five — sat unreachable by any test.
+ *
+ * Three cases, in the order they are decided:
+ *
+ *   - `layoutKey` given: the button lives on a SPECIFIC pinboard copy, so
+ *     unpin removes exactly that record by its own offset. Duplicates of one
+ *     image are ordinary, and matching by sha256 prefix here would remove the
+ *     wrong copy. The key's leading field is the record offset (see the board's
+ *     layout keys); `grid` is not consulted at all.
+ *   - the item is already pinned somewhere: remove its FIRST copy, found by
+ *     prefix.
+ *   - otherwise: append a new record at the first free slot (placeNewPin),
+ *     sized 10×10 v1 units scaled onto this board's lattice, with the gallery's
+ *     trim baked into the h field when the slot belongs to this item.
+ *
+ * Near-pure, and the only reason it is not literally pure is `placeNewPin`'s
+ * scan — which is itself a function of `prev` and `grid`.
+ */
+export function togglePinRecords(
+  prev: string[],
+  grid: GridParams,
+  sha256: string,
+  options: { layoutKey?: string; galleryTrim: GalleryTrimSlot | null }
+): string[] {
+  const { layoutKey, galleryTrim } = options
+  if (layoutKey !== undefined) {
+    const offset = parseInt(layoutKey.split("-")[0])
+    const next = [...prev]
+    next.splice(offset, 5)
+    return next
+  }
+  const pins: [string, number][] = prev
+    .filter((_, i) => i % 5 === 0)
+    .map((id, index) => [id, index])
+  const isPinnedIndex = pins.findIndex(([id]) =>
+    id.slice(0, PIN_SHA_PREFIX_LENGTH) === sha256.slice(0, PIN_SHA_PREFIX_LENGTH))
+  if (isPinnedIndex !== -1) {
+    // `pins` is one entry per record, so its index IS the record's index —
+    // times five to reach the flat array's offset.
+    const index = pins[isPinnedIndex][1]
+    const next = [...prev]
+    next.splice(index * 5, 5)
+    return next
+  }
+  // Default new-pin size is 10x10 in v1 units, scaled to the board's grid; the
+  // pin lands in the first free slot found scanning starting at the bottom row
+  // (placeNewPin above), never on top of anything.
+  const { sx, sy } = v1ScaleFactors(grid)
+  const w = Math.round(NEW_PIN_V1_SIZE * sx)
+  const h = Math.round(NEW_PIN_V1_SIZE * sy)
+  const { x, y } = placeNewPin(prev, grid, w, h)
+  return [
+    ...prev,
+    sha256.slice(0, PIN_SHA_PREFIX_LENGTH),
+    x.toString(),
+    y.toString(),
+    w.toString(),
+    newPinHField(h, sha256, galleryTrim),
+  ]
 }

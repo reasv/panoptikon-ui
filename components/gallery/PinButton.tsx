@@ -3,11 +3,9 @@
 import React from 'react'
 import { cn } from "@/lib/utils"
 import { useCellCallbacks, useCellFlags } from "@/lib/state/cellActions"
+import { PIN_SHA_PREFIX_LENGTH } from "@/lib/pinboardCrop"
 
 import { Pin, PinOff } from 'lucide-react'
-
-/** The length of the sha256 prefix a pinboard record stores. */
-const PREFIX_LENGTH = 10
 
 /**
  * Pin / unpin, mounted on every grid card, every filmstrip card and every pin.
@@ -37,7 +35,7 @@ export function PinButton({
 }) {
     const { pinnedPrefixes } = useCellFlags()
     const { togglePin } = useCellCallbacks()
-    const isPinned = pinnedPrefixes.has(sha256.slice(0, PREFIX_LENGTH))
+    const isPinned = pinnedPrefixes.has(sha256.slice(0, PIN_SHA_PREFIX_LENGTH))
     const handlePinClick = (e: React.MouseEvent) => {
         togglePin(sha256, { layoutKey, shiftKey: e.shiftKey })
     }
