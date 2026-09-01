@@ -181,6 +181,18 @@ console.log("\n== columns and row height from an explicit cell width (§9) ==")
       && clampCellWidth(99999) === MAX_CELL_WIDTH
       && clampCellWidth(NaN) === MIN_CELL_WIDTH
       && clampCellWidth(300.6) === 301)
+  // THE GRID READS `cs` THROUGH THIS CLAMP, and that is what keeps a
+  // hand-edited URL from rendering an empty page: an out-of-range target
+  // reaches `columnsForCellWidth` as 0 columns, which is indistinguishable
+  // from "not measured yet" — no cells, no skeletons, no scroll space.
+  for (const hostile of [0, -5, -1e9, NaN, 0.4]) {
+    const clamped = clampCellWidth(hostile)
+    check(
+      `a hostile ?cs=${hostile} still lays out columns`,
+      columnsForCellWidth(2473, clamped, GRID_GAP_PX) >= 1,
+      `clamped to ${clamped}`
+    )
+  }
 }
 
 console.log("\n== the page-size co-write (§9) ==")
@@ -213,6 +225,51 @@ console.log("\n== the page-size co-write (§9) ==")
   // Rounding must never produce a zero-item page out of a legal one.
   check("a heavy enlargement still leaves at least one item",
     coWrittenPageSize(2, MIN_CELL_WIDTH, MAX_CELL_WIDTH) === 1)
+}
+
+console.log("\n== the co-write snaps to whole rows (design §4's row invariant) ==")
+{
+  // The bar highlights the top row's LAST item while the URL anchor records
+  // its FIRST, so the two name the same virtual page only while no row
+  // straddles a k-boundary — i.e. while k is a multiple of the column count.
+  // Every co-written page size must therefore be one.
+  for (const columns of [1, 2, 3, 5, 7, 9, 12, 17, 24, 49]) {
+    for (const [size, prev, next] of [
+      [10, 584, 292], [10, 584, 140], [50, 300, 700], [7, 400, 401],
+      [100, 250, 1000], [3, 1200, 140], [10, 742, 207],
+    ]) {
+      const k = coWrittenPageSize(size, prev, next, columns)
+      if (k === null) continue
+      if (!check(
+        `k=${k} is a whole number of ${columns}-wide rows (${size} @ ${prev}->${next})`,
+        k % columns === 0 && k >= columns,
+        `${k} % ${columns} = ${k % columns}`
+      )) break
+    }
+  }
+  // The rounding is a snap, not a redefinition: it stays within half a row of
+  // the (prev/next)^2 intent.
+  for (const columns of [3, 5, 9, 17]) {
+    const exact = 10 * (584 / 207) ** 2
+    const k = coWrittenPageSize(10, 584, 207, columns)
+    check(
+      `the ${columns}-column snap stays within half a row of the intent`,
+      Math.abs(k - exact) <= columns / 2 + 1e-9,
+      `${k} vs ${exact.toFixed(2)}`
+    )
+  }
+  check("at least one whole row survives an extreme enlargement",
+    coWrittenPageSize(2, MIN_CELL_WIDTH, MAX_CELL_WIDTH, 9) === 9)
+  check("the ceiling is still a whole number of rows",
+    coWrittenPageSize(9000, 1200, 140, 7) === Math.floor(10000 / 7) * 7)
+  // The verifier's own case: 5 columns, a co-written 38 was the misalignment.
+  check("the k=38-over-9-columns straddle cannot be written any more",
+    coWrittenPageSize(10, 584, 292, 9) % 9 === 0)
+  // An unusable column count is the pre-existing unrounded answer, not a crash.
+  check("no column count falls back to the unrounded clamp",
+    coWrittenPageSize(10, 400, 200, 0) === 40
+      && coWrittenPageSize(10, 400, 200, NaN) === 40
+      && coWrittenPageSize(10, 400, 200, -3) === 40)
 }
 
 console.log(all ? "\nALL PASS" : "\nFAILURES")

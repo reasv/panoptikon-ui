@@ -103,6 +103,17 @@ const MAX_PAGE_SIZE = 10000
  * virtual page is one screenful" true through the change; in pages mode it
  * rides useCommitPageSize, which remaps the position onto the new size.
  *
+ * ROUNDED TO A WHOLE NUMBER OF ROWS at the column count the new cell size lays
+ * out, and that rounding is load-bearing rather than cosmetic. The pagination
+ * bar highlights the virtual page of the top row's LAST item while the URL
+ * anchor records its FIRST (design §4, `topRowHighlightItem`), and the two
+ * name the same page only while no row straddles a k-boundary — i.e. while
+ * `k % columns === 0`. The shipped default (k = 10 over 5 columns) is such a
+ * multiple, which is why the mismatch has never been visible; an arbitrary
+ * co-written k is not, and would leave the bar disagreeing with the URL it had
+ * just written on most rows. Snapping k to the nearest whole row keeps the
+ * `(prev / next)²` intent to within half a row and restores the invariant.
+ *
  * Returns null when there is nothing to write: an unchanged result, an
  * unusable input, or a `page_size` below 1 — which means "no LIMIT" rather
  * than a small page, and scaling it would silently impose one.
@@ -110,12 +121,32 @@ const MAX_PAGE_SIZE = 10000
 export function coWrittenPageSize(
   pageSize: number,
   prevCellWidth: number,
-  nextCellWidth: number
+  nextCellWidth: number,
+  /**
+   * The column count the NEW cell size lays out — the one the written page
+   * size has to divide by. 0 (nothing measured) falls back to the unrounded
+   * clamp, which is a coarser answer rather than a wrong one.
+   */
+  columns: number = 0
 ): number | null {
   if (!Number.isFinite(pageSize) || pageSize < MIN_PAGE_SIZE) return null
   if (!(prevCellWidth > 0) || !(nextCellWidth > 0)) return null
   const ratio = prevCellWidth / nextCellWidth
-  const scaled = Math.round(pageSize * ratio * ratio)
-  const next = Math.min(MAX_PAGE_SIZE, Math.max(MIN_PAGE_SIZE, scaled))
+  const scaled = pageSize * ratio * ratio
+  const usable =
+    Number.isFinite(columns) && columns >= 1 && columns <= MAX_PAGE_SIZE
+  let next: number
+  if (usable) {
+    const perRow = Math.floor(columns)
+    // The ROW count is what gets clamped, not the item count: clamping the
+    // items would hand back a ceiling that is not a multiple of anything, and
+    // the whole point is that the result divides evenly by the columns. At
+    // least one row, and never more rows than the page-size ceiling holds.
+    const maxRows = Math.max(1, Math.floor(MAX_PAGE_SIZE / perRow))
+    const rows = Math.min(Math.max(1, Math.round(scaled / perRow)), maxRows)
+    next = rows * perRow
+  } else {
+    next = Math.min(MAX_PAGE_SIZE, Math.max(MIN_PAGE_SIZE, Math.round(scaled)))
+  }
   return next === pageSize ? null : next
 }

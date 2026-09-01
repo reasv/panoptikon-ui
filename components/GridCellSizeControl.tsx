@@ -13,14 +13,17 @@ import {
 } from "@/components/ui/popover"
 import {
     CELL_WIDTH_STEP,
+    GRID_GAP_PX,
     MAX_CELL_WIDTH,
     MIN_CELL_WIDTH,
+    cellWidthForColumns,
     clampCellWidth,
     coWrittenPageSize,
+    columnsForCellWidth,
 } from "@/lib/gridCellSize"
 import { useGridCellSize } from "@/lib/state/cellSize"
 import { useCellSizePageLock } from "@/lib/state/cellSizePageLock"
-import type { CellWidthStore } from "@/lib/state/cellWidthBox"
+import { EMPTY_GRID_METRICS, type GridMetricsStore } from "@/lib/state/gridMetricsBox"
 import { useCommitPageSize } from "@/lib/searchHooks"
 import { usePageSize } from "@/lib/state/searchQuery/clientHooks"
 
@@ -47,8 +50,8 @@ import { usePageSize } from "@/lib/state/searchQuery/clientHooks"
  * rather than URL state, because it decides what a FUTURE drag writes rather
  * than what this view is.
  */
-export function GridCellSizeControl({ cellWidthStore }: {
-    cellWidthStore?: CellWidthStore
+export function GridCellSizeControl({ metricsStore }: {
+    metricsStore?: GridMetricsStore
 }) {
     const [cellSize, setCellSize] = useGridCellSize()
     const pageSize = usePageSize()
@@ -56,21 +59,21 @@ export function GridCellSizeControl({ cellWidthStore }: {
     // the item the user is looking at and the page holding it is prefetched
     // first, and in scroll mode it is the pure relabel that mode defines (see
     // useCommitPageSize). Both write "replace", which is what keeps a slider
-    // commit off the history stack.
+    // commit off the history stack — and both take the cell-size write as a
+    // companion so the whole change is ONE URL update (see `commit`).
     const commitPageSize = useCommitPageSize()
     const locked = useCellSizePageLock((state) => state.locked)
     const setLocked = useCellSizePageLock((state) => state.setLocked)
-    // The grid's current cell width. `getServerSnapshot` returns 0 — the
-    // server has no layout, and 0 reads as "unmeasured" everywhere below.
-    const measured = useSyncExternalStore(
-        cellWidthStore
-            ? cellWidthStore.subscribe
-            : NO_STORE_SUBSCRIBE,
-        cellWidthStore ? cellWidthStore.get : NO_STORE_GET,
+    // The grid's measured geometry. `getServerSnapshot` is the empty record —
+    // the server has no layout, and its zeroes read as "unmeasured" everywhere
+    // below.
+    const metrics = useSyncExternalStore(
+        metricsStore ? metricsStore.subscribe : NO_STORE_SUBSCRIBE,
+        metricsStore ? metricsStore.get : NO_STORE_GET,
         NO_STORE_GET
     )
     const auto = cellSize === null
-    const effective = clampCellWidth(cellSize ?? (measured || DEFAULT_CELL_WIDTH))
+    const effective = clampCellWidth(cellSize ?? (metrics.cellWidth || DEFAULT_CELL_WIDTH))
     // The thumb's live position during a drag. Re-seeded whenever the value it
     // stands for moves underneath it — a commit landing, a switch back to
     // auto, or (in auto) the grid re-measuring after a resize.
@@ -81,17 +84,35 @@ export function GridCellSizeControl({ cellWidthStore }: {
 
     const commit = async (next: number) => {
         const target = clampCellWidth(next)
-        // The width the ratio is measured FROM: the explicit one if there is
-        // one, otherwise the auto width the user is looking at right now. On
-        // the auto→explicit switch that is the whole point — the page size
-        // should follow the change the user just made, not the change from
-        // some notional default.
-        const previous = cellSize ?? measured
         if (target === cellSize) return
-        await setCellSize(target)
-        if (locked) return
-        const nextPageSize = coWrittenPageSize(pageSize, previous, target)
-        if (nextPageSize !== null) await commitPageSize(nextPageSize)
+        // ONE TICK for the whole change (design §9). The cell-size write is
+        // handed to the page-size commit as a companion rather than awaited
+        // first, because two ticks are observably wrong in pages mode: `cs`
+        // alone re-lays the grid out at the OLD page size, and the scroll-stop
+        // anchor that layout produces lands after — and on top of — the
+        // position this commit remapped.
+        const writeCellSize = () => setCellSize(target, { history: "replace" })
+        // The RATIO is measured between the widths actually LAID OUT, not
+        // between the targets: a target of 500px in a 2473px row lays out as
+        // four 611px cells, and it is the 611 that decides how many cells a
+        // screen holds. The new column count comes from the same expression
+        // the grid will run on the width it has already published.
+        const container = metrics.containerWidth
+        const nextColumns = columnsForCellWidth(container, target, GRID_GAP_PX)
+        const nextWidth = cellWidthForColumns(container, nextColumns, GRID_GAP_PX) || target
+        // The width the ratio is measured FROM: the laid-out width the grid is
+        // showing right now. On the auto→explicit switch that is the whole
+        // point — the page size follows the change the user just made, not a
+        // change from some notional default.
+        const previous = metrics.cellWidth || cellSize || target
+        const nextPageSize = locked
+            ? null
+            : coWrittenPageSize(pageSize, previous, nextWidth, nextColumns)
+        if (nextPageSize === null) {
+            await writeCellSize()
+            return
+        }
+        await commitPageSize(nextPageSize, writeCellSize)
     }
 
     return (
@@ -173,6 +194,7 @@ export function GridCellSizeControl({ cellWidthStore }: {
 const DEFAULT_CELL_WIDTH = 400
 
 // The no-store fallbacks, hoisted to module scope so their identity is stable:
-// useSyncExternalStore re-subscribes whenever the subscribe function changes.
+// useSyncExternalStore re-subscribes whenever the subscribe function changes,
+// and re-renders forever if the snapshot getter returns a fresh object.
 const NO_STORE_SUBSCRIBE = () => () => { }
-const NO_STORE_GET = () => 0
+const NO_STORE_GET = () => EMPTY_GRID_METRICS

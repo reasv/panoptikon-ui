@@ -1364,6 +1364,18 @@ export function useCommitViewMode() {
  * it relabels the pagination bar and rescales prev/next while the position,
  * the rows and every request stay exactly where they are — see the scroll
  * branch below.
+ *
+ * `alongside` is for a caller whose OWN parameter write has to land in the
+ * same URL update as this one. The cell-size slider is that caller and the
+ * reason the hook grew a second argument (design §9: cell size and page size
+ * are written "in one tick"). Two ticks are observably wrong rather than
+ * merely untidy: writing `cs` first re-lays the grid out at the OLD page size,
+ * the grid's scroll-stop timer then records an anchor for that intermediate
+ * geometry, and it lands after this commit's carefully remapped `top` —
+ * clobbering it, and putting the user rows away from the item they were
+ * looking at. Called exactly once, inside the write batch and after the
+ * supersession check, on every path that reaches a decision; a superseded
+ * commit runs nothing, because the call that superseded it carries its own.
  */
 export function useCommitPageSize() {
   const prefetch = usePrefetchPageState()
@@ -1381,7 +1393,10 @@ export function useCommitPageSize() {
     pageSize: number
     index: number
   } | null>(null)
-  return async (nextPageSize: number) => {
+  return async (
+    nextPageSize: number,
+    alongside?: () => Promise<unknown> | void
+  ) => {
     if (viewMode === "scroll") {
       // Any pages-mode commit still inside its prefetch is abandoned here:
       // its target is a (page, index) pair for a mode the URL has left, and
@@ -1395,8 +1410,19 @@ export function useCommitPageSize() {
       // So there is nothing to prefetch and nothing to remap: one param to
       // write, skipped when unchanged, in "replace" like every other
       // non-navigation position write.
-      if (nextPageSize === pageSize) return
-      await setPageSize(nextPageSize, { history: "replace" })
+      //
+      // The companion write is NOT skipped with it: "this page size is already
+      // the one you asked for" says nothing about the caller's own parameter,
+      // and dropping it here would silently lose a cell-size change whenever
+      // the co-write happened to land on the current k.
+      if (nextPageSize === pageSize) {
+        await alongside?.()
+        return
+      }
+      await Promise.all([
+        setPageSize(nextPageSize, { history: "replace" }),
+        alongside?.(),
+      ])
       return
     }
     const base = inFlight.current ?? {
@@ -1413,7 +1439,12 @@ export function useCommitPageSize() {
         pageSize
       ),
     }
-    if (nextPageSize === base.pageSize) return
+    // Same rule as the scroll branch's: nothing to remap does not mean nothing
+    // to write, and the caller's own parameter is not this hook's to drop.
+    if (nextPageSize === base.pageSize) {
+      await alongside?.()
+      return
+    }
     const target = remapPageAnchor({
       page: base.page,
       pageSize: base.pageSize,
@@ -1437,6 +1468,11 @@ export function useCommitPageSize() {
     // a page the URL was never on. Skipping on it drops a write that is not a
     // no-op and strands the URL on the old page.
     const writes: Promise<unknown>[] = []
+    // FIRST into the batch, so the companion parameter and the remapped
+    // position are one URL update and one re-layout. Order inside the tick
+    // does not matter to nuqs; being inside it is the whole point.
+    const companion = alongside?.()
+    if (companion) writes.push(companion)
     if (target.page !== page) writes.push(setPage(target.page, replace))
     if (galleryIndex !== null && target.index !== galleryIndex) {
       writes.push(setGalleryIndex(target.index, replace))
