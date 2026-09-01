@@ -51,16 +51,16 @@ export function PinButton({
                 : "Pin this image (Shift: carry it to a spot on the board)"
         }
         className={
-            cn("hover:scale-105 absolute top-2 left-2 bg-white rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300",
+            cn("hover:scale-105 absolute top-(--cell-chrome-inset) left-(--cell-chrome-inset) bg-white rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-(--cell-chrome-pad) opacity-0 group-hover:opacity-100 transition-opacity duration-300",
                 (showPins || isPinned) && !hidePins ? 'opacity-100' : 'opacity-0')
         }
         onClick={handlePinClick}
     >
         {isPinned ? (
-            <PinOff className="w-6 h-6 text-gray-800 fill-gray-800" />
+            <PinOff className="w-(--cell-chrome-glyph) h-(--cell-chrome-glyph) text-gray-800 fill-gray-800" />
 
         ) : (
-            <Pin className="w-6 h-6 text-gray-800" />
+            <Pin className="w-(--cell-chrome-glyph) h-(--cell-chrome-glyph) text-gray-800" />
         )}
     </button>
 }

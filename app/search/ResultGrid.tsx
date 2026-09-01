@@ -325,6 +325,25 @@ export function ResultGrid({
     const rowEstimate = imageHeightPx !== undefined
         ? rowHeightForCellWidth(cellWidth)
         : autoLayout.rowEstimate
+    // THE CELL WIDTH, PUBLISHED TO CSS (B1). The overlay chrome inside every
+    // card scales with it — a 40px button pair and 8px corner insets are
+    // right on a 400px cell and swallow a 150px one — and the ramp that does
+    // it is a `clamp()` over this custom property (app/globals.css, the
+    // "grid cell chrome" block). Written on the row container, whose
+    // descendants are every card, so one property write per layout change
+    // reaches all of them.
+    //
+    // A DOM WRITE RATHER THAN A PROP, and that is the whole reason it is CSS:
+    // handing the number down would re-render every visible card on every
+    // resize tick, to move a button by two pixels. No React state, no cell
+    // re-renders, and the value inherits into cards that mount later.
+    //
+    // A layout effect, so the chrome is at its final size in the same frame
+    // the cells first paint at a new width. Unitless, because the ramp does
+    // arithmetic on it.
+    useLayoutEffect(() => {
+        rowContainerRef.current?.style.setProperty("--cell-px", String(Math.round(cellWidth)))
+    }, [cellWidth])
     // Published for the size slider: the width seeds its thumb (so the first
     // drag off "auto" continues from what the user is looking at), and the
     // container width and column count are what let it compute the layout a
