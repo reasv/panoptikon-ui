@@ -508,12 +508,15 @@ function VirtualHorizontalScrollElement({
     // extreme-aspect item needs no special case here: the crop IS what this
     // card should show, and there is no hover-contain state to swap for.
     //
-    // ALWAYS THE STILL for an animated item. Adjudicated for F6: the strip
-    // shows POSTERS, never autoplaying video — a row of looping cards under
-    // the gallery is noise, and the strip's job is letting the eye find the
-    // next item. It is also correctness before policy: without the flag an
-    // animated item above the raw floor answers a grid tier with `video/mp4`,
-    // which this <img> would render as a broken picture.
+    // ALWAYS THE STILL for an animated item. Adjudicated for F6 and unchanged
+    // by D10: the strip's BASE picture is a poster, and nothing here ever
+    // autoplays — a row of looping cards under the gallery is noise, and the
+    // strip's job is letting the eye find the next item. What D10 adds is a
+    // loop the pointer has to ask for by resting on a card (StripLoopPicture),
+    // which is a layer over this URL rather than a change to it. It is also
+    // correctness before policy: without the flag an animated item above the
+    // raw floor answers a grid tier with `video/mp4`, which this <img> would
+    // render as a broken picture.
     //
     // ONE COMPARISON ON ROW DATA, and deliberately the cheap half of the
     // decision — the base picture never plays, so it needs no client-config

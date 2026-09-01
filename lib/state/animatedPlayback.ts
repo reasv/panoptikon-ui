@@ -348,9 +348,14 @@ export function observeAnimatedCell(video: HTMLVideoElement): () => void {
  * and refcounting means two surfaces on screen at once (the maximized board's
  * strip over a grid) still share one listener.
  *
- * It also binds the scroll sampler, which is what keeps `fastScroll` current
- * on a surface whose cells are all posters: without it a page with no
- * registered `<video>` would answer "not scrolling" to every arming question.
+ * WHAT IT COSTS A SURFACE THAT NOBODY HOVERS: the `pointermove` listener's
+ * coordinate compare (see onPointerMove) and the scroll sampler's one property
+ * read per scroll event. The sampler is not optional here — `fastScroll` is
+ * half the arming rule and both halves of the scroll cancellation, and a
+ * hover-mode grid has no registered `<video>` to have bound it, so without this
+ * the director would answer "not scrolling" to every arming question. The
+ * `play`/`pause` pair rides along because the four have one lifetime; on a page
+ * with no registered element they see nothing and answer nothing.
  */
 export function trackHoverPointer(): () => void {
   if (typeof window === "undefined") return () => {}
