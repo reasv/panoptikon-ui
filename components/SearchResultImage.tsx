@@ -30,6 +30,73 @@ const HOVER_ROOT_ATTR = "data-cell-hover-root"
  */
 const FILL_CLASSES = "absolute inset-0 h-full w-full"
 
+/**
+ * Which of the two picture elements a card's grid rendition needs. `"loop"`
+ * carries both URLs because the loop and its poster are the same request with
+ * and without `still=true`, and AnimatedCellPicture's fallback needs the second
+ * one in hand the moment the first one fails.
+ *
+ * COMPUTED ONCE PER CARD (see `source` below) and then dispatched on, so the
+ * `animated === "loop"` question is asked in one place rather than once per
+ * JSX branch that happens to care.
+ */
+type CellPictureSource =
+    | { kind: "image"; src: string }
+    | { kind: "loop"; src: string; poster: string }
+
+/**
+ * The still `<img>` every non-loop picture on this card is, spelled once.
+ *
+ * There is nothing clever here — it exists because the plain card, the
+ * extreme-aspect crop and the loop's poster fallback were three verbatim
+ * copies of the same `<Image fill placeholder unoptimized>`, and the settled
+ * law below has to hold for all three.
+ *
+ * THE BLURHASH PNG DATA URL IS HANDED TO `placeholder` DIRECTLY.
+ * `placeholder="blur"` is FORBIDDEN on this card and must not be
+ * reintroduced: with it, next/image wraps the PNG in a ~6 KB
+ * `data:image/svg+xml` document carrying a feGaussianBlur graph, UNIQUE per
+ * item. Blink treats an SVG used as an image as its own isolated Document
+ * (own style resolver, own layout tree), so a virtualized grid mints one
+ * Document per cell mount — ~12/s at scroll speed, faster than GC reclaims
+ * them. Measured (F3 investigation, 180 s stdtest scroll): live Documents
+ * 31 -> 901 and bucket p90 8.4 -> 33.6 ms; with the data URL passed straight
+ * through (plain `background-image: url(<png>)`, no SVG, no Document)
+ * Documents hold at 1 and the curve is flat.
+ *
+ * The TYPE of `blurDataURL` (`data:image/png;base64,…` template literal) is
+ * the real guard: next/image only validates the placeholder string in dev
+ * builds — in production an invalid string silently becomes a garbage
+ * background. `?? 'empty'` is equivalent to omitting the prop; it is kept as
+ * documentation.
+ */
+function CellStillImage({
+    src,
+    alt,
+    blurDataURL,
+    className,
+    elementRef,
+}: {
+    src: string
+    alt: string
+    /** Omitted (not null) where the layer underneath IS the placeholder. */
+    blurDataURL?: PlaceholderDataURL
+    className?: string
+    elementRef?: (element: HTMLImageElement | null) => void
+}) {
+    return (
+        <Image
+            ref={elementRef}
+            src={src}
+            alt={alt}
+            fill
+            placeholder={blurDataURL ?? 'empty'}
+            className={className}
+            unoptimized
+        />
+    )
+}
+
 // Memoized: the virtualized grid re-renders on every scroll frame (tanstack
 // virtual mutates state under "use no memo"), and without this each visible
 // card re-executes per frame. Callers must keep object/function props
@@ -121,11 +188,19 @@ export const SearchResultImage = memo(function SearchResultImage({
     const animated = animatedCellMode(result, animatedFloor)
     const thumbnailUrl = getFileURL(dbs, "thumbnail", "sha256", result.sha256, tierRef.current,
         animated === "still")
-    // Only built for a loop card; for every other card these are the same
-    // string as above and nothing reads them.
-    const loopPosterUrl = animated === "loop"
-        ? getFileURL(dbs, "thumbnail", "sha256", result.sha256, tierRef.current, true)
-        : thumbnailUrl
+    // THE ANSWER TO "what is this card's picture", computed once. Everything
+    // below dispatches on `source` rather than re-asking `animated === "loop"`
+    // — the extreme branch used to build this same object inline while the
+    // normal branch asked the question again, so the two could drift. The
+    // poster URL is the same request with `still=true`, and it is built only
+    // for a loop card.
+    const source: CellPictureSource = animated === "loop"
+        ? {
+            kind: "loop",
+            src: thumbnailUrl,
+            poster: getFileURL(dbs, "thumbnail", "sha256", result.sha256, tierRef.current, true),
+        }
+        : { kind: "image", src: thumbnailUrl }
     // Deliberately NOT a `useSearchParams` of its own. This card used to hold
     // one and rebuild its gallery href behind a `useMemo` keyed on the params
     // object — i.e. it recomputed on EVERY URL write, for every visible card,
@@ -219,24 +294,26 @@ export const SearchResultImage = memo(function SearchResultImage({
                         imageContainerClassName)}
                     style={imageHeightPx == null ? undefined : { height: imageHeightPx }}
                 >
+                    {/* THREE OUTCOMES, dispatched on `source` and on nothing
+                        else: an extreme-aspect card (whose own component then
+                        handles both kinds of crop), a loop, or the still
+                        image every other card is. */}
                     {extreme ? (
                         <ExtremeAspectPicture
-                            crop={animated === "loop"
-                                ? { kind: "loop", src: thumbnailUrl, poster: loopPosterUrl }
-                                : { kind: "image", src: thumbnailUrl }}
+                            crop={source}
                             displaySrc={getFileURL(dbs, "thumbnail", "sha256", result.sha256, "display")}
                             alt={`Result ${result.path}`}
                             blurDataURL={blurDataURL}
                             imageClassName={imageClassName}
                             disabled={!!showLoadingSpinner}
                         />
-                    ) : animated === "loop" ? (
+                    ) : source.kind === "loop" ? (
                         <AnimatedCellPicture
-                            src={thumbnailUrl}
-                            poster={loopPosterUrl}
+                            src={source.src}
+                            poster={source.poster}
                             alt={`Result ${result.path}`}
                             blurDataURL={blurDataURL}
-                            // The static card's classes, verbatim, so a loop
+                            // The still card's classes, verbatim, so a loop
                             // cell is indistinguishable from the picture it
                             // replaces — including the CSS-only hover contain,
                             // which works on a <video> exactly as it does on an
@@ -247,37 +324,14 @@ export const SearchResultImage = memo(function SearchResultImage({
                                 imageClassName)}
                         />
                     ) : (
-                        <Image
-                            src={thumbnailUrl}
+                        <CellStillImage
+                            src={source.src}
                             alt={`Result ${result.path}`}
-                            fill
-                            // The blurhash PNG data URL is handed to `placeholder`
-                            // DIRECTLY. `placeholder="blur"` is FORBIDDEN on this
-                            // card and must not be reintroduced: with it, next/image
-                            // wraps the PNG in a ~6 KB `data:image/svg+xml` document
-                            // carrying a feGaussianBlur graph, UNIQUE per item.
-                            // Blink treats an SVG used as an image as its own
-                            // isolated Document (own style resolver, own layout
-                            // tree), so a virtualized grid mints one Document per
-                            // cell mount — ~12/s at scroll speed, faster than GC
-                            // reclaims them. Measured (F3 investigation, 180 s
-                            // stdtest scroll): live Documents 31 -> 901 and bucket
-                            // p90 8.4 -> 33.6 ms; with the data URL passed straight
-                            // through (plain `background-image: url(<png>)`, no SVG,
-                            // no Document) Documents hold at 1 and the curve is flat.
-                            // The type of `blurDataURL` (`data:image/png;base64,…`
-                            // template literal) is the real guard here: next/image
-                            // only validates the placeholder string in dev builds —
-                            // in production an invalid string silently becomes a
-                            // garbage background. `?? 'empty'` is equivalent to
-                            // omitting the prop; it is kept as documentation.
-                            placeholder={blurDataURL ?? 'empty'}
-                            // draggable={true}
+                            blurDataURL={blurDataURL}
                             className={cn(
                                 "object-cover object-top",
                                 showLoadingSpinner ? "" : "group-hover:object-contain group-hover:object-center",
                                 imageClassName)}
-                            unoptimized
                         />
                     )}
                     {/* INSIDE the anchor, not beside it: the anchor is
@@ -454,16 +508,12 @@ function ExtremeAspectPicture({
                     occluded={showDisplay}
                 />
             ) : (
-                <Image
-                    ref={attachCrop}
+                <CellStillImage
+                    elementRef={attachCrop}
                     src={crop.src}
                     alt={alt}
-                    fill
-                    // Same rule as the plain card's: the blurhash PNG goes to
-                    // `placeholder` directly, never `placeholder="blur"`.
-                    placeholder={blurDataURL ?? 'empty'}
+                    blurDataURL={blurDataURL}
                     className={cropClassName}
-                    unoptimized
                 />
             )}
             {displayMounted && (
@@ -488,16 +538,6 @@ function ExtremeAspectPicture({
         </>
     )
 }
-
-/**
- * Which of the two picture elements a card's grid rendition needs. `"loop"`
- * carries both URLs because the loop and its poster are the same request with
- * and without `still=true`, and the fallback below needs the second one in hand
- * the moment the first one fails.
- */
-type CellPictureSource =
-    | { kind: "image"; src: string }
-    | { kind: "loop"; src: string; poster: string }
 
 /**
  * The picture of a card whose item MOVES and is above the raw floor, so its
@@ -593,16 +633,12 @@ function AnimatedCellPicture({
     }, [failed, occluded])
     if (failed) {
         return (
-            <Image
-                ref={elementRef}
+            <CellStillImage
+                elementRef={elementRef}
                 src={poster}
                 alt={alt}
-                fill
-                // Same rule as every other picture on this card: the blurhash
-                // PNG goes to `placeholder` directly, never `placeholder="blur"`.
-                placeholder={blurDataURL ?? 'empty'}
+                blurDataURL={blurDataURL}
                 className={className}
-                unoptimized
             />
         )
     }
@@ -643,7 +679,7 @@ function AnimatedCellPicture({
             // `placeholder` uses on every other picture in this card — so a
             // loop cell has the same something-shaped-like-the-picture behind
             // it as its neighbours in the moment before the poster paints.
-            // Never an SVG wrapper: see the placeholder note on the plain card.
+            // Never an SVG wrapper: see the settled law on CellStillImage.
             style={blurDataURL ? {
                 backgroundImage: `url("${blurDataURL}")`,
                 backgroundSize: "cover",

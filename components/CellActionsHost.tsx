@@ -8,7 +8,10 @@ import { toast } from "@/components/ui/use-toast"
 import { useBookmarkNs } from "@/lib/state/zust"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useAlwaysShowBookmarkBtn } from "@/lib/state/alwaysShowBookmarks"
-import { updateBookmarkStatusInSearchCache } from "@/lib/bookmarkSearchCache"
+import {
+    BOOKMARK_PATH,
+    toggleBookmark as toggleBookmarkWithCache,
+} from "@/lib/bookmarkSearchCache"
 import { useFileOpenRunner } from "@/hooks/fileOpen"
 import { useFileShareRunner } from "@/hooks/fileShare"
 import { useItemSelection } from "@/lib/state/itemSelection"
@@ -24,10 +27,8 @@ import {
 import { usePinBoard } from "@/lib/state/pinboard"
 import { usePinboardCarry } from "@/lib/state/pinboardCarry"
 import { markPinboardPendingEdit } from "@/lib/pinboardNavigation"
-import { newPinHField } from "@/lib/galleryTrim"
 import { PIN_SHA_PREFIX_LENGTH } from "@/lib/pinboardCrop"
-import { v1ScaleFactors } from "@/lib/pinboardGrid"
-import { placeNewPin } from "@/lib/pinboardPlace"
+import { togglePinRecords } from "@/lib/pinboardPlace"
 import type { FileActionTarget } from "@/lib/relayContext"
 import {
     CellCallbacksContext,
@@ -39,8 +40,6 @@ import {
 
 /** The per-item Data View is tab 1 of whichever sidebar is mounted. */
 const DATA_VIEW_TAB = 1
-
-const BOOKMARK_PATH = "/api/bookmarks/ns/{namespace}/{sha256}"
 
 
 /**
@@ -181,53 +180,14 @@ export function CellActionsHost({
         return {
             toggleBookmark(sha256, isBookmarked) {
                 const s = latest.current
-                const query = s.dbs
-                const namespace = s.namespace
-                const params = { path: { namespace, sha256 }, query }
-                const onSuccess = (deleted: boolean) => {
-                    // The mutation result is authoritative — patch every cached
-                    // search response so this card (and any other card showing
-                    // the same item) flips instantly without a refetch.
-                    updateBookmarkStatusInSearchCache(
-                        s.queryClient,
-                        query.user_data_db,
-                        sha256,
-                        namespace,
-                        !deleted
-                    )
-                    s.queryClient.invalidateQueries({
-                        queryKey: ["get", BOOKMARK_PATH, { params }],
-                    })
-                    s.queryClient.invalidateQueries({
-                        queryKey: ["get", "/api/bookmarks/item/{sha256}", {
-                            params: { path: { sha256 }, query },
-                        }],
-                    })
-                    toast({
-                        title: `Bookmark ${deleted ? "removed" : "added"}`,
-                        description: `File has been ${deleted ? "removed from" : "added to"} the ${namespace} group`,
-                        duration: 2000,
-                    })
-                }
-                const onError = (error: any) => {
-                    toast({
-                        title: "Failed to update bookmark",
-                        description: error.message,
-                        variant: "destructive",
-                        duration: 2000,
-                    })
-                }
-                if (isBookmarked) {
-                    s.removeBookmark.mutate({ params }, {
-                        onSuccess: () => onSuccess(true),
-                        onError,
-                    })
-                } else {
-                    s.addBookmark.mutate({ params }, {
-                        onSuccess: () => onSuccess(false),
-                        onError,
-                    })
-                }
+                toggleBookmarkWithCache(
+                    s.queryClient,
+                    { add: s.addBookmark, remove: s.removeBookmark },
+                    s.dbs,
+                    s.namespace,
+                    sha256,
+                    isBookmarked
+                )
             },
             openFile(file: CellFileRef) {
                 latest.current.fileOpen.openFile(file)
@@ -292,47 +252,15 @@ export function CellActionsHost({
                 if (s.records.length === 0 && !s.galleryOpen) {
                     void s.setHidePinBoard(true)
                 }
-                // Bound to a specific copy: splice out that exact record by
-                // its offset
-                if (layoutKey !== undefined) {
-                    s.updateRecords((prev) => {
-                        const offset = parseInt(layoutKey.split("-")[0])
-                        const next = [...prev]
-                        next.splice(offset, 5)
-                        return next
-                    })
-                    return
-                }
+                // The record algebra itself — which copy is removed, where a
+                // new pin lands, what its h field carries — is
+                // togglePinRecords in lib/pinboardPlace.ts. `galleryTrim` is
+                // read out of the box HERE rather than in the updater, so the
+                // trim baked into a new pin is the one in force at the click
+                // rather than whenever nuqs runs the update.
                 const galleryTrim = s.galleryTrim
-                s.updateRecords((prev, grid) => {
-                    const pins: [string, number][] = prev
-                        .filter((_, i) => i % 5 === 0)
-                        .map((id, index) => [id, index])
-                    const isPinnedIndex = pins.findIndex(([id]) =>
-                        id.slice(0, PIN_SHA_PREFIX_LENGTH) === sha256.slice(0, PIN_SHA_PREFIX_LENGTH))
-                    if (isPinnedIndex !== -1) {
-                        const index = pins[isPinnedIndex][1]
-                        const next = [...prev]
-                        next.splice(index * 5, 5)
-                        return next
-                    }
-                    // Default new-pin size is 10x10 in v1 units, scaled to the
-                    // board's grid; the pin lands in the first free slot found
-                    // scanning starting at the bottom row (see
-                    // pinboardPlace.ts), never on top of anything
-                    const { sx, sy } = v1ScaleFactors(grid)
-                    const w = Math.round(10 * sx)
-                    const h = Math.round(10 * sy)
-                    const { x, y } = placeNewPin(prev, grid, w, h)
-                    return [
-                        ...prev,
-                        sha256.slice(0, PIN_SHA_PREFIX_LENGTH),
-                        x.toString(),
-                        y.toString(),
-                        w.toString(),
-                        newPinHField(h, sha256, galleryTrim),
-                    ]
-                })
+                s.updateRecords((prev, grid) =>
+                    togglePinRecords(prev, grid, sha256, { layoutKey, galleryTrim }))
             },
             galleryHref(index: number) {
                 return getGalleryOptionsSerializer()(

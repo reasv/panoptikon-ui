@@ -76,7 +76,12 @@ const FAST_SCROLL_PX_PER_MS = 1.2
  */
 const SETTLE_MS = 180
 
-interface Entry {
+/**
+ * What the policy needs to know about one registered cell. Spelled as its own
+ * type so the planner below can be given plain objects — the policy is
+ * arithmetic over three fields and never needs an element (see planPlayback).
+ */
+export interface PlaybackState {
   /** Last ratio the observer reported. The tie-break when over the cap. */
   ratio: number
   /**
@@ -95,6 +100,94 @@ interface Entry {
    * time it comes back it is a new look at it.
    */
   userPaused: boolean
+}
+
+/** The registry's own record: the policy fields, and nothing else yet. */
+type Entry = PlaybackState
+
+/**
+ * What the policy has decided about one cell, by position in the array it was
+ * given.
+ *
+ *   - `"play"` / `"pause"` — hand this to `apply`.
+ *   - `"skip"` — LEAVE THE ELEMENT ALONE. It is the user's own pause: the
+ *     director neither resumes it nor pauses it again, and (see the cap below)
+ *     it is not counted against the cap either.
+ *
+ * `clearUserPaused` is the one piece of state the policy decides but does not
+ * own — the caller writes it back. It is separated out rather than mutated
+ * here so the planner stays a function of its inputs.
+ */
+export interface PlaybackDecision {
+  action: "play" | "pause" | "skip"
+  clearUserPaused: boolean
+}
+
+/**
+ * THE POLICY, as arithmetic: which cells should be playing, given what the
+ * observer last reported about each and whether the page is scrolling fast.
+ *
+ * Pure and element-free on purpose. Everything that made this hard to be sure
+ * about — the incumbency-first ordering, a user-paused cell being excluded
+ * from the playing set AND from the cap it would otherwise consume, the
+ * fast-scroll override outranking all of it — is a claim about numbers, and
+ * having it here means scripts/playback.test.mjs can pin those claims without
+ * a DOM. `reconcile` below maps the answers onto elements and is the only
+ * thing that touches one.
+ *
+ * `states` is in registration order, and the returned array is parallel to it.
+ * Ties in the over-cap ordering (same intent, same ratio) therefore resolve to
+ * registration order, because the sort is stable.
+ */
+export function planPlayback(
+  states: readonly PlaybackState[],
+  fastScroll: boolean
+): PlaybackDecision[] {
+  // The fast-scroll override, and it is total: everything stops, including
+  // cells that are fully visible and cells the user paused by hand. Their
+  // pause-intent is deliberately NOT cleared — a flick past a cell the user
+  // silenced must not un-silence it.
+  if (fastScroll) {
+    return states.map(() => ({ action: "pause", clearUserPaused: false }))
+  }
+  const decisions: PlaybackDecision[] = []
+  const candidates: number[] = []
+  for (let i = 0; i < states.length; i += 1) {
+    const state = states[i]
+    if (state.ratio < VISIBLE_RATIO) {
+      // Off screen: paused, and the user's pause-intent expires here. Leaving
+      // the viewport is the natural reset — the next time this cell is on
+      // screen it is a fresh look at it, not the one they silenced.
+      decisions.push({ action: "pause", clearUserPaused: true })
+      continue
+    }
+    if (state.userPaused) {
+      // Neither resumed nor counted against the cap: it is not competing for a
+      // decode session, so its slot belongs to a cell that is actually
+      // animating.
+      decisions.push({ action: "skip", clearUserPaused: false })
+      continue
+    }
+    decisions.push({ action: "play", clearUserPaused: false })
+    candidates.push(i)
+  }
+  if (candidates.length > MAX_PLAYING) {
+    // Only ever sorted in the over-cap case, which is the one the cap exists
+    // for. ALREADY PLAYING WINS, then the more visible of the rest: keeping
+    // the incumbent is what stops a boundary cell from being started and
+    // stopped on alternating callbacks, and among newcomers the cell the user
+    // can see more of is the one worth a decode session.
+    candidates.sort((a, b) => {
+      const ea = states[a]
+      const eb = states[b]
+      if (ea.playing !== eb.playing) return ea.playing ? -1 : 1
+      return eb.ratio - ea.ratio
+    })
+    for (let i = MAX_PLAYING; i < candidates.length; i += 1) {
+      decisions[candidates[i]].action = "pause"
+    }
+  }
+  return decisions
 }
 
 const entries = new Map<HTMLVideoElement, Entry>()
@@ -275,46 +368,27 @@ function settle(): void {
  * callbacks and on the two fast-scroll transitions — never on a timer and
  * never per frame — and touches an element only when its state should change,
  * so a settled screenful reconciles to zero DOM calls.
+ *
+ * The DECIDING is planPlayback's; this is the mapping onto elements. Map
+ * iteration order is insertion order, which is registration order, which is
+ * the order the planner's stable sort breaks ties in.
  */
 function reconcile(): void {
-  if (fastScroll) {
-    for (const [video, entry] of entries) apply(video, entry, false)
-    return
+  const videos = [...entries.keys()]
+  const states = videos.map((video) => entries.get(video)!)
+  const decisions = planPlayback(states, fastScroll)
+  // EVERY PAUSE BEFORE ANY PLAY, which is what the branch-by-branch version
+  // did for free and what keeps the cap from being momentarily exceeded: a
+  // cell handing its slot over must have released its decode session before
+  // the cell taking it asks for one.
+  for (let i = 0; i < videos.length; i += 1) {
+    const decision = decisions[i]
+    if (decision.clearUserPaused) states[i].userPaused = false
+    if (decision.action === "pause") apply(videos[i], states[i], false)
   }
-  const visible: HTMLVideoElement[] = []
-  for (const [video, entry] of entries) {
-    if (entry.ratio < VISIBLE_RATIO) {
-      // Off screen: paused, and the user's pause-intent expires here. Leaving
-      // the viewport is the natural reset — the next time this cell is on
-      // screen it is a fresh look at it, not the one they silenced.
-      entry.userPaused = false
-      apply(video, entry, false)
-      continue
-    }
-    // A cell the user stopped is neither resumed nor counted against the cap:
-    // it is not competing for a decode session, so its slot belongs to a cell
-    // that is actually animating.
-    if (entry.userPaused) continue
-    visible.push(video)
+  for (let i = 0; i < videos.length; i += 1) {
+    if (decisions[i].action === "play") apply(videos[i], states[i], true)
   }
-  if (visible.length > MAX_PLAYING) {
-    // Only ever sorted in the over-cap case, which is the one the cap exists
-    // for. ALREADY PLAYING WINS, then the more visible of the rest: keeping
-    // the incumbent is what stops a boundary cell from being started and
-    // stopped on alternating callbacks, and among newcomers the cell the user
-    // can see more of is the one worth a decode session.
-    visible.sort((a, b) => {
-      const ea = entries.get(a)!
-      const eb = entries.get(b)!
-      if (ea.playing !== eb.playing) return ea.playing ? -1 : 1
-      return eb.ratio - ea.ratio
-    })
-    for (let i = MAX_PLAYING; i < visible.length; i += 1) {
-      apply(visible[i], entries.get(visible[i])!, false)
-    }
-    visible.length = MAX_PLAYING
-  }
-  for (const video of visible) apply(video, entries.get(video)!, true)
 }
 
 function apply(video: HTMLVideoElement, entry: Entry, playing: boolean): void {
