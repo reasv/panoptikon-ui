@@ -19,7 +19,18 @@ import { blurHashToDataURL } from '@/lib/state/blurHashDataURL'
 import { PlayableBadge, isPlayableItem } from '@/components/PlayableBadge'
 import { useSearchLoading } from '@/lib/state/zust'
 import { topRowHighlightItem, virtualPageOf } from '@/lib/scrollMode'
+import { tierForCellWidth, type ThumbnailTier } from '@/lib/thumbnailTier'
+import { useDevicePixelRatio } from '@/hooks/useDevicePixelRatio'
 import type { ResultsSource } from '@/lib/searchHooks'
+
+// The strip's card box, in CSS pixels — the `w-[240px] h-80` figure below and
+// the skeleton that stands in for it. Named here because the rendition each
+// card asks for is derived from it: 240 CSS px is a `grid-s` box up to a
+// device pixel ratio of 2.4, which is why the filmstrip was the single worst
+// offender before tiers existed — it loaded display-class renditions (4096px
+// on the long side, or the original file) into a 240px box, one per card, at
+// virtualized-remount rates.
+const STRIP_CARD_CSS_WIDTH = 240
 
 // How far past the rendered cards the strip warms rows, in items. The strip
 // renders about a screen's worth of 256px cards at a time, so a couple of
@@ -157,6 +168,11 @@ export function VirtualGalleryHorizontalScroll({
             Math.min(scrollWidth - clientWidth, scrollLeft + e.deltaY)
         )
     }, [])
+    // ONE tier for the whole strip, computed here and passed down: the card
+    // box is a fixed 240px, so this depends on nothing but the device pixel
+    // ratio, and watching that per card would be a state and an effect in
+    // every one of them.
+    const tier = tierForCellWidth(STRIP_CARD_CSS_WIDTH, useDevicePixelRatio())
     const [qIndex] = useGalleryIndex()
     // The item the strip must keep in view, and WHICH FILE is currently at it.
     // The second half is the re-assert trigger, and it is deliberately not
@@ -374,6 +390,7 @@ export function VirtualGalleryHorizontalScroll({
                                 onItemHover={onItemHover}
                                 viewerOpen={viewerOpen}
                                 onViewerOpenChange={onViewerOpenChange}
+                                tier={tier}
                             />
                         )
                     })}
@@ -418,6 +435,7 @@ function VirtualHorizontalScrollElement({
     onItemHover,
     viewerOpen,
     onViewerOpenChange,
+    tier,
 }: {
     item: SearchResult
     ownIndex: number
@@ -433,6 +451,8 @@ function VirtualHorizontalScrollElement({
     /** The pinned viewer's open state and setter — see the strip's props. */
     viewerOpen?: boolean
     onViewerOpenChange?: (open: boolean) => void
+    /** The rendition tier for the 240px card box — computed by the strip. */
+    tier: ThumbnailTier
 }) {
     const [qIndex] = useGalleryIndex()
     // The same mapping the strip scrolls to (see stripTarget): clamped, not
@@ -448,7 +468,11 @@ function VirtualHorizontalScrollElement({
     )
     const [dbs] = useSelectedDBs()
     const setSelected = useItemSelection((state) => state.setItem)
-    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256)
+    // The card paints `object-cover object-top` in a 240x320 box, which is
+    // exactly the presentation the grid tiers' crop is cut for — so an
+    // extreme-aspect item needs no special case here: the crop IS what this
+    // card should show, and there is no hover-contain state to swap for.
+    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256, tier)
     // Every hover report this card makes goes through here, so the card can
     // know whether the dock's hover subject is currently ITS item. Tracked
     // from the reports rather than from raw pointer presence: the unmount

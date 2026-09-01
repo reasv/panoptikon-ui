@@ -2,6 +2,7 @@
 import { useState } from "react"
 import { cn, getFileURL } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
+import { isExtremeAspect } from "@/lib/thumbnailTier"
 
 // The maximized workspace's HOVER PEEK, as a LAYER inside the preview
 // surface's box (docs/maximized-pinboard-search-overlay-design.md §8.4) —
@@ -67,7 +68,17 @@ export function PeekLayer({
     onAspect: (sha: string, ratio: number) => void
 }) {
     const [dbs] = useSelectedDBs()
-    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256)
+    // A CONTAIN surface (LAYER_CLASSES), and one that MEASURES what it paints
+    // — `onAspect` reports naturalWidth/naturalHeight to size the box both
+    // preview subjects share. A grid tier is therefore doubly wrong here for
+    // an item past aspect 2: it is a crop, so it would show a strip's top
+    // screenful, and its aspect is the CROP's, which would size the shared box
+    // around a picture the viewer never paints. The default path is what this
+    // asks for, with `?size=display` spelled out for the extreme-aspect items
+    // whose display rendition the tier work changed (§2, F4) — same bytes, new
+    // URL, so a stale cache entry cannot answer it.
+    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256,
+        isExtremeAspect(item.width, item.height) ? "display" : undefined)
     // The dwell upgrade (§8): the stored thumbnail shows immediately; for
     // STILL images the original file loads behind it and fades in on load,
     // so a sweep stays cheap (the 200ms open debounce already suppresses

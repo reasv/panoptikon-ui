@@ -13,6 +13,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { useViewMode } from "@/lib/state/gallery"
 import { useCommitViewMode } from "@/lib/searchHooks"
 import { usePageSize } from "@/lib/state/searchQuery/clientHooks"
+import { useGridCellSize } from "@/lib/state/cellSize"
 import {
     clearUserDefaults,
     describeStoredDefaults,
@@ -44,6 +45,10 @@ export function ViewModeToggle() {
     // is already handled — nothing to guard here.
     const commitViewMode = useCommitViewMode()
     const pageSize = usePageSize()
+    // Mounted in the maximized board's search dock too, where no result grid
+    // is on screen — but `cs` is read from the URL, not from the grid, so what
+    // is saved there is still the presentation this search carries.
+    const cellSize = useGridCellSize()[0]
     const { toast } = useToast()
     const scrollMode = viewMode === "scroll"
     return (
@@ -100,10 +105,13 @@ export function ViewModeToggle() {
                     {/* User layer of the creation-defaults system (see
                         lib/searchDefaults.ts): Save captures the current
                         presentation as what a NEW search session starts
-                        with. ONE action for both parameters — the gesture is
-                        "start my searches looking like this", and a mode
-                        saved without the page size it was chosen at is half
-                        an answer. This search — and every URL that already
+                        with. ONE action for every presentation parameter —
+                        the gesture is "start my searches looking like this",
+                        and a mode saved without the page size and cell size
+                        it was chosen at is a fraction of an answer. Derived
+                        from the registry in lib/searchDefaults.ts, so a
+                        parameter added there is saved (and named in the toast)
+                        by this one call. This search — and every URL that already
                         exists — is never touched: defaults apply only when a
                         load with no presentation parameters creates a
                         session. */}
@@ -118,6 +126,10 @@ export function ViewModeToggle() {
                             const stored = saveUserDefaults({
                                 vm: viewMode,
                                 page_size: pageSize,
+                                // null (auto) sanitizes AWAY rather than being
+                                // stored, so saving from an automatic view is
+                                // also how someone drops a saved cell width.
+                                cs: cellSize,
                             })
                             const summary = describeStoredDefaults(stored)
                             toast({

@@ -41,6 +41,18 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 import { components } from "@/lib/panoptikon"
 import { GRID_SCROLL_ANCHOR_KEY, useGridScrollAnchor } from "@/lib/state/gridScroll"
 import { createDerivedPageStore } from "@/lib/state/derivedPage"
+import { createCellWidthStore, type CellWidthStore } from "@/lib/state/cellWidthBox"
+import { useGridCellSize } from "@/lib/state/cellSize"
+import {
+    GRID_GAP_PX,
+    cellWidthForColumns,
+    columnsForCellWidth,
+    imageBoxHeightForCellWidth,
+    rowHeightForCellWidth,
+} from "@/lib/gridCellSize"
+import { tierForCellWidth } from "@/lib/thumbnailTier"
+import { useDevicePixelRatio } from "@/hooks/useDevicePixelRatio"
+import { GridCellSizeControl } from "@/components/GridCellSizeControl"
 import { DesktopUpdateRibbon } from "@/components/DesktopUpdateRibbon"
 import { FindNavigator } from "@/components/gallery/FindButton"
 import { SearchMetricsHoverCard } from "@/components/SearchMetricsCard"
@@ -311,10 +323,11 @@ function useScrollURLNormalization({ urlParams, scrollMode, page, k, setScrollAn
  * experience is byte-identical to what it was before this existed (asserted in
  * scripts/scrollmode.test.mjs).
  */
-function useSearchCreationStamp({ urlParams, setViewMode, setPageSizeRaw }: {
+function useSearchCreationStamp({ urlParams, setViewMode, setPageSizeRaw, setCellSize }: {
     urlParams: ReadonlyURLSearchParams,
     setViewMode: ReturnType<typeof useViewMode>[1],
     setPageSizeRaw: ReturnType<typeof usePageSizeRaw>[1],
+    setCellSize: ReturnType<typeof useGridCellSize>[1],
 }) {
     // The same first-render snapshot discipline as the normalization hook's,
     // for the same reason: this decision is about the URL the session STARTED
@@ -338,6 +351,10 @@ function useSearchCreationStamp({ urlParams, setViewMode, setPageSizeRaw }: {
         const replace = { history: "replace" as const }
         if (stamp.vm !== undefined) setViewMode(stamp.vm, replace)
         if (stamp.page_size !== undefined) setPageSizeRaw(stamp.page_size, replace)
+        // Never `null` here — creationStamp only carries keys that DIFFER from
+        // the codec default, and `cs`'s codec default is null (auto). So this
+        // stamps a width or nothing at all.
+        if (stamp.cs != null) setCellSize(stamp.cs, replace)
         // Mount-only, exactly like the normalization effect above: the
         // decision is taken from the snapshot, and the setters churn identity.
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -679,7 +696,8 @@ export function MultiSearchView({ initialQuery, isRestrictedMode, updateRibbonVi
     const setPageRaw = useSearchPageRaw()[1]
     useScrollURLNormalization({ urlParams, scrollMode, page, k, setScrollAnchor, setPageRaw })
     const setPageSizeRaw = usePageSizeRaw()[1]
-    useSearchCreationStamp({ urlParams, setViewMode, setPageSizeRaw })
+    const setCellSize = useGridCellSize()[1]
+    useSearchCreationStamp({ urlParams, setViewMode, setPageSizeRaw, setCellSize })
 
     // The scrubber's three props. Virtual page N covers items [(N-1)k, Nk), so
     // a click is a position write and rides the grid's existing external-anchor
@@ -1007,6 +1025,11 @@ export function GridPanel({
     committedQuery: Pick<SearchRequestParts, "searchQuery" | "dbs">,
 }) {
     const pinboard = useGalleryPinBoardLayout()[0]
+    // The grid's measured cell width, from the one component that can compute
+    // it to the one control that reads it, without re-rendering this panel on
+    // the way (lib/state/cellWidthBox.ts). Per mount, never a module
+    // singleton — the derived-page box's rule, for its reason.
+    const [cellWidthStore] = useState(() => createCellWidthStore(0))
     const [pinboardTab, setPinboardTab] = useGridPinboardTab()
     const [libraryTab, setLibraryTab] = useGridLibraryTab()
     const [fs, setFs] = useGalleryFullscreen()
@@ -1148,6 +1171,13 @@ export function GridPanel({
                         the toggle decides how the Results tab presents, and
                         having it appear and disappear with the tab would
                         make it the one header control that moves. */}
+                    {/* Beside the mode toggle rather than inside it: both
+                        are about how the Results tab presents, and the size
+                        slider is the other half of the answer the toggle
+                        starts. Deliberately NOT mounted in the maximized
+                        board's search dock, which shares ViewModeToggle but
+                        renders no result grid for a cell size to describe. */}
+                    <GridCellSizeControl cellWidthStore={cellWidthStore} />
                     <ViewModeToggle />
                     <PinboardLibraryButton />
                 </div>
@@ -1178,6 +1208,7 @@ export function GridPanel({
                     showPagination={showPagination}
                     savedScrollOffsetRef={savedScrollOffsetRef}
                     updateRibbonVisible={updateRibbonVisible}
+                    cellWidthStore={cellWidthStore}
                 />
             )}
         </div>
@@ -1260,6 +1291,7 @@ export function ResultGrid({
     showPagination = true,
     savedScrollOffsetRef,
     updateRibbonVisible = false,
+    cellWidthStore,
 }: {
     source: ResultsSource,
     mode?: ViewMode,
@@ -1288,6 +1320,12 @@ export function ResultGrid({
     showPagination?: boolean,
     savedScrollOffsetRef?: React.MutableRefObject<number>,
     updateRibbonVisible?: boolean,
+    /**
+     * Where to publish the measured cell width for the size slider's thumb
+     * (lib/state/cellWidthBox.ts). Optional: the grid is correct without one,
+     * it just cannot seed a slider that has not been given the box.
+     */
+    cellWidthStore?: CellWidthStore,
 }) {
     // TanStack Virtual v3 triggers re-renders by mutating internal state,
     // which the React Compiler's memoization breaks — same as the gallery view.
@@ -1314,7 +1352,73 @@ export function ResultGrid({
     }, [])
     const parentRef = useRef<HTMLDivElement>(null)
     const [sidebarOpen] = useSideBarOpen()
-    const { columns, rowEstimate } = useResultGridLayout(sidebarOpen)
+    const autoLayout = useResultGridLayout(sidebarOpen)
+    // THE EXPLICIT CELL SIZE (design §9). Absent is "auto" — the breakpoint
+    // policy above, unchanged — and present replaces it wholesale: a target
+    // cell width from which the column count and the row height both follow.
+    // A hard switch, never a blend.
+    const [cellSize] = useGridCellSize()
+    // The row width, measured rather than derived. The auto policy needs no
+    // measurement (its columns come from window-level media queries, the same
+    // engine that applies the grid-cols-* classes), but "as many cells of
+    // width W as fit" is a question about THIS container, and the panel is
+    // narrower than the window by the sidebar, the page padding and the
+    // scrollbar gutter. It is also what turns a column count into a cell
+    // width for the tier choice below.
+    //
+    // Measured on the ROW CONTAINER (the spacer below) rather than on the
+    // scroll viewport, and that is not interchangeable: the viewport carries
+    // `pr-4` for the widened scrollbar, so its border box is 16px wider than
+    // the rows laid out inside it — and `clientWidth` there would include that
+    // padding while `contentRect` would not. The spacer has neither padding
+    // nor border, so every way of measuring it agrees, and what it reports is
+    // exactly the width the row's grid resolves against.
+    const [containerWidth, setContainerWidth] = useState(0)
+    const rowContainerRef = useRef<HTMLDivElement>(null)
+    useLayoutEffect(() => {
+        const element = rowContainerRef.current
+        if (!element) return
+        const publish = (width: number) => setContainerWidth((prev) =>
+            Math.abs(prev - width) < 1 ? prev : width)
+        const observer = new ResizeObserver((entries) => {
+            const entry = entries[entries.length - 1]
+            if (entry) publish(entry.contentRect.width)
+        })
+        observer.observe(element)
+        // Seeded synchronously in the layout pass that arms the observer,
+        // before the browser paints: the first frame that shows cells has to
+        // show them at the right tier, and the observer's own first callback
+        // arrives a frame later.
+        publish(element.clientWidth)
+        return () => observer.disconnect()
+    }, [])
+    const explicitSize = cellSize !== null && containerWidth > 0
+    const columns = explicitSize
+        ? columnsForCellWidth(containerWidth, cellSize, GRID_GAP_PX)
+        : autoLayout.columns
+    // What a cell is actually WIDE, in either mode: the slider's target is a
+    // target, and the columns it produces then share the container evenly.
+    // 0 while the container is unmeasured, which reads as "unknown" to the
+    // tier choice and answers `display` — the conservative direction.
+    const cellWidth = cellWidthForColumns(containerWidth, columns, GRID_GAP_PX)
+    const dpr = useDevicePixelRatio()
+    // ONE TIER FOR THE WHOLE GRID, computed here from the cell width the grid
+    // already knows and passed down as a stable string prop. Deliberately not
+    // a per-cell hook: a measurement or a media query inside the card is a
+    // subscription in every card, which is precisely what F1 removed.
+    const tier = tierForCellWidth(cellWidth, dpr)
+    const imageHeightPx = explicitSize && cellWidth > 0
+        ? imageBoxHeightForCellWidth(cellWidth)
+        : undefined
+    const rowEstimate = imageHeightPx !== undefined
+        ? rowHeightForCellWidth(cellWidth)
+        : autoLayout.rowEstimate
+    // Published for the size slider, which seeds its thumb from the width the
+    // user is currently looking at (so the first drag off "auto" continues
+    // from there). A box write, so this costs the panel no render.
+    useEffect(() => {
+        cellWidthStore?.set(Math.round(cellWidth))
+    }, [cellWidthStore, cellWidth])
     const scroll = mode === "scroll"
     // The navigable extent. In pages mode this IS `results.length` (the source
     // wraps the page's array); in scroll mode it is the count query's answer,
@@ -1788,6 +1892,7 @@ export function ResultGrid({
                 )}
             >
                 <div
+                    ref={rowContainerRef}
                     className="relative w-full"
                     style={{ height: `${virtualizer.getTotalSize()}px` }}
                 >
@@ -1809,12 +1914,26 @@ export function ResultGrid({
                                 style={{ transform: `translateY(${virtualRow.start}px)` }}
                             >
                                 <div
-                                    // These responsive classes must stay in sync with useGridColumns
-                                    className={cn('grid gap-4 pb-4 grid-cols-1 md:grid-cols-2',
-                                        sidebarOpen ?
-                                            ('lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4 4xl:grid-cols-5') :
-                                            ('lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5')
+                                    // AUTO: the responsive classes, which must
+                                    // stay in sync with useResultGridLayout.
+                                    // EXPLICIT: the column count computed from
+                                    // the slider's target width, plus the gap
+                                    // spelled out in pixels — the same number
+                                    // `columnsForCellWidth` measured against,
+                                    // so the two cannot drift the way a `rem`
+                                    // gap would under a raised root font size.
+                                    className={cn('grid pb-4',
+                                        explicitSize
+                                            ? ''
+                                            : cn('gap-4 grid-cols-1 md:grid-cols-2',
+                                                sidebarOpen ?
+                                                    ('lg:grid-cols-1 xl:grid-cols-3 2xl:grid-cols-4 4xl:grid-cols-5') :
+                                                    ('lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'))
                                     )}
+                                    style={explicitSize ? {
+                                        gap: `${GRID_GAP_PX}px`,
+                                        gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+                                    } : undefined}
                                 >
                                     {/* Cells are addressed by global index and
                                         capped at the item count, so the last
@@ -1844,7 +1963,7 @@ export function ResultGrid({
                                         if (index >= itemCount) return null
                                         const result = source.get(index)
                                         if (!result) {
-                                            return <ResultCellSkeleton key={`pending-${index}`} />
+                                            return <ResultCellSkeleton key={`pending-${index}`} imageHeightPx={imageHeightPx} />
                                         }
                                         return (
                                             <SearchResultImage
@@ -1860,6 +1979,14 @@ export function ResultGrid({
                                                 // against this same source.
                                                 galleryLink
                                                 showLoadingSpinner={isLoading}
+                                                // Both stable primitives, so
+                                                // React.memo still holds: the
+                                                // tier only moves when the
+                                                // cell crosses a threshold,
+                                                // and the height only in the
+                                                // explicit mode that owns it.
+                                                tier={tier}
+                                                imageHeightPx={imageHeightPx}
                                             />
                                         )
                                     })}

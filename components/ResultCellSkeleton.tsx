@@ -20,16 +20,33 @@ import { memo } from "react"
  * value: this renders a screenful at a time, so bright blocks over the dark
  * theme would not be a detail.
  *
- * Memoized for the same reason SearchResultImage is, and it takes no props so
- * the memo is total: the grid that renders these is `"use no memo"` (TanStack
- * Virtual re-renders it by mutating internal state, once a scroll frame), and
- * a screenful of skeletons is exactly the state a deep-linked load scrolls in.
+ * Memoized for the same reason SearchResultImage is, and its one prop is a
+ * plain number so the memo still holds: the grid that renders these is
+ * `"use no memo"` (TanStack Virtual re-renders it by mutating internal state,
+ * once a scroll frame), and a screenful of skeletons is exactly the state a
+ * deep-linked load scrolls in.
  */
-export const ResultCellSkeleton = memo(function ResultCellSkeleton() {
+export const ResultCellSkeleton = memo(function ResultCellSkeleton({
+    imageHeightPx,
+}: {
+    /**
+     * The picture box's height under an explicit cell size (design §9), where
+     * the breakpoint classes no longer describe it. Omitted keeps them — and
+     * passing it through matters for the same reason every class here is
+     * copied verbatim: this is one of the rows scroll mode may measure its one
+     * row height from.
+     */
+    imageHeightPx?: number
+}) {
     return (
         <div className="border rounded p-2" aria-hidden="true">
             <div className="overflow-hidden relative w-full pb-full mb-2">
-                <div className="block relative mb-2 h-96 4xl:h-120 5xl:h-152">
+                <div
+                    className={imageHeightPx == null
+                        ? "block relative mb-2 h-96 4xl:h-120 5xl:h-152"
+                        : "block relative mb-2"}
+                    style={imageHeightPx == null ? undefined : { height: imageHeightPx }}
+                >
                     <div className="absolute inset-0 animate-pulse rounded bg-muted" />
                 </div>
             </div>

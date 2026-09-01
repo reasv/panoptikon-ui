@@ -15,6 +15,22 @@ import { GRID_SCROLL_ANCHOR_KEY } from "@/lib/state/gridScroll"
 import { useSearchParams } from "next/navigation"
 import { useMemo } from "react"
 import { PartitionBy, partitionBySerializer, usePartitionBy } from "@/lib/state/partitionBy"
+import { tierForCellWidth } from "@/lib/thumbnailTier"
+import { useDevicePixelRatio } from "@/hooks/useDevicePixelRatio"
+
+// The nominal CSS width of one card in this list, for the rendition it asks
+// for (lib/thumbnailTier.ts). A NOMINAL rather than a measurement, unlike the
+// result grid's: the sidebar is a fraction of the window (lg:w-1/2 down to
+// 5xl:w-[18%]) split over one or two columns, which puts a card between
+// ~170px (a 1280px window) and ~360px (4K), and the tier ladder's own slack
+// sits on top of that.
+//
+// ACCEPTED DEVIATION: past about 6K the sidebar's 18% is wide enough for
+// ~600px cards, where this asks for one tier less than the box wants. This
+// list is at most ten cards behind a collapsible panel rather than a
+// scrolling set, so the container measurement the result grid needs would not
+// pay for itself here.
+const SIMILAR_CARD_CSS_WIDTH = 400
 
 
 type ObjectWithDefaults<T> = {
@@ -62,6 +78,9 @@ export function SimilarItemsView({
 }) {
     const [dbs, ___] = useSelectedDBs()
     const searchParams = useSearchParams()
+    // One tier for the whole list, like the grid's: chosen here from the
+    // card's nominal box rather than inside each card.
+    const cardTier = tierForCellWidth(SIMILAR_CARD_CSS_WIDTH, useDevicePixelRatio())
     const [partitionBy] = usePartitionBy()
     const bookmarkNs = useBookmarkNs((state) => state.namespace)
     const { data, error, isError, refetch, isFetching, isLoading } = $api.useQuery(
@@ -252,6 +271,7 @@ export function SimilarItemsView({
                             onImageClick={() => onImageClick(index)}
                             showLoadingSpinner={isLoading || isFetching}
                             overrideURL={indexToLinkMapping ? indexToLinkMapping[index] : undefined}
+                            tier={cardTier}
                         />
                     ))}
                 </div>

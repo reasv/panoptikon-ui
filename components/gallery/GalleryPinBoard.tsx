@@ -2820,7 +2820,12 @@ export function PinBoard(
                     >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                            src={getFileURL(dbs, "thumbnail", "sha256", carrySha)}
+                            // An 80x80 box, so the smallest tier covers it to
+                            // beyond any display density (§2 names this ghost
+                            // explicitly: it paints plain centre
+                            // `object-cover`, and a top-crop shown here for an
+                            // extreme-aspect item is accepted as a non-issue).
+                            src={getFileURL(dbs, "thumbnail", "sha256", carrySha, "grid-s")}
                             alt=""
                             className="w-20 h-20 object-cover rounded shadow-lg opacity-80 border border-white/40"
                         />

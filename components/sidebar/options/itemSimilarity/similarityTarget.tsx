@@ -7,10 +7,19 @@ import { Button } from "@/components/ui/button";
 import { useItemSelection } from "@/lib/state/itemSelection";
 import { useItemSimilaritySearch, useSearchPage } from "@/lib/state/searchQuery/clientHooks";
 import { FilterContainer } from "../../base/FilterContainer";
+import { tierForCellWidth } from "@/lib/thumbnailTier";
+import { useDevicePixelRatio } from "@/hooks/useDevicePixelRatio";
+
+// The nominal CSS width of this ONE card, which spans the sidebar's whole
+// content width (grid-cols-1): ~350px at a 1280px window, ~700px at 4K. The
+// same nominal-rather-than-measured call as SimilarItemsView's, for the same
+// reason — a single card behind a collapsible panel.
+const TARGET_CARD_CSS_WIDTH = 700
 
 export function SimilarityTarget() {
     const selected = useItemSelection((state) => state.getSelected())
     const [dbs, ___] = useSelectedDBs()
+    const cardTier = tierForCellWidth(TARGET_CARD_CSS_WIDTH, useDevicePixelRatio())
     const [filter, setFilter] = useItemSimilaritySearch()
     const [page, setPage] = useSearchPage()
     const currentTargetExists = filter.target.length > 0
@@ -64,7 +73,7 @@ export function SimilarityTarget() {
             storageKey="similarity-target-details-open"
         >
             {currentTargetExists && <>
-                {resultItem && <SearchResultImage className="mt-4 grid grid-cols-1" result={resultItem} index={0} dbs={dbs} />}
+                {resultItem && <SearchResultImage className="mt-4 grid grid-cols-1" result={resultItem} index={0} dbs={dbs} tier={cardTier} />}
                 <div className="space-x-2 mt-4">
                     <p className="text-xs text-gray-500 mt-2">
                         {/* Real download, not open-in-tab (same-origin

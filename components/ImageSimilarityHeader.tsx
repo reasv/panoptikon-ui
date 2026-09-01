@@ -80,8 +80,19 @@ export function ImageSimilarityHeader() {
                         side="top"
                         className="w-auto p-2"
                     >
+                        {/* A CONTAIN surface, so `display` and never a grid
+                            tier (§2): past aspect 2 a grid rendition is a CROP
+                            cut for `object-cover`, and contained in this box
+                            it would show a strip's first screenful instead of
+                            the whole picture. The parameter is spelled out
+                            rather than left implicit in the bare URL — same
+                            bytes, NEW URL, so a browser cache holding this
+                            item's pre-tier long-side-crushed thumbnail cannot
+                            answer it (F4). Unconditional because the target is
+                            a sha256 and this component never has the item's
+                            dimensions in hand to test an aspect with. */}
                         <img
-                            src={getFileURL(dbs, "thumbnail", "sha256", filter.target)}
+                            src={getFileURL(dbs, "thumbnail", "sha256", filter.target, "display")}
                             alt="Similarity search target"
                             className="max-h-[40vh] max-w-[min(24rem,80vw)] rounded object-contain"
                         />

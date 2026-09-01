@@ -447,11 +447,15 @@ export function PreviewSurface({
     //
     // BOTH subjects report, and — THIS IS THE WHOLE POINT — only through the
     // one element they both paint: `getFileURL(dbs, "thumbnail", "sha256",
-    // item.sha256)`. PeekLayer's base layer and GalleryImageLarge's still
-    // image build that URL from the same expression against the same
-    // `useSelectedDBs()`, so restricting the store to them makes the box
-    // agree with the picture BY CONSTRUCTION in either subject, and fixing a
-    // peek is a no-op for the picture again.
+    // item.sha256, extreme ? "display" : undefined)`. PeekLayer's base layer
+    // and GalleryImageLarge's still image build that URL from the same
+    // expression against the same `useSelectedDBs()` — the extreme-aspect
+    // `?size=display` clause included, which is why the two carry the
+    // identical test rather than each deciding for itself — so restricting
+    // the store to them makes the box agree with the picture BY CONSTRUCTION
+    // in either subject, and fixing a peek is a no-op for the picture again.
+    // Neither surface ever paints a GRID tier: past aspect 2 that is a crop,
+    // and its aspect belongs to no picture either of them shows.
     //
     // TRAP — "same file" is NOT "same painted image", and a store keyed per
     // file cannot tell the difference. The peek's dwell upgrade loads the

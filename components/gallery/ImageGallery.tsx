@@ -23,6 +23,7 @@ import Link from 'next/link'
 import { usePageSize, useSearchPage, useSearchPageRaw } from '@/lib/state/searchQuery/clientHooks'
 import { useGridScrollAnchor } from '@/lib/state/gridScroll'
 import { useFetchPageRows, usePrefetchPageState, type ResultsSource } from '@/lib/searchHooks'
+import { isExtremeAspect } from '@/lib/thumbnailTier'
 import { SCROLL_CHUNK_SIZE } from '@/lib/searchRequest'
 import { chunkStartOf, scanLoadedForward } from '@/lib/scrollMode'
 import { serializers } from '@/lib/state/searchQuery/serializers'
@@ -1521,7 +1522,16 @@ export function GalleryImageLarge(
     }
 ) {
     const [dbs, ___] = useSelectedDBs()
-    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256)
+    // The large view stays on the DEFAULT path — no `size=`, the display
+    // rendition, exactly what it has always loaded — with ONE exception (§2,
+    // F4). It is a CONTAIN surface, so an item past aspect 2 must be asked for
+    // by name: `?size=display` is the same bytes and a NEW URL, which is what
+    // stops a browser cache stamped before the tier work from answering with
+    // the old long-side-crushed thumbnail (an 800x20000 webtoon used to be
+    // stored 163x4096 and painted here at 163px wide). Normal-aspect items
+    // keep the bare URL, so nothing else in the gallery re-downloads.
+    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256,
+        isExtremeAspect(item.width, item.height) ? "display" : undefined)
     const fileURL = getFileURL(dbs, "file", "sha256", item.sha256)
 
     const searchLoading = useSearchLoading(state => state.loading)

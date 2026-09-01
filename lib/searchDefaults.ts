@@ -37,17 +37,20 @@
 
 import type { ViewMode } from "./state/gallery"
 
-export type SearchDefaultableKey = "vm" | "page_size"
+export type SearchDefaultableKey = "vm" | "page_size" | "cs"
 
 export const SEARCH_DEFAULTABLE_KEYS: SearchDefaultableKey[] = [
   "vm",
   "page_size",
+  "cs",
 ]
 
 /** Every defaultable parameter, resolved to a value. */
 export interface ResolvedSearchDefaults {
   vm: ViewMode
   page_size: number
+  /** The explicit grid cell width, or null for the automatic policy. */
+  cs: number | null
 }
 
 interface DefaultableParam<K extends SearchDefaultableKey> {
@@ -77,6 +80,13 @@ export const SEARCH_DEFAULTABLE_PARAMS: {
   vm: { codecDefault: "pages", creationDefault: "pages", label: "Browsing Mode" },
   // The sidebar's Page Size slider (components/sidebar/base/PageSizeControl)
   page_size: { codecDefault: 10, creationDefault: 10, label: "Page Size" },
+  // The results header's Cell Size slider
+  // (components/GridCellSizeControl). NULL is the codec default and means
+  // "auto" — the breakpoint column counts, parameter absent — which is what a
+  // missing `cs` has meant in every search URL ever shared, and stays frozen
+  // as such. Someone who prefers a fixed card width saves it here and every
+  // new session stamps it explicitly.
+  cs: { codecDefault: null, creationDefault: null, label: "Cell Size" },
 }
 
 /**
@@ -108,6 +118,12 @@ export type SearchUserDefaults = Partial<ResolvedSearchDefaults>
 const MIN_PAGE_SIZE = 1
 const MAX_PAGE_SIZE = 10000
 
+// The bounds the cell-size slider itself enforces (lib/gridCellSize.ts),
+// restated for the same reason as the page-size pair above: this module is
+// deliberately import-free, and these are the bounds of what may be STAMPED.
+const MIN_CELL_WIDTH = 140
+const MAX_CELL_WIDTH = 1200
+
 // Only allowlisted keys with in-domain values survive, so stale or
 // hand-edited localStorage cannot stamp junk into a URL — the discipline
 // sanitizeBoardFlags applies to the board flags. `vm` must be exactly one of
@@ -126,6 +142,19 @@ export function sanitizeSearchDefaults(value: unknown): SearchUserDefaults {
     const floored = Math.floor(pageSize)
     if (floored >= MIN_PAGE_SIZE) {
       out.page_size = Math.min(floored, MAX_PAGE_SIZE)
+    }
+  }
+  // NULL AND UNDEFINED BOTH DROP THE KEY, and that is the whole handling of
+  // "auto": absence already means it, at both layers. A stored `cs: null`
+  // would be a saved default that says what saving nothing says, and it would
+  // put "Cell Size: null" in the saved-defaults toast. So saving from a view
+  // in auto mode stores no cell size — and since a save REPLACES the record,
+  // that is also how a user who had saved an explicit width goes back to auto.
+  const cellSize = source.cs
+  if (typeof cellSize === "number" && Number.isFinite(cellSize)) {
+    const floored = Math.floor(cellSize)
+    if (floored >= MIN_CELL_WIDTH) {
+      out.cs = Math.min(floored, MAX_CELL_WIDTH)
     }
   }
   return out
@@ -181,6 +210,7 @@ export function effectiveCreationDefaultsFrom(
     vm: user.vm ?? SEARCH_DEFAULTABLE_PARAMS.vm.creationDefault,
     page_size:
       user.page_size ?? SEARCH_DEFAULTABLE_PARAMS.page_size.creationDefault,
+    cs: user.cs ?? SEARCH_DEFAULTABLE_PARAMS.cs.creationDefault,
   }
 }
 
@@ -229,12 +259,13 @@ export function creationStamp(
  * (design §7).
  *
  * URL keys as literals — `top` is `GRID_SCROLL_ANCHOR_KEY`
- * (lib/state/gridScroll.ts) — because this module is deliberately
+ * (lib/state/gridScroll.ts) and `cs` is `GRID_CELL_SIZE_KEY`
+ * (lib/state/cellSize.ts) — because this module is deliberately
  * import-free: every function in it is pure, which is what lets
  * scripts/scrollmode.test.mjs execute them under plain node, and the state
  * modules that own the keys drag in nuqs and React.
  */
-export const SESSION_PARAM_KEYS = ["vm", "page", "page_size", "top", "gi"]
+export const SESSION_PARAM_KEYS = ["vm", "page", "page_size", "top", "gi", "cs"]
 
 /**
  * Whether a load creates a search session — the one predicate both callers
