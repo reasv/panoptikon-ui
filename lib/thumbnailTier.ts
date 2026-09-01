@@ -56,6 +56,35 @@ export function tierForCellWidth(cssWidth: number, dpr: number): ThumbnailTier {
 }
 
 /**
+ * The width below which a grid cell counts as SMALL — one constant, in CSS
+ * pixels, for the two policies that turn on it (docs/grid-hover-animate-
+ * implementation.md D1):
+ *
+ *   - an animated image's DEFAULT playback mode (D2): hover-only below,
+ *     always above (lib/state/animatePref.ts);
+ *   - which video thumbnail a cell asks for (D9): the single frame below, the
+ *     2×2 frame mosaic above.
+ *
+ * Both are the same judgement — at this size a picture is a glance rather than
+ * a look — so they may not drift apart, and the number is tunable in QA
+ * without hunting for a second copy of it.
+ */
+export const SMALL_CELL_THRESHOLD_PX = 200
+
+/**
+ * Is a cell of this width in the SMALL range?
+ *
+ * An unmeasured width (0, negative, non-finite) answers `false`, which is the
+ * conservative direction in both consumers: it keeps today's behaviour — the
+ * 2×2 video thumbnail and always-animate — rather than applying a
+ * small-cell policy to a cell nobody has measured yet.
+ */
+export function isSmallCell(cssWidth: number | null | undefined): boolean {
+  if (!cssWidth || !Number.isFinite(cssWidth) || cssWidth <= 0) return false
+  return cssWidth < SMALL_CELL_THRESHOLD_PX
+}
+
+/**
  * The aspect past which a grid tier is a CROP rather than the whole picture
  * (§2). Comic strips and webtoons are real content in the target datasets and
  * cluster in search results, so the stored grid renditions bound them at
@@ -241,4 +270,55 @@ export function animatedCellMode(
   return isAboveAnimatedFloor(item.size, item.width, item.height, floor)
     ? "loop"
     : "still"
+}
+
+/**
+ * WHEN a loop cell animates: unprompted, or only while the pointer dwells on
+ * it (D2). Decided per SURFACE from the cell width and the user's preference
+ * (lib/state/animatePref.ts), never per card — it is one value for a whole
+ * grid — and latched at a card's mount.
+ */
+export type AnimateMode = "always" | "hover"
+
+/**
+ * Should this cell carry the "this one plays" badge?
+ *
+ * THE RULE (D8): the badge means "this item moves, but it is not moving right
+ * now". It is a render-time question about which PICTURE the cell is
+ * showing, deliberately not about live playback state — a badge that tracked
+ * the director's play/pause would re-render cells on every scroll.
+ *
+ *   - a VIDEO always earns one: its cell shows a frame still, whichever of the
+ *     two renditions D9 picked, and nothing in the grid ever plays it;
+ *   - a LOOP earns one only in hover mode, where the cell paints a static
+ *     poster until the pointer dwells. In always mode the `<video>` is
+ *     animating, and a play glyph over a playing picture is noise. (The hover
+ *     fade is unchanged and orthogonal: this decides whether the badge is
+ *     MOUNTED, `group-hover:opacity-0` decides whether it is visible while the
+ *     pointer is on the card.)
+ *   - a `"still"` cell earns none: the endpoint answers it with the item's own
+ *     file, which animates natively in the `<img>`. ACCEPTED RESIDUAL — the
+ *     mode also covers a row too incomplete to place against the floor
+ *     (`isAboveAnimatedFloor`'s conservative `false`), and such a row is
+ *     served a poster with no badge over it. It needs a missing width or
+ *     height AND a file inside the byte floor, i.e. a pre-backfill record;
+ *   - anything else falls back to a MEASURED SPAN, which is what earns audio
+ *     (and any future type with a duration) the badge it has today.
+ */
+export function showsMotionBadge(
+  item: {
+    type: string | null | undefined
+    duration?: number | null
+    size?: number | null
+    width?: number | null
+    height?: number | null
+  },
+  floor: AnimatedFloor | null | undefined,
+  animate: AnimateMode
+): boolean {
+  if (item.type?.startsWith("video/")) return true
+  const mode = animatedCellMode(item, floor)
+  if (mode === "loop") return animate === "hover"
+  if (mode === "still") return false
+  return !!item.duration && item.duration > 0
 }
