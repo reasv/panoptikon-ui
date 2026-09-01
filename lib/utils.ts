@@ -30,6 +30,13 @@ export function cn(...inputs: ClassValue[]) {
  * `isAnimatedItem` alone — or unconditionally where it has no row to test
  * (lib/thumbnailTier.ts). It is a distinct URL, hence a distinct cache entry;
  * that is the whole cost of the no-op case.
+ *
+ * `big` selects between a VIDEO item's two stored thumbnails: the 2×2 frame
+ * mosaic (the default, and what omitting the parameter has always meant) and
+ * the single frame at index 1, which carries its own grid tiers. Only `false`
+ * is ever spelled out — a small grid cell asking for the single frame (D9) —
+ * so every other call site produces the URL it always did, byte for byte, and
+ * no cache entry moves for the sake of a parameter that changes nothing.
  */
 export function getFileURL(
   dbs: { index_db: string | null; user_data_db: string | null },
@@ -39,12 +46,14 @@ export function getFileURL(
   id_type: paths["/api/items/item"]["get"]["parameters"]["query"]["id_type"],
   id: string | number,
   size?: ThumbnailTier,
-  still?: boolean
+  still?: boolean,
+  big?: boolean
 ) {
   const index_db_param = dbs.index_db ? `&index_db=${dbs.index_db}` : ""
   const size_param = size ? `&size=${size}` : ""
   const still_param = still ? `&still=true` : ""
-  return `/api/items/item/${file_type}?id=${id}&id_type=${id_type}${index_db_param}${size_param}${still_param}`
+  const big_param = big === false ? `&big=false` : ""
+  return `/api/items/item/${file_type}?id=${id}&id_type=${id_type}${index_db_param}${size_param}${still_param}${big_param}`
 }
 
 // Basename of an indexed path. Either separator: the index stores paths as

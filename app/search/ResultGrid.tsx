@@ -30,8 +30,10 @@ import {
     imageBoxHeightForCellWidth,
     rowHeightForCellWidth,
 } from "@/lib/gridCellSize"
-import { tierForCellWidth } from "@/lib/thumbnailTier"
+import { isSmallCell, tierForCellWidth } from "@/lib/thumbnailTier"
 import { useDevicePixelRatio } from "@/hooks/useDevicePixelRatio"
+import { useAnimateMode } from "@/hooks/useAnimateMode"
+import { trackHoverPointer } from "@/lib/state/animatedPlayback"
 import { useAnimatedFloor } from "@/lib/useClientConfig"
 
 // md, lg, xl, 2xl, 4xl, 5xl — the Tailwind breakpoints used by the result grid
@@ -305,6 +307,18 @@ export function ResultGrid({
     // decides against are the server's and identical for every card, so they
     // are read here and passed down rather than subscribed to per cell.
     const animatedFloor = useAnimatedFloor()
+    // ONE ANSWER FOR THE WHOLE GRID again, and the last of the three the cards
+    // are handed: which range this grid's cells fall in decides both the
+    // animate mode the user's preference resolves to (D2) and which of a
+    // video's two thumbnails a cell asks for (D9).
+    const animateMode = useAnimateMode(cellWidth)
+    const smallCell = isSmallCell(cellWidth)
+    // The pointer tracking the hover arming is written in terms of, bound for
+    // as long as this grid is mounted rather than by the cells (which mount by
+    // the hundred, and would each bind it a moment too late to answer the
+    // first `pointerenter` they get). One listener, refcounted with the
+    // filmstrip's — see trackHoverPointer.
+    useEffect(() => trackHoverPointer(), [])
     const imageHeightPx = explicitSize && cellWidth > 0
         ? imageBoxHeightForCellWidth(cellWidth)
         : undefined
@@ -1159,6 +1173,16 @@ export function ResultGrid({
                                                 // renders that change nothing,
                                                 // so the memo still holds.
                                                 animatedFloor={animatedFloor}
+                                                // Two more stable primitives
+                                                // on the same rule as the
+                                                // tier: both move only when
+                                                // the cell crosses the small
+                                                // threshold or the user
+                                                // changes the preference, and
+                                                // the cards latch them at
+                                                // mount either way.
+                                                animateMode={animateMode}
+                                                smallCell={smallCell}
                                             />
                                         )
                                     })}

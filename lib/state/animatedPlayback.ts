@@ -30,7 +30,20 @@
 //     reconcile started itself and ran past the cap forever (measured: 32
 //     visible cells, 32 playing). Dropping `autoplay` closed that route; the
 //     listener stays because a cap that anything can walk around is not a cap.
-//   * ONE Map of registered elements.
+//   * ONE bubble-phase `pointermove`, which records where the pointer is and
+//     when it last actually moved. It is what the HOVER ARMING below asks its
+//     question of (see canArmHover), and it is the whole standing cost of that
+//     feature on a page nobody hovers: a comparison and two writes per event.
+//   * ONE Map of registered elements, and ONE hover slot.
+//
+// HOVER-TO-ANIMATE (docs/grid-hover-animate-implementation.md D6/D7) is
+// grafted onto exactly the same shape, and for the same reason: "at most one
+// cell may hover-play" is a property of the PAGE, and a cell cannot enforce it.
+// The director owns the arming rule, the dwell timer and the single slot;
+// `armHoverPlay` is the entire interface, and the cell it answers decides
+// nothing about policy. Cells in hover mode mount no `<video>` at all until
+// their arm fires, so "the director does not auto-play a hover-mode cell" is
+// structural rather than a rule it has to keep.
 //
 // The elements themselves are inert: no `autoplay`, `preload="none"`. Every
 // play() and pause() in the app comes from `apply` below, which means the
@@ -75,6 +88,28 @@ const FAST_SCROLL_PX_PER_MS = 1.2
  * "stopped scrolling" and "animations are back" read as the same moment.
  */
 const SETTLE_MS = 180
+
+/**
+ * How recently the pointer must have actually MOVED for a `pointerenter` to
+ * count as the user arriving at a cell (D6).
+ *
+ * THE WHOLE DEFENCE, and it is against the browser rather than against the
+ * user: Chromium re-dispatches boundary events when content scrolls under a
+ * STATIONARY cursor, so a wheel scroll through a grid delivers a
+ * `pointerenter` for every cell that passes beneath the pointer. Arming on
+ * those is how a scroll turns into a trail of started-and-abandoned decodes.
+ * A real arrival is always preceded by a real move; a scroll under a still
+ * cursor never is.
+ */
+const HOVER_MOVE_WINDOW_MS = 150
+
+/**
+ * How long the pointer has to REST on a cell before it plays (D6). Long
+ * enough that sweeping the grid to reach the scrollbar or a corner button
+ * starts nothing, short enough that it reads as a response to looking rather
+ * than as a delay.
+ */
+const HOVER_DWELL_MS = 200
 
 /**
  * What the policy needs to know about one registered cell. Spelled as its own
@@ -190,12 +225,80 @@ export function planPlayback(
   return decisions
 }
 
+/**
+ * What the arming rule needs to know at the moment of a `pointerenter`.
+ * Element-free for the same reason PlaybackState is: the rule is a comparison
+ * of two timestamps and a boolean, and scripts/hoveranimate.test.mjs pins it
+ * without a DOM.
+ */
+export interface HoverArmInputs {
+  /** `performance.now()` at the entry. */
+  now: number
+  /** When the pointer last actually moved; 0 = it never has. */
+  lastRealMoveAt: number
+  /** Is the page scrolling fast enough that the director has suspended? */
+  fastScroll: boolean
+}
+
+/**
+ * MAY THIS ENTRY ARM A HOVER? (D6)
+ *
+ * Two conditions, and both are about telling a person arriving at a cell from
+ * a cell arriving at a stationary pointer:
+ *
+ *   - a REAL pointer move within the last `HOVER_MOVE_WINDOW_MS`. See that
+ *     constant: content scrolling under a still cursor delivers genuine
+ *     `pointerenter` events, and nothing about the event itself distinguishes
+ *     them from the user reaching for the cell;
+ *   - the director is not suspended. A fast scroll is the one state where the
+ *     answer is already known for every cell on the page, so an entry during
+ *     one is not worth a dwell timer that the next scroll sample would cancel.
+ *
+ * A future timestamp (a clock read taken before the move it is compared
+ * against) fails rather than passing on a negative age — it is a state this
+ * cannot be in, and treating it as "moved 0 ms ago" would arm on exactly the
+ * events the window exists to refuse.
+ */
+export function canArmHover(input: HoverArmInputs): boolean {
+  if (input.fastScroll) return false
+  if (!(input.lastRealMoveAt > 0)) return false
+  const age = input.now - input.lastRealMoveAt
+  return age >= 0 && age <= HOVER_MOVE_WINDOW_MS
+}
+
 const entries = new Map<HTMLVideoElement, Entry>()
 
 let observer: IntersectionObserver | null = null
-let scrollBound = false
+let listenersBound = false
 let fastScroll = false
 let settleTimer: ReturnType<typeof setTimeout> | undefined
+
+/**
+ * The pointer's last position and the time it last CHANGED. Two numbers and a
+ * timestamp, written by the one `pointermove` listener below — this is the
+ * entire standing cost of the hover machinery on a page nobody is hovering.
+ */
+let lastMoveX = NaN
+let lastMoveY = NaN
+let lastRealMoveAt = 0
+
+/**
+ * The ONE hover slot (D7). At most one cell is ever armed or hover-playing:
+ * arming another releases this one, which is what makes "entering another
+ * stops the previous" a property of the director rather than an agreement
+ * between cells that cannot see each other.
+ */
+interface HoverArm {
+  /** The cell's hover root, so a re-entry on the same one is a no-op. */
+  root: Element
+  onFire: (playing: boolean) => void
+  timer: ReturnType<typeof setTimeout> | undefined
+  fired: boolean
+}
+let hoverArm: HoverArm | null = null
+
+/** How many surfaces are watching the pointer (see `trackHoverPointer`). */
+let hoverTrackers = 0
 
 /**
  * Last scroll offset seen per scroller, for the velocity sample. A WeakMap so a
@@ -223,14 +326,96 @@ export function observeAnimatedCell(video: HTMLVideoElement): () => void {
   if (typeof window === "undefined") return () => {}
   entries.set(video, { ratio: 0, playing: false, userPaused: false })
   ensureObserver().observe(video)
-  bindScroll()
+  bindDocumentListeners()
   return () => {
     observer?.unobserve(video)
     const entry = entries.get(video)
     if (entry) apply(video, entry, false)
     entries.delete(video)
-    if (entries.size === 0) teardown()
+    maybeTeardown()
   }
+}
+
+/**
+ * Start watching the pointer for a surface that can hover-play cells — the
+ * result grid and the gallery filmstrip — and return the release.
+ *
+ * WHY A HOST CALLS THIS RATHER THAN A CELL. The arming rule asks how long ago
+ * the pointer last moved, so the listener that answers it has to be running
+ * BEFORE the first `pointerenter`; a listener bound by the first arm attempt
+ * would make the first hover on every page the one that does nothing. Hosts
+ * mount once and cells mount by the hundred, so the host is the right place —
+ * and refcounting means two surfaces on screen at once (the maximized board's
+ * strip over a grid) still share one listener.
+ *
+ * It also binds the scroll sampler, which is what keeps `fastScroll` current
+ * on a surface whose cells are all posters: without it a page with no
+ * registered `<video>` would answer "not scrolling" to every arming question.
+ */
+export function trackHoverPointer(): () => void {
+  if (typeof window === "undefined") return () => {}
+  hoverTrackers += 1
+  bindDocumentListeners()
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    hoverTrackers -= 1
+    maybeTeardown()
+  }
+}
+
+/**
+ * Arm a hover on one cell (D6/D7), returning the cancel its caller runs on
+ * `pointerleave` or unmount.
+ *
+ * `onFire(true)` lands after the dwell; `onFire(false)` is the director taking
+ * the slot back — another cell was entered, or a scroll suspended playback —
+ * and is the only way a cell learns to stop that is not its own pointer
+ * leaving. The returned cancel does NOT call back: the caller that runs it
+ * already knows.
+ *
+ * Re-entering the SAME root while armed keeps the existing arm rather than
+ * restarting the dwell. That is the Chromium re-dispatch again (see
+ * HOVER_MOVE_WINDOW_MS): a cell that stays under a stationary pointer through
+ * a scroll can be handed repeated entries, and restarting on each would mean a
+ * dwell that never completes.
+ */
+export function armHoverPlay(
+  root: Element,
+  onFire: (playing: boolean) => void
+): () => void {
+  if (typeof window === "undefined") return () => {}
+  if (hoverArm && hoverArm.root === root) return cancelFor(hoverArm)
+  releaseHoverSlot()
+  if (!canArmHover({ now: performance.now(), lastRealMoveAt, fastScroll })) {
+    return () => {}
+  }
+  const arm: HoverArm = { root, onFire, timer: undefined, fired: false }
+  hoverArm = arm
+  arm.timer = setTimeout(() => {
+    arm.timer = undefined
+    arm.fired = true
+    arm.onFire(true)
+  }, HOVER_DWELL_MS)
+  return cancelFor(arm)
+}
+
+function cancelFor(arm: HoverArm): () => void {
+  return () => {
+    if (hoverArm !== arm) return
+    hoverArm = null
+    clearTimeout(arm.timer)
+  }
+}
+
+/** Take the slot back, telling the cell holding it to stop if it had started. */
+function releaseHoverSlot(): void {
+  const arm = hoverArm
+  if (!arm) return
+  hoverArm = null
+  clearTimeout(arm.timer)
+  if (arm.fired) arm.onFire(false)
 }
 
 function ensureObserver(): IntersectionObserver {
@@ -253,35 +438,76 @@ function ensureObserver(): IntersectionObserver {
   return observer
 }
 
-function bindScroll(): void {
-  if (scrollBound) return
-  // Capture phase for both: neither `scroll` nor `play` bubbles, so this is the
-  // only way ONE listener can see every scroller and every media element on the
-  // page — the grid's, the filmstrip's, and the document's. Passive, because
-  // neither must ever be able to delay what it only observes.
+function bindDocumentListeners(): void {
+  if (listenersBound) return
+  // Capture phase for all of them: none of `scroll`, `play` or `pause` bubbles,
+  // so this is the only way ONE listener can see every scroller and every media
+  // element on the page — the grid's, the filmstrip's, and the document's.
+  // Passive, because none must ever be able to delay what it only observes.
   document.addEventListener("scroll", onScroll, { capture: true, passive: true })
   document.addEventListener("play", onPlay, { capture: true, passive: true })
   document.addEventListener("pause", onPause, { capture: true, passive: true })
-  scrollBound = true
+  // `pointermove` needs no capture (it bubbles), and is listed here so the
+  // whole set has one lifetime. See onPointerMove for what it costs.
+  document.addEventListener("pointermove", onPointerMove, { passive: true })
+  listenersBound = true
 }
 
-function teardown(): void {
+/**
+ * Tear the shared machinery down once nothing needs it: no registered loop AND
+ * no surface watching the pointer. The two counts are separate because a
+ * hover-mode grid has a tracker and, until someone dwells on a cell, not one
+ * registered element.
+ */
+function maybeTeardown(): void {
+  if (entries.size > 0 || hoverTrackers > 0) return
   observer?.disconnect()
   observer = null
-  if (scrollBound) {
+  if (listenersBound) {
     document.removeEventListener("scroll", onScroll, { capture: true })
     document.removeEventListener("play", onPlay, { capture: true })
     document.removeEventListener("pause", onPause, { capture: true })
-    scrollBound = false
+    document.removeEventListener("pointermove", onPointerMove)
+    listenersBound = false
   }
+  releaseHoverSlot()
   clearTimeout(settleTimer)
   settleTimer = undefined
   fastScroll = false
+  lastRealMoveAt = 0
+  lastMoveX = NaN
+  lastMoveY = NaN
+}
+
+/**
+ * THE STANDING COST OF THE HOVER MACHINERY, in full: a comparison of two
+ * numbers and, when they differ, two writes and a clock read. No layout is
+ * read, nothing is allocated, and nothing per cell runs at all — which is what
+ * makes it safe to leave bound for the life of a grid that nobody hovers.
+ *
+ * The comparison is the point rather than an optimisation: an event whose
+ * coordinates are identical to the last one is not the pointer moving, and
+ * treating it as one would re-open the very window `canArmHover` closes.
+ */
+function onPointerMove(event: Event): void {
+  const pointer = event as PointerEvent
+  if (pointer.clientX === lastMoveX && pointer.clientY === lastMoveY) return
+  lastMoveX = pointer.clientX
+  lastMoveY = pointer.clientY
+  lastRealMoveAt = performance.now()
 }
 
 function onScroll(event: Event): void {
   const target = event.target
   if (!target) return
+  // SCROLL START CANCELS A PENDING DWELL (D6), at any speed and before any
+  // velocity arithmetic. The content under the pointer is moving, so whatever
+  // cell the entry named is not the cell that will be there in 200ms — and
+  // waiting for the fast-scroll threshold would let a slow drag hand the user
+  // an animation on a cell they were only scrolling past. A dwell that has
+  // already FIRED is left alone here; it is the pointer leaving the cell, or
+  // the suspend below, that stops it.
+  if (hoverArm && !hoverArm.fired) cancelFor(hoverArm)()
   // ONE property read per event, the same reading the grid's own scroll
   // listener already takes. Reading a scroller's offset does not invalidate
   // layout, and this runs once per scroll event rather than per frame.
@@ -303,6 +529,11 @@ function onScroll(event: Event): void {
   settleTimer = setTimeout(settle, SETTLE_MS)
   if (fastScroll) return
   fastScroll = true
+  // The suspend takes the hover slot back as well (D6). A hover-played cell is
+  // about to be paused by the reconcile below whatever happens, and leaving its
+  // <video> mounted over the poster it is indistinguishable from would keep a
+  // decode session for a picture that has stopped moving.
+  releaseHoverSlot()
   reconcile()
 }
 
@@ -421,4 +652,6 @@ export const ANIMATED_PLAYBACK = {
   MAX_PLAYING,
   FAST_SCROLL_PX_PER_MS,
   SETTLE_MS,
+  HOVER_MOVE_WINDOW_MS,
+  HOVER_DWELL_MS,
 } as const

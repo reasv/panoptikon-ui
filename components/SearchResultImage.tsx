@@ -4,7 +4,7 @@ import { BookmarkBtn, FileActionCluster, FilePathComponent } from "@/components/
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn, getFileURL } from "@/lib/utils";
 import { ItemMetaLine } from "@/components/ItemMetaLine";
-import { PlayableBadge, isPlayableItem } from "@/components/PlayableBadge";
+import { PlayableBadge } from "@/components/PlayableBadge";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { PinButton } from './gallery/PinButton';
 import { blurHashToDataURL, type PlaceholderDataURL } from '@/lib/state/blurHashDataURL';
@@ -13,15 +13,20 @@ import { PIN_SHA_PREFIX_LENGTH } from '@/lib/pinboardCrop';
 import {
     animatedCellMode,
     isExtremeAspect,
+    showsMotionBadge,
+    type AnimateMode,
     type AnimatedFloor,
     type ThumbnailTier,
 } from '@/lib/thumbnailTier';
 import { observeAnimatedCell } from '@/lib/state/animatedPlayback';
+import { CELL_HOVER_ROOT_ATTR, useArmedHover } from '@/hooks/useArmedHover';
 
-// The marker the extreme-aspect swap binds its hover listeners to. It is the
-// element that carries `group`, so the JS hover region and the CSS one are the
-// same box by construction — see ExtremeAspectPicture.
-const HOVER_ROOT_ATTR = "data-cell-hover-root"
+// The marker the extreme-aspect swap and the hover arming bind their listeners
+// to. It is the element that carries `group`, so the JS hover regions and the
+// CSS one are the same box by construction — see ExtremeAspectPicture and
+// hooks/useArmedHover.ts, which defines it because the filmstrip's cards carry
+// it too.
+const HOVER_ROOT_ATTR = CELL_HOVER_ROOT_ATTR
 
 /**
  * What next/image's `fill` writes as inline style, spelled as classes for the
@@ -181,6 +186,8 @@ export const SearchResultImage = memo(function SearchResultImage({
     tier,
     imageHeightPx,
     animatedFloor,
+    animateMode = "always",
+    smallCell = false,
 }: {
     result: SearchResult,
     index: number,
@@ -217,6 +224,24 @@ export const SearchResultImage = memo(function SearchResultImage({
      * a host with no animated cells rather than a broken one.
      */
     animatedFloor?: AnimatedFloor | null
+    /**
+     * Whether a loop cell animates unprompted or only while the pointer dwells
+     * on it (D2). Resolved ONCE by the host from the cell width and the user's
+     * preference (hooks/useAnimateMode.ts) and handed down as a stable string,
+     * on the same rule as the tier above: it is one answer for the whole grid,
+     * and a preference subscription per card is what F1 removed.
+     *
+     * Omitted is `"always"`, which is today's behaviour — so a surface that
+     * knows nothing about this feature keeps the cells it always had.
+     */
+    animateMode?: AnimateMode
+    /**
+     * Is this cell in the SMALL range (lib/thumbnailTier.ts
+     * `SMALL_CELL_THRESHOLD_PX`)? Decides which of a VIDEO's two stored
+     * thumbnails the card requests (D9) — measured by the host, like the tier,
+     * because a measurement in the card is a measurement in every card.
+     */
+    smallCell?: boolean
 }) {
     const fileUrl = overrideURL ? overrideURL : getFileURL(dbs, "file", "sha256", result.sha256)
     // LATCHED AT MOUNT, and that is the whole of F4's no-flash rule for a tier
@@ -235,7 +260,24 @@ export const SearchResultImage = memo(function SearchResultImage({
     // those cards, never a flash — which is the requirement, and the simpler
     // of the two constructions the plan allows.
     const tierRef = useRef(tier)
-    // ONE COMPARISON ON ROW DATA, exactly like `extreme` below and under the
+    // LATCHED AT MOUNT for the same reason the tier is, and it is the same
+    // failure both times: `smallCell` moves the video cell's `src`, so a
+    // slider drag across the threshold would drop the bitmap every mounted
+    // video card is painting. `animateMode` moves nothing on its own, but a
+    // loop card whose mode changed under it would swap an animating `<video>`
+    // for a poster (or the reverse) while the user is looking at it — the
+    // preference is a decision about what the NEXT cells do, exactly as the
+    // tier is. Both apply to newly mounted cells, which under virtualization
+    // is everything the user scrolls to next.
+    const smallCellRef = useRef(smallCell)
+    const animateModeRef = useRef(animateMode)
+    // ONE COMPARISON ON ROW DATA (§2's zero-cost-for-normal invariant). It
+    // decides which of the picture components is rendered, so the hover
+    // swap's state and listeners exist only inside the extreme-aspect one —
+    // a normal card mounts no hook, no listener and no second <img>, exactly
+    // as before this feature existed.
+    const extreme = isExtremeAspect(result.width, result.height)
+    // ONE COMPARISON ON ROW DATA, exactly like `extreme` above and under the
     // same rule (§2's zero-cost-for-normal invariant): the fields are already
     // in the search payload, the floor is a prop, and a static card leaves
     // here with `"static"` having mounted nothing. The three modes are
@@ -244,8 +286,17 @@ export const SearchResultImage = memo(function SearchResultImage({
     // `still=true` — a grid tier answers an animated item above the floor with
     // `video/mp4`, which an `<img>` would show as a broken picture.
     const animated = animatedCellMode(result, animatedFloor)
+    // D9: at small sizes a video's 2×2 frame mosaic is four thumbnails' worth
+    // of detail in a box too small to read any of them, so the cell asks for
+    // the single frame instead and swaps to the mosaic on an armed hover
+    // (VideoStillPicture). NOT applied to an extreme-aspect video, whose card
+    // already owns a hover swap of its own — two layers competing for the same
+    // gesture is one too many, and a strip-shaped video is rare enough that
+    // keeping today's rendition there costs nothing.
+    const smallVideo = smallCellRef.current && !extreme
+        && !!result.type?.startsWith("video/")
     const thumbnailUrl = getFileURL(dbs, "thumbnail", "sha256", result.sha256, tierRef.current,
-        animated === "still")
+        animated === "still", smallVideo ? false : undefined)
     // THE ANSWER TO "what is this card's picture", computed once. Everything
     // below dispatches on `source` rather than re-asking `animated === "loop"`
     // — the extreme branch used to build this same object inline while the
@@ -275,12 +326,6 @@ export const SearchResultImage = memo(function SearchResultImage({
         }
     }, [onImageClick, index])
     const blurDataURL = useMemo(() => result.blurhash ? blurHashToDataURL(result.blurhash) : undefined, [result.blurhash])
-    // ONE COMPARISON ON ROW DATA (§2's zero-cost-for-normal invariant). It
-    // decides which of two picture components is rendered, so the hover
-    // swap's state and listeners exist only inside the extreme-aspect one —
-    // a normal card mounts no hook, no listener and no second <img>, exactly
-    // as before this feature existed.
-    const extreme = isExtremeAspect(result.width, result.height)
     // The one refresh for the anchor's href — see the comment on the anchor.
     const refreshHref = galleryLink
         ? (event: React.SyntheticEvent<HTMLAnchorElement>) => {
@@ -368,10 +413,11 @@ export const SearchResultImage = memo(function SearchResultImage({
                         imageContainerClassName)}
                     style={imageHeightPx == null ? undefined : { height: imageHeightPx }}
                 >
-                    {/* THREE OUTCOMES, dispatched on `source` and on nothing
-                        else: an extreme-aspect card (whose own component then
-                        handles both kinds of crop), a loop, or the still
-                        image every other card is. */}
+                    {/* FOUR OUTCOMES, dispatched on `source` and on the two
+                        latched host decisions and nothing else: an
+                        extreme-aspect card (whose own component then handles
+                        both kinds of crop), a loop, a small video cell, or the
+                        still image every other card is. */}
                     {extreme ? (
                         <ExtremeAspectPicture
                             crop={source}
@@ -380,18 +426,32 @@ export const SearchResultImage = memo(function SearchResultImage({
                             blurDataURL={blurDataURL}
                             imageClassName={imageClassName}
                             disabled={!!showLoadingSpinner}
+                            animateMode={animateModeRef.current}
                         />
                     ) : source.kind === "loop" ? (
-                        <AnimatedCellPicture
+                        <CellLoopPicture
                             src={source.src}
                             poster={source.poster}
                             alt={`Result ${result.path}`}
                             blurDataURL={blurDataURL}
+                            mode={animateModeRef.current}
                             // The still card's classes, verbatim, so a loop
                             // cell is indistinguishable from the picture it
                             // replaces — including the CSS-only hover contain,
                             // which works on a <video> exactly as it does on an
                             // <img> (`object-fit` is not element-specific).
+                            className={cn(
+                                "object-cover object-top",
+                                showLoadingSpinner ? "" : "group-hover:object-contain group-hover:object-center",
+                                imageClassName)}
+                        />
+                    ) : smallVideo ? (
+                        <VideoStillPicture
+                            src={source.src}
+                            mosaicSrc={getFileURL(dbs, "thumbnail", "sha256", result.sha256, tierRef.current)}
+                            alt={`Result ${result.path}`}
+                            blurDataURL={blurDataURL}
+                            disabled={!!showLoadingSpinner}
                             className={cn(
                                 "object-cover object-top",
                                 showLoadingSpinner ? "" : "group-hover:object-contain group-hover:object-center",
@@ -418,7 +478,8 @@ export const SearchResultImage = memo(function SearchResultImage({
                         Harmless inside the link because the badge takes no
                         pointer events, so the click and the drag still belong
                         to the anchor. */}
-                    {isPlayableItem(result) && <PlayableBadge />}
+                    {showsMotionBadge(result, animatedFloor, animateModeRef.current)
+                        && <PlayableBadge />}
                 </a>
                 {showLoadingSpinner && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-white bg-opacity-50">
@@ -476,6 +537,7 @@ function ExtremeAspectPicture({
     blurDataURL,
     imageClassName,
     disabled,
+    animateMode,
 }: {
     /**
      * The stored grid rendition — a still crop, or the CROPPED LOOP when the
@@ -490,6 +552,8 @@ function ExtremeAspectPicture({
     imageClassName?: string
     /** The loading-spinner state, where the card shows no hover at all. */
     disabled: boolean
+    /** Passed through to the crop when it is a loop — see CellLoopPicture. */
+    animateMode: AnimateMode
 }) {
     // A CALLBACK ref rather than a typed object ref, because the crop layer is
     // an <img> for a still item and a <video> for an animated one and this only
@@ -570,11 +634,12 @@ function ExtremeAspectPicture({
     return (
         <>
             {crop.kind === "loop" ? (
-                <AnimatedCellPicture
+                <CellLoopPicture
                     src={crop.src}
                     poster={crop.poster}
                     alt={alt}
                     blurDataURL={blurDataURL}
+                    mode={animateMode}
                     className={cropClassName}
                     elementRef={attachCrop}
                     // Fully covered by the display layer, so its frames are
@@ -673,7 +738,111 @@ function AnimatedCellPicture({
     className,
     elementRef,
     occluded,
-}: {
+}: LoopPictureProps) {
+    const [failed, setFailed] = useState(false)
+    if (failed) {
+        return (
+            <CellStillImage
+                elementRef={elementRef}
+                src={poster}
+                alt={alt}
+                blurDataURL={blurDataURL}
+                className={className}
+            />
+        )
+    }
+    return (
+        <LoopVideo
+            src={src}
+            poster={poster}
+            alt={alt}
+            // The blurhash, by the same direct-data-URL mechanism next/image's
+            // `placeholder` uses on every other picture in this card — so a
+            // loop cell has the same something-shaped-like-the-picture behind
+            // it as its neighbours in the moment before the poster paints.
+            // Never an SVG wrapper: see the settled law on CellStillImage.
+            blurDataURL={blurDataURL}
+            className={className}
+            elementRef={elementRef}
+            registered={!occluded}
+            onFailed={() => setFailed(true)}
+        />
+    )
+}
+
+/**
+ * The same card, in HOVER mode (D2/D7): a static poster that mounts the loop
+ * only once the pointer has DWELT on the card, and drops it again when the
+ * pointer leaves.
+ *
+ * WHY A SEPARATE COMPONENT rather than a branch inside the one above. The two
+ * modes want opposite things from the same element — always mode's `<video>`
+ * IS the picture and must exist for the director to schedule, while hover
+ * mode's is a layer over a picture that is already correct without it — and
+ * the poster `<img>` underneath is what makes the whole thing free: leaving
+ * and re-entering paints nothing new, because the layer that went away was
+ * never the thing being looked at. Keeping them apart also means always mode
+ * is exactly the code it was before this feature existed.
+ *
+ * NO FLASH IN EITHER DIRECTION, by layering rather than by swapping a `src` —
+ * the same construction ExtremeAspectPicture uses, for the same reason. The
+ * loop fades in on its own `playing` event (the first decoded frame, not the
+ * first byte) and simply unmounts on leave, which is instant and lands on the
+ * poster that never stopped painting. Re-hovering is cheap because the loop's
+ * URL is immutable and in the browser cache by then.
+ *
+ * The `error` latch is the one above's, unchanged in meaning: a response that
+ * is not a video (backfill pending, or the settled keep-the-original edge)
+ * stops this cell arming again for the rest of its life, and the poster it
+ * was already showing is the correct picture.
+ */
+function HoverLoopPicture({
+    src,
+    poster,
+    alt,
+    blurDataURL,
+    className,
+    elementRef,
+    occluded,
+}: LoopPictureProps) {
+    const [failed, setFailed] = useState(false)
+    // Not armed while a hover layer already covers this picture: the pointer
+    // is on the card, but what it is looking at is the layer.
+    const hover = useArmedHover(!failed && !occluded)
+    const attach = useCallback((element: HTMLElement | null) => {
+        hover.attach(element)
+        elementRef?.(element)
+    }, [hover.attach, elementRef])
+    return (
+        <>
+            <CellStillImage
+                elementRef={attach}
+                src={poster}
+                alt={alt}
+                blurDataURL={blurDataURL}
+                className={className}
+            />
+            {hover.active && (
+                <LoopVideo
+                    src={src}
+                    poster={poster}
+                    alt={alt}
+                    // NO blurhash background: the poster underneath is the
+                    // placeholder, and a blur behind a layer fading in over a
+                    // painted picture is the flash this construction avoids.
+                    blurDataURL={undefined}
+                    className={className}
+                    fadeIn
+                    registered
+                    onFailed={() => setFailed(true)}
+                />
+            )}
+        </>
+    )
+}
+
+/** What both loop pictures are handed; see AnimatedCellPicture. */
+interface LoopPictureProps {
     /** The grid tier URL — `video/mp4` when a loop exists for this item. */
     src: string
     /** The same tier with `still=true`: the loop's poster, and the fallback. */
@@ -692,32 +861,101 @@ function AnimatedCellPicture({
      * "occluded" should mean.
      */
     occluded?: boolean
+}
+
+/**
+ * WHICH of the two loop pictures this card gets. One dispatch, so the question
+ * "is this cell in hover mode" is asked in one place rather than at each of the
+ * two sites that render a loop (the plain card and the extreme-aspect crop).
+ */
+function CellLoopPicture({ mode, ...props }: LoopPictureProps & { mode: AnimateMode }) {
+    return mode === "hover"
+        ? <HoverLoopPicture {...props} />
+        : <AnimatedCellPicture {...props} />
+}
+
+/**
+ * THE loop element, spelled once for both modes.
+ *
+ * Styled to be INDISTINGUISHABLE from the `<img>` it stands in for: the caller
+ * hands down the card's own object-fit classes verbatim, and `FILL_CLASSES`
+ * reproduces what next/image's `fill` writes as inline style.
+ * `object-fit`/`object-position` apply to a replaced element whatever its
+ * kind, so the CSS hover-contain and the rounded corners work here untouched.
+ *
+ * NOTHING IS FETCHED UNTIL IT IS PLAYED. `preload="none"` and no `autoplay`:
+ * the loop's bytes are requested by the director's own `play()`, and the
+ * director only plays cells that are at least half on screen and inside the
+ * cap. An earlier build carried `autoplay` and let the element decide, which
+ * fetched and fully buffered EVERY mounted loop — measured at 16/16 buffered
+ * with 14 of them off screen, ~4 MB nobody saw. The poster paints immediately
+ * and the blurhash sits behind it, so a cell that has not been played yet is a
+ * still picture rather than an empty box.
+ *
+ * KNOWN, ACCEPTED UX DELTA: right-clicking an animated cell gets the browser's
+ * VIDEO context menu (Loop, Show controls, Save video as…) rather than the
+ * image one. Inherent to being a real media element; flagged for user QA.
+ */
+function LoopVideo({
+    src,
+    poster,
+    alt,
+    blurDataURL,
+    className,
+    elementRef,
+    registered,
+    fadeIn,
+    onFailed,
+}: {
+    src: string
+    poster: string
+    alt: string
+    blurDataURL: PlaceholderDataURL | undefined
+    className?: string
+    elementRef?: (element: HTMLElement | null) => void
+    /** False while something covers this cell — see LoopPictureProps.occluded. */
+    registered: boolean
+    /**
+     * Start transparent and fade in on the first DECODED frame. For a layer
+     * over a poster: without it the element paints its own `poster` attribute
+     * first, which is the same picture at a different moment — a visible blink
+     * where there should be no transition at all.
+     */
+    fadeIn?: boolean
+    /**
+     * The response was not a video. THE POSTER FALLBACK IS THE POINT, not
+     * defensive polish: two states answer a grid-tier request for an animated
+     * item above the floor with the item's own IMAGE bytes, and the client
+     * cannot tell either apart in advance —
+     *
+     *   - the backfill has not written the loop yet — transitional, and
+     *     answered `no-cache` so it resolves the moment the scan lands;
+     *   - no H.264 encode of this source came out smaller than the source, so
+     *     the settled keep-the-original edge serves the file itself —
+     *     PERMANENT, and answered immutable, so the fallback is the only thing
+     *     that will ever render those items.
+     *
+     * A cell that only ever mounted `<video>` shows an empty box in both. The
+     * swap hangs off the element's own `error` event — NO PROBE REQUEST, which
+     * would double the request count for the common case to save one wasted
+     * fetch in the rare one — and every caller latches it one-way, so a failure
+     * cannot loop.
+     */
+    onFailed: () => void
 }) {
-    const [failed, setFailed] = useState(false)
     const videoRef = useRef<HTMLVideoElement | null>(null)
+    const [live, setLive] = useState(false)
     // The concurrency policy in one line: the director owns the observer, the
     // scroll listener, the cap and every play/pause call, and this cell owns
-    // nothing but its membership (lib/state/animatedPlayback.ts). Re-runs on the
-    // fallback, where React has already nulled the ref for the unmounted
-    // <video>, so the registration is dropped exactly when the element stops
-    // existing — and on the occlusion flag, which is what pauses a loop the
-    // hover layer has covered.
+    // nothing but its membership (lib/state/animatedPlayback.ts). Dropped on
+    // the occlusion flag, which is what pauses a loop the hover layer has
+    // covered — and, in hover mode, when the element unmounts on leave, which
+    // is what D7's "pause + unmount" is made of.
     useEffect(() => {
         const video = videoRef.current
-        if (!video || occluded) return
+        if (!video || !registered) return
         return observeAnimatedCell(video)
-    }, [failed, occluded])
-    if (failed) {
-        return (
-            <CellStillImage
-                elementRef={elementRef}
-                src={poster}
-                alt={alt}
-                blurDataURL={blurDataURL}
-                className={className}
-            />
-        )
-    }
+    }, [registered])
     return (
         // eslint-disable-next-line jsx-a11y/media-has-caption
         <video
@@ -750,19 +988,95 @@ function AnimatedCellPicture({
             // makes that decision cover the network too rather than only the
             // decode.
             preload="none"
-            onError={() => setFailed(true)}
-            // The blurhash, by the same direct-data-URL mechanism next/image's
-            // `placeholder` uses on every other picture in this card — so a
-            // loop cell has the same something-shaped-like-the-picture behind
-            // it as its neighbours in the moment before the poster paints.
-            // Never an SVG wrapper: see the settled law on CellStillImage.
+            onError={onFailed}
+            onPlaying={fadeIn ? () => setLive(true) : undefined}
             style={blurDataURL ? {
                 backgroundImage: `url("${blurDataURL}")`,
                 backgroundSize: "cover",
                 backgroundPosition: "50% 0%",
                 backgroundRepeat: "no-repeat",
             } : undefined}
-            className={cn(FILL_CLASSES, className)}
+            className={cn(FILL_CLASSES,
+                fadeIn && cn("transition-opacity duration-150",
+                    live ? "opacity-100" : "opacity-0"),
+                className)}
         />
+    )
+}
+
+/**
+ * The picture of a VIDEO card in a SMALL cell (D9): the single frame, with the
+ * 2×2 frame mosaic layered over it once the pointer dwells.
+ *
+ * WHY THE SWAP AT ALL. The mosaic is four frames in one box, and it is what
+ * tells a video apart from a still at a glance — at 150px that reading is four
+ * thumbnails of about 70px each, which is no reading at all, so the small cell
+ * shows one frame it can actually resolve. The mosaic is still the more
+ * INFORMATIVE picture, though, so a deliberate look brings it back: the hover
+ * is armed by the same rule as a loop's (D6), so sweeping the grid swaps
+ * nothing.
+ *
+ * LATCH-UNTIL-LOADED and STICKY, both copied from ExtremeAspectPicture and for
+ * its reasons: the single frame keeps painting until the mosaic has fired its
+ * own `load`, so a slow response shows the picture the cell already had rather
+ * than an empty box; and the mosaic stays mounted afterwards, so a second look
+ * is instant and costs no second request. Both layers are still images, which
+ * is what makes the stickiness free here (unlike an animation's — see the note
+ * on the extreme-aspect layer).
+ */
+function VideoStillPicture({
+    src,
+    mosaicSrc,
+    alt,
+    blurDataURL,
+    className,
+    disabled,
+}: {
+    /** The single frame — `big=false` at this cell's tier. */
+    src: string
+    /** The 2×2 mosaic: the same tier with the parameter left off. */
+    mosaicSrc: string
+    alt: string
+    blurDataURL: PlaceholderDataURL | undefined
+    className?: string
+    /** The loading-spinner state, where the card shows no hover at all. */
+    disabled: boolean
+}) {
+    const hover = useArmedHover(!disabled)
+    const [requested, setRequested] = useState(false)
+    const [loaded, setLoaded] = useState(false)
+    useEffect(() => {
+        if (hover.active) setRequested(true)
+    }, [hover.active])
+    const showMosaic = hover.active && loaded
+    return (
+        <>
+            <CellStillImage
+                elementRef={hover.attach}
+                src={src}
+                alt={alt}
+                blurDataURL={blurDataURL}
+                className={cn(
+                    (requested || showMosaic) && "transition-opacity duration-150",
+                    showMosaic ? "opacity-0" : "opacity-100",
+                    className)}
+            />
+            {requested && (
+                <Image
+                    src={mosaicSrc}
+                    alt={alt}
+                    fill
+                    // NO placeholder: the single frame underneath is it.
+                    className={cn("transition-opacity duration-150",
+                        showMosaic ? "opacity-100" : "opacity-0",
+                        className)}
+                    // The layer must never eat the anchor's clicks or the
+                    // card's drag — it exists to be looked at.
+                    style={{ pointerEvents: "none" }}
+                    onLoad={() => setLoaded(true)}
+                    unoptimized
+                />
+            )}
+        </>
     )
 }
