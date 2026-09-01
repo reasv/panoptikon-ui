@@ -100,6 +100,12 @@ const SETTLE_MS = 180
  * those is how a scroll turns into a trail of started-and-abandoned decodes.
  * A real arrival is always preceded by a real move; a scroll under a still
  * cursor never is.
+ *
+ * Since the entry event's own coordinates count as that move, an event that
+ * CHANGES the position always arms (its age is zero), and this window only
+ * ever refuses events at the last recorded position — which is exactly the
+ * re-dispatch. The coordinate compare is the rule; the window is how stale a
+ * genuine same-spot re-entry (a quick out-and-back) may be and still count.
  */
 const HOVER_MOVE_WINDOW_MS = 150
 
@@ -652,6 +658,11 @@ export function armHoverPlay(
   entry?: { clientX: number; clientY: number }
 ): () => void {
   if (typeof window === "undefined") return () => {}
+  // ONE ARMABLE PICTURE PER HOVER ROOT. The callback map and the root-keyed
+  // cancel below both assume it: a second consumer under the same root would
+  // silently replace the first's callback and cancel. The cell's picture kinds
+  // are mutually exclusive today, and the extreme-aspect card opts out of
+  // arming entirely rather than sharing its root.
   hoverCallbacks.set(root, onFire)
   hoverEnter(
     hoverArming,
