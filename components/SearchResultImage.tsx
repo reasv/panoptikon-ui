@@ -370,6 +370,16 @@ function ExtremeAspectPicture({
     // (and, on a cold cache, a fresh decode with the crop showing through
     // again), and it is what makes "one hover, one request" true for the
     // network-log assertion.
+    //
+    // STICKY ONLY FOR A STILL CROP. What the layer holds for an animated item
+    // is the ORIGINAL ANIMATED FILE, and a left-mounted one goes on decoding
+    // and compositing every frame at opacity 0 for as long as the card lives —
+    // a permanent cost per hovered cell, in the one place the whole feature is
+    // about not paying for pictures nobody is looking at. A still's layer is
+    // one decode sitting there, which is what the stickiness was weighed
+    // against; an animation's is not the same trade. Re-hover stays cheap
+    // because the file is in the browser cache by then.
+    const stickyDisplay = crop.kind === "image"
     const [requested, setRequested] = useState(false)
     const [loaded, setLoaded] = useState(false)
     useEffect(() => {
@@ -390,17 +400,35 @@ function ExtremeAspectPicture({
             setHovered(true)
             setRequested(true)
         }
-        const leave = () => setHovered(false)
+        const leave = () => {
+            setHovered(false)
+            // The non-sticky layer is about to unmount, so the next hover gets
+            // a fresh element that has not fired its own `load` yet. Leaving
+            // `loaded` set would make that next hover show an empty layer over
+            // a crop already faded to nothing — the exact flash the load gate
+            // exists to prevent.
+            if (!stickyDisplay) setLoaded(false)
+        }
         root.addEventListener("mouseenter", enter)
         root.addEventListener("mouseleave", leave)
         return () => {
             root.removeEventListener("mouseenter", enter)
             root.removeEventListener("mouseleave", leave)
         }
-    }, [disabled])
+    }, [disabled, stickyDisplay])
     const showDisplay = hovered && loaded
+    // Mounted while it is wanted. For a still that is "ever" (see the sticky
+    // note); for an animation it is "while the pointer is here".
+    const displayMounted = requested && (stickyDisplay || hovered)
     const cropClassName = cn(
-        "object-cover object-top transition-opacity duration-150",
+        "object-cover object-top",
+        // The fade OUT is a considered transition — the crop keeps painting
+        // until the display rendition has loaded, then dissolves under it. The
+        // way BACK is instant for an animation, because its display layer
+        // unmounts in the same commit: a 150ms fade-in from an already-empty
+        // box is a flash, not a transition. A still's layer stays mounted, so
+        // its return can stay symmetrical exactly as it was.
+        (stickyDisplay || showDisplay) && "transition-opacity duration-150",
         showDisplay ? "opacity-0" : "opacity-100",
         imageClassName)
     return (
@@ -413,6 +441,11 @@ function ExtremeAspectPicture({
                     blurDataURL={blurDataURL}
                     className={cropClassName}
                     elementRef={attachCrop}
+                    // Fully covered by the display layer, so its frames are
+                    // being decoded and composited for nobody. The director
+                    // takes it out of the playing set for as long as that
+                    // holds, and gives its cap slot to a cell on screen.
+                    occluded={showDisplay}
                 />
             ) : (
                 <Image
@@ -427,7 +460,7 @@ function ExtremeAspectPicture({
                     unoptimized
                 />
             )}
-            {requested && (
+            {displayMounted && (
                 <Image
                     src={displaySrc}
                     alt={alt}
@@ -492,7 +525,23 @@ type CellPictureSource =
  * rare one — and lands on `still=true`, a stored poster for every item above
  * the floor. It is a one-way latch: `failed` never goes back, so a failure
  * cannot loop, and the poster is already in cache because the `<video>` was
- * showing it.
+ * showing it. With `preload="none"` the failing response is not even fetched
+ * until the director first plays this cell, so the swap now happens on the
+ * first play of a visible cell rather than at mount — the poster is what the
+ * cell was showing until then either way.
+ *
+ * NOTHING IS FETCHED UNTIL IT IS PLAYED. `preload="none"` and no `autoplay`:
+ * the loop's bytes are requested by the director's own `play()`, and the
+ * director only plays cells that are at least half on screen and inside the
+ * cap. An earlier build carried `autoplay` and let the element decide, which
+ * fetched and fully buffered EVERY mounted loop — measured at 16/16 buffered
+ * with 14 of them off screen, ~4 MB nobody saw. The poster paints immediately
+ * and the blurhash sits behind it, so a cell that has not been played yet is a
+ * still picture rather than an empty box.
+ *
+ * KNOWN, ACCEPTED UX DELTA: right-clicking an animated cell gets the browser's
+ * VIDEO context menu (Loop, Show controls, Save video as…) rather than the
+ * image one. Inherent to being a real media element; flagged for user QA.
  */
 function AnimatedCellPicture({
     src,
@@ -501,6 +550,7 @@ function AnimatedCellPicture({
     blurDataURL,
     className,
     elementRef,
+    occluded,
 }: {
     /** The grid tier URL — `video/mp4` when a loop exists for this item. */
     src: string
@@ -512,19 +562,29 @@ function AnimatedCellPicture({
     className?: string
     /** The extreme-aspect swap's anchor, when this loop is inside one. */
     elementRef?: (element: HTMLElement | null) => void
+    /**
+     * Something is painting over this cell completely — today the
+     * extreme-aspect hover layer. Deregisters rather than pausing through a
+     * second code path: an unregistered element is paused by the director on
+     * the way out and stops competing for the cap, which is the whole of what
+     * "occluded" should mean.
+     */
+    occluded?: boolean
 }) {
     const [failed, setFailed] = useState(false)
     const videoRef = useRef<HTMLVideoElement | null>(null)
     // The concurrency policy in one line: the director owns the observer, the
-    // scroll listener and the cap, and this cell owns nothing but its
-    // membership (lib/state/animatedPlayback.ts). Re-runs on the fallback, where
-    // React has already nulled the ref for the unmounted <video>, so the
-    // registration is dropped exactly when the element stops existing.
+    // scroll listener, the cap and every play/pause call, and this cell owns
+    // nothing but its membership (lib/state/animatedPlayback.ts). Re-runs on the
+    // fallback, where React has already nulled the ref for the unmounted
+    // <video>, so the registration is dropped exactly when the element stops
+    // existing — and on the occlusion flag, which is what pauses a loop the
+    // hover layer has covered.
     useEffect(() => {
         const video = videoRef.current
-        if (!video) return
+        if (!video || occluded) return
         return observeAnimatedCell(video)
-    }, [failed])
+    }, [failed, occluded])
     if (failed) {
         return (
             <Image
@@ -548,20 +608,42 @@ function AnimatedCellPicture({
                 elementRef?.(element)
             }}
             src={src}
-            // Shown until the first frame decodes, and shown for good if the
-            // response turns out not to be a video at all — so the cell paints
-            // a correct picture from its first frame in every case.
+            // Shown until the director plays this cell and the first frame
+            // decodes, and shown for good if the response turns out not to be a
+            // video at all — so the cell paints a correct picture throughout.
             poster={poster}
+            // A <video> has no implicit ARIA role, so a screen reader would
+            // announce nothing here where the card it replaces announces its
+            // `alt`. `role="img"` plus the label is that parity: this element
+            // is a picture that happens to move, not a media player (it has no
+            // controls, no sound and no timeline the user can reach).
+            role="img"
             aria-label={alt}
             // `muted` is intrinsic rather than a setting: a grid of cells that
-            // could make noise is not a grid, and it is also what makes
-            // autoplay permissible without a user gesture in every browser.
+            // could make noise is not a grid, and it is also what keeps the
+            // director's `play()` permissible without a user gesture in every
+            // browser.
             muted
-            autoPlay
             loop
             playsInline
             disablePictureInPicture
+            // NOT `autoplay`, and deliberately: see the note on this component.
+            // The director decides what plays, and `preload="none"` is what
+            // makes that decision cover the network too rather than only the
+            // decode.
+            preload="none"
             onError={() => setFailed(true)}
+            // The blurhash, by the same direct-data-URL mechanism next/image's
+            // `placeholder` uses on every other picture in this card — so a
+            // loop cell has the same something-shaped-like-the-picture behind
+            // it as its neighbours in the moment before the poster paints.
+            // Never an SVG wrapper: see the placeholder note on the plain card.
+            style={blurDataURL ? {
+                backgroundImage: `url("${blurDataURL}")`,
+                backgroundSize: "cover",
+                backgroundPosition: "50% 0%",
+                backgroundRepeat: "no-repeat",
+            } : undefined}
             className={cn(FILL_CLASSES, className)}
         />
     )

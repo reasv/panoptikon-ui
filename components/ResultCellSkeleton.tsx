@@ -1,4 +1,5 @@
 import { memo } from "react"
+import { cn } from "@/lib/utils"
 
 /**
  * A result card's frame with nothing in it yet: what a scroll-mode grid cell
@@ -28,6 +29,7 @@ import { memo } from "react"
  */
 export const ResultCellSkeleton = memo(function ResultCellSkeleton({
     imageHeightPx,
+    className,
 }: {
     /**
      * The picture box's height under an explicit cell size (design §9), where
@@ -37,9 +39,17 @@ export const ResultCellSkeleton = memo(function ResultCellSkeleton({
      * row height from.
      */
     imageHeightPx?: number
+    /**
+     * The frame extra of the card this stands in for, matching
+     * SearchResultImage's own `className` prop. The GRID never passes one — its
+     * cards do not either, and the verbatim-classes rule above is about that
+     * case. The similarity-target panel does, because there the skeleton and
+     * the card it becomes are the same box in the same layout.
+     */
+    className?: string
 }) {
     return (
-        <div className="border rounded p-2" aria-hidden="true">
+        <div className={cn("border rounded p-2", className)} aria-hidden="true">
             <div className="overflow-hidden relative w-full pb-full mb-2">
                 <div
                     className={imageHeightPx == null

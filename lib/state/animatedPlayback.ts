@@ -20,13 +20,22 @@
 //     bubble, but they are dispatched through the capture phase, so a single
 //     listener sees the grid's scroller, the filmstrip's, and the window's
 //     without any of them having to publish state.
-//   * ONE capture-phase `play` listener on the document, by the same trick.
-//     Elements carry `autoplay`, which can start one at ANY point after its
-//     media has buffered — including after the last reconcile, which is how a
-//     capped cell would otherwise slip past the cap and stay running forever
-//     (measured: 32 visible cells, 32 playing). This is the only edge that
-//     needs it, so it is one listener and not a per-element subscription.
+//   * ONE capture-phase `play`/`pause` pair on the document, by the same trick.
+//     They are how the director notices playback state it did not cause: the
+//     user's own Play/Pause from the browser's video context menu (`pause`
+//     becomes an exclusion that survives until the cell scrolls away), and any
+//     future route that starts a cell behind the cap's back. An earlier build
+//     put `autoplay` on the elements, and the `play` listener was load-bearing
+//     rather than defensive there — a cell whose media buffered after the last
+//     reconcile started itself and ran past the cap forever (measured: 32
+//     visible cells, 32 playing). Dropping `autoplay` closed that route; the
+//     listener stays because a cap that anything can walk around is not a cap.
 //   * ONE Map of registered elements.
+//
+// The elements themselves are inert: no `autoplay`, `preload="none"`. Every
+// play() and pause() in the app comes from `apply` below, which means the
+// director governs the NETWORK as well as the decode — an off-screen loop has
+// not been fetched, not merely paused.
 //
 // Nothing here runs per animation frame, and nothing runs at all while no
 // animated cell is mounted: the last unregister tears the observer and the
@@ -72,10 +81,20 @@ interface Entry {
   ratio: number
   /**
    * What the director last ASKED this element to do. An intent, not a
-   * reading: it is the incumbency term in the over-cap ordering, and it is
-   * deliberately NOT what `apply` gates on — see the note there.
+   * reading: it is the incumbency term in the over-cap ordering, the thing
+   * `onPause` compares against to tell a user's pause from the director's own,
+   * and deliberately NOT what `apply` gates on — see the note there.
    */
   playing: boolean
+  /**
+   * The user paused this cell themselves (the video context menu, or any other
+   * route to a pause the director did not ask for). While it is set the
+   * director leaves the element alone entirely — it neither resumes it nor
+   * counts it against the cap. Cleared when the cell leaves the viewport, which
+   * is the natural reset: the intent was about the thing on screen, and by the
+   * time it comes back it is a new look at it.
+   */
+  userPaused: boolean
 }
 
 const entries = new Map<HTMLVideoElement, Entry>()
@@ -95,21 +114,27 @@ const lastOffsets = new WeakMap<EventTarget, { at: number; offset: number }>()
  * Register a mounted loop element. Returns the unregister function, so the
  * caller's effect is a one-liner and cannot leak a half-registered element.
  *
- * Registration does NOT start playback: the element's own `autoplay` does that
- * for a cell that mounts on screen, and the first observer callback — which
- * the browser delivers as soon as it has computed intersection — is what
- * settles every cell into the policy. That ordering is deliberate. A cell
- * scrolled to at speed starts playing for a frame or two before the director
- * pauses it, which is invisible; a cell that waited for JavaScript to start it
- * would be a still picture for as long as the callback took, which is not.
+ * THE DIRECTOR STARTS PLAYBACK, and nothing else does. The elements carry no
+ * `autoplay` and `preload="none"`, so an unregistered — or registered but
+ * off-screen — loop has not even fetched its bytes; the first `play()` here is
+ * what asks the network for them. That is the point: an earlier build let the
+ * element decide and fetched every mounted loop whether or not anyone saw it.
+ * The cost is that a cell is its poster until the first observer callback
+ * arrives, which the browser delivers as soon as it has computed intersection.
+ *
+ * The unregister PAUSES on the way out. An element that is unmounting does not
+ * care, but one that is merely occluded (the extreme-aspect hover layer) is
+ * still on the page and would otherwise go on decoding underneath.
  */
 export function observeAnimatedCell(video: HTMLVideoElement): () => void {
   if (typeof window === "undefined") return () => {}
-  entries.set(video, { ratio: 0, playing: !video.paused })
+  entries.set(video, { ratio: 0, playing: false, userPaused: false })
   ensureObserver().observe(video)
   bindScroll()
   return () => {
     observer?.unobserve(video)
+    const entry = entries.get(video)
+    if (entry) apply(video, entry, false)
     entries.delete(video)
     if (entries.size === 0) teardown()
   }
@@ -143,6 +168,7 @@ function bindScroll(): void {
   // neither must ever be able to delay what it only observes.
   document.addEventListener("scroll", onScroll, { capture: true, passive: true })
   document.addEventListener("play", onPlay, { capture: true, passive: true })
+  document.addEventListener("pause", onPause, { capture: true, passive: true })
   scrollBound = true
 }
 
@@ -152,6 +178,7 @@ function teardown(): void {
   if (scrollBound) {
     document.removeEventListener("scroll", onScroll, { capture: true })
     document.removeEventListener("play", onPlay, { capture: true })
+    document.removeEventListener("pause", onPause, { capture: true })
     scrollBound = false
   }
   clearTimeout(settleTimer)
@@ -187,11 +214,13 @@ function onScroll(event: Event): void {
 }
 
 /**
- * A registered element started playing. Either the director asked for it — in
- * which case the reconcile below is a no-op and stops there — or `autoplay`
- * did, which is the case this exists for: an element whose media buffers after
- * the last reconcile starts itself, and without this the cap and the
- * fast-scroll suspension would both simply not apply to it.
+ * A registered element started playing without the director having asked. With
+ * `autoplay` dropped the browser no longer does this on its own, so the only
+ * routes left are the user's (the video context menu's Play) and anything that
+ * gets a `play()` past us in future. DEFENSIVE, and kept precisely because the
+ * cap is only a cap if nothing can start a cell behind its back: reconcile puts
+ * the element back under policy — resumed if it belongs in the playing set,
+ * paused if it does not.
  *
  * Cannot recurse: the reconcile it triggers only ever calls `play()` on an
  * element that is currently paused, so a `play` it causes is one it will not
@@ -200,8 +229,38 @@ function onScroll(event: Event): void {
 function onPlay(event: Event): void {
   const target = event.target
   if (!(target instanceof HTMLVideoElement)) return
-  if (!entries.has(target)) return
+  const entry = entries.get(target)
+  if (!entry) return
+  // Starting a cell by hand withdraws an earlier pause-by-hand. Without this
+  // the exclusion below would make the user's own Play a no-op that reconcile
+  // immediately undoes.
+  entry.userPaused = false
   reconcile()
+}
+
+/**
+ * A registered element stopped. `entry.playing` is what tells the two cases
+ * apart, and it is reliable in both directions because `apply` writes the
+ * intent BEFORE it touches the element, while the event arrives on a later
+ * task:
+ *
+ *   - intent already `false` — the director's own pause (off screen, over the
+ *     cap, fast scroll, occluded). Nothing to do.
+ *   - intent still `true` — nobody here asked for this, so it is the user
+ *     (the video context menu is the reachable route) or the browser reclaiming
+ *     a decoder. Either way the cell should stay stopped: an animation the user
+ *     silenced must not come back on the next scroll event.
+ *
+ * The exclusion is cleared when the cell leaves the viewport (see `reconcile`),
+ * so it never becomes permanent state to reason about.
+ */
+function onPause(event: Event): void {
+  const target = event.target
+  if (!(target instanceof HTMLVideoElement)) return
+  const entry = entries.get(target)
+  if (!entry || !entry.playing) return
+  entry.playing = false
+  entry.userPaused = true
 }
 
 function settle(): void {
@@ -224,8 +283,19 @@ function reconcile(): void {
   }
   const visible: HTMLVideoElement[] = []
   for (const [video, entry] of entries) {
-    if (entry.ratio >= VISIBLE_RATIO) visible.push(video)
-    else apply(video, entry, false)
+    if (entry.ratio < VISIBLE_RATIO) {
+      // Off screen: paused, and the user's pause-intent expires here. Leaving
+      // the viewport is the natural reset — the next time this cell is on
+      // screen it is a fresh look at it, not the one they silenced.
+      entry.userPaused = false
+      apply(video, entry, false)
+      continue
+    }
+    // A cell the user stopped is neither resumed nor counted against the cap:
+    // it is not competing for a decode session, so its slot belongs to a cell
+    // that is actually animating.
+    if (entry.userPaused) continue
+    visible.push(video)
   }
   if (visible.length > MAX_PLAYING) {
     // Only ever sorted in the over-cap case, which is the one the cap exists
@@ -248,13 +318,16 @@ function reconcile(): void {
 }
 
 function apply(video: HTMLVideoElement, entry: Entry, playing: boolean): void {
+  // The intent is written FIRST, and `onPause` depends on that ordering to tell
+  // the director's own pause from the user's.
   entry.playing = playing
-  // GATED ON THE ELEMENT, never on the intent above. A cell mounts with the
-  // `autoplay` attribute, so it starts playing without the director ever having
-  // asked — and a version of this that skipped the call whenever the intent
-  // already read "not playing" left every autoplaying cell past the cap running
-  // (measured: 32 visible cells, 32 playing). `paused` is a plain property
-  // read, no layout, and it is the only thing that knows the truth.
+  // GATED ON THE ELEMENT, never on the intent above. Anything can have moved
+  // the element since the last reconcile — the user through the video context
+  // menu, or (in the build that still carried `autoplay`) the browser itself,
+  // which left every autoplaying cell past the cap running because the intent
+  // still read "not playing" and the call was skipped: measured at 32 visible
+  // cells, 32 playing. `paused` is a plain property read, no layout, and it is
+  // the only thing that knows the truth.
   if (playing) {
     if (!video.paused) return
     // The rejection is expected traffic, not an error: a pause landing between

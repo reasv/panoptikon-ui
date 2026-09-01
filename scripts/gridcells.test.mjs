@@ -268,6 +268,20 @@ console.log("\n== what a grid cell renders (F6) ==")
       === "still")
   check("with no floor a static item is still static",
     animatedCellMode({ type: "image/png", size: 1, width: 1, height: 1 }, null) === "static")
+  // THE PERMISSIVE HOLE, asserted so it stays visible. A row that has not
+  // resolved its metadata yet and defaults its `type` to a placeholder answers
+  // "static" — a BARE grid-tier URL — for what may well be an animated item
+  // above the floor, and the endpoint answers that with `video/mp4` into an
+  // `<img>`. Unlike every other field here, an absent type has NO safe default:
+  // guessing animated would send `still=true` for every non-image row on earth,
+  // and guessing static is the blank cell this asserts. The fix belongs at the
+  // call site and it is to wait, which is what
+  // components/sidebar/options/itemSimilarity/similarityTarget.tsx now does —
+  // a skeleton until its item query answers for the target's own sha.
+  check("an unknown type answers static — permissively, hence the V1 gating",
+    mode({ type: "unknown", duration: 1.2, size: 540046, width: 800, height: 600 }) === "static")
+  check("an empty type answers static for the same reason",
+    mode({ type: "", duration: 1.2, size: 540046, width: 800, height: 600 }) === "static")
 }
 
 console.log("\n== columns and row height from an explicit cell width (§9) ==")
