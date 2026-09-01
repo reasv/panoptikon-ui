@@ -640,12 +640,15 @@ export interface paths {
         /**
          * Get thumbnail for an item
          * @description Returns a thumbnail for a given item.
-         *     The thumbnail may be a thumbnail,
+         *     The thumbnail may be a stored rendition,
          *     the unmodified original image (only for images),
          *     or a placeholder image generated on the fly.
          *     GIFs are always returned as the original file.
          *     For video thumbnails, the `big` parameter can be used to
          *     select between the 2x2 frame grid (big=True) or the first frame from the grid (big=False).
+         *     The `size` parameter selects a rendition tier: `display` (default, unchanged behaviour),
+         *     `grid-m` (short side 1024) or `grid-s` (short side 512).
+         *     A tier with no stored rendition falls through to the next larger one.
          */
         get: operations["item_thumbnail"];
         put?: never;
@@ -4223,6 +4226,14 @@ export interface components {
         TextResponse: {
             text: components["schemas"]["ExtractedTextRecord"][];
         };
+        /**
+         * @description One rendition of an item's picture.
+         *
+         *     The wire values are the frozen `size=` parameter of
+         *     `GET /api/items/item/thumbnail`; do not rename them.
+         * @enum {string}
+         */
+        ThumbnailTier: "display" | "grid-m" | "grid-s";
         TranscodeCacheResize: {
             /**
              * Format: int64
@@ -5606,6 +5617,21 @@ export interface operations {
                 /** @description The type of the item identifier */
                 id_type: components["schemas"]["ItemIdentifierType"];
                 big?: boolean;
+                /**
+                 * @description Which rendition to serve. `display` (the default, and what omitting
+                 *     the parameter has always meant) is gallery quality; `grid-m` and
+                 *     `grid-s` cap the **short** side at 1024 and 512 for grid-sized boxes.
+                 *     A tier an item has no stored rendition for falls through to the next
+                 *     larger one, so a request is always answerable.
+                 */
+                size?: components["schemas"]["ThumbnailTier"];
+                /**
+                 * @description Animated items: serve the static tier image (the loop's poster)
+                 *     instead of the loop. Accepted now and a no-op for static items, whose
+                 *     renditions are always images; the animated pipeline it selects
+                 *     between is step B2.
+                 */
+                still?: boolean;
             };
             header?: never;
             path?: never;
