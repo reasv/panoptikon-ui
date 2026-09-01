@@ -1,30 +1,27 @@
 import { cn } from "@/lib/utils"
 
 /**
- * Does this item MOVE when you open it?
+ * WHO GETS THIS BADGE is `showsMotionBadge` in lib/thumbnailTier.ts, and that
+ * expression is the single place to change it.
  *
- * Two ways to be true, and the second is the reason this is a predicate
- * rather than a mime test at the call site:
+ * It used to be a local `isPlayableItem(item)` — "a `video/*` mime, or a
+ * measured span" — and the question it answered ("does this item move when you
+ * open it?") stopped being the right one when grid cells learned to move by
+ * themselves. The badge's meaning is now the narrower "this item moves, but it
+ * is NOT moving right now" (D8), which no test on the item alone can answer:
+ * the same animated GIF earns a badge in a hover-mode cell, earns none in an
+ * always-mode one, and earns none below the raw floor where it is animating in
+ * its own `<img>`. So the predicate takes the cell's animate mode and the
+ * server's floor as well as the row, and it lives beside the other
+ * which-picture-is-this-cell-showing decisions rather than here.
  *
- *   - a `video/*` mime, whatever the browser can actually decode. NOT
- *     `isPlayableVideo` (components/gallery/ImageGallery.tsx), which asks
- *     whether THIS browser can play the file — an HEVC-in-mp4 it cannot
- *     decode is still a video, and a badge that vanished on exactly the
- *     files the user is most likely to be confused by would be worse than
- *     no badge;
- *   - a measured span, which is how an animated GIF/WebP/AVIF is recorded
- *     (`duration > 0` — the same three-state column ItemMetaLine reads, where
- *     null is unprobed and 0 is a still). Those play in this app too, and a
- *     still frame of an animation raises exactly the question this badge
- *     exists to answer.
- *
- * If the badge should be videos ONLY, this expression is the single place to
- * say so.
+ * One thing it kept deliberately: a `video/*` mime counts whatever the browser
+ * can actually decode. NOT `isPlayableVideo`
+ * (components/gallery/ImageGallery.tsx), which asks whether THIS browser can
+ * play the file — an HEVC-in-mp4 it cannot decode is still a video, and a
+ * badge that vanished on exactly the files the user is most likely to be
+ * confused by would be worse than no badge.
  */
-export function isPlayableItem(item: SearchResult): boolean {
-    if (item.type?.startsWith("video/")) return true
-    return !!item.duration && item.duration > 0
-}
 
 /**
  * The "this one plays" mark for a THUMBNAIL: a ghosted play glyph in the

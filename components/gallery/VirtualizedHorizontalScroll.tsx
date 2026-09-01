@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useRef } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -15,12 +15,23 @@ import { useSelectedDBs } from "@/lib/state/database"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { PinButton } from './PinButton'
 import { FindButton } from './FindButton'
-import { blurHashToDataURL } from '@/lib/state/blurHashDataURL'
-import { PlayableBadge, isPlayableItem } from '@/components/PlayableBadge'
+import { blurHashToDataURL, type PlaceholderDataURL } from '@/lib/state/blurHashDataURL'
+import { LoopVideo } from '@/components/LoopVideo'
+import { PlayableBadge } from '@/components/PlayableBadge'
 import { useSearchLoading } from '@/lib/state/zust'
 import { topRowHighlightItem, virtualPageOf } from '@/lib/scrollMode'
-import { isAnimatedItem, tierForCellWidth, type ThumbnailTier } from '@/lib/thumbnailTier'
+import {
+    animatedCellMode,
+    isAnimatedItem,
+    showsMotionBadge,
+    tierForCellWidth,
+    type AnimatedFloor,
+    type ThumbnailTier,
+} from '@/lib/thumbnailTier'
 import { useDevicePixelRatio } from '@/hooks/useDevicePixelRatio'
+import { CELL_HOVER_ROOT_ATTR, useArmedHover } from '@/hooks/useArmedHover'
+import { trackHoverPointer } from '@/lib/state/animatedPlayback'
+import { useAnimatedFloor } from '@/lib/useClientConfig'
 import type { ResultsSource } from '@/lib/searchHooks'
 
 // The BINDING EDGE of the strip's card box, in CSS pixels: the LARGER of the
@@ -182,6 +193,17 @@ export function VirtualGalleryHorizontalScroll({
     // watching that per card would be a state and an effect in every one of
     // them.
     const tier = tierForCellWidth(STRIP_CARD_CSS_BINDING_EDGE, useDevicePixelRatio())
+    // ONE FLOOR FOR THE WHOLE STRIP, read here and passed down exactly as the
+    // result grid reads it (lib/useClientConfig.ts): the strip needs it for
+    // two questions per card that are the same question — which cards can
+    // hover-play a stored loop (D10), and which of them are already animating
+    // in their own `<img>` and must not carry a badge saying they are not
+    // (D8). react-query keeps the object's identity across refetches that
+    // change nothing.
+    const animatedFloor = useAnimatedFloor()
+    // The pointer tracking the hover arming reads — bound for as long as the
+    // strip is mounted, refcounted with the grid's (see trackHoverPointer).
+    useEffect(() => trackHoverPointer(), [])
     const [qIndex] = useGalleryIndex()
     // The item the strip must keep in view, and WHICH FILE is currently at it.
     // The second half is the re-assert trigger, and it is deliberately not
@@ -400,6 +422,7 @@ export function VirtualGalleryHorizontalScroll({
                                 viewerOpen={viewerOpen}
                                 onViewerOpenChange={onViewerOpenChange}
                                 tier={tier}
+                                animatedFloor={animatedFloor}
                             />
                         )
                     })}
@@ -445,6 +468,7 @@ function VirtualHorizontalScrollElement({
     viewerOpen,
     onViewerOpenChange,
     tier,
+    animatedFloor,
 }: {
     item: SearchResult
     ownIndex: number
@@ -462,6 +486,8 @@ function VirtualHorizontalScrollElement({
     onViewerOpenChange?: (open: boolean) => void
     /** The rendition tier for the card box — computed once by the strip. */
     tier: ThumbnailTier
+    /** The animated raw floor — read once by the strip. See its own read. */
+    animatedFloor: AnimatedFloor | null
 }) {
     const [qIndex] = useGalleryIndex()
     // The same mapping the strip scrolls to (see stripTarget): clamped, not
@@ -490,13 +516,19 @@ function VirtualHorizontalScrollElement({
     // which this <img> would render as a broken picture.
     //
     // ONE COMPARISON ON ROW DATA, and deliberately the cheap half of the
-    // decision — a surface that never plays needs no client-config floor, only
-    // "does this item move" (lib/thumbnailTier.ts). `still=true` is documented
-    // as a NO-OP for an animated item at or below the floor: it is served as
-    // its original file either way, and animates in the <img> exactly as it
-    // does today.
+    // decision — the base picture never plays, so it needs no client-config
+    // floor, only "does this item move" (lib/thumbnailTier.ts). `still=true` is
+    // documented as a NO-OP for an animated item at or below the floor: it is
+    // served as its original file either way, and animates in the <img> exactly
+    // as it does today.
     const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256, tier,
         isAnimatedItem(item.type, item.duration))
+    // The other half, which the HOVER play does need (D10): a stored loop
+    // exists only above the raw floor, and only such a card mounts the arming
+    // and the <video>. Still one comparison on row data — a static card, or an
+    // animated one already animating in its own <img>, keeps today's picture
+    // with no listener and no state.
+    const animated = animatedCellMode(item, animatedFloor)
     // Every hover report this card makes goes through here, so the card can
     // know whether the dock's hover subject is currently ITS item. Tracked
     // from the reports rather than from raw pointer presence: the unmount
@@ -588,6 +620,12 @@ function VirtualHorizontalScrollElement({
                 )}
                 onDragStart={handleDragStart}
                 draggable={true}
+                // The hover-play arming binds to THIS box (D10): it is the one
+                // that carries `group`, so the region that plays a loop is the
+                // same region the card's own hover chrome fades in over — see
+                // hooks/useArmedHover.ts. Static markup, so a card with nothing
+                // to play carries four bytes and no behaviour.
+                {...{ [CELL_HOVER_ROOT_ATTR]: "" }}
                 // Both paths go through the dock's 200ms delayed-open,
                 // instant-close hook, and that is what makes body hover safe
                 // at all: a sweep across the strip to reach the scrollbar, a
@@ -631,32 +669,29 @@ function VirtualHorizontalScrollElement({
             >
                 <Link href={imageLink} onClick={onClick}>
                     <div className="w-full h-full relative">
-                        <Image
-                            src={thumbnailURL}
-                            alt={item.path}
-                            className="object-cover object-top rounded-md cursor-pointer"
-                            fill
-                            // Direct data URL, never `placeholder="blur"` — the
-                            // filmstrip virtualizes and remounts a card per item
-                            // exactly like the grid, and 'blur' would emit a
-                            // unique `data:image/svg+xml` blur wrapper per mount,
-                            // each of which Blink instantiates as its own
-                            // isolated Document. Those pile up faster than GC
-                            // collects them and degrade frame time for the whole
-                            // session (see the comment in
-                            // components/SearchResultImage.tsx). Do not
-                            // reintroduce. The data-URL template type is the
-                            // real guard (next/image validates only in dev);
-                            // `?? 'empty'` just documents the fallback.
-                            placeholder={blurDataURL ?? 'empty'}
-                            unoptimized={true}
-                            sizes="240px"
-                        />
+                        {animated === "loop"
+                            ? <StripLoopPicture
+                                poster={thumbnailURL}
+                                loop={getFileURL(dbs, "thumbnail", "sha256", item.sha256, tier)}
+                                alt={item.path}
+                                blurDataURL={blurDataURL}
+                            />
+                            : <StripCardImage
+                                src={thumbnailURL}
+                                alt={item.path}
+                                blurDataURL={blurDataURL}
+                            />}
                     </div>
                 </Link>
                 {/* Same stacking rule as the grid card's copy: after the
-                    link, before the spinner and the hover verbs. */}
-                {isPlayableItem(item) && <PlayableBadge />}
+                    link, before the spinner and the hover verbs.
+
+                    "hover", always: the strip's animate mode is not the
+                    grid's preference but a fixed policy (D10) — its cards
+                    show posters and play only what the pointer dwells on —
+                    so a card that CAN move and is not moving is exactly what
+                    the badge is for. */}
+                {showsMotionBadge(item, animatedFloor, "hover") && <PlayableBadge />}
                 {searchLoading && (
                     <div className="absolute inset-0 z-10 flex items-center rounded-md justify-center bg-white bg-opacity-50">
                         <Image
@@ -730,6 +765,93 @@ function VirtualHorizontalScrollElement({
                 <FileActionCluster sha256={item.sha256} path={item.path} anchor="bottom-right" />
             </figure>
         </div>
+    )
+}
+
+/**
+ * The strip card's picture, for every card that is not a hover-playable loop —
+ * which is all of them until an animated item above the raw floor comes past.
+ *
+ * Its own component only so that the loop card below can reuse it verbatim as
+ * the poster it plays over: the two must be the SAME element with the same
+ * classes, or the moment the video fades in would also be a moment the picture
+ * moved.
+ */
+function StripCardImage({ src, alt, blurDataURL, elementRef }: {
+    src: string
+    alt: string
+    blurDataURL: PlaceholderDataURL | undefined
+    elementRef?: (element: HTMLImageElement | null) => void
+}) {
+    return (
+        <Image
+            ref={elementRef}
+            src={src}
+            alt={alt}
+            className="object-cover object-top rounded-md cursor-pointer"
+            fill
+            // Direct data URL, never `placeholder="blur"` — the filmstrip
+            // virtualizes and remounts a card per item exactly like the grid,
+            // and 'blur' would emit a unique `data:image/svg+xml` blur wrapper
+            // per mount, each of which Blink instantiates as its own isolated
+            // Document. Those pile up faster than GC collects them and degrade
+            // frame time for the whole session (see the comment in
+            // components/SearchResultImage.tsx). Do not reintroduce. The
+            // data-URL template type is the real guard (next/image validates
+            // only in dev); `?? 'empty'` just documents the fallback.
+            placeholder={blurDataURL ?? 'empty'}
+            unoptimized={true}
+            sizes="240px"
+        />
+    )
+}
+
+/**
+ * The strip card of an item that MOVES and has a stored loop (D10): the poster
+ * it has always shown, which plays once the pointer dwells on the card.
+ *
+ * HOVER, NEVER UNPROMPTED, and that is a policy of the strip rather than the
+ * user's preference: a row of cards all looping under the gallery is noise,
+ * and the strip's job is letting the eye find the next item. It is also why
+ * the strip has never asked for anything but posters.
+ *
+ * MOUNTED ONLY FOR LOOP CARDS, exactly as in the grid and for the same reason:
+ * the arming state, the two listeners and the media element are in here, so
+ * every other card in the strip renders the `<Image>` it always did and mounts
+ * none of it.
+ */
+function StripLoopPicture({ poster, loop, alt, blurDataURL }: {
+    poster: string
+    loop: string
+    alt: string
+    blurDataURL: PlaceholderDataURL | undefined
+}) {
+    const [failed, setFailed] = useState(false)
+    const hover = useArmedHover(!failed)
+    return (
+        <>
+            <StripCardImage
+                elementRef={hover.attach}
+                src={poster}
+                alt={alt}
+                blurDataURL={blurDataURL}
+            />
+            {hover.active && (
+                <LoopVideo
+                    src={loop}
+                    poster={poster}
+                    alt={alt}
+                    // The poster underneath is the placeholder; a blurhash
+                    // behind a layer fading in over a painted picture would be
+                    // the flash the fade exists to avoid.
+                    blurDataURL={undefined}
+                    className="object-cover object-top rounded-md"
+                    fadeIn
+                    registered
+                    onFailed={() => setFailed(true)}
+                />
+            )}
+        </>
     )
 }
 
