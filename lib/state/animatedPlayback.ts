@@ -266,6 +266,216 @@ export function canArmHover(input: HoverArmInputs): boolean {
   return age >= 0 && age <= HOVER_MOVE_WINDOW_MS
 }
 
+/**
+ * Identity is all the machine wants of a hover root; the app's are Elements.
+ */
+export type HoverRoot = Element
+
+/**
+ * THE ARMING STATE MACHINE (D6/D7) — the whole of the hover policy that is not
+ * a timer, and the answer to two ways a cell could otherwise never play:
+ *
+ *   1. `pointerenter` is dispatched BEFORE the `pointermove` that carried the
+ *      pointer across the boundary, so a rule fed only by `pointermove` never
+ *      sees the movement that produced the entry. A cursor that RESTED longer
+ *      than the window before crossing in was therefore refused — and because
+ *      moving inside a cell fires no second `pointerenter`, nothing ever asked
+ *      again. `hoverEnter` samples the entry's own coordinates (F1a).
+ *   2. A cell released by a scroll suspend, with the pointer never leaving it,
+ *      had the same problem from the other end. Both cases now leave a PENDING
+ *      candidate that `hoverMove` arms on the next REAL move inside it (F1b).
+ *      Nothing re-arms on a scroll settling or on time passing: no play
+ *      without a move the user made.
+ *
+ * A MUTABLE CURSOR, STEPPED IN PLACE, rather than a reducer returning fresh
+ * state. `hoverMove` runs on every real `pointermove` on the page, and the
+ * standing cost of this feature on a grid nobody hovers is precisely the thing
+ * it exists to keep small: a coordinate compare and a timestamp write, with no
+ * allocation behind them. The state is still an explicit argument with no
+ * globals and no DOM in it, which is what lets scripts/hoveranimate.test.mjs
+ * drive whole gestures through these functions without a browser — the
+ * director below owns exactly one of these, and the tests own their own.
+ *
+ * The three OUT fields are a step's answer, read by the caller immediately
+ * after the call (see `applyHoverCommands`): `starting` is a dwell to begin,
+ * `dropped` a root the machine has taken the slot back from, and
+ * `droppedFired` says whether that root had already been told to play — i.e.
+ * whether it now has to be told to stop. Every step clears all three first, so
+ * a stale answer can never be read twice.
+ */
+export interface HoverArming {
+  /** The last pointer coordinates seen; NaN until the first sample. */
+  x: number
+  y: number
+  /** When the pointer last actually MOVED (0 = it never has). */
+  movedAt: number
+  /** The root whose dwell is running, or has fired and is playing. */
+  armed: HoverRoot | null
+  /** Has `armed`'s dwell elapsed? */
+  fired: boolean
+  /** The root to arm on the next real move INSIDE it (see above). */
+  pending: HoverRoot | null
+  /** OUT: a root the last step took the slot back from. */
+  dropped: HoverRoot | null
+  /** OUT: had `dropped` been told to play? Then it must be told to stop. */
+  droppedFired: boolean
+  /** OUT: a root whose dwell the caller must start. */
+  starting: HoverRoot | null
+}
+
+export function newHoverArming(): HoverArming {
+  return {
+    x: NaN,
+    y: NaN,
+    movedAt: 0,
+    armed: null,
+    fired: false,
+    pending: null,
+    dropped: null,
+    droppedFired: false,
+    starting: null,
+  }
+}
+
+function clearAnswers(state: HoverArming): void {
+  state.dropped = null
+  state.droppedFired = false
+  state.starting = null
+}
+
+/**
+ * Fold one pointer position in, and say whether it was the pointer actually
+ * MOVING.
+ *
+ * THE FIRST SAMPLE ONLY SEEDS THE POSITION: with nothing to compare against,
+ * "the coordinates changed" is unknowable, and reading it as a move would arm
+ * on the very first event a page delivers — which, when content renders or
+ * scrolls under an already-resting cursor, is an entry nobody caused.
+ */
+function samplePointer(
+  state: HoverArming,
+  x: number,
+  y: number,
+  at: number
+): boolean {
+  const seen = !Number.isNaN(state.x)
+  const moved = seen && (x !== state.x || y !== state.y)
+  state.x = x
+  state.y = y
+  if (moved) state.movedAt = at
+  return moved
+}
+
+/** Take the slot back, recording whether its holder had been told to play. */
+function dropArmed(state: HoverArming): void {
+  if (!state.armed) return
+  state.dropped = state.armed
+  state.droppedFired = state.fired
+  state.armed = null
+  state.fired = false
+}
+
+/** Give `root` the slot if D6 allows it right now. */
+function tryArm(
+  state: HoverArming,
+  root: HoverRoot,
+  at: number,
+  fastScroll: boolean
+): boolean {
+  if (!canArmHover({ now: at, lastRealMoveAt: state.movedAt, fastScroll })) {
+    return false
+  }
+  dropArmed(state)
+  state.armed = root
+  state.fired = false
+  state.pending = null
+  state.starting = root
+  return true
+}
+
+/**
+ * The pointer entered `root`, at (`x`, `y`).
+ *
+ * THE ENTERING MOVEMENT COUNTS (F1a): the browser dispatches this before the
+ * `pointermove` that carried the pointer in, so the entry's own coordinates
+ * are the only record of that movement the rule can have. Chromium's
+ * re-dispatched enters — the ones D6 exists to refuse — carry the SAME
+ * coordinates as the last move, so they are still not moves and the
+ * stationary-cursor defence is unchanged.
+ */
+export function hoverEnter(
+  state: HoverArming,
+  root: HoverRoot,
+  x: number,
+  y: number,
+  at: number,
+  fastScroll: boolean
+): void {
+  clearAnswers(state)
+  samplePointer(state, x, y, at)
+  if (state.armed === root) {
+    // Re-entering the cell that already holds the slot keeps its dwell running
+    // rather than restarting it — see HOVER_MOVE_WINDOW_MS for why a cell can
+    // be handed repeated entries it never left.
+    state.pending = null
+    return
+  }
+  dropArmed(state)
+  if (!tryArm(state, root, at, fastScroll)) state.pending = root
+}
+
+/**
+ * The pointer moved. `insidePending` is the caller's answer to "did this land
+ * inside the candidate" — asked only when there IS one, which is what keeps
+ * the standing cost of an un-hovered page to a comparison and a write.
+ */
+export function hoverMove(
+  state: HoverArming,
+  x: number,
+  y: number,
+  at: number,
+  fastScroll: boolean,
+  insidePending: boolean
+): void {
+  clearAnswers(state)
+  if (!samplePointer(state, x, y, at)) return
+  const root = state.pending
+  if (!root || !insidePending) return
+  tryArm(state, root, at, fastScroll)
+}
+
+/** The pointer left `root`, or the cell went away: it forfeits both slots. */
+export function hoverLeave(state: HoverArming, root: HoverRoot): void {
+  clearAnswers(state)
+  if (state.pending === root) state.pending = null
+  if (state.armed === root) dropArmed(state)
+}
+
+/**
+ * Something scrolled. ANY scroll cancels a dwell that has not fired (D6) — the
+ * content under the pointer is moving, so the cell the entry named is not the
+ * cell that will be there in 200 ms — and a SUSPEND (the fast-scroll
+ * threshold) also stops one that has already fired.
+ *
+ * Either way the cell is REMEMBERED: the pointer may never leave it, and
+ * without the candidate the cell could not play again without a trip out and
+ * back. It still takes a real move to arm it.
+ */
+export function hoverScroll(state: HoverArming, suspend: boolean): void {
+  clearAnswers(state)
+  if (!state.armed) return
+  if (!suspend && state.fired) return
+  state.pending = state.armed
+  dropArmed(state)
+}
+
+/** The dwell elapsed: `root` is playing, so a later drop has to stop it. */
+export function hoverFired(state: HoverArming, root: HoverRoot): void {
+  clearAnswers(state)
+  if (state.armed !== root) return
+  state.fired = true
+}
+
 const entries = new Map<HTMLVideoElement, Entry>()
 
 let observer: IntersectionObserver | null = null
@@ -274,28 +484,68 @@ let fastScroll = false
 let settleTimer: ReturnType<typeof setTimeout> | undefined
 
 /**
- * The pointer's last position and the time it last CHANGED. Two numbers and a
- * timestamp, written by the one `pointermove` listener below — this is the
- * entire standing cost of the hover machinery on a page nobody is hovering.
+ * THE ONE HOVER SLOT (D7), and the pointer tracking that feeds it: one machine
+ * instance, stepped in place by the listeners below. At most one cell is ever
+ * armed or hover-playing, which is what makes "entering another stops the
+ * previous" a property of the director rather than an agreement between cells
+ * that cannot see each other.
  */
-let lastMoveX = NaN
-let lastMoveY = NaN
-let lastRealMoveAt = 0
+const hoverArming = newHoverArming()
 
 /**
- * The ONE hover slot (D7). At most one cell is ever armed or hover-playing:
- * arming another releases this one, which is what makes "entering another
- * stops the previous" a property of the director rather than an agreement
- * between cells that cannot see each other.
+ * The armed (and candidate) cells' callbacks, keyed by their hover root. A
+ * WeakMap because the machine holds roots by identity and a card that unmounts
+ * must be able to take its element — and this entry — with it.
  */
-interface HoverArm {
-  /** The cell's hover root, so a re-entry on the same one is a no-op. */
-  root: Element
-  onFire: (playing: boolean) => void
-  timer: ReturnType<typeof setTimeout> | undefined
-  fired: boolean
+const hoverCallbacks = new WeakMap<Element, (playing: boolean) => void>()
+
+/** The dwell. At most one runs, because at most one cell is ever armed. */
+let dwellTimer: ReturnType<typeof setTimeout> | undefined
+
+/**
+ * Carry out whatever the last machine step decided: stop a cell that was
+ * playing, and start a dwell for a cell that just took the slot. The machine
+ * clears its answers on the next step, and this clears them as it consumes
+ * them, so nothing here can act on a decision twice.
+ */
+function applyHoverCommands(): void {
+  const dropped = hoverArming.dropped
+  if (dropped) {
+    hoverArming.dropped = null
+    clearTimeout(dwellTimer)
+    dwellTimer = undefined
+    // Only a cell that was actually told to play needs telling to stop; a
+    // dwell that never fired has nothing to take back.
+    if (hoverArming.droppedFired) hoverCallbacks.get(dropped)?.(false)
+  }
+  const starting = hoverArming.starting
+  if (!starting) return
+  hoverArming.starting = null
+  clearTimeout(dwellTimer)
+  dwellTimer = setTimeout(() => {
+    dwellTimer = undefined
+    hoverFired(hoverArming, starting)
+    // The machine refuses the transition if the slot moved on under us, and
+    // this is the one place a stale timer could otherwise reach a cell.
+    if (hoverArming.armed !== starting) return
+    hoverCallbacks.get(starting)?.(true)
+  }, HOVER_DWELL_MS)
 }
-let hoverArm: HoverArm | null = null
+
+/** Forget everything: the teardown's reset, in place and without allocating. */
+function resetHoverArming(): void {
+  clearTimeout(dwellTimer)
+  dwellTimer = undefined
+  hoverArming.x = NaN
+  hoverArming.y = NaN
+  hoverArming.movedAt = 0
+  hoverArming.armed = null
+  hoverArming.fired = false
+  hoverArming.pending = null
+  hoverArming.dropped = null
+  hoverArming.droppedFired = false
+  hoverArming.starting = null
+}
 
 /** How many surfaces are watching the pointer (see `trackHoverPointer`). */
 let hoverTrackers = 0
@@ -388,42 +638,40 @@ export function trackHoverPointer(): () => void {
  * HOVER_MOVE_WINDOW_MS): a cell that stays under a stationary pointer through
  * a scroll can be handed repeated entries, and restarting on each would mean a
  * dwell that never completes.
+ *
+ * PASS THE ENTRY EVENT. Its `clientX`/`clientY` are the only record of the
+ * movement that carried the pointer in — the `pointermove` for it arrives
+ * AFTER this — and without them a pointer that rested before crossing the
+ * boundary is refused and never asked again (see the machine's doc, F1a). A
+ * refusal is no longer final either way: the root is remembered, and the
+ * director's own `pointermove` arms it on the next real move inside it.
  */
 export function armHoverPlay(
   root: Element,
-  onFire: (playing: boolean) => void
+  onFire: (playing: boolean) => void,
+  entry?: { clientX: number; clientY: number }
 ): () => void {
   if (typeof window === "undefined") return () => {}
-  if (hoverArm && hoverArm.root === root) return cancelFor(hoverArm)
-  releaseHoverSlot()
-  if (!canArmHover({ now: performance.now(), lastRealMoveAt, fastScroll })) {
-    return () => {}
-  }
-  const arm: HoverArm = { root, onFire, timer: undefined, fired: false }
-  hoverArm = arm
-  arm.timer = setTimeout(() => {
-    arm.timer = undefined
-    arm.fired = true
-    arm.onFire(true)
-  }, HOVER_DWELL_MS)
-  return cancelFor(arm)
-}
-
-function cancelFor(arm: HoverArm): () => void {
+  hoverCallbacks.set(root, onFire)
+  hoverEnter(
+    hoverArming,
+    root,
+    // No event (a caller that has none): the current position, which the
+    // machine reads as "not a move" and answers exactly as it did before.
+    entry ? entry.clientX : hoverArming.x,
+    entry ? entry.clientY : hoverArming.y,
+    performance.now(),
+    fastScroll
+  )
+  applyHoverCommands()
+  // KEYED ON THE ROOT, not on the arm it just made: the director can re-arm
+  // this same root by itself (the pending-candidate retry), and a cancel that
+  // only knew about the first arm would leave that second one running after
+  // the cell had left or unmounted.
   return () => {
-    if (hoverArm !== arm) return
-    hoverArm = null
-    clearTimeout(arm.timer)
+    hoverLeave(hoverArming, root)
+    applyHoverCommands()
   }
-}
-
-/** Take the slot back, telling the cell holding it to stop if it had started. */
-function releaseHoverSlot(): void {
-  const arm = hoverArm
-  if (!arm) return
-  hoverArm = null
-  clearTimeout(arm.timer)
-  if (arm.fired) arm.onFire(false)
 }
 
 function ensureObserver(): IntersectionObserver {
@@ -478,20 +726,25 @@ function maybeTeardown(): void {
     document.removeEventListener("pointermove", onPointerMove)
     listenersBound = false
   }
-  releaseHoverSlot()
+  // Whoever holds the slot is told to stop before the state goes: the cells
+  // are usually unmounting with it, but "usually" is not a thing to leave a
+  // playing element on.
+  if (hoverArming.armed) {
+    hoverLeave(hoverArming, hoverArming.armed)
+    applyHoverCommands()
+  }
+  resetHoverArming()
   clearTimeout(settleTimer)
   settleTimer = undefined
   fastScroll = false
-  lastRealMoveAt = 0
-  lastMoveX = NaN
-  lastMoveY = NaN
 }
 
 /**
  * THE STANDING COST OF THE HOVER MACHINERY, in full: a comparison of two
- * numbers and, when they differ, two writes and a clock read. No layout is
- * read, nothing is allocated, and nothing per cell runs at all — which is what
- * makes it safe to leave bound for the life of a grid that nobody hovers.
+ * numbers and, when they differ, two writes and a clock read — plus, ONLY
+ * while a cell is waiting for its retry, one `contains()`. No layout is read,
+ * nothing is allocated, and nothing per cell runs at all, which is what makes
+ * it safe to leave bound for the life of a grid that nobody hovers.
  *
  * The comparison is the point rather than an optimisation: an event whose
  * coordinates are identical to the last one is not the pointer moving, and
@@ -499,10 +752,28 @@ function maybeTeardown(): void {
  */
 function onPointerMove(event: Event): void {
   const pointer = event as PointerEvent
-  if (pointer.clientX === lastMoveX && pointer.clientY === lastMoveY) return
-  lastMoveX = pointer.clientX
-  lastMoveY = pointer.clientY
-  lastRealMoveAt = performance.now()
+  if (pointer.clientX === hoverArming.x && pointer.clientY === hoverArming.y) {
+    return
+  }
+  // THE ONE `contains()` THIS FEATURE EVER COSTS, and only while a cell is
+  // waiting for its retry: the machine needs to know whether this move landed
+  // inside the candidate, and on a page with none it is not asked. No layout
+  // is read either way.
+  let insidePending = false
+  const pending = hoverArming.pending
+  if (pending) {
+    const target = pointer.target
+    insidePending = target instanceof Node && pending.contains(target)
+  }
+  hoverMove(
+    hoverArming,
+    pointer.clientX,
+    pointer.clientY,
+    performance.now(),
+    fastScroll,
+    insidePending
+  )
+  applyHoverCommands()
 }
 
 function onScroll(event: Event): void {
@@ -514,8 +785,12 @@ function onScroll(event: Event): void {
   // waiting for the fast-scroll threshold would let a slow drag hand the user
   // an animation on a cell they were only scrolling past. A dwell that has
   // already FIRED is left alone here; it is the pointer leaving the cell, or
-  // the suspend below, that stops it.
-  if (hoverArm && !hoverArm.fired) cancelFor(hoverArm)()
+  // the suspend below, that stops it. The cell is remembered as the candidate
+  // either way, because the pointer may never leave it.
+  if (hoverArming.armed) {
+    hoverScroll(hoverArming, false)
+    applyHoverCommands()
+  }
   // Two property reads per event, the same readings the scrollers' own
   // listeners already take. Reading a scroller's offset does not invalidate
   // layout, and this runs once per scroll event rather than per frame.
@@ -551,8 +826,12 @@ function onScroll(event: Event): void {
   // The suspend takes the hover slot back as well (D6). A hover-played cell is
   // about to be paused by the reconcile below whatever happens, and leaving its
   // <video> mounted over the poster it is indistinguishable from would keep a
-  // decode session for a picture that has stopped moving.
-  releaseHoverSlot()
+  // decode session for a picture that has stopped moving. It stays the
+  // CANDIDATE: the pointer never left it, so without that it could not play
+  // again without a trip out of the cell and back. A settle alone still starts
+  // nothing — only a real move inside the cell arms it.
+  hoverScroll(hoverArming, true)
+  applyHoverCommands()
   reconcile()
 }
 

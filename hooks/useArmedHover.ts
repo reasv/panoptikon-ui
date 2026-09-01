@@ -54,14 +54,25 @@ export function useArmedHover(enabled: boolean): {
     const root = anchor.current?.closest(`[${CELL_HOVER_ROOT_ATTR}]`)
     if (!root) return
     let cancel: (() => void) | undefined
-    const enter = () => {
+    const enter = (event: Event) => {
       // Deliberately NOT cancelling first: re-entering the same root while
       // already armed is the director's own no-op, and cancelling here would
       // turn Chromium's repeated entries under a stationary pointer into a
       // dwell that restarts forever (see armHoverPlay).
-      cancel = armHoverPlay(root, setActive)
+      //
+      // THE EVENT ITSELF IS HANDED OVER, and it is load-bearing: the browser
+      // dispatches `pointerenter` BEFORE the `pointermove` that carried the
+      // pointer across this boundary, so its coordinates are the only record
+      // the arming rule can have of the movement that produced the entry.
+      // Without them a cursor that rested before crossing in was refused —
+      // and, since moving inside a cell fires no second entry, never asked
+      // again.
+      cancel = armHoverPlay(root, setActive, event as PointerEvent)
     }
     const leave = () => {
+      // Also drops the pending candidate the director may be holding for this
+      // root (a refused arm, or one a scroll took back): the cancel is keyed
+      // on the root, not on any one arm, precisely so leaving ends both.
       cancel?.()
       cancel = undefined
       setActive(false)
