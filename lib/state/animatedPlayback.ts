@@ -304,7 +304,10 @@ let hoverTrackers = 0
  * Last scroll offset seen per scroller, for the velocity sample. A WeakMap so a
  * scroller that goes away with its subtree takes its entry with it.
  */
-const lastOffsets = new WeakMap<EventTarget, { at: number; offset: number }>()
+const lastOffsets = new WeakMap<
+  EventTarget,
+  { at: number; top: number; left: number }
+>()
 
 /**
  * Register a mounted loop element. Returns the unregister function, so the
@@ -513,22 +516,33 @@ function onScroll(event: Event): void {
   // already FIRED is left alone here; it is the pointer leaving the cell, or
   // the suspend below, that stops it.
   if (hoverArm && !hoverArm.fired) cancelFor(hoverArm)()
-  // ONE property read per event, the same reading the grid's own scroll
-  // listener already takes. Reading a scroller's offset does not invalidate
+  // Two property reads per event, the same readings the scrollers' own
+  // listeners already take. Reading a scroller's offset does not invalidate
   // layout, and this runs once per scroll event rather than per frame.
-  const offset =
-    target === document || target === document.documentElement
-      ? window.scrollY
-      : (target as HTMLElement).scrollTop ?? 0
+  //
+  // BOTH AXES, and the second one is not symmetry for its own sake: the
+  // gallery filmstrip is a HORIZONTAL scroller whose `scrollTop` never leaves
+  // 0, so a vertical-only sample reported every strip pan — including a wheel
+  // flick across it — as motionless, and the suspend that is supposed to stop
+  // its cards animating mid-pan never fired. Whichever axis moved is the one
+  // the content moved by.
+  const isDocument = target === document || target === document.documentElement
+  const element = target as HTMLElement
+  const top = isDocument ? window.scrollY : element.scrollTop ?? 0
+  const left = isDocument ? window.scrollX : element.scrollLeft ?? 0
   const now = performance.now()
   const previous = lastOffsets.get(target)
-  lastOffsets.set(target, { at: now, offset })
+  lastOffsets.set(target, { at: now, top, left })
   if (!previous) return
   const elapsed = now - previous.at
   // A zero (or absurd) interval says nothing about speed; skip the sample
   // rather than divide by it.
   if (elapsed <= 0 || elapsed > 500) return
-  const speed = Math.abs(offset - previous.offset) / elapsed
+  const moved = Math.max(
+    Math.abs(top - previous.top),
+    Math.abs(left - previous.left)
+  )
+  const speed = moved / elapsed
   if (speed < FAST_SCROLL_PX_PER_MS) return
   clearTimeout(settleTimer)
   settleTimer = setTimeout(settle, SETTLE_MS)
