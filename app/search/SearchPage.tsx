@@ -109,15 +109,20 @@ export function SearchPageContent({ initialQuery, isRestrictedMode }:
     )
 }
 
-// ---- The three mount/URL effects MultiSearchView used to own inline.
+// ---- The three mount/URL hooks MultiSearchView used to own inline.
 //
 // Extracted for ONE mechanical reason: each of them suppresses
 // `react-hooks/exhaustive-deps`, and that suppression makes the React Compiler
 // skip the whole enclosing function — per function, not per effect. Inline,
 // the three of them cost MultiSearchView (the search page's largest component)
 // its memoization entirely. As their own hooks the skip lands on a hook that
-// does nothing but run its effect, and MultiSearchView compiles again. Each
-// takes exactly the values its body reads; nothing else moved.
+// does nothing but the suppressed effect, and MultiSearchView compiles again.
+// Each takes exactly the values its body reads; nothing else moved.
+//
+// Two of them are effect-only (useScrollURLNormalization,
+// useSearchCreationStamp). The first, useDerivedVirtualPage, also owns the
+// derived-page box it seeds and hands back — the effect is the suppressed
+// part, the box is what makes the hook worth calling.
 
 /**
  * The highlighted virtual page: the subscribable box the number lives in (see
@@ -2078,12 +2083,21 @@ export function ResultGrid({
                 // belongs on the VIEWPORT and not on the row container below —
                 // rows are absolutely positioned, and an abs-positioned child
                 // resolves `w-full` against its containing block's PADDING box,
-                // so padding there would inset nothing. Nothing derives from the
-                // narrowed content width either: the column count comes from
-                // window-level media queries (useResultGridLayout), not from a
-                // container measurement, and the row height — the one number
-                // scroll mode's whole offset space is built on — is fixed per
-                // breakpoint and untouched by horizontal padding.
+                // so padding there would inset nothing.
+                //
+                // Explicit cell-size mode DOES derive its column count from a
+                // width measurement, and this padding is why that measurement
+                // is taken on the row container rather than on this viewport:
+                // the spacer sits INSIDE the padding and has none of its own,
+                // so what it reports is already the width the row's grid
+                // resolves against (see the rowContainerRef comment above —
+                // `clientWidth` on the viewport would have included these
+                // 16px, `contentRect` would not, and the two disagreeing is
+                // the trap). Auto mode derives nothing from it at all: its
+                // columns come from window-level media queries
+                // (useResultGridLayout). The row height — the one number
+                // scroll mode's whole offset space is built on — is untouched
+                // by horizontal padding either way.
                 className={cn('w-full rounded-[inherit] [&>div]:block! pr-4',
                     showPagination
                         ? (updateRibbonVisible ? 'h-[calc(100vh-261px)]' : 'h-[calc(100vh-213px)]')

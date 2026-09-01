@@ -59,8 +59,11 @@ const PIN_PREFIX_LENGTH = 10
  * effect is deliberate — `galleryHref` is read during a card's RENDER, and an
  * effect-assigned box is empty on the first paint of a deep-linked load.
  * Writing a ref during render is what the compiler must not be asked to
- * reason about, hence the directive; there is nothing here worth memoizing
- * anyway, since the host renders one `children` element.
+ * reason about, hence the directive. Opting out costs nothing here: the
+ * compiler's own memoization has nothing to bite on, since the host's whole
+ * output is one `children` element it never re-creates. (The explicit
+ * `useMemo`s below are unaffected — they are hand-written value caches whose
+ * identities the context contract depends on, not compiler output.)
  */
 export function CellActionsHost({
     pinboardMaximized,

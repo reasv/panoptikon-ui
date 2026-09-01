@@ -12,7 +12,7 @@ import type { CellFileRef } from "@/lib/state/cellActions"
 
 // The pairing half of the file actions, on its own so useFileShare can reach
 // the relay-pairing affordance without instantiating the open/reveal mutations
-// it never calls — PinBoardCtx renders once per pin and holds both (§FIX 11).
+// it never calls — PinBoardCtx renders once per pin and holds both.
 //
 // The STANDALONE `toast()` rather than `useToast().toast`: the hook form
 // registers a listener on the shared toast store per mount (and re-registers
@@ -63,7 +63,7 @@ export function useFileOpenRunner() {
 
   // Cached (30 s) and shared with the share button's own lookup, so a click
   // costs at most one server-side stat of the file — a network round trip on
-  // an SMB-mounted index (§FIX 9).
+  // an SMB-mounted index.
   const getPath = async ({ sha256, path }: CellFileRef) => {
     if (path) return path
     const data = await fetchItemRecord(queryClient, query, sha256)

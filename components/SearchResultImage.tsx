@@ -36,6 +36,12 @@ const FILL_CLASSES = "absolute inset-0 h-full w-full"
 // referentially stable for the memo to hold — which is why the two layout
 // props below are a plain string and a plain number rather than the style
 // object each of them stands for.
+//
+// `animatedFloor` is the one OBJECT prop, and the memo contract depends on the
+// host holding its identity: a floor rebuilt per render (an inline literal, or
+// a fresh object out of the client-config query) defeats this memo for every
+// visible card on every scroll frame — the exact per-frame re-execution it
+// exists to stop. See its own prop doc below for where the host reads it.
 export const SearchResultImage = memo(function SearchResultImage({
     result,
     index,
