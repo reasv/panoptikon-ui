@@ -8,7 +8,8 @@ import { PlayableBadge, isPlayableItem } from "@/components/PlayableBadge";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { PinButton } from './gallery/PinButton';
 import { blurHashToDataURL, type PlaceholderDataURL } from '@/lib/state/blurHashDataURL';
-import { useCellCallbacks } from '@/lib/state/cellActions';
+import { useCellCallbacks, useCellFlags } from '@/lib/state/cellActions';
+import { PIN_SHA_PREFIX_LENGTH } from '@/lib/pinboardCrop';
 import {
     animatedCellMode,
     isExtremeAspect,
@@ -95,6 +96,63 @@ function CellStillImage({
             unoptimized
         />
     )
+}
+
+/**
+ * Gate around the card's overlay chrome — the bookmark button (a query
+ * observer plus a Radix context-menu root), the file-action cluster (three to
+ * four button slots, each optionally wrapped in another context menu when a
+ * relay is paired), the details button and the pin button. All of it renders
+ * `opacity-0` until the card is hovered, yet it used to MOUNT on every cell
+ * the scroll ever created — measured at one-third to one-half of per-mount
+ * cost at the smallest cell size (the recorded ~280 mounts/s ceiling,
+ * plan §"Lazy-mount cell overlay chrome").
+ *
+ * So it mounts on demand instead: the card arms the gate on the hover root's
+ * first `pointerenter`/`focusin` (see the handlers on that div), and the gate
+ * itself only forces the chrome in eagerly where a visibility flag has a
+ * control PAINTED without any hover — a bookmarked card under "always show
+ * bookmarks", or a pinned card's pin marker. Everything else about the
+ * chrome (its own hover fades, focus behaviour, menus) is unchanged — it just
+ * comes into existence at the moment it first could be seen.
+ *
+ * The flag subscription lives HERE, not in the card: the card's memo contract
+ * is stable props/context only, and a `useCellFlags` read in the card body
+ * would re-render every visible cell on any flag change. This component is a
+ * few bytes of decision; re-rendering it on a pin/bookmark-settings change
+ * costs nothing.
+ *
+ * KEYBOARD PARITY is load-bearing: `focusin` (React's bubbling `onFocus`)
+ * fires on the root the moment the card's ANCHOR takes focus — one Tab stop
+ * before any button slot — so by the time Tab could reach a button, the
+ * buttons exist. Verified explicitly (focus the anchor, then count the
+ * card's tab stops).
+ *
+ * ACCEPTED RESIDUAL: on a surface WITHOUT enriched results
+ * (`bookmarked == null`), "always show bookmarks" cannot know a card is
+ * bookmarked without mounting the query — those surfaces show the bookmark
+ * pill on first hover rather than eagerly. The search grid, which is what
+ * this gate is for, is enriched.
+ */
+function CellOverlay({
+    active,
+    sha256,
+    bookmarked,
+    children,
+}: {
+    /** The card's one-way latch: pointer or focus has reached the card. */
+    active: boolean
+    sha256: string
+    /** `result.bookmarked` — the enriched search payload's answer. */
+    bookmarked?: boolean | null
+    children: React.ReactNode
+}) {
+    const { alwaysShowBookmark, pinnedPrefixes } = useCellFlags()
+    const forced =
+        (alwaysShowBookmark && !!bookmarked) ||
+        pinnedPrefixes.has(sha256.slice(0, PIN_SHA_PREFIX_LENGTH))
+    if (!active && !forced) return null
+    return <>{children}</>
 }
 
 // Memoized: the virtualized grid re-renders on every scroll frame (tanstack
@@ -235,6 +293,14 @@ export const SearchResultImage = memo(function SearchResultImage({
         event.dataTransfer.setData('text/plain', result.sha256);
         event.dataTransfer.setData('text/uri-list', fileUrl);
     }
+    // The CellOverlay gate's latch (see its doc): LOCAL state, one-way, armed
+    // by the first pointer entry or focus on the hover root below. Local
+    // because the card's memo holds only while it renders from stable
+    // props/context — a store or flag subscription here would re-render every
+    // visible card whenever it changed. Setting an already-true latch is a
+    // React no-op, so repeated entries cost nothing.
+    const [overlayActive, setOverlayActive] = useState(false)
+    const armOverlay = () => setOverlayActive(true)
     return (
         <div className={cn("border rounded p-2", className)}>
             <div className={cn("overflow-hidden relative w-full pb-full mb-2",
@@ -247,6 +313,14 @@ export const SearchResultImage = memo(function SearchResultImage({
                 {...{ [HOVER_ROOT_ATTR]: "" }}
                 onDragStart={handleDragStart}
                 draggable={true}
+                // The overlay gate's two arming events. `pointerenter` (not
+                // `mouseenter`: React has no bubbling mouseenter, and pointer
+                // covers mice and pens alike) precedes every hover fade the
+                // chrome paints; `focusin` (React's `onFocus` on a non-input
+                // IS focusin — it bubbles) fires when the card's anchor takes
+                // focus, one Tab stop before any button slot exists to need.
+                onPointerEnter={armOverlay}
+                onFocus={armOverlay}
             >
                 <a
                     href={imageLink}
@@ -356,10 +430,12 @@ export const SearchResultImage = memo(function SearchResultImage({
                         />
                     </div>
                 )}
-                <BookmarkBtn sha256={result.sha256} bookmarked={result.bookmarked} />
-                <FileActionCluster sha256={result.sha256} path={result.path} />
-                <OpenDetailsButton item={result} variantButton />
-                <PinButton sha256={result.sha256} />
+                <CellOverlay active={overlayActive} sha256={result.sha256} bookmarked={result.bookmarked}>
+                    <BookmarkBtn sha256={result.sha256} bookmarked={result.bookmarked} />
+                    <FileActionCluster sha256={result.sha256} path={result.path} />
+                    <OpenDetailsButton item={result} variantButton />
+                    <PinButton sha256={result.sha256} />
+                </CellOverlay>
             </div>
             <FilePathComponent path={result.path} />
             <ItemMetaLine item={result} className="text-gray-500" />
