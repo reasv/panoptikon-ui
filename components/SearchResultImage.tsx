@@ -639,6 +639,18 @@ function ExtremeAspectPicture({
                     // takes it out of the playing set for as long as that
                     // holds, and gives its cap slot to a cell on screen.
                     occluded={showDisplay}
+                    // NO HOVER ARM ON THIS CARD, in either sense — no dwell,
+                    // no <video>, no loop fetch. THE HOVER IS ALREADY SPOKEN
+                    // FOR: this card's own gesture swaps to the `display`
+                    // rendition, which is the ORIGINAL FILE and animates
+                    // natively in its <img>. Arming as well meant a cell that
+                    // fetched a loop, mounted it, and then unmounted it again
+                    // the moment the swap landed — a request and a decode
+                    // session spent on a picture that was replaced by an
+                    // animating one. The badge rule is untouched (D8): the
+                    // crop under the swap is still a static poster, so it
+                    // still says so.
+                    armable={false}
                 />
             ) : (
                 <CellStillImage
@@ -796,11 +808,13 @@ function HoverLoopPicture({
     className,
     elementRef,
     occluded,
+    armable = true,
 }: LoopPictureProps) {
     const [failed, setFailed] = useState(false)
-    // Not armed while a hover layer already covers this picture: the pointer
-    // is on the card, but what it is looking at is the layer.
-    const hover = useArmedHover(!failed && !occluded)
+    // Not armed while a hover layer already covers this picture (the pointer
+    // is on the card, but what it is looking at is the layer), and never at
+    // all on a card whose hover belongs to a swap of its own — see `armable`.
+    const hover = useArmedHover(armable && !failed && !occluded)
     const attach = useCallback((element: HTMLElement | null) => {
         hover.attach(element)
         elementRef?.(element)
@@ -853,6 +867,12 @@ interface LoopPictureProps {
      * "occluded" should mean.
      */
     occluded?: boolean
+    /**
+     * May this cell arm a hover play at all? False on the extreme-aspect card,
+     * whose hover already means something else — see the site there. Distinct
+     * from `occluded`, which is about a moment; this is about the card.
+     */
+    armable?: boolean
 }
 
 /**
