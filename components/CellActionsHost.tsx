@@ -25,6 +25,7 @@ import { usePinBoard } from "@/lib/state/pinboard"
 import { usePinboardCarry } from "@/lib/state/pinboardCarry"
 import { markPinboardPendingEdit } from "@/lib/pinboardNavigation"
 import { newPinHField } from "@/lib/galleryTrim"
+import { PIN_SHA_PREFIX_LENGTH } from "@/lib/pinboardCrop"
 import { v1ScaleFactors } from "@/lib/pinboardGrid"
 import { placeNewPin } from "@/lib/pinboardPlace"
 import type { FileActionTarget } from "@/lib/relayContext"
@@ -40,9 +41,6 @@ import {
 const DATA_VIEW_TAB = 1
 
 const BOOKMARK_PATH = "/api/bookmarks/ns/{namespace}/{sha256}"
-
-/** The length of the sha256 prefix a pinboard record stores. */
-const PIN_PREFIX_LENGTH = 10
 
 
 /**
@@ -120,7 +118,7 @@ export function CellActionsHost({
     const pinnedPrefixes = useMemo(() => {
         const set = new Set<string>()
         for (let i = 0; i < records.length; i += 5) {
-            set.add(records[i].slice(0, PIN_PREFIX_LENGTH))
+            set.add(records[i].slice(0, PIN_SHA_PREFIX_LENGTH))
         }
         return set
     }, [records])
@@ -311,7 +309,7 @@ export function CellActionsHost({
                         .filter((_, i) => i % 5 === 0)
                         .map((id, index) => [id, index])
                     const isPinnedIndex = pins.findIndex(([id]) =>
-                        id.slice(0, PIN_PREFIX_LENGTH) === sha256.slice(0, PIN_PREFIX_LENGTH))
+                        id.slice(0, PIN_SHA_PREFIX_LENGTH) === sha256.slice(0, PIN_SHA_PREFIX_LENGTH))
                     if (isPinnedIndex !== -1) {
                         const index = pins[isPinnedIndex][1]
                         const next = [...prev]
@@ -328,7 +326,7 @@ export function CellActionsHost({
                     const { x, y } = placeNewPin(prev, grid, w, h)
                     return [
                         ...prev,
-                        sha256.slice(0, PIN_PREFIX_LENGTH),
+                        sha256.slice(0, PIN_SHA_PREFIX_LENGTH),
                         x.toString(),
                         y.toString(),
                         w.toString(),

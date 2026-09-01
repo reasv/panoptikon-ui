@@ -14,13 +14,12 @@ import {
 import {
     CELL_WIDTH_STEP,
     GRID_GAP_PX,
-    MAX_CELL_WIDTH,
-    MIN_CELL_WIDTH,
     cellWidthForColumns,
     clampCellWidth,
     coWrittenPageSize,
     columnsForCellWidth,
 } from "@/lib/gridCellSize"
+import { MAX_CELL_WIDTH, MIN_CELL_WIDTH } from "@/lib/searchLimits"
 import { useGridCellSize } from "@/lib/state/cellSize"
 import { useCellSizePageLock } from "@/lib/state/cellSizePageLock"
 import { EMPTY_GRID_METRICS, type GridMetricsStore } from "@/lib/state/gridMetricsBox"

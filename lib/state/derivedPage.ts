@@ -25,6 +25,7 @@
  * one `useSyncExternalStore` call in the one component that displays the value
  * (components/pageselect.tsx).
  */
+import { createValueBox, type ValueBox } from "./valueBox"
 
 /**
  * A read/write box with subscribers. Every member is created once per store
@@ -32,41 +33,20 @@
  * grid's and the strip's scroll listeners, which re-subscribe (and reset their
  * 350 ms scroll-stop timers) whenever it changes, exactly as they did when it
  * was a `useState` setter.
+ *
+ * Named rather than an alias in the call sites, because what this store holds
+ * — the virtual page, bailing on an unchanged number, notified per crossing —
+ * is the contract its readers depend on; `ValueBox<number>` is only how it is
+ * built.
  */
-export interface DerivedPageStore {
-  /** The current virtual page. Stable between writes, so it is a valid
-   * `useSyncExternalStore` snapshot. */
-  get(): number
-  /**
-   * Publish a new virtual page. A write of the value already held notifies
-   * nobody — the same bail-out `useState` performs, and the reason the
-   * gallery's and the strip's per-scroll pushes cost nothing while the number
-   * stands still.
-   */
-  set(page: number): void
-  /** Subscribe; the returned function unsubscribes. */
-  subscribe(onChange: () => void): () => void
-}
+export type DerivedPageStore = ValueBox<number>
 
+/**
+ * The mechanism is lib/state/valueBox.ts. Default equality (`Object.is`) is
+ * exactly right for a page number: a write of the value already held notifies
+ * nobody, which is what makes the gallery's and the strip's per-scroll pushes
+ * cost nothing while the number stands still.
+ */
 export function createDerivedPageStore(initial: number): DerivedPageStore {
-  let page = initial
-  const listeners = new Set<() => void>()
-  return {
-    get: () => page,
-    set: (next: number) => {
-      if (next === page) return
-      page = next
-      // Iterated over a copy: a listener is free to unsubscribe (React does,
-      // when the subscribing component unmounts on the very notification) and
-      // mutating the set under its own iteration is how that turns into a
-      // missed notification for whoever came after it.
-      for (const listener of [...listeners]) listener()
-    },
-    subscribe: (onChange: () => void) => {
-      listeners.add(onChange)
-      return () => {
-        listeners.delete(onChange)
-      }
-    },
-  }
+  return createValueBox(initial)
 }

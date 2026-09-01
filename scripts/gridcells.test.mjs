@@ -28,8 +28,6 @@ const {
 const {
   CELL_CHROME_PX,
   GRID_GAP_PX,
-  MAX_CELL_WIDTH,
-  MIN_CELL_WIDTH,
   cellWidthForColumns,
   clampCellWidth,
   coWrittenPageSize,
@@ -37,6 +35,8 @@ const {
   imageBoxHeightForCellWidth,
   rowHeightForCellWidth,
 } = await import("../lib/gridCellSize.ts")
+// The URL-domain bounds those helpers clamp into, from their single source.
+const { MAX_CELL_WIDTH, MIN_CELL_WIDTH } = await import("../lib/searchLimits.ts")
 const { getFileURL } = await import("../lib/utils.ts")
 
 let all = true

@@ -13,8 +13,8 @@
 // The sha prefix is the identity of the video the trim belongs to, not a
 // scope to clear on navigation: a param whose prefix doesn't match the item
 // on screen is INERT, and comes back to life when that video does. The
-// prefix length is the pinboard record's (PinButton.tsx `prefixLength`), so
-// the two identities compare directly.
+// prefix length is the pinboard record's own (PIN_SHA_PREFIX_LENGTH, in
+// pinboardCrop.ts), so the two identities compare directly.
 
 // Type-only imports are spelled out: node's --experimental-strip-types
 // (how scripts/trimparam.test.mjs exercises this module) cannot erase a
@@ -25,9 +25,8 @@ import {
   encodeTime,
   isEmptyTrim,
   packHField,
+  PIN_SHA_PREFIX_LENGTH,
 } from "./pinboardCrop"
-
-export const TRIM_SHA_PREFIX_LENGTH = 10
 
 export interface GalleryTrimSlot {
   sha10: string | null
@@ -48,7 +47,7 @@ export function encodeGalleryTrim(
   trim: TrimRange | null
 ): string | null {
   if (isEmptyTrim(trim)) return null
-  const sha10 = sha256.slice(0, TRIM_SHA_PREFIX_LENGTH)
+  const sha10 = sha256.slice(0, PIN_SHA_PREFIX_LENGTH)
   // A prefix parseGalleryTrim would reject (short input, non-hex) must not
   // be written: it would put junk in the URL and silently drop the trim.
   if (!/^[0-9a-f]{10}$/.test(sha10)) return null
@@ -77,7 +76,7 @@ export function trimForSha(
   sha256: string
 ): TrimRange | null {
   if (!slot?.sha10) return null
-  return slot.sha10 === sha256.slice(0, TRIM_SHA_PREFIX_LENGTH)
+  return slot.sha10 === sha256.slice(0, PIN_SHA_PREFIX_LENGTH)
     ? slot.trim
     : null
 }

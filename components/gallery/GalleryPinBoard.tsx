@@ -25,7 +25,7 @@ import { $api } from '@/lib/api'
 import { MediaControls } from './PlayButton'
 import React from 'react'
 import { useOutroSkipEnabled, useVideoPlayerState } from '@/lib/videoPlayerState'
-import { CropRect, PinAudioState, PinLock, PinOrientation, TrimRange, clampCrop, composeCrops, isEmptyTrim, isIdentityOrientation, packHField, parseHField } from '@/lib/pinboardCrop'
+import { CropRect, PIN_SHA_PREFIX_LENGTH, PinAudioState, PinLock, PinOrientation, TrimRange, clampCrop, composeCrops, isEmptyTrim, isIdentityOrientation, packHField, parseHField } from '@/lib/pinboardCrop'
 import { effectiveVideoTrim, outroCutPoint, outroProbeEligible, outroSkipGoverns, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
 import { useVideoEndProbe } from '@/lib/videoEndProbe'
 import { noteVideoPlaybackError, shouldDowngradeOnError, useVideoPlayability } from '@/lib/videoPlayability'
@@ -1345,7 +1345,7 @@ export function PinBoard(
             }
             return [
                 ...next,
-                sha256.slice(0, 10),
+                sha256.slice(0, PIN_SHA_PREFIX_LENGTH),
                 r.x.toString(), r.y.toString(), r.w.toString(),
                 newPinHField(r.h, sha256, galleryTrim),
             ]

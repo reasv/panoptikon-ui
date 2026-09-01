@@ -9,12 +9,17 @@
 // breakpoint-relative scaling and clamping explicit sizes into breakpoint
 // bands is where incoherence lives.
 //
-// IMPORT-FREE, like lib/scrollMode.ts: scripts/gridcells.test.mjs runs these
-// under plain node.
+// IMPORT-FREE apart from lib/searchLimits.ts, which is itself nothing but
+// constants: scripts/gridcells.test.mjs runs these under plain node, and a
+// module with no imports and no runtime behaviour strips just as cleanly.
 
-/** The slider's ends, in CSS pixels of cell WIDTH. */
-export const MIN_CELL_WIDTH = 140
-export const MAX_CELL_WIDTH = 1200
+import {
+  MAX_CELL_WIDTH,
+  MAX_PAGE_SIZE,
+  MIN_CELL_WIDTH,
+  MIN_PAGE_SIZE,
+} from "./searchLimits"
+
 /** The slider's granularity. Finer than this is thumb noise, not a choice. */
 export const CELL_WIDTH_STEP = 10
 
@@ -83,13 +88,6 @@ export function imageBoxHeightForCellWidth(cellWidth: number): number {
 export function rowHeightForCellWidth(cellWidth: number): number {
   return imageBoxHeightForCellWidth(cellWidth) + CELL_CHROME_PX
 }
-
-// The page-size bounds the sidebar's own control enforces, restated rather
-// than imported for the same reason lib/searchDefaults.ts restates them: this
-// module is deliberately import-free, and these are the bounds of what may be
-// WRITTEN to the URL.
-const MIN_PAGE_SIZE = 1
-const MAX_PAGE_SIZE = 10000
 
 /**
  * The page size that preserves the screen-to-items ratio across a cell-size

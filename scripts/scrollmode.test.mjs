@@ -40,6 +40,11 @@ const { getScrollPositionURL, getSearchPageURL } = await import(
 // made against the thing the UI actually reads rather than against the
 // arithmetic alone.
 const { createDerivedPageStore } = await import("../lib/state/derivedPage.ts")
+// The mechanism underneath it (lib/state/valueBox.ts), which is also what
+// lib/state/gridMetricsBox.ts is built from — so the assertions below cover
+// both boxes. Imported directly only for the custom-equality path, which a
+// derived page (a plain number on `Object.is`) never reaches.
+const { createValueBox } = await import("../lib/state/valueBox.ts")
 // The storage-free half of the creation-defaults layer: resolution, the
 // stamp derived from it, and the allowlist. loadUserDefaults and its two
 // siblings are the only parts that touch localStorage, and they have no
@@ -622,6 +627,11 @@ const of = (url) => new URLSearchParams(url)
 // and the maximized strip all push per scroll event, and the number stands
 // still between crossings), and a notification must reach every subscriber
 // even when one of them unsubscribes as a consequence.
+//
+// Asserted through createDerivedPageStore, which is where the box is actually
+// consumed — but the mechanism is lib/state/valueBox.ts, so these hold for the
+// grid-metrics box too. Its one extra degree of freedom, the custom equality,
+// is asserted separately at the end of this section.
 
 {
   const store = createDerivedPageStore(4)
@@ -661,6 +671,32 @@ const of = (url) => new URLSearchParams(url)
     "a subscriber leaving mid-notification does not swallow the next one",
     second === 1,
     `${second}`
+  )
+}
+
+{
+  // The custom-equality path, which is what lib/state/gridMetricsBox.ts is
+  // built on: the grid publishes a FRESHLY BUILT metrics object on every
+  // measurement, so an `Object.is` box would wake the size slider on every
+  // resize tick — including the ones that measured the identical numbers.
+  const store = createValueBox(
+    { cellWidth: 200, columns: 5 },
+    (a, b) => a.cellWidth === b.cellWidth && a.columns === b.columns
+  )
+  const first = store.get()
+  let notifications = 0
+  store.subscribe(() => { notifications += 1 })
+  store.set({ cellWidth: 200, columns: 5 })
+  check(
+    "a re-measurement of equal values notifies nobody and keeps its identity",
+    notifications === 0 && store.get() === first,
+    `${notifications} ${store.get() === first}`
+  )
+  store.set({ cellWidth: 240, columns: 4 })
+  check(
+    "a real measurement publishes once and replaces the snapshot",
+    notifications === 1 && store.get().cellWidth === 240 && store.get() !== first,
+    `${notifications} ${store.get().cellWidth}`
   )
 }
 
