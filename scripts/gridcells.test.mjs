@@ -54,13 +54,25 @@ function check(name, ok, detail = "") {
 
 console.log("\n== tier thresholds (§2) ==")
 {
-  // The two numbers the design states verbatim: grid-s up to 576 device
-  // pixels, grid-m up to 1152, display past that. Written as products so the
-  // assertion survives a change of either constant.
+  // The numbers the designs state verbatim: grid-xs up to 288 device pixels
+  // (docs/thumbnail-format-implementation.md §6), grid-s up to 576, grid-m up
+  // to 1152, display past that. Written as products so every assertion
+  // survives a change of any constant.
+  const xsMax = TIER_SHORT_SIDE["grid-xs"] * TIER_SLACK
   const sMax = TIER_SHORT_SIDE["grid-s"] * TIER_SLACK
   const mMax = TIER_SHORT_SIDE["grid-m"] * TIER_SLACK
-  check("the stated thresholds are 576 and 1152",
-    sMax === 576 && mMax === 1152, `${sMax} / ${mMax}`)
+  check("the stated thresholds are 288, 576 and 1152",
+    xsMax === 288 && sMax === 576 && mMax === 1152,
+    `${xsMax} / ${sMax} / ${mMax}`)
+  // A POWER-OF-TWO series, which is what makes each rung halve the decoded
+  // megapixels of the one above it rather than shave a little off it.
+  check("each rung is half the one above it",
+    TIER_SHORT_SIDE["grid-xs"] * 2 === TIER_SHORT_SIDE["grid-s"]
+      && TIER_SHORT_SIDE["grid-s"] * 2 === TIER_SHORT_SIDE["grid-m"])
+  check("at DPR 1 a 288px cell is still grid-xs",
+    tierForCellWidth(288, 1) === "grid-xs")
+  check("at DPR 1 a 289px cell steps up to grid-s",
+    tierForCellWidth(289, 1) === "grid-s")
   check("at DPR 1 a 576px cell is still grid-s",
     tierForCellWidth(576, 1) === "grid-s")
   check("at DPR 1 a 577px cell steps up to grid-m",
@@ -72,7 +84,9 @@ console.log("\n== tier thresholds (§2) ==")
   // DPR is a multiplier on the box, nothing else: the same cell on a 2x
   // display asks for the tier a twice-as-wide cell would.
   check("DPR 2 halves every threshold",
-    tierForCellWidth(288, 2) === "grid-s"
+    tierForCellWidth(144, 2) === "grid-xs"
+      && tierForCellWidth(145, 2) === "grid-s"
+      && tierForCellWidth(288, 2) === "grid-s"
       && tierForCellWidth(289, 2) === "grid-m"
       && tierForCellWidth(576, 2) === "grid-m"
       && tierForCellWidth(577, 2) === "display")
@@ -82,11 +96,25 @@ console.log("\n== tier thresholds (§2) ==")
     tierForCellWidth(750, 1) === "grid-m")
   check("a 1080p 5-column cell (~370px) asks for grid-s at DPR 1",
     tierForCellWidth(370, 1) === "grid-s")
-  check("the gallery filmstrip's 240px card is grid-s to DPR 2.4",
-    tierForCellWidth(240, 1) === "grid-s"
-      && tierForCellWidth(240, 2) === "grid-s"
-      && tierForCellWidth(240, 2.4) === "grid-s"
-      && tierForCellWidth(240, 3) === "grid-m")
+  // THE REASON grid-xs EXISTS: at the size slider's minimum a cell is 140 CSS
+  // px (MIN_CELL_WIDTH), and against the 512 rung a screenful of those decodes
+  // roughly 14x the pixels it paints. It stays on the new rung to DPR 2, which
+  // covers every retina laptop the grid is used on.
+  check("the slider's minimum cell asks for grid-xs to DPR 2",
+    tierForCellWidth(MIN_CELL_WIDTH, 1) === "grid-xs"
+      && tierForCellWidth(MIN_CELL_WIDTH, 2) === "grid-xs"
+      && tierForCellWidth(MIN_CELL_WIDTH, 3) === "grid-s")
+  // ...and the rung must not reach any further than that. The filmstrip's
+  // cards bind at 320 CSS px (STRIP_CARD_CSS_BINDING_EDGE) and the similarity
+  // cards at 400/700, all of them past the 288 boundary at every density, so
+  // adding grid-xs moved no surface but the small end of the grid.
+  check("the filmstrip's 320px card is NOT grid-xs at any density",
+    tierForCellWidth(320, 1) === "grid-s"
+      && tierForCellWidth(320, 2) === "grid-m"
+      && tierForCellWidth(320, 4) === "display")
+  check("the similarity cards are not grid-xs either",
+    tierForCellWidth(400, 1) === "grid-s"
+      && tierForCellWidth(700, 1) === "grid-m")
 }
 {
   // "Not measured yet" must answer display, never the smallest tier: the
@@ -127,13 +155,21 @@ console.log("\n== the extreme-aspect test (§2) ==")
 console.log("\n== the URL the tier produces ==")
 {
   const dbs = { index_db: "stdtest", user_data_db: null }
-  check("omitting the tier is the legacy bare URL",
+  // The bare URL now carries the DISPLAY REVISION (lib/utils.ts
+  // DISPLAY_REVISION, docs/thumbnail-format-implementation.md §5): the old
+  // display bytes were served `immutable` under an ETag with no format and no
+  // geometry in it, so every browser that ever loaded one holds it at the
+  // legacy URL for a year, and only a different URL can dislodge it.
+  check("omitting the tier is the bare URL plus the display revision",
     getFileURL(dbs, "thumbnail", "sha256", "abc")
-      === "/api/items/item/thumbnail?id=abc&id_type=sha256&index_db=stdtest",
+      === "/api/items/item/thumbnail?id=abc&id_type=sha256&index_db=stdtest&r=2",
     getFileURL(dbs, "thumbnail", "sha256", "abc"))
   check("a tier appends size=",
     getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-s")
       === "/api/items/item/thumbnail?id=abc&id_type=sha256&index_db=stdtest&size=grid-s")
+  check("grid-xs is a plain tier like the others",
+    getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-xs")
+      === "/api/items/item/thumbnail?id=abc&id_type=sha256&index_db=stdtest&size=grid-xs")
   // The point of spelling `display` out (F4): it is a DIFFERENT URL from the
   // bare one, so a cache entry stamped before the tier work cannot answer it.
   check("an explicit display is a different URL from the bare one",
@@ -148,6 +184,46 @@ console.log("\n== the URL the tier produces ==")
   check("a false still is the same URL as omitting it",
     getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-m", false)
       === getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-m"))
+}
+
+console.log("\n== the display revision (§5) ==")
+{
+  const dbs = { index_db: "stdtest", user_data_db: null }
+  const url = (...args) => getFileURL(dbs, ...args)
+  const carries = (u) => /[?&]r=2(&|$)/.test(u)
+  // WHERE IT GOES: the display rendition, whether asked for by name or by
+  // omission — those are the two spellings of the one request whose bytes this
+  // release changes.
+  check("the bare thumbnail URL carries it",
+    carries(url("thumbnail", "sha256", "abc")), url("thumbnail", "sha256", "abc"))
+  check("an explicit display carries it",
+    carries(url("thumbnail", "sha256", "abc", "display")),
+    url("thumbnail", "sha256", "abc", "display"))
+  check("a display poster (still=true) carries it too",
+    carries(url("thumbnail", "sha256", "abc", "display", true))
+      && carries(url("thumbnail", "sha256", "abc", undefined, true)))
+  check("a display request for a video's single frame carries it",
+    carries(url("thumbnail", "sha256", "abc", undefined, false, false)))
+  // WHERE IT MUST NOT GO, and this is the assertion the whole parameter turns
+  // on: a grid tier's bytes are versioned inside its own ETag
+  // (TIER_PROCESS_VERSION), so it needs no revision — and adding one would
+  // move every grid URL in the app, costing a cold cache in the one surface
+  // most sensitive to one. Byte-identical to the pre-revision build.
+  for (const tier of ["grid-m", "grid-s", "grid-xs"]) {
+    check(`${tier} URLs are byte-identical to before the revision existed`,
+      !carries(url("thumbnail", "sha256", "abc", tier))
+        && !carries(url("thumbnail", "sha256", "abc", tier, true))
+        && !carries(url("thumbnail", "sha256", "abc", tier, false, false)),
+      url("thumbnail", "sha256", "abc", tier, true, false))
+  }
+  // `file` serves the bytes on disk, which no release of this app changes.
+  check("the original-file URL never carries it",
+    !carries(url("file", "sha256", "abc")), url("file", "sha256", "abc"))
+  // One value, one place. A call site that could pass its own would let two
+  // surfaces disagree about the URL for the same item and stop sharing a
+  // cache entry, which is exactly what PreviewSurface's note depends on.
+  check("the revision is not a parameter any call site can vary",
+    url("thumbnail", "sha256", "abc") === url("thumbnail", "sha256", "abc", undefined))
 }
 
 console.log("\n== does the picture move (F6) ==")

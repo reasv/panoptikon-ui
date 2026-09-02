@@ -37,6 +37,9 @@ export function cn(...inputs: ClassValue[]) {
  * is ever spelled out — a small grid cell asking for the single frame (D9) —
  * so every other call site produces the URL it always did, byte for byte, and
  * no cache entry moves for the sake of a parameter that changes nothing.
+ *
+ * `r` is the DISPLAY REVISION, added here and never by a call site — see
+ * `DISPLAY_REVISION`.
  */
 export function getFileURL(
   dbs: { index_db: string | null; user_data_db: string | null },
@@ -53,7 +56,50 @@ export function getFileURL(
   const size_param = size ? `&size=${size}` : ""
   const still_param = still ? `&still=true` : ""
   const big_param = big === false ? `&big=false` : ""
-  return `/api/items/item/${file_type}?id=${id}&id_type=${id_type}${index_db_param}${size_param}${still_param}${big_param}`
+  const revision_param = isDisplayRequest(file_type, size)
+    ? `&r=${DISPLAY_REVISION}`
+    : ""
+  return `/api/items/item/${file_type}?id=${id}&id_type=${id_type}${index_db_param}${size_param}${still_param}${big_param}${revision_param}`
+}
+
+/**
+ * THE DISPLAY REVISION, bumped by hand exactly when a release changes what the
+ * display rendition's BYTES are and the endpoint cannot express that in an
+ * ETag the client already holds.
+ *
+ * Why it exists (docs/thumbnail-format-implementation.md §5): the display
+ * rendition used to be served `immutable` under the ETag `sha-thumb{idx}`,
+ * which carries no format and no geometry. The format work changes those bytes
+ * — a PNG's display rendition becomes WebP, geometry re-caps at 2560 — and
+ * every browser that ever loaded the old JPEG holds it at the bare URL for a
+ * year. The new ETag fixes the FUTURE; only a different URL fixes the caches
+ * already out there, and this is that URL, once, deterministically, instead of
+ * "until eviction". `2` because revision 1 is every URL ever issued without
+ * this parameter.
+ *
+ * It rides in `getFileURL` rather than at the call sites so that no surface can
+ * be missed and none can disagree: the peek layer, the gallery and the
+ * similarity header must produce the SAME string for the same item or they
+ * stop sharing a cache entry (see PreviewSurface's note on that).
+ */
+const DISPLAY_REVISION = 2
+
+/**
+ * Which requests carry it: `thumbnail` at the DISPLAY size, spelled or
+ * omitted, and nothing else.
+ *
+ * The grid tiers are excluded DELIBERATELY and must stay excluded. Their bytes
+ * are versioned inside their own ETag (`TIER_PROCESS_VERSION`), so a format or
+ * encoder change already invalidates them; adding a parameter here would move
+ * every grid URL in the app for no gain and cost a cold cache for the surface
+ * that is most sensitive to one. `file` requests serve the bytes on disk,
+ * which no release changes.
+ */
+function isDisplayRequest(
+  file_type: "file" | "thumbnail",
+  size: ThumbnailTier | undefined
+): boolean {
+  return file_type === "thumbnail" && (size === undefined || size === "display")
 }
 
 // Basename of an indexed path. Either separator: the index stores paths as

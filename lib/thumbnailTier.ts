@@ -6,22 +6,33 @@
 // scripts/gridcells.test.mjs execute them under plain node. The React side is
 // a handful of call sites that pass a measured CSS width in.
 //
-// The contract (docs/grid-scroll-performance-implementation.md §2, frozen):
+// The contract (docs/grid-scroll-performance-implementation.md §2, frozen;
+// extended by docs/thumbnail-format-implementation.md §3):
 //
-//   GET /api/items/item/thumbnail?…&size=display|grid-m|grid-s
+//   GET /api/items/item/thumbnail?…&size=display|grid-m|grid-s|grid-xs
 //
 // `display` is what omitting the parameter has always meant — gallery quality,
-// long side bounded. `grid-m` and `grid-s` cap the SHORT side at 1024 and 512,
-// which is the dimension an `object-cover` cell's crispness is actually bound
-// by. A tier an item has no stored rendition for falls UP the ladder
-// server-side, so every request is answerable and no call site needs a
+// long side bounded. `grid-m`, `grid-s` and `grid-xs` cap the SHORT side at
+// 1024, 512 and 256, which is the dimension an `object-cover` cell's crispness
+// is actually bound by. A tier an item has no stored rendition for falls UP the
+// ladder server-side, so every request is answerable and no call site needs a
 // fallback.
 
 /** The frozen `size=` wire values. */
-export type ThumbnailTier = "display" | "grid-m" | "grid-s"
+export type ThumbnailTier = "display" | "grid-m" | "grid-s" | "grid-xs"
 
-/** The short-side cap each grid tier stores, in image pixels. */
+/**
+ * The short-side cap each grid tier stores, in image pixels.
+ *
+ * `grid-xs` exists because the size slider's minimum is a 140px cell
+ * (lib/searchLimits.ts): a screenful of those against the 512 rung decodes
+ * ~14x the pixels it paints, which is the whole cost the ladder exists to
+ * bound. Its rung is the reason the ladder is a POWER OF TWO series and not a
+ * set of hand-picked numbers — each rung halves the decoded megapixels of the
+ * one above it.
+ */
 export const TIER_SHORT_SIDE = {
+  "grid-xs": 256,
   "grid-s": 512,
   "grid-m": 1024,
 } as const
@@ -37,10 +48,10 @@ export const TIER_SLACK = 1.125
 
 /**
  * The smallest tier whose short side covers a cell of `cssWidth` at `dpr`,
- * i.e. `grid-s` up to 576 device pixels, `grid-m` up to 1152, `display` past
- * that. This is what keeps decoded megapixels per screenful roughly constant
- * as the size slider shrinks cells: fewer, bigger cells and more, smaller ones
- * both land on a tier sized for the box.
+ * i.e. `grid-xs` up to 288 device pixels, `grid-s` up to 576, `grid-m` up to
+ * 1152, `display` past that. This is what keeps decoded megapixels per
+ * screenful roughly constant as the size slider shrinks cells: fewer, bigger
+ * cells and more, smaller ones both land on a tier sized for the box.
  *
  * A non-positive or non-finite width answers `display` — the conservative
  * direction. It means "not measured yet", and a surface that has not measured
@@ -50,6 +61,7 @@ export function tierForCellWidth(cssWidth: number, dpr: number): ThumbnailTier {
   if (!Number.isFinite(cssWidth) || cssWidth <= 0) return "display"
   const scale = Number.isFinite(dpr) && dpr > 0 ? dpr : 1
   const needed = cssWidth * scale
+  if (needed <= TIER_SHORT_SIDE["grid-xs"] * TIER_SLACK) return "grid-xs"
   if (needed <= TIER_SHORT_SIDE["grid-s"] * TIER_SLACK) return "grid-s"
   if (needed <= TIER_SHORT_SIDE["grid-m"] * TIER_SLACK) return "grid-m"
   return "display"
@@ -184,6 +196,81 @@ export function isAnimatedItem(
     return !(measured && duration! <= 0)
   }
   return type.startsWith("image") && measured && duration! > 0
+}
+
+/**
+ * The bounds past which the DISPLAY size of an animated item stops being a
+ * picture and becomes an H.264 loop (docs/thumbnail-format-implementation.md
+ * R2/R3). Served by `GET /api/client-config` as `display_loop_trigger` and,
+ * like `AnimatedFloor`, never restated as a constant on this side: the same
+ * three numbers decided what the scan stored, so surfacing them is what keeps
+ * the element the UI mounts and the bytes the endpoint answers with from
+ * drifting apart.
+ *
+ * Null means the server stores no display loops at all — an older Server, a
+ * policy where the feature is off, or the config still in flight — and every
+ * consumer reads that as "the display size is always an image".
+ */
+export interface DisplayLoopTrigger {
+  /** Bytes of the SOURCE file. Past this the display size is a loop. */
+  maxBytes: number
+  /** Pixels. The SHORT side past this is a loop. */
+  maxShortSide: number
+  /** Total pixels (w x h) past which it is a loop. */
+  maxPixels: number
+}
+
+/**
+ * Does the `display` size of this item answer `video/mp4` rather than image
+ * bytes? The gallery's large view mounts a `<video>` exactly when this is
+ * true, so it is the one thing standing between an over-bound GIF and a broken
+ * picture in the biggest surface in the app.
+ *
+ * ANY of the three bounds fires it, all with a strict `>` — a 6000x4000 image
+ * is exactly 24,000,000 pixels and stays an image, which is the boundary the
+ * bake-off chose deliberately (§2, "decimal MP with `>`").
+ *
+ * ONE COMPARISON ON ROW DATA, like `isAnimatedItem` and `isAboveAnimatedFloor`
+ * before it: no request, no probe, no error latch. The animated test is the
+ * same transcription the grid uses, so an item the server considers static can
+ * never reach the video branch here.
+ *
+ * Incomplete rows answer FALSE — an `<img>`, today's element — and the two
+ * halves settle independently, exactly as in `isAboveAnimatedFloor`:
+ *
+ * - `size` alone can fire it: past `maxBytes` nothing else matters, so a row
+ *   with no dimensions is still settled;
+ * - within `maxBytes` and with no dimensions on record, it cannot be settled,
+ *   and the answer is the `<img>`.
+ *
+ * The residual is a row with NO SIZE and in-bound dimensions whose file is
+ * nonetheless over `maxBytes`: it renders an `<img>` at a URL that answers
+ * `video/mp4`. That is why the gallery's video branch also carries a one-way
+ * `onError` fallback to the `<img>` — the reverse mistake, which the stored
+ * keep-the-original SENTINEL makes a permanent state rather than a rare one
+ * (an item over the bounds whose H.264 encode came out no smaller than the
+ * source is served its own bytes forever), and no client-side test can predict
+ * it.
+ */
+export function exceedsDisplayLoopTrigger(
+  item: {
+    type: string | null | undefined
+    duration?: number | null
+    size?: number | null
+    width?: number | null
+    height?: number | null
+  },
+  trigger: DisplayLoopTrigger | null | undefined
+): boolean {
+  if (!trigger) return false
+  if (!isAnimatedItem(item.type, item.duration)) return false
+  const { size, width, height } = item
+  if (size != null && Number.isFinite(size) && size > trigger.maxBytes) return true
+  if (!width || !height) return false
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return false
+  if (width <= 0 || height <= 0) return false
+  if (Math.min(width, height) > trigger.maxShortSide) return true
+  return width * height > trigger.maxPixels
 }
 
 /**

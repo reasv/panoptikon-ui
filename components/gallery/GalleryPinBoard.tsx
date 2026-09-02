@@ -2821,7 +2821,8 @@ export function PinBoard(
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                             // An 80x80 box, so the smallest tier covers it to
-                            // beyond any display density (§2 names this ghost
+                            // beyond any display density — `grid-xs` (256)
+                            // still covers it at DPR 3 (§2 names this ghost
                             // explicitly: it paints plain centre
                             // `object-cover`, and a top-crop shown here for an
                             // extreme-aspect item is accepted as a non-issue).
@@ -2839,7 +2840,7 @@ export function PinBoard(
                             // entry for an 80x80 thumbnail. A ghost that rides
                             // the cursor for the length of a drag has no
                             // business animating anyway.
-                            src={getFileURL(dbs, "thumbnail", "sha256", carrySha, "grid-s", true)}
+                            src={getFileURL(dbs, "thumbnail", "sha256", carrySha, "grid-xs", true)}
                             alt=""
                             className="w-20 h-20 object-cover rounded shadow-lg opacity-80 border border-white/40"
                         />
