@@ -89,17 +89,23 @@ export function previewRung(
 }
 
 /**
- * WHAT THE CELL POSTS. `end_cs` is present exactly when the file is longer
- * than the cap, and absent when it is not — so a 9-second clip is one key and
- * one artifact whichever surface asked for it, rather than a trimmed rendition
- * of a file that needed no trimming.
+ * WHAT THE CELL POSTS.
  *
- * AN UNKNOWN DURATION SENDS THE BOUND. `duration` is null on a row the probe
- * has not reached, and "we do not know how long it is" is the one case where
- * omitting the bound could hand ffmpeg a two-hour film to encode in full for a
- * thumbnail nobody asked to watch. The plan's rule reads "present iff > 16 s",
- * which is exactly this for every row that carries a duration; this is what it
- * means for the rows that do not.
+ * THE RULE, EXACTLY AS IMPLEMENTED: `end_cs` is OMITTED only when the row
+ * carries a finite duration greater than zero and at most 16 s; it is SENT in
+ * every other case — longer than the cap, and equally when the duration is
+ * null, zero, negative, NaN or Infinity.
+ *
+ * The omission is what makes a 9-second clip one key and one artifact
+ * whichever surface asked for it, rather than a trimmed rendition of a file
+ * that needed no trimming.
+ *
+ * The rest of the rule is a DELIBERATE WIDENING of the plan's "present iff
+ * duration > 16 s" (verifier finding S6). `duration` is null on a row the
+ * probe has not reached, and "we do not know how long it is" is the one case
+ * where omitting the bound could hand ffmpeg a two-hour film to encode in full
+ * for a thumbnail nobody asked to watch. For every row that carries a real
+ * duration the two readings agree exactly.
  */
 export function previewRequest(row: {
   duration?: number | null
@@ -166,9 +172,19 @@ export function cellPreviewRung(
  * retries in the session, because a ring that stopped and a caption naming an
  * ffmpeg error are both worse than the still frame the cell already has.
  *
- * The caption's words come from `transcodeBadge`, the formatter the gallery's
- * play affordance already uses, so a queue position is spelled the one way in
- * both places.
+ * THE CAPTIONS, EXACTLY AS IMPLEMENTED: "Queued #n" for a job that HAS a queue
+ * position, and "Transcoding…" for both of the other pending states — the job
+ * running, and the POST still in flight (`requesting`).
+ *
+ * That third case is a DELIBERATE READING of V11's two captions (verifier
+ * finding S5): `requesting` is before the queue, so there is no position to
+ * name, and "Queued" with no number would be a worse sentence than the one
+ * that describes what is about to happen. The sweep is shared with the real
+ * queued state because both are the same fact on screen — something is
+ * happening and nobody can say how far along it is.
+ *
+ * The queue position's spelling comes from `transcodeBadge`, the formatter the
+ * gallery's play affordance already uses, so it reads the one way in both.
  */
 export interface PreviewFeedback {
   progress: "queued" | number
