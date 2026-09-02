@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
   ClientConfig,
@@ -5,6 +6,15 @@ import {
   deriveClientConfig,
 } from "./clientConfig"
 import type { AnimatedFloor, DisplayLoopTrigger } from "./thumbnailTier"
+import {
+  HOVER_PREVIEW_OFF,
+  getHoverPreviewPref,
+  getServerHoverPreviewPref,
+  resolveHoverPreview,
+  subscribeHoverPreviewPref,
+  type HoverPreviewCapability,
+} from "./state/hoverPreviewPref"
+import { useHydrated } from "./videoPlayability"
 
 // Client-side counterpart of lib/serverApi.ts's getServerClientConfig: a
 // same-origin fetch, so in production the gateway (which serves
@@ -65,3 +75,45 @@ export const useAnimatedFloor = (): AnimatedFloor | null =>
 // must not break is the grid's: nothing per cell may subscribe to this query.
 export const useDisplayLoopTrigger = (): DisplayLoopTrigger | null =>
   useClientConfig().data?.displayLoopTrigger ?? null
+
+/**
+ * WHAT A HOVERED VIDEO CELL MAY DO on this surface — the server's answer with
+ * the browser preference subtracted from it (V5 ∧ V6 ∧ V7), as one interned
+ * object.
+ *
+ * READ ONCE PER HOST (the result grid, the gallery filmstrip) and passed down
+ * as a prop, never per cell, on exactly the rule the animated floor is read
+ * under: it is one answer for every card on the page, and both halves of it
+ * are subscriptions — the react-query cache and the preference box.
+ * `resolveHoverPreview` returns one of four frozen constants, so the prop's
+ * identity moves only when the ANSWER moves and the cards' memo holds.
+ *
+ * OFF UNTIL HYDRATED, and that is a correctness gate rather than caution. The
+ * search page PREFETCHES the client config into the query cache
+ * (app/search/prefetch.ts), so the server render would resolve a real
+ * capability and plan video cells against a playability ladder that has no
+ * browser to probe — different markup from the client's first render, which is
+ * a hydration mismatch across every video card on screen. Both sides therefore
+ * answer "off" until the render after hydration, when the real value lands as
+ * an ordinary update — which is also when the FIRST possible dwell could be
+ * (200 ms of it), so nothing is lost.
+ */
+export const useHoverPreview = (): HoverPreviewCapability => {
+  const server = useClientConfig().data?.hoverPreview ?? null
+  const pref = useSyncExternalStore(
+    subscribeHoverPreviewPref,
+    getHoverPreviewPref,
+    getServerHoverPreviewPref
+  )
+  const hydrated = useHydrated()
+  return hydrated ? resolveHoverPreview(server, pref) : HOVER_PREVIEW_OFF
+}
+
+/**
+ * The SERVER's half alone, for the one control that has to explain itself: the
+ * toggle greys out "All" when this policy denies the preview encode, and
+ * "denied by the server" and "turned off by the user" are different sentences
+ * (A6). Every other consumer wants `useHoverPreview` above.
+ */
+export const useHoverPreviewCapability = (): HoverPreviewCapability | null =>
+  useClientConfig().data?.hoverPreview ?? null

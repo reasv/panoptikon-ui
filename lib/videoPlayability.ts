@@ -313,8 +313,13 @@ function subscribeDowngrades(onChange: () => void): () => void {
 // snapshot while hydrating and re-checks the client one immediately after,
 // which is the same mechanism useOutroSkipEnabled relies on. The store never
 // changes, so it never subscribes to anything.
+// EXPORTED because the hover-preview capability needs the same split for the
+// same reason (lib/useClientConfig.ts `useHoverPreview`): the search page
+// prefetches the client config, so a server render would otherwise resolve a
+// real capability and plan video cells against a ladder that had no browser to
+// probe. One store that is never notified, so a second caller costs nothing.
 const subscribeNothing = () => () => {}
-function useHydrated(): boolean {
+export function useHydrated(): boolean {
   return React.useSyncExternalStore(
     subscribeNothing,
     () => true,
