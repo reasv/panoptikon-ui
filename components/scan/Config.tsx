@@ -327,6 +327,15 @@ export function Config() {
                                         toast({
                                             title: "Thumbnail Formats",
                                             description: "At least one format must stay selected — thumbnails have to be stored in something.",
+                                            // The page's own variant for "the
+                                            // thing you asked for did not
+                                            // happen" (see Maintenance
+                                            // Failed): the two toasts that
+                                            // merely CONFIRM a queued job are
+                                            // the default, and a refusal that
+                                            // looked like one of those would
+                                            // read as a receipt.
+                                            variant: "destructive",
                                         })
                                         return
                                     }
