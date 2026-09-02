@@ -446,16 +446,33 @@ export function PreviewSurface({
     // GalleryImageLarge's mediaAspect walks for its overlays.
     //
     // BOTH subjects report, and — THIS IS THE WHOLE POINT — only through the
-    // one element they both paint: `getFileURL(dbs, "thumbnail", "sha256",
-    // item.sha256, extreme ? "display" : undefined)`. PeekLayer's base layer
-    // and GalleryImageLarge's still image build that URL from the same
-    // expression against the same `useSelectedDBs()` — the extreme-aspect
-    // `?size=display` clause included, which is why the two carry the
-    // identical test rather than each deciding for itself — so restricting
-    // the store to them makes the box agree with the picture BY CONSTRUCTION
-    // in either subject, and fixing a peek is a no-op for the picture again.
-    // Neither surface ever paints a GRID tier: past aspect 2 that is a crop,
-    // and its aspect belongs to no picture either of them shows.
+    // one picture they both paint: the display-size thumbnail of that sha,
+    // `getFileURL(dbs, "thumbnail", "sha256", item.sha256, extreme ?
+    // "display" : undefined, …)`. PeekLayer's base layer and
+    // GalleryImageLarge's still image build it against the same
+    // `useSelectedDBs()` and carry the identical extreme-aspect test rather
+    // than each deciding for itself, so restricting the store to them makes
+    // the box agree with the picture BY CONSTRUCTION in either subject, and
+    // fixing a peek is a no-op for the picture again. Neither surface ever
+    // paints a GRID tier: past aspect 2 that is a crop, and its aspect belongs
+    // to no picture either of them shows.
+    //
+    // ONE CLASS OF ITEM IS NO LONGER THE SAME EXPRESSION, and it still holds:
+    // an ANIMATED item past the server's display-loop bounds, whose display
+    // request answers `video/mp4` (docs/thumbnail-format-implementation.md
+    // R3). The peek sends `still=true` there, because a peek can only paint an
+    // `<img>`; the gallery mounts a `<video>` on the bare URL, because that
+    // surface is where the motion belongs. Two URLs, and neither the cache nor
+    // this store minds:
+    //
+    //   - the cache entry IS still shared, because the gallery gives that
+    //     `<video>` the peek's exact URL as its `poster` — the same request,
+    //     fetched once;
+    //   - and the store never hears two answers for the sha, because the
+    //     `<video>` reports NO aspect at all (see GalleryImageLarge's note on
+    //     why a live element must not re-fit a host box). Only the peek's
+    //     `<img>` writes, and what it paints is the poster frame of the very
+    //     loop the gallery is playing — same pixels, same ratio.
     //
     // TRAP — "same file" is NOT "same painted image", and a store keyed per
     // file cannot tell the difference. The peek's dwell upgrade loads the
