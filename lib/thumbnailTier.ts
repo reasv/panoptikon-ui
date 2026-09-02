@@ -84,6 +84,51 @@ export function tierForCellWidth(cssWidth: number, dpr: number): ThumbnailTier {
 }
 
 /**
+ * The square raster a blurhash is decoded to for a card at this tier, in
+ * pixels. Rides the SAME ladder as the rendition because it answers the same
+ * question — how big is this card's box — and pairing them is what keeps a
+ * second, independently-drifting threshold out of the codebase.
+ *
+ * WHY THE PLACEHOLDER HAS A LADDER AT ALL. Decoding a blurhash and
+ * PNG-encoding it in JS costs ~284 µs at 32x32, ~70 µs at 16x16 and ~21 µs at
+ * 8x8 on the reference machine (measured 2026-09-03), and a virtualized grid
+ * pays it once per cell MOUNT. The mount rate scales with 1/cell-area: at the
+ * size slider's 140px minimum on a 4K viewport it is ~330 cells/s, where a
+ * 32x32 placeholder was 36% of ALL busy JS during a scroll and the wall
+ * between 42 and 68 fps. At the sizes where cells are big the same arithmetic
+ * runs the other way — a handful of mounts per second — so there is nothing
+ * there to buy and full quality is simply kept.
+ *
+ * WHY 8x8 LOSES NOTHING AT `grid-xs`. A blurhash carries 4x3 cosine
+ * components; there is no detail in it that a 32x32 raster holds and an 8x8
+ * one does not, and next/image paints either as a `background-image` scaled to
+ * the box with smoothing. `grid-xs` is by definition a box of at most
+ * 256 x 1.125 = 288 device pixels, so the raster is upscaled ~36x either way.
+ * `grid-s` (<= 576 device px) takes the conservative middle rung rather than
+ * the same 8, because its mount rate is already a quarter of `grid-xs`'s and
+ * there is little left to win.
+ *
+ * `display` and an UNKNOWN tier both answer the full 32: unknown means "this
+ * surface has not measured itself yet" (`tierForCellWidth`'s own conservative
+ * direction), and a surface that cannot say how big its cards are must not be
+ * handed the rung reserved for the smallest ones.
+ */
+export type PlaceholderSize = 8 | 16 | 32
+
+export const TIER_PLACEHOLDER_SIZE = {
+  "grid-xs": 8,
+  "grid-s": 16,
+  "grid-m": 32,
+  display: 32,
+} as const satisfies Record<ThumbnailTier, PlaceholderSize>
+
+export function placeholderSizeForTier(
+  tier: ThumbnailTier | undefined
+): PlaceholderSize {
+  return tier === undefined ? 32 : TIER_PLACEHOLDER_SIZE[tier]
+}
+
+/**
  * The aspect past which a grid tier is a CROP rather than the whole picture
  * (§2). Comic strips and webtoons are real content in the target datasets and
  * cluster in search results, so the stored grid renditions bound them at

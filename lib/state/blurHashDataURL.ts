@@ -1,15 +1,21 @@
 import { decode } from "blurhash"
-
-const PLACEHOLDER_WIDTH = 32
-const PLACEHOLDER_HEIGHT = 32
+import type { PlaceholderSize } from "../thumbnailTier"
 
 /**
- * Decoded placeholders, keyed by the blurhash string alone — the placeholder
- * dimensions are module constants, so they can never vary between two entries.
+ * Decoded placeholders, keyed by hash AND raster size.
  *
- * A blurhash is decoded AND PNG-encoded in pure JS — 4096 `String.fromCharCode`
- * calls, a hand-rolled deflate-store and a CRC pass — and a grid cell does it
- * on every mount. Scrolling back up a virtualized grid remounts cells that
+ * THE SIZE IS PART OF THE KEY, and that is not defensive — it is required.
+ * The raster used to be a pair of module constants, so one hash had exactly
+ * one rendering; it is now a per-card rung off the thumbnail tier
+ * (`placeholderSizeForTier`, lib/thumbnailTier.ts), so the SAME hash legitimately
+ * has an 8x8, a 16x16 and a 32x32 form live in one tab at once — the result
+ * grid and the gallery strip sit on the same page at different card sizes.
+ * Keyed by hash alone, whichever surface mounted first would silently hand its
+ * raster to the other.
+ *
+ * A blurhash is decoded AND PNG-encoded in pure JS — one `String.fromCharCode`
+ * per byte, a hand-rolled deflate-store and a CRC pass — and a grid cell does
+ * it on every mount. Scrolling back up a virtualized grid remounts cells that
  * were on screen seconds ago, so without this the same twenty hashes are
  * re-encoded over and over on the warm re-scroll path, which is the direction
  * that measured WORSE than a cold scroll.
@@ -17,10 +23,27 @@ const PLACEHOLDER_HEIGHT = 32
  * Insertion-ordered Map as an LRU: a hit re-inserts, and the oldest entry is
  * evicted past the cap. The cap exists because the cache is module-level and
  * lives as long as the tab — a long scrolling session would otherwise keep
- * every data URL it has ever produced (~5.5 KB each) alive forever, which is
- * exactly the accumulation this work is trying not to add to.
+ * every data URL it has ever produced alive forever, which is exactly the
+ * accumulation this work is trying not to add to.
+ *
+ * WHY 2048 AND NOT 512. The cap only ever matters on the surface that mounts
+ * fastest, and 512 was below ONE SCREENFUL-SECOND there: at the size slider's
+ * 140px minimum on a 4K viewport the grid mounts ~330 cells/s across 19
+ * columns, so a forward scroll walked 2660 distinct hashes in eight seconds
+ * and the hit rate on the path that matters was zero — the cache helped only a
+ * short scroll back. 2048 covers ~6 s of that scroll, which is the range a
+ * user actually reverses over.
+ *
+ * The memory that buys is small BECAUSE of the ladder above, and the two
+ * decisions are coupled. An entry is ~5.5 KB at 32x32, ~1.5 KB at 16x16 and
+ * ~0.5 KB at 8x8 (measured, scripts/blurplaceholder.test.mjs). The rung that
+ * can actually fill 2048 slots is `grid-xs`, i.e. 8x8 — about 1 MB full. The
+ * 32x32 rung is reached only by big cells and the gallery, where the mount
+ * rate is single digits per second and the cache never approaches the cap; a
+ * cache full of 32x32 entries would be ~11 MB, and no surface in the app
+ * produces one.
  */
-const CACHE_LIMIT = 512
+const CACHE_LIMIT = 2048
 const cache = new Map<string, PlaceholderDataURL>()
 
 /**
@@ -35,19 +58,27 @@ const cache = new Map<string, PlaceholderDataURL>()
  */
 export type PlaceholderDataURL = `data:image/png;base64,${string}`
 
+/**
+ * `size` is REQUIRED and has no default, deliberately: every call site knows
+ * which tier its card is on, and a default would be the 32 this work exists to
+ * stop paying at the small ones — silently, in whatever surface forgot. Get it
+ * from `placeholderSizeForTier` rather than writing a number.
+ */
 export function blurHashToDataURL(
-  hash: string | undefined
+  hash: string | undefined,
+  size: PlaceholderSize
 ): PlaceholderDataURL | undefined {
   if (!hash) return undefined
-  const hit = cache.get(hash)
+  const key = `${size}:${hash}`
+  const hit = cache.get(key)
   if (hit !== undefined) {
-    cache.delete(hash)
-    cache.set(hash, hit)
+    cache.delete(key)
+    cache.set(key, hit)
     return hit
   }
-  const pixels = decode(hash, PLACEHOLDER_WIDTH, PLACEHOLDER_HEIGHT)
-  const dataURL = parsePixels(pixels, PLACEHOLDER_WIDTH, PLACEHOLDER_HEIGHT)
-  cache.set(hash, dataURL)
+  const pixels = decode(hash, size, size)
+  const dataURL = parsePixels(pixels, size, size)
+  cache.set(key, dataURL)
   if (cache.size > CACHE_LIMIT) {
     const oldest = cache.keys().next()
     if (!oldest.done) cache.delete(oldest.value)

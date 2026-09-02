@@ -23,6 +23,7 @@ import { useSearchLoading } from '@/lib/state/zust'
 import { topRowHighlightItem, virtualPageOf } from '@/lib/scrollMode'
 import {
     animatedCellMode,
+    placeholderSizeForTier,
     showsMotionBadge,
     tierForCellWidth,
     type AnimatedFloor,
@@ -587,7 +588,19 @@ function VirtualHorizontalScrollElement({
         onNavigate(ownIndex % nItems)
         setSelected(item)
     }
-    const blurDataURL = useMemo(() => item.blurhash ? blurHashToDataURL(item.blurhash) : undefined, [item.blurhash])
+    // The placeholder raster off the SAME tier the card's rendition uses, which
+    // on this surface is the strip's one answer for its fixed 240x320 box — so
+    // it moves only with the device pixel ratio, never per card. NOT a constant
+    // 32: at dpr 1 the binding edge is 320 device px, i.e. `grid-s`, and the
+    // strip remounts cards at virtualized rates exactly as the result grid
+    // does. `tier` is in the deps because it is a LIVE prop here (unlike the
+    // grid's latched one), so a dpr change must not strand a raster keyed to
+    // the old rung.
+    const blurDataURL = useMemo(
+        () => item.blurhash
+            ? blurHashToDataURL(item.blurhash, placeholderSizeForTier(tier))
+            : undefined,
+        [item.blurhash, tier])
     const searchLoading = useSearchLoading(state => state.loading)
     const handleDragStart = (event: React.DragEvent<HTMLImageElement | HTMLAnchorElement | HTMLDivElement>): void => {
         if (!item) return;

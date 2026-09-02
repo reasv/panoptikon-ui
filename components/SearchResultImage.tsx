@@ -13,6 +13,7 @@ import { useCellCallbacks, useCellFlags } from '@/lib/state/cellActions';
 import { PIN_SHA_PREFIX_LENGTH } from '@/lib/pinboardCrop';
 import {
     animatedCellMode,
+    placeholderSizeForTier,
     showsMotionBadge,
     type AnimateMode,
     type AnimatedFloor,
@@ -353,7 +354,15 @@ export const SearchResultImage = memo(function SearchResultImage({
             onImageClick(index)
         }
     }, [onImageClick, index])
-    const blurDataURL = useMemo(() => result.blurhash ? blurHashToDataURL(result.blurhash) : undefined, [result.blurhash])
+    // The placeholder raster rides the card's LATCHED tier, not a live one, for
+    // exactly the reason the tier is latched at all (see `tierRef` above):
+    // recomputing it would swap the `background-image` under a mounted <img>,
+    // i.e. re-introduce across every visible card the viewport-wide flash the
+    // latch exists to prevent. `tierRef` is written once at mount, so the
+    // hash-only dep list is honest rather than a stale closure.
+    const blurDataURL = useMemo(() => result.blurhash
+        ? blurHashToDataURL(result.blurhash, placeholderSizeForTier(tierRef.current))
+        : undefined, [result.blurhash])
     // The one refresh for the anchor's href — see the comment on the anchor.
     const refreshHref = galleryLink
         ? (event: React.SyntheticEvent<HTMLAnchorElement>) => {
