@@ -319,15 +319,27 @@ const jobs = new Map<string, { id: string; created: boolean }>()
 /** How to stop following one key's job: an SSE close, or a poller's stop. */
 const followers = new Map<string, () => void>()
 /**
- * Keys whose job THIS client cancelled, and whose late events must be ignored.
+ * THE POST WINDOW, as one generation number per key with a submit in flight.
  *
- * Without it a cancellation is a STICKY FAILURE: the pool settles a cancelled
- * job by reporting `failed`, `stateFromEvent` reads that as the job's own
- * verdict (which it caches for the session), and the next hover over the same
- * cell would refuse to resubmit — for a job the user ended by moving the
- * pointer. Cleared by the next `startTranscode` on the key.
+ * It exists because a POST is the one writer to a key that cannot be stopped
+ * synchronously — the SSE is closed and the poller is flagged the moment a
+ * cancel runs, but a request already on the wire will come back and want to
+ * write. `submitJob` re-reads its own generation after the await and bails when
+ * it no longer owns the key, which covers BOTH ways the key can move on:
+ *
+ *   - the entry is GONE — the pointer left and `cancelTranscode` dropped it.
+ *     Without this, the pool settling that job as `failed` would be read as a
+ *     verdict about the FILE, cached for the session, and the next hover over
+ *     the same cell would refuse to resubmit;
+ *   - the entry holds a NEWER number — a second dwell resubmitted. That job is
+ *     the one the user is waiting on, so the stale exchange must not touch the
+ *     state and must not DELETE the job the new POST just joined.
+ *
+ * BOUNDED BY CONSTRUCTION: one entry per POST actually in flight, removed by
+ * the submit's own `finally` and by a cancel. Nothing accumulates per cell.
  */
-const cancelled = new Set<string>()
+const submits = new Map<string, number>()
+let submitGeneration = 0
 
 /**
  * The store key. Content-addressed, never a URL — see the header.
@@ -439,10 +451,6 @@ export function followTranscodeJob(key: string, jobId: string) {
  * stream it just replaced) from reviving a job that is already done.
  */
 export function applyJobEvent(key: string, payload: unknown): TranscodeState | null {
-  // A key this client cancelled (V4): the pool settles the job by reporting
-  // `failed`, which would otherwise be cached as a verdict about the FILE and
-  // stop the next hover resubmitting. See `cancelled`.
-  if (cancelled.has(key)) return null
   const current = states.get(key)
   if (current && isTerminalState(current)) return null
   const next = stateFromEvent(payload)
@@ -544,13 +552,13 @@ export function startTranscode(options: {
   const preset = options.preset ?? PLAYBACK_PRESET
   const endCs = options.endCs ?? null
   const key = transcodeKey(options.sha256, preset, endCs)
-  // A key can only be un-cancelled by a fresh submit, and this is that submit:
-  // clearing here rather than in `cancelTranscode` is what makes the marker
-  // cover the whole window in which the settled job's late events arrive.
-  cancelled.delete(key)
   if (!shouldSubmit(states.get(key))) return key
+  // Claimed BEFORE the state write, so a POST already on the wire for this key
+  // (one a cancel invalidated a moment ago) can see that it no longer owns it.
+  const generation = ++submitGeneration
+  submits.set(key, generation)
   setState(key, { state: "requesting" })
-  void submitJob(key, options.sha256, preset, options.dbs, endCs)
+  void submitJob(key, generation, options.sha256, preset, options.dbs, endCs)
   return key
 }
 
@@ -570,6 +578,7 @@ export function createdOwnJob(payload: unknown): boolean {
 
 async function submitJob(
   key: string,
+  generation: number,
   sha256: string,
   preset: string,
   dbs: { index_db: string | null; user_data_db: string | null },
@@ -587,14 +596,18 @@ async function submitJob(
         ...(endCs == null ? {} : { end_cs: endCs }),
       },
     })
-    // The pointer left while the POST was in flight (V4). Nothing has been
-    // rendered from this exchange and the store is already back on idle, so
-    // the only thing left to do is put the job the server just started back —
-    // which is the same DELETE `cancelTranscode` would have issued had the id
-    // existed when it ran.
-    if (cancelled.has(key)) {
-      const lateId = data ? jobIdFromSubmit(data) : null
-      if (lateId && createdOwnJob(data)) void deleteJob(lateId)
+    // THE KEY MOVED ON while the POST was in flight (V4) — see `submits`.
+    if (submits.get(key) !== generation) {
+      // CANCELLED, not superseded: nothing was rendered from this exchange and
+      // the store is already back on idle, so the only thing left is to put the
+      // job the server just started back — the same DELETE `cancelTranscode`
+      // would have issued had the id existed when it ran. A SUPERSEDED submit
+      // deliberately leaves the job alone: the newer POST will have joined it,
+      // and cancelling it here would take away the encode being waited on.
+      if (!submits.has(key) && data && createdOwnJob(data)) {
+        const lateId = jobIdFromSubmit(data)
+        if (lateId) void deleteJob(lateId)
+      }
       return
     }
     if (error || !data) {
@@ -614,7 +627,15 @@ async function submitJob(
     jobs.set(key, { id: jobId, created: createdOwnJob(data) })
     followJob(key, jobId)
   } catch {
-    setState(key, retryableFailure("The transcode request failed"))
+    // Guarded like every other write in here: a request that failed AFTER the
+    // pointer left says nothing about the item, and recording it would be the
+    // stale verdict `submits` exists to prevent.
+    if (submits.get(key) === generation) {
+      setState(key, retryableFailure("The transcode request failed"))
+    }
+  } finally {
+    // Only if still ours: a newer submit owns the entry now and needs it.
+    if (submits.get(key) === generation) submits.delete(key)
   }
 }
 
@@ -655,11 +676,40 @@ export function cancelTranscode(key: string): void {
   jobs.delete(key)
   followers.get(key)?.()
   followers.delete(key)
-  // Marked even with no id yet: the POST may still be in flight, and
-  // `submitJob` reads this to cancel the job it is about to be handed.
-  cancelled.add(key)
-  setState(key, IDLE)
+  // Invalidates a POST still on the wire for this key, which is the one writer
+  // the two lines above cannot reach (see `submits`).
+  submits.delete(key)
+  // FORGOTTEN, not set to idle. An idle entry reads the same to every caller
+  // (`getTranscodeState` answers IDLE for an absent key) and is not terminal,
+  // so `setState`'s cleanup would never fire for it — a session skimming a
+  // large library would keep one map entry per cell whose preview was
+  // cancelled, forever. Listeners are notified either way.
+  forgetTranscodeState(key)
   if (job?.created) void deleteJob(job.id)
+}
+
+/**
+ * How much the store is holding, for the bounded-growth assertions in
+ * scripts/videopreview.test.mjs.
+ *
+ * A cancel must leave NOTHING behind — the hover preview cancels one key per
+ * cell the pointer rests on and leaves, so anything kept per cancelled key is a
+ * leak the length of the session (verifier finding S3). `states` still grows
+ * with keys that reached `done`, and that is the point of a content-addressed
+ * store: those are the cache hits a second look is meant to find.
+ */
+export function transcodeStoreSize(): {
+  states: number
+  jobs: number
+  followers: number
+  submits: number
+} {
+  return {
+    states: states.size,
+    jobs: jobs.size,
+    followers: followers.size,
+    submits: submits.size,
+  }
 }
 
 /** Did this store create the job standing on `key`? For the tests and hosts. */
@@ -788,6 +838,10 @@ function pollJob(key: string, jobId: string) {
         "/api/video/jobs/{job_id}",
         { params: { path: { job_id: jobId } } }
       )
+      // A cancel landed while this request was on the wire. Same rule as the
+      // POST's (see `submits`): nothing this loop learned is about the item any
+      // more, and writing it would be the stale verdict.
+      if (stopped) return
       if (response.status === 404) {
         // The pool's terminal ring is time-bounded; a job that aged out of it
         // after we lost the stream is unknowable, not failed — the encode may
