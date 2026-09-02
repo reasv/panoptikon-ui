@@ -1,5 +1,10 @@
-import { components } from "@/lib/panoptikon"
-import type { AnimatedFloor } from "@/lib/thumbnailTier"
+// Type-only, both of them. `@/lib/panoptikon` is a .d.ts, so a VALUE import of
+// it is a runtime module the node test scripts cannot resolve (the rule
+// lib/videoTranscode.ts documents) — and with both erased this module has NO
+// runtime imports at all, which is what lets scripts/displayloop.test.mjs
+// execute `deriveClientConfig` under plain node.
+import type { components } from "@/lib/panoptikon"
+import type { AnimatedFloor, DisplayLoopTrigger } from "@/lib/thumbnailTier"
 
 // The gateway's GET /api/client-config response: the name of the policy that
 // matched the request, capability booleans derived from that policy's
@@ -7,6 +12,14 @@ import type { AnimatedFloor } from "@/lib/thumbnailTier"
 export type ClientConfigResponse = components["schemas"]["ClientConfigResponse"] & {
   desktop_managed?: boolean
   desktop_shell_available?: boolean
+  // Optional here — and every field inside it optional — because this client
+  // must parse the response of a Server that predates the field. Absent reads
+  // as "this Server stores no display loops", which is exactly right for one.
+  display_loop_trigger?: {
+    max_bytes?: number
+    max_short_side?: number
+    max_pixels?: number
+  } | null
 }
 
 // The derived shape the UI actually consumes. Computed by deriveClientConfig
@@ -36,6 +49,18 @@ export interface ClientConfig {
    * while the config request is still in flight.
    */
   animatedFloor: AnimatedFloor | null
+  /**
+   * The bounds past which the DISPLAY size of an animated item is an H.264
+   * loop rather than a picture (`display_loop_trigger`), verbatim from the
+   * server. The gallery's large view decides `<video>` vs `<img>` against it
+   * from row data alone — no wasted request, no error latch.
+   *
+   * Null when the server does not report one, which covers a Server older than
+   * the display-loop pipeline, a deployment where it is off, and the window
+   * while the config request is in flight. Every consumer reads null as "the
+   * display size is always an image", i.e. today's element.
+   */
+  displayLoopTrigger: DisplayLoopTrigger | null
 }
 
 // [policies.client] keys are free-form; these are the by-convention keys the
@@ -93,6 +118,34 @@ export function deriveClientConfig(response: ClientConfigResponse): ClientConfig
     // property of what the scan wrote, identical for every policy, so it rides
     // at the top level of the response and is passed through as-is.
     animatedFloor: normalizeAnimatedFloor(response.animated_floor),
+    // Top-level for the same reason as the floor above: it is a property of
+    // what the scan wrote, identical for every policy.
+    displayLoopTrigger: normalizeDisplayLoopTrigger(response.display_loop_trigger),
+  }
+}
+
+// All THREE numbers have to be present and finite for the trigger to mean
+// anything: it is an OR of three bounds, so a missing one is not a bound that
+// simply never fires — it is a bound the server IS applying and this client
+// cannot see, and guessing would put a `<video>` where image bytes are or the
+// reverse. Anything short of complete is read as "no trigger reported", which
+// every consumer answers with today's `<img>`.
+function normalizeDisplayLoopTrigger(
+  trigger: ClientConfigResponse["display_loop_trigger"]
+): DisplayLoopTrigger | null {
+  if (!trigger) return null
+  const {
+    max_bytes: maxBytes,
+    max_short_side: maxShortSide,
+    max_pixels: maxPixels,
+  } = trigger
+  for (const value of [maxBytes, maxShortSide, maxPixels]) {
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null
+  }
+  return {
+    maxBytes: maxBytes as number,
+    maxShortSide: maxShortSide as number,
+    maxPixels: maxPixels as number,
   }
 }
 

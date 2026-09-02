@@ -10,7 +10,8 @@ import { useSelectedDBs } from "@/lib/state/database";
 import { FilePathComponent } from "./imageButtons";
 import { getFileURL } from "@/lib/utils";
 import { useItemSimilaritySearch, useQueryOptions } from "@/lib/state/searchQuery/clientHooks";
-import { isExtremeAspect } from "@/lib/thumbnailTier";
+import { exceedsDisplayLoopTrigger, isExtremeAspect } from "@/lib/thumbnailTier";
+import { useDisplayLoopTrigger } from "@/lib/useClientConfig";
 
 export function ImageSimilarityHeader() {
     const [dbs, ___] = useSelectedDBs()
@@ -30,6 +31,9 @@ export function ImageSimilarityHeader() {
         }
     )
     const path = data?.files[0]?.path
+    // See the <img> below: an animated target past the server's display-loop
+    // bounds answers `video/mp4` at this size, which this element cannot show.
+    const displayLoopTrigger = useDisplayLoopTrigger()
     const onExitClick = () => {
         setOptions({ e_iss: false })
     }
@@ -106,7 +110,22 @@ export function ImageSimilarityHeader() {
                         <img
                             src={getFileURL(dbs, "thumbnail", "sha256", filter.target,
                                 isExtremeAspect(data?.item?.width, data?.item?.height)
-                                    ? "display" : undefined)}
+                                    ? "display" : undefined,
+                                // `still=true` for an animated target past the
+                                // display-loop bounds, and only then: its
+                                // display request answers `video/mp4`
+                                // (docs/thumbnail-format-implementation.md R3),
+                                // which this <img> would render as a broken
+                                // picture. A smaller animated target keeps the
+                                // bare URL, animates as it does today, and
+                                // keeps sharing its cache entry with the
+                                // gallery. Same RESIDUAL as the aspect test
+                                // above: before the query resolves there is no
+                                // row to test, so the flag is off for one
+                                // render.
+                                data?.item
+                                    ? exceedsDisplayLoopTrigger(data.item, displayLoopTrigger)
+                                    : undefined)}
                             alt="Similarity search target"
                             className="max-h-[40vh] max-w-[min(24rem,80vw)] rounded object-contain"
                         />

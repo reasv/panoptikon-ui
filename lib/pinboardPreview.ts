@@ -308,9 +308,15 @@ export async function composeBoardPreview(
   const visible = placements.filter(
     (p) => (p.top - cropTop) * scale < outHeight
   )
+  // `still=true`: a canvas draw source has to be an <img>, and above the
+  // server's display-loop bounds an animated item's display request answers
+  // `video/mp4` (docs/thumbnail-format-implementation.md R3), which would
+  // reject and leave a placeholder tile in the saved preview. The flag is a
+  // no-op for every other item. Nothing here reads the media TYPE, so a WebP
+  // rendition needs no other change — the element decodes what it is sent.
   const images = await Promise.allSettled(
     visible.map((p) =>
-      loadImage(getFileURL(dbs, "thumbnail", "sha256", p.sha256))
+      loadImage(getFileURL(dbs, "thumbnail", "sha256", p.sha256, undefined, true))
     )
   )
 

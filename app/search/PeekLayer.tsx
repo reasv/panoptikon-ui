@@ -2,7 +2,8 @@
 import { useState } from "react"
 import { cn, getFileURL } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
-import { isExtremeAspect } from "@/lib/thumbnailTier"
+import { exceedsDisplayLoopTrigger, isExtremeAspect } from "@/lib/thumbnailTier"
+import { useDisplayLoopTrigger } from "@/lib/useClientConfig"
 
 // The maximized workspace's HOVER PEEK, as a LAYER inside the preview
 // surface's box (docs/maximized-pinboard-search-overlay-design.md §8.4) —
@@ -45,9 +46,13 @@ export function PeekLayer({
      * FILE, but the two subjects can paint DIFFERENT IMAGES of one file: the
      * upgrade loads the ORIGINAL (which the browser rotates per EXIF) while
      * GalleryImageLarge paints `thumbnail`, and above the scanner's size
-     * thresholds that is a STORED thumbnail re-encoded through `to_rgb8()` +
-     * JPEG with no EXIF and no orientation applied
-     * (panoptikon/src/jobs/files.rs, generate_thumbnail/encode_image). Let
+     * thresholds that is a STORED thumbnail re-encoded with no EXIF and no
+     * orientation applied (panoptikon/src/jobs/files.rs,
+     * generate_thumbnail/encode_image). Its FORMAT is not fixed and nothing
+     * here may assume one: the display rendition of a lossless original is
+     * WebP and of a JPEG original is JPEG, per the database's own policy
+     * (docs/thumbnail-format-implementation.md R2). What matters to the box
+     * below is the pixels, which are the same either way. Let
      * the upgrade report and a 6000x4000 Orientation-6 JPEG dwelt on, then
      * clicked, fixes the box PORTRAIT around a LANDSCAPE stored thumbnail —
      * the picture visibly flips and shrinks on the click, which is the very
@@ -77,8 +82,20 @@ export function PeekLayer({
     // asks for, with `?size=display` spelled out for the extreme-aspect items
     // whose display rendition the tier work changed (§2, F4) — same bytes, new
     // URL, so a stale cache entry cannot answer it.
+    //
+    // `still=true` for exactly one class of item and no other: an animated one
+    // past the server's display-loop bounds, whose display request answers
+    // `video/mp4` (docs/thumbnail-format-implementation.md R3) — which this
+    // <img> would render as a broken picture, and which a peek has no business
+    // playing anyway (§8.4). Gated on the trigger rather than on "is it
+    // animated" so that a SMALL animated image keeps the bare URL: it still
+    // animates in the <img> exactly as it does today, and it keeps sharing its
+    // cache entry with GalleryImageLarge's picture of the same item, which is
+    // the property PreviewSurface's note depends on.
+    const displayLoopTrigger = useDisplayLoopTrigger()
     const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256,
-        isExtremeAspect(item.width, item.height) ? "display" : undefined)
+        isExtremeAspect(item.width, item.height) ? "display" : undefined,
+        exceedsDisplayLoopTrigger(item, displayLoopTrigger))
     // The dwell upgrade (§8): the stored thumbnail shows immediately; for
     // STILL images the original file loads behind it and fades in on load,
     // so a sweep stays cheap (the 200ms open debounce already suppresses

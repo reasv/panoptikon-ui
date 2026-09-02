@@ -23,7 +23,7 @@ import Link from 'next/link'
 import { usePageSize, useSearchPage, useSearchPageRaw } from '@/lib/state/searchQuery/clientHooks'
 import { useGridScrollAnchor } from '@/lib/state/gridScroll'
 import { useFetchPageRows, usePrefetchPageState, type ResultsSource } from '@/lib/searchHooks'
-import { isExtremeAspect } from '@/lib/thumbnailTier'
+import { exceedsDisplayLoopTrigger, isExtremeAspect } from '@/lib/thumbnailTier'
 import { SCROLL_CHUNK_SIZE } from '@/lib/searchRequest'
 import { chunkStartOf, scanLoadedForward } from '@/lib/scrollMode'
 import { serializers } from '@/lib/state/searchQuery/serializers'
@@ -46,7 +46,7 @@ import { clipRequestFor } from '@/lib/videoClip'
 import { useVideoEndProbe } from '@/lib/videoEndProbe'
 import { noteVideoPlaybackError, shouldDowngradeOnError, useVideoPlayability, videoPlayability } from '@/lib/videoPlayability'
 import { useVideoPlayback } from '@/lib/videoTranscode'
-import { useVideoTranscodeEnabled } from '@/lib/useClientConfig'
+import { useDisplayLoopTrigger, useVideoTranscodeEnabled } from '@/lib/useClientConfig'
 import { isEmptyTrim, TrimRange } from '@/lib/pinboardCrop'
 import { trimForSha } from '@/lib/galleryTrim'
 
@@ -1397,6 +1397,19 @@ const NAV_MIN = 96
 // play/pause strip of at least 40% of the video always survives.
 const NAV_ENCROACH_MAX = 0.3
 
+// Ref for the display loop's <video>: it does nothing on attach and PAUSES on
+// detach (a React 19 ref cleanup), so a navigation that removes the element
+// stops its playback and its fetch at exactly that moment rather than whenever
+// a detached media element happens to be collected.
+//
+// AT MODULE SCOPE ON PURPOSE. An inline ref callback is a new function every
+// render, and React detaches and re-attaches on each one — which here means
+// pausing the loop on every unrelated re-render of the gallery. (That trap is
+// already written up at `attachVideo` below for the player's element, which
+// solves it with a useCallback because it closes over per-item state; this one
+// closes over nothing, so the fix is simply not to create it per render.)
+const pauseVideoOnDetach = (el: HTMLVideoElement | null) => () => el?.pause()
+
 // The picture a contain fit paints inside `box`, as CSS offsets against that
 // box. Null while the aspect or the box is still unknown — callers then fall
 // back to the box itself, which is exactly what the overlays anchored to
@@ -1530,9 +1543,35 @@ export function GalleryImageLarge(
     // the old long-side-crushed thumbnail (an 800x20000 webtoon used to be
     // stored 163x4096 and painted here at 163px wide). Normal-aspect items
     // keep the bare URL, so nothing else in the gallery re-downloads.
-    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256,
-        isExtremeAspect(item.width, item.height) ? "display" : undefined)
+    const displaySize = isExtremeAspect(item.width, item.height) ? "display" : undefined
+    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256, displaySize)
     const fileURL = getFileURL(dbs, "file", "sha256", item.sha256)
+
+    // AN ANIMATED ITEM BIG ENOUGH THAT THE DISPLAY SIZE IS A LOOP, NOT A
+    // PICTURE (docs/thumbnail-format-implementation.md R3). Past any of the
+    // server's three bounds the endpoint answers this exact URL with
+    // `video/mp4`, so the element has to be a `<video>` — an `<img>` there is a
+    // broken picture, and the biggest surface in the app is the worst place for
+    // one. Below them, or against a server that reports no trigger, NOTHING
+    // changes: the same `<img>` at the same URL, serving the item's own file,
+    // animating natively as it always has.
+    //
+    // Decided from ROW DATA against `/api/client-config` — no probe request and
+    // no error latch in the common path, the same rule the grid follows.
+    // `still=true` is not involved: this surface WANTS the motion, and the
+    // still URL is only ever the poster below.
+    const displayLoopTrigger = useDisplayLoopTrigger()
+    // The one-way fallback for the case no client-side test can predict: the
+    // keep-the-original SENTINEL. An item over the bounds whose H.264 encode
+    // came out no smaller than its source is served its own image bytes
+    // FOREVER (§R2), and a client cannot tell that apart from a loop in
+    // advance. Keyed by sha, like `mediaAspect` below, so it resets on
+    // navigation rather than latching the fallback across items — the same
+    // reason that state is keyed.
+    const [loopFailed, setLoopFailed] = useState<string | null>(null)
+    const showDisplayLoop =
+        exceedsDisplayLoopTrigger(item, displayLoopTrigger)
+        && loopFailed !== item.sha256
 
     const searchLoading = useSearchLoading(state => state.loading)
 
@@ -2069,7 +2108,10 @@ export function GalleryImageLarge(
         return () => window.removeEventListener("keydown", onKey)
     }, [isPlayable, showVideo, playerActive, prevImage, nextImage, videoState, player, trim, videoRef, setGalleryTrim, item.sha256, playback])
 
-    const handleDragStart = (event: React.DragEvent<HTMLImageElement>): void => {
+    // HTMLElement, not HTMLImageElement: the picture is an `<img>` or a
+    // `<video>` depending on the item (see showDisplayLoop), and the drag
+    // payload — the ORIGINAL file's URL — is the same either way.
+    const handleDragStart = (event: React.DragEvent<HTMLElement>): void => {
         if (!fileURL) return;
         event.dataTransfer.effectAllowed = 'copy';
         event.dataTransfer.setData('text/plain', item.sha256);
@@ -2321,40 +2363,107 @@ export function GalleryImageLarge(
                         className="absolute inset-0"
                         onClick={(e) => e.preventDefault()}
                     >
-                        <Image
-                            src={thumbnailURL}
-                            alt={`${item.path}`}
-                            draggable={true}
-                            onDragStart={handleDragStart}
-                            fill
-                            className="object-contain"
-                            unoptimized={true}
-                            // Playable items, or a host that asked for the
-                            // painted aspect (onMediaAspect) — for a still
-                            // image this element is what the panel actually
-                            // shows, so it is the only thing that can correct
-                            // an EXIF-rotated host box. It is NOT necessarily
-                            // the original file: `thumbnail` serves the file
-                            // itself only below the scanner's size thresholds,
-                            // and above them a STORED thumbnail the `image`
-                            // crate wrote with no EXIF and no orientation
-                            // applied (panoptikon/src/jobs/files.rs,
-                            // image_is_served_directly). A host must weigh the
-                            // answer knowing that — see PreviewSurface's
-                            // `confirmed`, where treating "same file" as "same
-                            // painted image" was a real bug. Neither: a plain
-                            // image renders exactly as it always did, with no
-                            // aspect bookkeeping and no overlay box to anchor.
-                            // The ref covers cache hits that complete before
-                            // React attaches onLoad (same pattern as the pin's
-                            // thumbnail); onLoad covers the network path.
-                            ref={isPlayable || onMediaAspect ? ((el) => {
-                                if (el?.complete) noteThumbAspect(el)
-                            }) : undefined}
-                            onLoad={isPlayable || onMediaAspect
-                                ? ((e) => noteThumbAspect(e.currentTarget))
-                                : undefined}
-                        />
+                        {showDisplayLoop ?
+                            /* eslint-disable-next-line jsx-a11y/media-has-caption */
+                            <video
+                                // Keyed by item for the same reason the player's
+                                // element is: navigation must give a FRESH one.
+                                // A reused element keeps the previous item's
+                                // playback state, because a bare src swap fires
+                                // `emptied`, not `pause`.
+                                key={item.sha256}
+                                src={thumbnailURL}
+                                // The still URL of the same rendition, so the
+                                // first frame paints while the loop's bytes are
+                                // still arriving. Same size argument as the loop
+                                // — an extreme-aspect item must name `display`
+                                // on both or the poster would be a crop.
+                                poster={getFileURL(dbs, "thumbnail", "sha256",
+                                    item.sha256, displaySize, true)}
+                                // AUTOPLAY, unlike the grid's LoopVideo: there is
+                                // no playback director here and nothing to
+                                // schedule. The gallery shows ONE item, the user
+                                // asked for it, and an animated picture that
+                                // needs a press to move is not the picture the
+                                // `<img>` used to be.
+                                autoPlay
+                                muted
+                                loop
+                                playsInline
+                                disablePictureInPicture
+                                // A <video> has no implicit ARIA role, so without
+                                // this a screen reader announces nothing where the
+                                // <img> it stands in for announces its `alt`. This
+                                // is a picture that happens to move: no controls,
+                                // no sound, no timeline the user can reach.
+                                role="img"
+                                aria-label={`${item.path}`}
+                                draggable={true}
+                                onDragStart={handleDragStart}
+                                // Belt to the key's braces. React removes the
+                                // element on navigation, but a detached media
+                                // element is not guaranteed to stop fetching or
+                                // decoding before it is collected, and the gallery
+                                // is arrow-keyed — a fast sweep would leave a
+                                // trail of them. A ref CLEANUP (React 19) runs at
+                                // exactly the moment the element leaves. Module
+                                // scope, and read why before inlining it.
+                                ref={pauseVideoOnDetach}
+                                // The keep-the-original sentinel, and the only
+                                // way to detect it: the response was image bytes,
+                                // so fall back to the <img> for this item. Latched
+                                // one-way per sha, so it cannot loop.
+                                onError={() => setLoopFailed(item.sha256)}
+                                // What next/image's `fill` writes as inline
+                                // style, plus the `<img>`'s own object-fit: the
+                                // two elements must occupy the same box.
+                                className="absolute inset-0 h-full w-full object-contain"
+                                // Reports NO aspect, deliberately, and this is the
+                                // rule this component already follows for the
+                                // player's element (see onMediaAspect): a host box
+                                // is a LAYOUT, and re-fitting it when a live
+                                // element reports metadata re-lays-out everything
+                                // anchored to it. The cost here is nil — a host
+                                // falls back to item.width/height, which for an
+                                // animated image ARE the display dimensions (no
+                                // EXIF rotation exists in GIF/WebP animation, and
+                                // the scan stores rotated dimensions anyway).
+                            />
+                            :
+                            <Image
+                                src={thumbnailURL}
+                                alt={`${item.path}`}
+                                draggable={true}
+                                onDragStart={handleDragStart}
+                                fill
+                                className="object-contain"
+                                unoptimized={true}
+                                // Playable items, or a host that asked for the
+                                // painted aspect (onMediaAspect) — for a still
+                                // image this element is what the panel actually
+                                // shows, so it is the only thing that can correct
+                                // an EXIF-rotated host box. It is NOT necessarily
+                                // the original file: `thumbnail` serves the file
+                                // itself only below the scanner's size thresholds,
+                                // and above them a STORED thumbnail the `image`
+                                // crate wrote with no EXIF and no orientation
+                                // applied (panoptikon/src/jobs/files.rs,
+                                // image_is_served_directly). A host must weigh the
+                                // answer knowing that — see PreviewSurface's
+                                // `confirmed`, where treating "same file" as "same
+                                // painted image" was a real bug. Neither: a plain
+                                // image renders exactly as it always did, with no
+                                // aspect bookkeeping and no overlay box to anchor.
+                                // The ref covers cache hits that complete before
+                                // React attaches onLoad (same pattern as the pin's
+                                // thumbnail); onLoad covers the network path.
+                                ref={isPlayable || onMediaAspect ? ((el) => {
+                                    if (el?.complete) noteThumbAspect(el)
+                                }) : undefined}
+                                onLoad={isPlayable || onMediaAspect
+                                    ? ((e) => noteThumbAspect(e.currentTarget))
+                                    : undefined}
+                            />}
 
                     </a>}
                 {searchLoading && (
