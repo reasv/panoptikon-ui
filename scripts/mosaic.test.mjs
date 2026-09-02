@@ -10,6 +10,7 @@
 // The geometry module imports its siblings extensionless, which node's
 // resolver rejects; ts-hooks fills that in. register() has to run before
 // the modules load, hence the dynamic imports.
+import { createChecker } from "./harness.mjs"
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
@@ -28,13 +29,8 @@ const {
 } = await import("../lib/pinboardGeometry.ts")
 const { V2_GRID, effectiveGrid, rowStep } = await import("../lib/pinboardGrid.ts")
 
-let all = true
+const { check, finish } = createChecker()
 const eq = (a, b, tol = 1e-9) => Math.abs(a - b) <= tol
-function check(name, ok, detail = "") {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? `\n  ${detail}` : ""}`)
-  all &&= !!ok
-  return ok
-}
 
 // mosaicGeometry answers with a tagged result (a box, or WHY there is no
 // box); the geometry assertions below want the box itself.
@@ -608,5 +604,4 @@ check("canvasClampFactor is 1 for an ordinary canvas", canvasClampFactor(3840, 8
   )
 }
 
-console.log(all ? "\nALL PASS" : "\nFAILURES")
-process.exit(all ? 0 : 1)
+finish()

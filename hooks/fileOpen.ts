@@ -3,7 +3,7 @@
 import { useQueryClient } from "@tanstack/react-query"
 import { $api } from "@/lib/api"
 import { toast } from "@/components/ui/use-toast"
-import { getFileURL } from "@/lib/utils"
+import { originalFileURL } from "@/lib/thumbnailURL"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useClientConfig } from "@/lib/useClientConfig"
 import { useRelay } from "@/lib/relayContext"
@@ -82,7 +82,7 @@ export function useFileOpenRunner() {
     await relay.run(action, actualPath)
   }
 
-  const openFileInBrowser = (sha256: string) => window.open(getFileURL(query, "file", "sha256", sha256), "_blank")
+  const openFileInBrowser = (sha256: string) => window.open(originalFileURL(query, sha256), "_blank")
   const openFile = (file: CellFileRef) => {
     const { sha256, path } = file
     if (relay.paired && relay.target === "relay") {

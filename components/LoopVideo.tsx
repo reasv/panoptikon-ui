@@ -14,6 +14,36 @@ import { observeAnimatedCell } from "@/lib/state/animatedPlayback"
 export const FILL_CLASSES = "absolute inset-0 h-full w-full"
 
 /**
+ * A ref that does nothing on attach and TEARS THE ELEMENT DOWN on detach (a
+ * React 19 ref cleanup), so whatever removes the element stops both its
+ * playback and its FETCH at exactly that moment rather than whenever a detached
+ * media element happens to be collected.
+ *
+ * `pause()` ALONE IS NOT ENOUGH. Pausing stops playback and nothing else: the
+ * resource selection algorithm goes on buffering the rest of the loop into a
+ * detached element. In an arrow-keyed gallery that is a trail of multi-megabyte
+ * downloads for pictures nobody is looking at any more; in a hover-mode grid it
+ * is the loop of every cell the pointer has rested on, still arriving after the
+ * pointer left. Clearing `src` and calling `load()` is what the spec defines as
+ * ABORTING: it runs the media load algorithm on an empty source, which fires
+ * `emptied`, drops the current resource and cancels the fetch. Both, in that
+ * order, because `load()` on its own resets a still-set `src` and starts
+ * fetching again.
+ *
+ * Module scope, so its identity is stable and React never detaches and
+ * reattaches it on a re-render. Read this before inlining it.
+ */
+export function abortVideo(el: HTMLVideoElement | null): void {
+    if (!el) return
+    el.pause()
+    el.removeAttribute("src")
+    el.load()
+}
+
+/** The same thing shaped as a ref: nothing on attach, the abort on detach. */
+export const abortVideoOnDetach = (el: HTMLVideoElement | null) => () => abortVideo(el)
+
+/**
  * THE animated-loop element, spelled once for every surface that shows one:
  * the grid card in either animate mode, and the gallery filmstrip's
  * hover-played cards. Its own module because those live in different trees and
@@ -106,6 +136,18 @@ export function LoopVideo({
             ref={(element) => {
                 videoRef.current = element
                 elementRef?.(element)
+                // A React 19 ref CLEANUP, which also means this callback is no
+                // longer invoked with `null` — so the two writes above are
+                // undone here by hand, exactly as React used to do for them.
+                return () => {
+                    videoRef.current = null
+                    elementRef?.(null)
+                    // THE ABORT. In hover mode this element unmounts the moment
+                    // the pointer leaves, and a detached media element keeps
+                    // buffering the rest of the loop: the exact cost hover mode
+                    // exists to avoid, paid on every cell the pointer rested on.
+                    abortVideo(element)
+                }
             }}
             src={src}
             // Shown until the director plays this cell and the first frame

@@ -11,7 +11,8 @@ import { X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal, Download } from "luc
 import { Button } from "@/components/ui/button"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useShallow } from "zustand/react/shallow"
-import { cn, consumesArrowKeys, downloadFileName, fileNameFromPath, getFileURL, hasOpenLayer } from "@/lib/utils"
+import { cn, consumesArrowKeys, downloadFileName, fileNameFromPath, hasOpenLayer } from "@/lib/utils"
+import { originalFileURL, thumbnailMediaURL, thumbnailStillURL } from "@/lib/thumbnailURL"
 import { ItemMetaLine } from "@/components/ItemMetaLine"
 import { itemEquals, OpenDetailsButton } from "@/components/OpenFileDetails"
 import { useFileShare } from "@/hooks/fileShare"
@@ -23,7 +24,8 @@ import Link from 'next/link'
 import { usePageSize, useSearchPage, useSearchPageRaw } from '@/lib/state/searchQuery/clientHooks'
 import { useGridScrollAnchor } from '@/lib/state/gridScroll'
 import { useFetchPageRows, usePrefetchPageState, type ResultsSource } from '@/lib/searchHooks'
-import { isExtremeAspect } from '@/lib/thumbnailTier'
+import { exceedsDisplayLoopTrigger } from '@/lib/thumbnailTier'
+import { DisplayLoopPicture } from '@/components/gallery/DisplayLoopPicture'
 import { SCROLL_CHUNK_SIZE } from '@/lib/searchRequest'
 import { chunkStartOf, scanLoadedForward } from '@/lib/scrollMode'
 import { serializers } from '@/lib/state/searchQuery/serializers'
@@ -46,7 +48,7 @@ import { clipRequestFor } from '@/lib/videoClip'
 import { useVideoEndProbe } from '@/lib/videoEndProbe'
 import { noteVideoPlaybackError, shouldDowngradeOnError, useVideoPlayability, videoPlayability } from '@/lib/videoPlayability'
 import { useVideoPlayback } from '@/lib/videoTranscode'
-import { useVideoTranscodeEnabled } from '@/lib/useClientConfig'
+import { useDisplayLoopTrigger, useVideoTranscodeEnabled } from '@/lib/useClientConfig'
 import { isEmptyTrim, TrimRange } from '@/lib/pinboardCrop'
 import { trimForSha } from '@/lib/galleryTrim'
 
@@ -1522,17 +1524,41 @@ export function GalleryImageLarge(
     }
 ) {
     const [dbs, ___] = useSelectedDBs()
-    // The large view stays on the DEFAULT path — no `size=`, the display
-    // rendition, exactly what it has always loaded — with ONE exception (§2,
-    // F4). It is a CONTAIN surface, so an item past aspect 2 must be asked for
-    // by name: `?size=display` is the same bytes and a NEW URL, which is what
-    // stops a browser cache stamped before the tier work from answering with
-    // the old long-side-crushed thumbnail (an 800x20000 webtoon used to be
-    // stored 163x4096 and painted here at 163px wide). Normal-aspect items
-    // keep the bare URL, so nothing else in the gallery re-downloads.
-    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256,
-        isExtremeAspect(item.width, item.height) ? "display" : undefined)
-    const fileURL = getFileURL(dbs, "file", "sha256", item.sha256)
+    // The large view is on the DEFAULT path for every item — no `size=`, the
+    // display rendition, exactly what it has always loaded. It is a CONTAIN
+    // surface, so it never takes a grid tier (past aspect 2 that is a crop),
+    // and the bare URL already is the display rendition.
+    //
+    // Extreme-aspect items used to spell `?size=display` out here to dislodge a
+    // browser cache entry stamped before the tier work (an 800x20000 webtoon
+    // was stored 163x4096 and painted at 163px wide). `r=2` dislodges it for
+    // every display request now, so the spelling bought nothing but this
+    // surface, the peek layer and the similarity header agreeing by hand.
+    const thumbnailURL = thumbnailMediaURL(dbs, item.sha256)
+    const fileURL = originalFileURL(dbs, item.sha256)
+
+    const displayLoopTrigger = useDisplayLoopTrigger()
+    // The still poster of the same rendition: the display size with
+    // `still=true`, which the endpoint guarantees answers an IMAGE — a poster,
+    // or the original for a sentinel or under-bound item — never video and
+    // never a 404 (§5). The `<video>`'s `poster`, and the last rung of its
+    // fallback ladder.
+    const stillURL = thumbnailStillURL(dbs, item.sha256)
+    // AN ANIMATED ITEM BIG ENOUGH THAT THE DISPLAY SIZE IS A LOOP, NOT A
+    // PICTURE (docs/thumbnail-format-implementation.md R3). Past any of the
+    // server's three bounds the endpoint answers `thumbnailURL` with
+    // `video/mp4`, so the element has to be a `<video>` — an `<img>` there is a
+    // broken picture, and the biggest surface in the app is the worst place for
+    // one. Below them, or against a server that reports no trigger, NOTHING
+    // changes: the same `<img>` at the same URL, serving the item's own file,
+    // animating natively as it always has.
+    //
+    // Decided from ROW DATA against `/api/client-config` — no probe request and
+    // no error latch in the common path, the same rule the grid follows. The
+    // ladder that runs when the element disagrees, and the state it needs,
+    // belong to DisplayLoopPicture; keying it by sha is what resets them across
+    // a navigation.
+    const displayLoop = exceedsDisplayLoopTrigger(item, displayLoopTrigger)
 
     const searchLoading = useSearchLoading(state => state.loading)
 
@@ -2069,12 +2095,54 @@ export function GalleryImageLarge(
         return () => window.removeEventListener("keydown", onKey)
     }, [isPlayable, showVideo, playerActive, prevImage, nextImage, videoState, player, trim, videoRef, setGalleryTrim, item.sha256, playback])
 
-    const handleDragStart = (event: React.DragEvent<HTMLImageElement>): void => {
+    // HTMLElement, not HTMLImageElement: the picture is an `<img>` or a
+    // `<video>` depending on the item (see `displayLoop`), and the drag
+    // payload — the ORIGINAL file's URL — is the same either way.
+    const handleDragStart = (event: React.DragEvent<HTMLElement>): void => {
         if (!fileURL) return;
         event.dataTransfer.effectAllowed = 'copy';
         event.dataTransfer.setData('text/plain', item.sha256);
         event.dataTransfer.setData('text/uri-list', fileURL);
     };
+
+    // THE PANEL'S STILL PICTURE, spelled once: the element every non-animated
+    // item renders, and the one DisplayLoopPicture falls back to on both of its
+    // rungs. Handed down rather than duplicated there because the aspect
+    // bookkeeping below writes state that lives HERE — a picture component that
+    // owned it would be reporting into a host it cannot see.
+    const renderStill = (src: string, onError?: () => void) => (
+        <Image
+            src={src}
+            alt={`${item.path}`}
+            draggable={true}
+            onDragStart={handleDragStart}
+            onError={onError}
+            fill
+            className="object-contain"
+            unoptimized={true}
+            // Playable items, or a host that asked for the painted aspect
+            // (onMediaAspect) — for a still image this element is what the panel
+            // actually shows, so it is the only thing that can correct an
+            // EXIF-rotated host box. It is NOT necessarily the original file:
+            // `thumbnail` serves the file itself only below the scanner's size
+            // thresholds, and above them a STORED thumbnail the `image` crate
+            // wrote with no EXIF and no orientation applied
+            // (panoptikon/src/jobs/files.rs, image_is_served_directly). A host
+            // must weigh the answer knowing that — see PreviewSurface's
+            // `confirmed`, where treating "same file" as "same painted image"
+            // was a real bug. Neither: a plain image renders exactly as it
+            // always did, with no aspect bookkeeping and no overlay box to
+            // anchor. The ref covers cache hits that complete before React
+            // attaches onLoad (same pattern as the pin's thumbnail); onLoad
+            // covers the network path.
+            ref={isPlayable || onMediaAspect ? ((el) => {
+                if (el?.complete) noteThumbAspect(el)
+            }) : undefined}
+            onLoad={isPlayable || onMediaAspect
+                ? ((e) => noteThumbAspect(e.currentTarget))
+                : undefined}
+        />
+    )
     return (
         <div
             ref={panelRef}
@@ -2321,40 +2389,23 @@ export function GalleryImageLarge(
                         className="absolute inset-0"
                         onClick={(e) => e.preventDefault()}
                     >
-                        <Image
-                            src={thumbnailURL}
-                            alt={`${item.path}`}
-                            draggable={true}
-                            onDragStart={handleDragStart}
-                            fill
-                            className="object-contain"
-                            unoptimized={true}
-                            // Playable items, or a host that asked for the
-                            // painted aspect (onMediaAspect) — for a still
-                            // image this element is what the panel actually
-                            // shows, so it is the only thing that can correct
-                            // an EXIF-rotated host box. It is NOT necessarily
-                            // the original file: `thumbnail` serves the file
-                            // itself only below the scanner's size thresholds,
-                            // and above them a STORED thumbnail the `image`
-                            // crate wrote with no EXIF and no orientation
-                            // applied (panoptikon/src/jobs/files.rs,
-                            // image_is_served_directly). A host must weigh the
-                            // answer knowing that — see PreviewSurface's
-                            // `confirmed`, where treating "same file" as "same
-                            // painted image" was a real bug. Neither: a plain
-                            // image renders exactly as it always did, with no
-                            // aspect bookkeeping and no overlay box to anchor.
-                            // The ref covers cache hits that complete before
-                            // React attaches onLoad (same pattern as the pin's
-                            // thumbnail); onLoad covers the network path.
-                            ref={isPlayable || onMediaAspect ? ((el) => {
-                                if (el?.complete) noteThumbAspect(el)
-                            }) : undefined}
-                            onLoad={isPlayable || onMediaAspect
-                                ? ((e) => noteThumbAspect(e.currentTarget))
-                                : undefined}
-                        />
+                        {displayLoop ? (
+                            <DisplayLoopPicture
+                                // React's key is the ladder's reset. This
+                                // component is NOT keyed by item at either host
+                                // (app/search/PreviewSurface.tsx and the gallery
+                                // page both render one long-lived
+                                // GalleryImageLarge and change its `item`), so
+                                // without it a fallback taken on item A would
+                                // still stand when the user came back to it.
+                                key={item.sha256}
+                                loopSrc={thumbnailURL}
+                                stillSrc={stillURL}
+                                alt={`${item.path}`}
+                                onDragStart={handleDragStart}
+                                renderStill={renderStill}
+                            />
+                        ) : renderStill(thumbnailURL)}
 
                     </a>}
                 {searchLoading && (

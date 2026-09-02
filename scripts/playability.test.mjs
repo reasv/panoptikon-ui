@@ -11,6 +11,7 @@
 // videoPlayability imports its dependencies extensionless / via the "@/"
 // alias, neither of which node's resolver knows; ts-hooks fills both in.
 // register() has to run before the modules load, hence the dynamic import.
+import { createChecker } from "./harness.mjs"
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
@@ -18,12 +19,7 @@ const { shouldDowngradeOnError, videoPlayability } = await import(
   "../lib/videoPlayability.ts"
 )
 
-let all = true
-function check(name, ok, detail = "") {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? `\n  ${detail}` : ""}`)
-  all &&= !!ok
-  return ok
-}
+const { check, finish } = createChecker()
 
 // ---- injected browsers -------------------------------------------------
 //
@@ -419,4 +415,4 @@ for (const [type, wasPlayable] of legacyCases) {
 }
 check("NULL-codec verdicts match the mp4/webm check element for element", parity)
 
-process.exit(all ? 0 : 1)
+finish()

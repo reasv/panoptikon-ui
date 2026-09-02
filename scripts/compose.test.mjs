@@ -9,6 +9,7 @@
 // numbers from `resolvePinDraw` — the function both paths call — rather than
 // from a table of constants that could drift from either.
 
+import { createChecker } from "./harness.mjs"
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
@@ -36,12 +37,7 @@ const { V2_GRID, effectiveGrid } = await import("../lib/pinboardGrid.ts")
 const { videoStateOf } = await import("../lib/pinboardMedia.ts")
 const { packHField } = await import("../lib/pinboardCrop.ts")
 
-let all = true
-function check(name, ok, detail = "") {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? `\n  ${detail}` : ""}`)
-  all &&= !!ok
-  return ok
-}
+const { check, finish } = createChecker()
 const shape = (value) => JSON.stringify(value)
 
 // ---- the fixture board -------------------------------------------------
@@ -1468,5 +1464,4 @@ function solveAt(width, only) {
   )
 }
 
-console.log(all ? "\nALL PASS" : "\nFAILURES")
-process.exit(all ? 0 : 1)
+finish()

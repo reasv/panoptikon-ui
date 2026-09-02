@@ -445,17 +445,20 @@ export function PreviewSurface({
     // element-confirmed beats item dimensions, the same ladder
     // GalleryImageLarge's mediaAspect walks for its overlays.
     //
-    // BOTH subjects report, and — THIS IS THE WHOLE POINT — only through the
-    // one element they both paint: `getFileURL(dbs, "thumbnail", "sha256",
-    // item.sha256, extreme ? "display" : undefined)`. PeekLayer's base layer
-    // and GalleryImageLarge's still image build that URL from the same
-    // expression against the same `useSelectedDBs()` — the extreme-aspect
-    // `?size=display` clause included, which is why the two carry the
-    // identical test rather than each deciding for itself — so restricting
-    // the store to them makes the box agree with the picture BY CONSTRUCTION
-    // in either subject, and fixing a peek is a no-op for the picture again.
-    // Neither surface ever paints a GRID tier: past aspect 2 that is a crop,
-    // and its aspect belongs to no picture either of them shows.
+    // BOTH subjects report, and only through the one picture they both paint:
+    // `thumbnailPictureURL(dbs, item, trigger)` — the display-size thumbnail of
+    // that sha, built by the same function against the same `useSelectedDBs()`
+    // in PeekLayer's layer and in GalleryImageLarge's still, so restricting the
+    // store to them makes the box agree with the picture BY CONSTRUCTION in
+    // either subject. Neither ever paints a GRID tier: past aspect 2 that is a
+    // crop, whose aspect belongs to no picture either of them shows.
+    //
+    // The gallery's `<video>` — an animated item past the display-loop bounds —
+    // uses that same URL as its `poster`, so the request is still fetched once
+    // between the two surfaces, and it reports NOTHING (see GalleryImageLarge's
+    // note on why a live element must not re-fit a host box). Only `<img>`
+    // elements at that URL write here, which is why the store never hears two
+    // answers for one sha.
     //
     // TRAP — "same file" is NOT "same painted image", and a store keyed per
     // file cannot tell the difference. The peek's dwell upgrade loads the

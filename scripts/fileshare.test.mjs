@@ -8,6 +8,7 @@
 // (the flag is what lets a .mjs import the .ts module; Node 22+). Exits
 // non-zero on the first failing assertion set.
 
+import { createChecker } from "./harness.mjs"
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
@@ -19,12 +20,7 @@ const {
   truncateShareFilename,
 } = await import("../lib/fileShareMeta.ts")
 
-let all = true
-function check(name, ok, detail = "") {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? `\n  ${detail}` : ""}`)
-  all &&= !!ok
-  return ok
-}
+const { check, finish } = createChecker()
 
 const SHA = "0a1b2c3d4e5f60718293a4b5c6d7e8f900112233445566778899aabbccddeeff"
 const SHA10 = SHA.slice(0, 10)
@@ -230,5 +226,4 @@ check(
   truncateShareFilename(`.${"z".repeat(400)}`, 8).length > 0
 )
 
-console.log(all ? "\nALL PASS" : "\nFAILURES")
-process.exit(all ? 0 : 1)
+finish()

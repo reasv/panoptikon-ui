@@ -4,7 +4,8 @@ import { useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { $api } from "@/lib/api"
 import { toast } from "@/components/ui/use-toast"
-import { getFileURL, downloadFileName } from "@/lib/utils"
+import { downloadFileName } from "@/lib/utils"
+import { originalFileURL } from "@/lib/thumbnailURL"
 import { downloadURL } from "@/lib/download"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useClientConfig } from "@/lib/useClientConfig"
@@ -120,13 +121,13 @@ export function useFileShareRunner() {
 
   // Resolves the filename lazily (only on invocation, never per render) so the
   // saved file keeps its real name and extension even where the caller passed
-  // no path — the pinboard's "Download original". getFileURL keeps using the
+  // no path — the pinboard's "Download original". The URL keeps using the
   // possibly-prefix sha256; the server resolves it. `meta` is passed in on
   // every path that already resolved it, so one invocation never fetches the
   // item twice.
   const runDownload = async (file: ShareFileRef, meta?: ShareMeta) => {
     const resolved = meta ?? await resolveMeta(file)
-    downloadURL(getFileURL(query, "file", "sha256", file.sha256), resolved.filename)
+    downloadURL(originalFileURL(query, file.sha256), resolved.filename)
   }
 
   // Relay copy. Instant when the mapping resolves or the cache is warm; a
@@ -211,7 +212,7 @@ export function useFileShareRunner() {
     const meta = canCopyRelay ? await resolveMeta(file) : undefined
     if (meta && isFullSha256(meta.sha256) && meta.size !== undefined && !!meta.path) {
       await copyViaRelay(file, {
-        url: getFileURL(query, "file", "sha256", file.sha256),
+        url: originalFileURL(query, file.sha256),
         path: meta.path,
         sha256: meta.sha256,
         filename: meta.filename,

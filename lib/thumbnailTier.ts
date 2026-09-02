@@ -1,30 +1,57 @@
-// Which stored rendition a picture surface asks the thumbnail endpoint for,
-// and the one aspect test the crop rule turns on.
+// WHAT KIND OF PICTURE AN ITEM HAS: which stored rendition covers a box of a
+// given size, whether that rendition is a crop, whether the item moves, and
+// whether the size the endpoint answers is video or an image. The URLs those
+// answers turn into are lib/thumbnailURL.ts's; the element a grid card mounts
+// is lib/cellPicture.ts's.
 //
 // IMPORT-FREE on purpose, like lib/scrollMode.ts and lib/searchDefaults.ts and
 // for the same reason: every function here is pure, which is what lets
 // scripts/gridcells.test.mjs execute them under plain node. The React side is
 // a handful of call sites that pass a measured CSS width in.
 //
-// The contract (docs/grid-scroll-performance-implementation.md §2, frozen):
+// The contract (docs/grid-scroll-performance-implementation.md §2, frozen;
+// extended by docs/thumbnail-format-implementation.md §3):
 //
-//   GET /api/items/item/thumbnail?…&size=display|grid-m|grid-s
+//   GET /api/items/item/thumbnail?…&size=display|grid-m|grid-s|grid-xs
 //
 // `display` is what omitting the parameter has always meant — gallery quality,
-// long side bounded. `grid-m` and `grid-s` cap the SHORT side at 1024 and 512,
-// which is the dimension an `object-cover` cell's crispness is actually bound
-// by. A tier an item has no stored rendition for falls UP the ladder
-// server-side, so every request is answerable and no call site needs a
+// long side bounded. `grid-m`, `grid-s` and `grid-xs` cap the SHORT side at
+// 1024, 512 and 256, which is the dimension an `object-cover` cell's crispness
+// is actually bound by. A tier an item has no stored rendition for falls UP the
+// ladder server-side, so every request is answerable and no call site needs a
 // fallback.
 
 /** The frozen `size=` wire values. */
-export type ThumbnailTier = "display" | "grid-m" | "grid-s"
+export type ThumbnailTier = "display" | "grid-m" | "grid-s" | "grid-xs"
 
-/** The short-side cap each grid tier stores, in image pixels. */
+/**
+ * The short-side cap each grid tier stores, in image pixels.
+ *
+ * `grid-xs` exists because the size slider's minimum is a 140px cell
+ * (lib/searchLimits.ts): a screenful of those against the 512 rung decodes
+ * ~14x the pixels it paints, which is the whole cost the ladder exists to
+ * bound. Its rung is the reason the ladder is a POWER OF TWO series and not a
+ * set of hand-picked numbers — each rung halves the decoded megapixels of the
+ * one above it.
+ */
 export const TIER_SHORT_SIDE = {
+  "grid-xs": 256,
   "grid-s": 512,
   "grid-m": 1024,
 } as const
+
+/**
+ * THE GRID TIERS IN ORDER, smallest first — the sequence `tierForCellWidth`
+ * walks, and the thing the halving property is a property OF.
+ *
+ * An array rather than a chain of `if`s because the ladder's shape is the
+ * claim: each rung is exactly half the one above it, so each halves the decoded
+ * megapixels of the one above it, and a rung added out of order (or not a power
+ * of two) would break that silently. Written once here, asserted over in
+ * scripts/gridcells.test.mjs, and walked below — so there is no second place to
+ * forget.
+ */
+export const TIER_LADDER = ["grid-xs", "grid-s", "grid-m"] as const
 
 /**
  * How much smaller than the box a tier may be before the next one up is
@@ -37,10 +64,10 @@ export const TIER_SLACK = 1.125
 
 /**
  * The smallest tier whose short side covers a cell of `cssWidth` at `dpr`,
- * i.e. `grid-s` up to 576 device pixels, `grid-m` up to 1152, `display` past
- * that. This is what keeps decoded megapixels per screenful roughly constant
- * as the size slider shrinks cells: fewer, bigger cells and more, smaller ones
- * both land on a tier sized for the box.
+ * i.e. `grid-xs` up to 288 device pixels, `grid-s` up to 576, `grid-m` up to
+ * 1152, `display` past that. This is what keeps decoded megapixels per
+ * screenful roughly constant as the size slider shrinks cells: fewer, bigger
+ * cells and more, smaller ones both land on a tier sized for the box.
  *
  * A non-positive or non-finite width answers `display` — the conservative
  * direction. It means "not measured yet", and a surface that has not measured
@@ -50,38 +77,10 @@ export function tierForCellWidth(cssWidth: number, dpr: number): ThumbnailTier {
   if (!Number.isFinite(cssWidth) || cssWidth <= 0) return "display"
   const scale = Number.isFinite(dpr) && dpr > 0 ? dpr : 1
   const needed = cssWidth * scale
-  if (needed <= TIER_SHORT_SIDE["grid-s"] * TIER_SLACK) return "grid-s"
-  if (needed <= TIER_SHORT_SIDE["grid-m"] * TIER_SLACK) return "grid-m"
+  for (const tier of TIER_LADDER) {
+    if (needed <= TIER_SHORT_SIDE[tier] * TIER_SLACK) return tier
+  }
   return "display"
-}
-
-/**
- * The width below which a grid cell counts as SMALL — one constant, in CSS
- * pixels, for the two policies that turn on it (docs/grid-hover-animate-
- * implementation.md D1):
- *
- *   - an animated image's DEFAULT playback mode (D2): hover-only below,
- *     always above (lib/state/animatePref.ts);
- *   - which video thumbnail a cell asks for (D9): the single frame below, the
- *     2×2 frame mosaic above.
- *
- * Both are the same judgement — at this size a picture is a glance rather than
- * a look — so they may not drift apart, and the number is tunable in QA
- * without hunting for a second copy of it.
- */
-export const SMALL_CELL_THRESHOLD_PX = 200
-
-/**
- * Is a cell of this width in the SMALL range?
- *
- * An unmeasured width (0, negative, non-finite) answers `false`, which is the
- * conservative direction in both consumers: it keeps today's behaviour — the
- * 2×2 video thumbnail and always-animate — rather than applying a
- * small-cell policy to a cell nobody has measured yet.
- */
-export function isSmallCell(cssWidth: number | null | undefined): boolean {
-  if (!cssWidth || !Number.isFinite(cssWidth) || cssWidth <= 0) return false
-  return cssWidth < SMALL_CELL_THRESHOLD_PX
 }
 
 /**
@@ -99,7 +98,13 @@ export const EXTREME_ASPECT = 2
  * the zero-cost-for-normal invariant (§2): the URL scheme is
  * aspect-independent, so this test decides only whether a cell mounts the
  * hover-swap machinery, and a normal-aspect cell keeps today's CSS-only hover
- * with no listeners and no state.
+ * for that gesture — no listeners and no state FOR THE SWAP.
+ *
+ * It is not the whole of what a card mounts, and never was: a normal-aspect
+ * card whose item MOVES mounts a `<video>` (and, in hover mode, the arming
+ * hook), and a normal-aspect VIDEO in a small cell mounts its own plain-hover
+ * swap. The invariant is about the STATIC normal-aspect card, which is the
+ * overwhelming majority of a screenful and which still mounts nothing.
  *
  * Missing dimensions are NORMAL, deliberately. A row with no width/height is
  * either a pre-backfill record or a non-image, and treating an unknown as
@@ -184,6 +189,81 @@ export function isAnimatedItem(
     return !(measured && duration! <= 0)
   }
   return type.startsWith("image") && measured && duration! > 0
+}
+
+/**
+ * The bounds past which the DISPLAY size of an animated item stops being a
+ * picture and becomes an H.264 loop (docs/thumbnail-format-implementation.md
+ * R2/R3). Served by `GET /api/client-config` as `display_loop_trigger` and,
+ * like `AnimatedFloor`, never restated as a constant on this side: the same
+ * three numbers decided what the scan stored, so surfacing them is what keeps
+ * the element the UI mounts and the bytes the endpoint answers with from
+ * drifting apart.
+ *
+ * Null means the server stores no display loops at all — an older Server, a
+ * policy where the feature is off, or the config still in flight — and every
+ * consumer reads that as "the display size is always an image".
+ */
+export interface DisplayLoopTrigger {
+  /** Bytes of the SOURCE file. Past this the display size is a loop. */
+  maxBytes: number
+  /** Pixels. The SHORT side past this is a loop. */
+  maxShortSide: number
+  /** Total pixels (w x h) past which it is a loop. */
+  maxPixels: number
+}
+
+/**
+ * Does the `display` size of this item answer `video/mp4` rather than image
+ * bytes? The gallery's large view mounts a `<video>` exactly when this is
+ * true, so it is the one thing standing between an over-bound GIF and a broken
+ * picture in the biggest surface in the app.
+ *
+ * ANY of the three bounds fires it, all with a strict `>` — a 6000x4000 image
+ * is exactly 24,000,000 pixels and stays an image, which is the boundary the
+ * bake-off chose deliberately (§2, "decimal MP with `>`").
+ *
+ * ONE COMPARISON ON ROW DATA, like `isAnimatedItem` and `isAboveAnimatedFloor`
+ * before it: no request, no probe, no error latch. The animated test is the
+ * same transcription the grid uses, so an item the server considers static can
+ * never reach the video branch here.
+ *
+ * Incomplete rows answer FALSE — an `<img>`, today's element — and the two
+ * halves settle independently, exactly as in `isAboveAnimatedFloor`:
+ *
+ * - `size` alone can fire it: past `maxBytes` nothing else matters, so a row
+ *   with no dimensions is still settled;
+ * - within `maxBytes` and with no dimensions on record, it cannot be settled,
+ *   and the answer is the `<img>`.
+ *
+ * The residual is a row with NO SIZE and in-bound dimensions whose file is
+ * nonetheless over `maxBytes`: it renders an `<img>` at a URL that answers
+ * `video/mp4`. That is why the gallery's video branch also carries a one-way
+ * `onError` fallback to the `<img>` — the reverse mistake, which the stored
+ * keep-the-original SENTINEL makes a permanent state rather than a rare one
+ * (an item over the bounds whose H.264 encode came out no smaller than the
+ * source is served its own bytes forever), and no client-side test can predict
+ * it.
+ */
+export function exceedsDisplayLoopTrigger(
+  item: {
+    type: string | null | undefined
+    duration?: number | null
+    size?: number | null
+    width?: number | null
+    height?: number | null
+  },
+  trigger: DisplayLoopTrigger | null | undefined
+): boolean {
+  if (!trigger) return false
+  if (!isAnimatedItem(item.type, item.duration)) return false
+  const { size, width, height } = item
+  if (size != null && Number.isFinite(size) && size > trigger.maxBytes) return true
+  if (!width || !height) return false
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return false
+  if (width <= 0 || height <= 0) return false
+  if (Math.min(width, height) > trigger.maxShortSide) return true
+  return width * height > trigger.maxPixels
 }
 
 /**
@@ -276,7 +356,13 @@ export function animatedCellMode(
  * WHEN a loop cell animates: unprompted, or only while the pointer dwells on
  * it (D2). Decided per SURFACE from the cell width and the user's preference
  * (lib/state/animatePref.ts), never per card — it is one value for a whole
- * grid — and latched at a card's mount.
+ * grid.
+ *
+ * A LIVE prop, deliberately not latched like the tier: it moves only on a
+ * deliberate act on the grid (the Always / On hover toggle, the size slider
+ * crossing the small-cell threshold) whose whole point is that the cells on
+ * screen change. A latched one read as doing nothing until a refresh (user QA,
+ * 2026-09-02).
  */
 export type AnimateMode = "always" | "hover"
 
@@ -319,15 +405,17 @@ export function showsMotionBadge(
   item: {
     type: string | null | undefined
     duration?: number | null
-    size?: number | null
-    width?: number | null
-    height?: number | null
   },
-  floor: AnimatedFloor | null | undefined,
+  /**
+   * THE CELL'S ALREADY-COMPUTED MODE. Handed in rather than derived from the
+   * floor a second time: every caller has just asked `animatedCellMode` to
+   * decide which element it renders, and a badge that re-derived the answer
+   * could disagree with the picture it sits on.
+   */
+  mode: AnimatedCellMode,
   animate: AnimateMode
 ): boolean {
   if (item.type?.startsWith("video/")) return true
-  const mode = animatedCellMode(item, floor)
   if (mode === "loop") return animate === "hover"
   if (mode === "still") return false
   return !!item.duration && item.duration > 0

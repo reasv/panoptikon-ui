@@ -8,9 +8,9 @@ import {
 import { $api } from "@/lib/api";
 import { useSelectedDBs } from "@/lib/state/database";
 import { FilePathComponent } from "./imageButtons";
-import { getFileURL } from "@/lib/utils";
+import { StillFallbackImage } from "@/components/StillFallbackImage";
 import { useItemSimilaritySearch, useQueryOptions } from "@/lib/state/searchQuery/clientHooks";
-import { isExtremeAspect } from "@/lib/thumbnailTier";
+import { useDisplayLoopTrigger } from "@/lib/useClientConfig";
 
 export function ImageSimilarityHeader() {
     const [dbs, ___] = useSelectedDBs()
@@ -30,6 +30,9 @@ export function ImageSimilarityHeader() {
         }
     )
     const path = data?.files[0]?.path
+    // See the <img> below: an animated target past the server's display-loop
+    // bounds answers `video/mp4` at this size, which this element cannot show.
+    const displayLoopTrigger = useDisplayLoopTrigger()
     const onExitClick = () => {
         setOptions({ e_iss: false })
     }
@@ -85,28 +88,35 @@ export function ImageSimilarityHeader() {
                             (§2): past aspect 2 a grid rendition is a CROP cut
                             for `object-cover`, and contained in this box it
                             would show a strip's first screenful instead of the
-                            whole picture. Gated on the aspect through the same
-                            helper the gallery and the peek layer use, off the
-                            dimensions THIS component's own `/api/items/item`
-                            query already carries — so a normal-aspect target
-                            keeps the bare URL and shares its cache entry with
-                            the gallery's picture of the same item, and only an
-                            extreme-aspect one asks for `?size=display` by name:
-                            same bytes, NEW URL, which is exactly what a browser
-                            cache holding the pre-tier long-side-crushed
-                            thumbnail cannot answer (F4).
+                            whole picture. The bare URL IS the display
+                            rendition, for every item and whatever its aspect,
+                            so this shares its cache entry with the gallery's
+                            and the peek layer's picture of the same item.
+                            (Extreme-aspect targets used to name `?size=display`
+                            to dislodge a pre-tier cache entry; `r=2` dislodges
+                            it for every display request now.) */}
+                        {/* `still=true` rides in for an animated target past
+                            the display-loop bounds, and only then, with the
+                            one retry the row-data rule needs
+                            (components/StillFallbackImage.tsx).
 
-                            RESIDUAL, and it is the one every contain surface
-                            here carries: on a first hover the query may not
-                            have resolved, `data` is undefined, the aspect test
-                            answers false and the bare URL is used. The picture
-                            is still the right one — the bare path IS the
-                            display rendition — so only the cache-busting half
-                            is missed, and only until the query settles. */}
-                        <img
-                            src={getFileURL(dbs, "thumbnail", "sha256", filter.target,
-                                isExtremeAspect(data?.item?.width, data?.item?.height)
-                                    ? "display" : undefined)}
+                            RESIDUAL: on a first hover the query may not have
+                            resolved, `type` is undefined, the rule answers
+                            "static" and the bare URL is used for one render.
+                            The key is the retry's reset — a new target starts
+                            from the row's own answer again. */}
+                        <StillFallbackImage
+                            key={filter.target}
+                            dbs={dbs}
+                            item={{
+                                sha256: filter.target,
+                                type: data?.item?.type,
+                                duration: data?.item?.duration,
+                                size: data?.item?.size,
+                                width: data?.item?.width,
+                                height: data?.item?.height,
+                            }}
+                            trigger={displayLoopTrigger}
                             alt="Similarity search target"
                             className="max-h-[40vh] max-w-[min(24rem,80vw)] rounded object-contain"
                         />

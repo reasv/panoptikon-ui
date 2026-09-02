@@ -197,14 +197,55 @@
   }
 }
 
+/* THE OVERLAY CHROME'S TWO REPEATED SHAPES, as utilities.
+
+   Both were literal class lists copied across seven component files — the
+   white pill ten times, the fanout's diagonal offsets ten more — which is one
+   copy per place a `--cell-chrome-*` rename would have to be found by grep. A
+   utility is the same declarations under one name, so the ramp above has
+   exactly two consumers to keep in step.
+
+   `@apply` rather than hand-written declarations, deliberately: `shadow-[...]`
+   composes through Tailwind's `--tw-shadow` slot, and a plain `box-shadow`
+   here would overwrite whatever a `focus-visible:ring-*` on the same button
+   had put in the other slots. Going through the same utilities the call sites
+   used means the emitted declarations are the ones they already had, so the
+   computed geometry is identical by construction rather than by inspection. */
+@utility cell-chrome-pill {
+  @apply rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-(--cell-chrome-pad) hover:scale-105;
+}
+
+/* The file-action fanout's SECOND rank: one `--cell-chrome-step` further out
+   from the anchored corner, so the three slots form a square that shrinks with
+   the ramp (components/imageButtons.tsx CLUSTER_SLOTS). Three names because a
+   slot needs one or both of them, and the horizontal one depends on which
+   corner the cluster is anchored to. */
+@utility fan-up {
+  bottom: calc(var(--cell-chrome-inset) + var(--cell-chrome-step));
+}
+@utility fan-in-l {
+  left: calc(var(--cell-chrome-inset) + var(--cell-chrome-step));
+}
+@utility fan-in-r {
+  right: calc(var(--cell-chrome-inset) + var(--cell-chrome-step));
+}
+
 /* GRID CELL CHROME SCALING (docs/grid-hover-animate-implementation.md D11).
 
    The corner buttons, the file-action fanout and their insets are sized for a
-   card several hundred pixels wide. At the size slider's minimum (140px) the
-   same 40px circles at 8px insets are most of the picture, and the fanout
-   opens straight across the other three corners. So they ride ONE ramp over
-   the cell width the grid publishes as `--cell-px` (app/search/ResultGrid.tsx,
-   written on the row container so it inherits into every card).
+   card several hundred pixels wide. At the size slider's minimum the same 40px
+   circles at 8px insets are most of the picture, and the fanout opens straight
+   across the other three corners. So they ride ONE ramp over the cell width
+   the grid publishes as `--cell-px` (app/search/ResultGrid.tsx, written on the
+   row container so it inherits into every card).
+
+   THE TWO NUMBERS IN THE RAMP ARE NAMED ELSEWHERE, and CSS cannot import
+   them: `140` is `MIN_CELL_WIDTH` (lib/searchLimits.ts), the slider's minimum
+   and the narrowest cell that can exist; the `400` fallback is
+   `DEFAULT_CELL_WIDTH` (components/GridCellSizeControl.tsx), which is where an
+   unmeasured surface sits and is deliberately past the ramp's top so a card
+   with no `--cell-px` gets today's chrome unscaled. Changing either means
+   changing both.
 
    ONE RAMP, TWO CONSUMED VALUES. `--cell-chrome-t` is the normalized
    position between the slider's minimum and a cell wide enough to want no

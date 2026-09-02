@@ -1,8 +1,10 @@
 "use client"
 import { useState } from "react"
-import { cn, getFileURL } from "@/lib/utils"
+import { cn } from "@/lib/utils"
+import { originalFileURL } from "@/lib/thumbnailURL"
+import { StillFallbackImage } from "@/components/StillFallbackImage"
 import { useSelectedDBs } from "@/lib/state/database"
-import { isExtremeAspect } from "@/lib/thumbnailTier"
+import { useDisplayLoopTrigger } from "@/lib/useClientConfig"
 
 // The maximized workspace's HOVER PEEK, as a LAYER inside the preview
 // surface's box (docs/maximized-pinboard-search-overlay-design.md §8.4) —
@@ -45,9 +47,13 @@ export function PeekLayer({
      * FILE, but the two subjects can paint DIFFERENT IMAGES of one file: the
      * upgrade loads the ORIGINAL (which the browser rotates per EXIF) while
      * GalleryImageLarge paints `thumbnail`, and above the scanner's size
-     * thresholds that is a STORED thumbnail re-encoded through `to_rgb8()` +
-     * JPEG with no EXIF and no orientation applied
-     * (panoptikon/src/jobs/files.rs, generate_thumbnail/encode_image). Let
+     * thresholds that is a STORED thumbnail re-encoded with no EXIF and no
+     * orientation applied (panoptikon/src/jobs/files.rs,
+     * generate_thumbnail/encode_image). Its FORMAT is not fixed and nothing
+     * here may assume one: the display rendition of a lossless original is
+     * WebP and of a JPEG original is JPEG, per the database's own policy
+     * (docs/thumbnail-format-implementation.md R2). What matters to the box
+     * below is the pixels, which are the same either way. Let
      * the upgrade report and a 6000x4000 Orientation-6 JPEG dwelt on, then
      * clicked, fixes the box PORTRAIT around a LANDSCAPE stored thumbnail —
      * the picture visibly flips and shrinks on the click, which is the very
@@ -73,12 +79,22 @@ export function PeekLayer({
     // preview subjects share. A grid tier is therefore doubly wrong here for
     // an item past aspect 2: it is a crop, so it would show a strip's top
     // screenful, and its aspect is the CROP's, which would size the shared box
-    // around a picture the viewer never paints. The default path is what this
-    // asks for, with `?size=display` spelled out for the extreme-aspect items
-    // whose display rendition the tier work changed (§2, F4) — same bytes, new
-    // URL, so a stale cache entry cannot answer it.
-    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256,
-        isExtremeAspect(item.width, item.height) ? "display" : undefined)
+    // around a picture the viewer never paints. The bare URL — the display
+    // rendition — is what this asks for, for every item and whatever its
+    // aspect. (The extreme-aspect ones used to spell `?size=display` out to
+    // bust a pre-tier cache entry; `r=2` does that for every display request
+    // now, so the spelling only forced surfaces to agree by hand.)
+    //
+    // `still=true` rides in for exactly one class of item and no other: an
+    // animated one past the server's display-loop bounds, whose display request
+    // answers `video/mp4` (docs/thumbnail-format-implementation.md R3) — which
+    // this <img> would render as a broken picture, and which a peek has no
+    // business playing anyway (§8.4). A SMALL animated image keeps the bare URL:
+    // it still animates in the <img> exactly as it does today, and it keeps
+    // sharing its cache entry with GalleryImageLarge's picture of the same
+    // item, which is the property PreviewSurface's note depends on. The rule,
+    // and the one retry it needs, are StillFallbackImage's.
+    const displayLoopTrigger = useDisplayLoopTrigger()
     // The dwell upgrade (§8): the stored thumbnail shows immediately; for
     // STILL images the original file loads behind it and fades in on load,
     // so a sweep stays cheap (the 200ms open debounce already suppresses
@@ -105,28 +121,23 @@ export function PeekLayer({
         // subject, so the picture underneath shows through any letterbox the
         // two shapes leave over.
         <div className="pointer-events-none absolute inset-0 z-40 bg-background">
-            <img
-                src={thumbnailURL}
+            <StillFallbackImage
+                dbs={dbs}
+                item={item}
+                trigger={displayLoopTrigger}
                 alt=""
                 draggable={false}
-                // ref for the cache hit that decodes before React attaches
-                // onLoad, onLoad for the network path — the gallery
-                // thumbnail's pattern, and the only way a re-hover on a warm
-                // image confirms anything at all.
-                ref={(el) => {
-                    if (el?.naturalWidth && el.naturalHeight) {
-                        onAspect(item.sha256, el.naturalWidth / el.naturalHeight)
-                    }
-                }}
-                onLoad={(e) => {
-                    const el = e.currentTarget
-                    onAspect(item.sha256, el.naturalWidth / el.naturalHeight)
-                }}
                 className={LAYER_CLASSES}
+                // Reported from a ref for a cache hit that decodes before React
+                // attaches onLoad, and from onLoad for the network path — which
+                // is the only way a re-hover on a warm image confirms anything
+                // at all. Idempotent, as that pair requires.
+                onPainted={(el) =>
+                    onAspect(item.sha256, el.naturalWidth / el.naturalHeight)}
             />
             {upgrade && (
                 <img
-                    src={getFileURL(dbs, "file", "sha256", item.sha256)}
+                    src={originalFileURL(dbs, item.sha256)}
                     alt=""
                     draggable={false}
                     // naturalWidth also guards the error case: a full file

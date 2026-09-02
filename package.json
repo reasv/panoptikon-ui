@@ -10,6 +10,7 @@
     "build": "next build",
     "start": "next start",
     "gen:api": "openapi-typescript ../panoptikon/openapi.json -o lib/panoptikon.d.ts --default-non-nullable=false",
+    "test": "node scripts/all.test.mjs",
     "test:overlap": "node --experimental-strip-types scripts/overlap.test.mjs",
     "test:crop": "node --experimental-strip-types scripts/crop.test.mjs",
     "test:mosaic": "node --experimental-strip-types scripts/mosaic.test.mjs",
@@ -26,7 +27,10 @@
     "test:scrollmode": "node --experimental-strip-types scripts/scrollmode.test.mjs",
     "test:gridcells": "node --experimental-strip-types scripts/gridcells.test.mjs",
     "test:playback": "node --experimental-strip-types scripts/playback.test.mjs",
-    "test:hoveranimate": "node --experimental-strip-types scripts/hoveranimate.test.mjs"
+    "test:hoveranimate": "node --experimental-strip-types scripts/hoveranimate.test.mjs",
+    "test:displayloop": "node --experimental-strip-types scripts/displayloop.test.mjs",
+    "test:thumbnailurl": "node --experimental-strip-types scripts/thumbnailurl.test.mjs",
+    "test:thumbnailformats": "node --experimental-strip-types scripts/thumbnailformats.test.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.1.2",

@@ -1,7 +1,7 @@
 // Assertions for the grid's rendition-tier choice (lib/thumbnailTier.ts), the
 // cell-size slider's arithmetic (lib/gridCellSize.ts) and the pin button's
-// record algebra (lib/pinboardPlace.ts togglePinRecords), plus the URL the
-// first two feed (lib/utils.ts getFileURL). The contracts are
+// record algebra (lib/pinboardPlace.ts togglePinRecords). The URLs those
+// choices feed are scripts/thumbnailurl.test.mjs's. The contracts are
 // docs/grid-scroll-performance-implementation.md §2 (tier thresholds, the
 // extreme-aspect rule, the animated raw floor and the <img>-vs-<video>
 // decision of §3 F6) and docs/search-scroll-mode-design.md §9 (the slider).
@@ -14,11 +14,13 @@
 // React, next/image and nuqs, none of which resolve outside one. Exits
 // non-zero on failure.
 
+import { createChecker } from "./harness.mjs"
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
 const {
   EXTREME_ASPECT,
+  TIER_LADDER,
   TIER_SHORT_SIDE,
   TIER_SLACK,
   animatedCellMode,
@@ -28,14 +30,20 @@ const {
   tierForCellWidth,
 } = await import("../lib/thumbnailTier.ts")
 const {
+  AUTO_IMAGE_BOX_HEIGHT_4XL_PX,
+  AUTO_IMAGE_BOX_HEIGHT_5XL_PX,
+  AUTO_IMAGE_BOX_HEIGHT_PX,
   CELL_CHROME_PX,
   GRID_GAP_PX,
+  cellBoxBindingEdge,
   cellWidthForColumns,
+  coverBindingEdge,
   clampCellWidth,
   coWrittenPageSize,
   columnsForCellWidth,
   imageBoxHeightForCellWidth,
   rowHeightForCellWidth,
+  rowHeightForImageBox,
 } = await import("../lib/gridCellSize.ts")
 // The URL-domain bounds those helpers clamp into, from their single source.
 const { MAX_CELL_WIDTH, MIN_CELL_WIDTH } = await import("../lib/searchLimits.ts")
@@ -43,24 +51,44 @@ const { MAX_CELL_WIDTH, MIN_CELL_WIDTH } = await import("../lib/searchLimits.ts"
 // five-string splice arithmetic below can be asserted at all.
 const { togglePinRecords } = await import("../lib/pinboardPlace.ts")
 const { V1_GRID, V2_GRID } = await import("../lib/pinboardGrid.ts")
-const { getFileURL } = await import("../lib/utils.ts")
+const { cellTierForRow } = await import("../lib/cellPicture.ts")
 
-let all = true
-function check(name, ok, detail = "") {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? `\n  ${detail}` : ""}`)
-  all &&= !!ok
-  return ok
-}
+const { check, finish } = createChecker()
 
 console.log("\n== tier thresholds (§2) ==")
 {
-  // The two numbers the design states verbatim: grid-s up to 576 device
-  // pixels, grid-m up to 1152, display past that. Written as products so the
-  // assertion survives a change of either constant.
+  // The numbers the designs state verbatim: grid-xs up to 288 device pixels
+  // (docs/thumbnail-format-implementation.md §6), grid-s up to 576, grid-m up
+  // to 1152, display past that. Written as products so every assertion
+  // survives a change of any constant.
+  const xsMax = TIER_SHORT_SIDE["grid-xs"] * TIER_SLACK
   const sMax = TIER_SHORT_SIDE["grid-s"] * TIER_SLACK
   const mMax = TIER_SHORT_SIDE["grid-m"] * TIER_SLACK
-  check("the stated thresholds are 576 and 1152",
-    sMax === 576 && mMax === 1152, `${sMax} / ${mMax}`)
+  check("the stated thresholds are 288, 576 and 1152",
+    xsMax === 288 && sMax === 576 && mMax === 1152,
+    `${xsMax} / ${sMax} / ${mMax}`)
+  // A POWER-OF-TWO series, which is what makes each rung halve the decoded
+  // megapixels of the one above it rather than shave a little off it. Asserted
+  // over TIER_LADDER — the array `tierForCellWidth` actually walks — so a rung
+  // added to it is a rung this test covers.
+  check("each rung is half the one above it",
+    TIER_LADDER.every((tier, i) =>
+      i === 0
+      || TIER_SHORT_SIDE[TIER_LADDER[i - 1]] * 2 === TIER_SHORT_SIDE[tier]),
+    TIER_LADDER.map((t) => TIER_SHORT_SIDE[t]).join(" / "))
+  // And the ladder IS the ladder: every grid tier the short-side table names is
+  // reachable, and nothing else is on it.
+  check("the ladder names every grid tier, smallest first",
+    TIER_LADDER.length === Object.keys(TIER_SHORT_SIDE).length
+      && TIER_LADDER.every((tier, i) =>
+        i === 0 || TIER_SHORT_SIDE[TIER_LADDER[i - 1]] < TIER_SHORT_SIDE[tier])
+      && TIER_LADDER.every((tier) =>
+        tierForCellWidth(TIER_SHORT_SIDE[tier] * TIER_SLACK, 1) === tier),
+    TIER_LADDER.join(", "))
+  check("at DPR 1 a 288px cell is still grid-xs",
+    tierForCellWidth(288, 1) === "grid-xs")
+  check("at DPR 1 a 289px cell steps up to grid-s",
+    tierForCellWidth(289, 1) === "grid-s")
   check("at DPR 1 a 576px cell is still grid-s",
     tierForCellWidth(576, 1) === "grid-s")
   check("at DPR 1 a 577px cell steps up to grid-m",
@@ -72,7 +100,9 @@ console.log("\n== tier thresholds (§2) ==")
   // DPR is a multiplier on the box, nothing else: the same cell on a 2x
   // display asks for the tier a twice-as-wide cell would.
   check("DPR 2 halves every threshold",
-    tierForCellWidth(288, 2) === "grid-s"
+    tierForCellWidth(144, 2) === "grid-xs"
+      && tierForCellWidth(145, 2) === "grid-s"
+      && tierForCellWidth(288, 2) === "grid-s"
       && tierForCellWidth(289, 2) === "grid-m"
       && tierForCellWidth(576, 2) === "grid-m"
       && tierForCellWidth(577, 2) === "display")
@@ -82,11 +112,184 @@ console.log("\n== tier thresholds (§2) ==")
     tierForCellWidth(750, 1) === "grid-m")
   check("a 1080p 5-column cell (~370px) asks for grid-s at DPR 1",
     tierForCellWidth(370, 1) === "grid-s")
-  check("the gallery filmstrip's 240px card is grid-s to DPR 2.4",
-    tierForCellWidth(240, 1) === "grid-s"
-      && tierForCellWidth(240, 2) === "grid-s"
-      && tierForCellWidth(240, 2.4) === "grid-s"
-      && tierForCellWidth(240, 3) === "grid-m")
+  // THE REASON grid-xs EXISTS: at the size slider's minimum a cell is 140 CSS
+  // px (MIN_CELL_WIDTH), and against the 512 rung a screenful of those decodes
+  // roughly 14x the pixels it paints. It stays on the new rung to DPR 2, which
+  // covers every retina laptop the grid is used on.
+  check("the slider's minimum cell asks for grid-xs to DPR 2",
+    tierForCellWidth(MIN_CELL_WIDTH, 1) === "grid-xs"
+      && tierForCellWidth(MIN_CELL_WIDTH, 2) === "grid-xs"
+      && tierForCellWidth(MIN_CELL_WIDTH, 3) === "grid-s")
+  // ...and the rung must not reach any further than that. The filmstrip's
+  // cards bind at 320 CSS px (STRIP_CARD_CSS_BINDING_EDGE) and the similarity
+  // cards at 400/700, all of them past the 288 boundary at every density, so
+  // adding grid-xs moved no surface but the small end of the grid.
+  check("the filmstrip's 320px card is NOT grid-xs at any density",
+    tierForCellWidth(320, 1) === "grid-s"
+      && tierForCellWidth(320, 2) === "grid-m"
+      && tierForCellWidth(320, 4) === "display")
+  check("the similarity cards are not grid-xs either",
+    tierForCellWidth(400, 1) === "grid-s"
+      && tierForCellWidth(700, 1) === "grid-m")
+}
+
+console.log("\n== the BINDING EDGE of the cell's picture box (§6) ==")
+{
+  // The auto layout's box is `cellWidth x AUTO_IMAGE_BOX_HEIGHT_*`, NOT a
+  // square, and `object-cover` scales the rendition until it covers BOTH
+  // edges — so the taller edge is what the tier has to be chosen against.
+  // The regression this guards: a 266px-wide auto cell (a 5-column 1400px
+  // panel) is 384px tall, and the width alone put it on grid-xs (256), a 1.5x
+  // upscale of the short side and well past the ladder's 1.125 slack.
+  check("the auto box heights are 384 / 480 / 608",
+    AUTO_IMAGE_BOX_HEIGHT_PX === 384
+      && AUTO_IMAGE_BOX_HEIGHT_4XL_PX === 480
+      && AUTO_IMAGE_BOX_HEIGHT_5XL_PX === 608)
+  check("a 266px-wide AUTO cell is grid-s at DPR 1, not grid-xs",
+    tierForCellWidth(cellBoxBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX), 1) === "grid-s",
+    `binding edge ${cellBoxBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX)}`)
+  check("...which is exactly what the width alone got wrong",
+    tierForCellWidth(266, 1) === "grid-xs")
+  // The EXPLICIT mode's box IS square, so its binding edge is its width and
+  // the slider's minimum still lands on the rung grid-xs exists for.
+  check("an EXPLICIT 140px cell is grid-xs at DPR 1",
+    tierForCellWidth(
+      cellBoxBindingEdge(140, imageBoxHeightForCellWidth(140)), 1) === "grid-xs")
+  check("an explicit cell's binding edge is its own width at every size",
+    [MIN_CELL_WIDTH, 200, 512, MAX_CELL_WIDTH].every((w) =>
+      cellBoxBindingEdge(w, imageBoxHeightForCellWidth(w)) === w))
+  // The two larger breakpoint bands bind on their box too, and THIS case
+  // discriminates: a 500px-wide cell at the 5xl band is 608 tall, so a
+  // LANDSCAPE picture in it needs grid-m where the width alone said grid-s.
+  // (The previous 590px case did not: 590 is past the grid-s rung on its own.)
+  check("a landscape image in a 500x608 5xl cell is grid-m at DPR 1",
+    tierForCellWidth(
+      coverBindingEdge(500, AUTO_IMAGE_BOX_HEIGHT_5XL_PX, 4000, 3000), 1) === "grid-m")
+  check("...where the width alone said grid-s",
+    tierForCellWidth(500, 1) === "grid-s")
+  // "Not measured yet" must survive the max(): a known box height next to an
+  // unmeasured width would otherwise answer a small tier for a cell nobody
+  // has laid out.
+  check("an unmeasured width still answers display through the binding edge",
+    tierForCellWidth(cellBoxBindingEdge(0, AUTO_IMAGE_BOX_HEIGHT_PX), 1) === "display"
+      && tierForCellWidth(cellBoxBindingEdge(NaN, AUTO_IMAGE_BOX_HEIGHT_PX), 1) === "display")
+  check("an unusable box height falls back to the width",
+    cellBoxBindingEdge(300, undefined) === 300
+      && cellBoxBindingEdge(300, 0) === 300
+      && cellBoxBindingEdge(300, NaN) === 300)
+  // The row estimate and the box are one arithmetic now, not two ladders that
+  // have to be kept in step by hand.
+  check("the auto row estimates are the boxes plus the chrome",
+    rowHeightForImageBox(AUTO_IMAGE_BOX_HEIGHT_PX) === 470
+      && rowHeightForImageBox(AUTO_IMAGE_BOX_HEIGHT_4XL_PX) === 566
+      && rowHeightForImageBox(AUTO_IMAGE_BOX_HEIGHT_5XL_PX) === 694)
+}
+
+console.log("\n== the binding edge of ONE PICTURE in that box (§6) ==")
+{
+  // `object-cover` scales the image until it covers BOTH edges, so the edge
+  // its SHORT side has to pay for depends on the image: a portrait picture in
+  // a portrait box is bound by the box's WIDTH, a landscape one by its
+  // HEIGHT. The worst case above is right for a grid that knows no rows; a
+  // CELL knows its own, and at the 5xl band the difference is a whole rung
+  // (4x the decoded pixels) for the majority of cells.
+  const PORTRAIT = [1200, 1800]
+  const LANDSCAPE = [4000, 3000]
+  check("a PORTRAIT image in a 266x384 auto cell is grid-xs at DPR 1",
+    tierForCellWidth(
+      coverBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX, ...PORTRAIT), 1) === "grid-xs",
+    `binding edge ${coverBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX, ...PORTRAIT)}`)
+  check("a LANDSCAPE image in the same cell is grid-s",
+    tierForCellWidth(
+      coverBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX, ...LANDSCAPE), 1) === "grid-s",
+    `binding edge ${coverBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX, ...LANDSCAPE)}`)
+  // THE CASE THIS EXISTS FOR: the 5xl band's 608px box against a ~500px cell,
+  // i.e. a 4K window at 100%. Every cell used to be grid-m.
+  check("at the 5xl band a portrait is grid-s and a landscape grid-m",
+    tierForCellWidth(
+      coverBindingEdge(500, AUTO_IMAGE_BOX_HEIGHT_5XL_PX, ...PORTRAIT), 1) === "grid-s"
+      && tierForCellWidth(
+        coverBindingEdge(500, AUTO_IMAGE_BOX_HEIGHT_5XL_PX, ...LANDSCAPE), 1) === "grid-m")
+  // A SQUARE box has one binding edge whatever the picture is, which is what
+  // makes the explicit cell size indifferent to this whole question.
+  check("a square box binds on its own edge for either orientation",
+    [140, 300, 512].every((w) =>
+      coverBindingEdge(w, w, ...PORTRAIT) === w
+        && coverBindingEdge(w, w, ...LANDSCAPE) === w
+        && coverBindingEdge(w, w, 1000, 1000) === w))
+  // EXCEPT BY ROUNDING: the explicit mode's box is `cellWidth x
+  // Math.round(cellWidth)`, so at a fractional DPR the two edges can land on
+  // opposite sides of a rung. Right, not a defect — the box really is 461 CSS
+  // px tall — and this pins it so nobody "fixes" it into a square.
+  check("an explicit 460.5px cell at DPR 1.25 splits on the rounded height",
+    tierForCellWidth(
+      coverBindingEdge(460.5, imageBoxHeightForCellWidth(460.5), ...PORTRAIT),
+      1.25) === "grid-s"
+      && tierForCellWidth(
+        coverBindingEdge(460.5, imageBoxHeightForCellWidth(460.5), ...LANDSCAPE),
+        1.25) === "grid-m",
+    `edges ${coverBindingEdge(460.5, imageBoxHeightForCellWidth(460.5), ...PORTRAIT)}`
+      + ` / ${coverBindingEdge(460.5, imageBoxHeightForCellWidth(460.5), ...LANDSCAPE)}`)
+  // UNKNOWN DIMENSIONS ARE THE WORST CASE, which is the answer the grid gave
+  // before it consulted the picture at all: a pre-backfill row has no shape to
+  // reason from, and the direction that guesses is the one that paints a
+  // blurry cell.
+  check("unknown or unusable dimensions fall back to the worst case",
+    [[null, null], [undefined, undefined], [0, 0], [NaN, 100], [100, -5]].every(
+      ([w, h]) => coverBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX, w, h)
+        === cellBoxBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX)))
+  check("an unmeasured cell width still answers display, whatever the picture",
+    tierForCellWidth(
+      coverBindingEdge(0, AUTO_IMAGE_BOX_HEIGHT_PX, ...PORTRAIT), 1) === "display"
+      && tierForCellWidth(
+        coverBindingEdge(NaN, AUTO_IMAGE_BOX_HEIGHT_PX, ...LANDSCAPE), 1) === "display")
+  check("an unusable box height falls back to the width, whatever the picture",
+    coverBindingEdge(300, undefined, ...PORTRAIT) === 300
+      && coverBindingEdge(300, 0, ...LANDSCAPE) === 300
+      && coverBindingEdge(300, NaN, ...PORTRAIT) === 300)
+  // The BOUNDARY: an image whose aspect exactly matches the box's covers both
+  // edges at once, and either answer is the same picture. Taken as the
+  // height, with the >= — the conservative side of a tie.
+  check("an image of the box's own aspect binds on the height",
+    coverBindingEdge(300, 600, 500, 1000) === 600)
+}
+
+console.log("\n== the card's tier, crop shape included ==")
+{
+  // THE SUBSTITUTION IS THE FUNCTION'S, not a call site's (lib/cellPicture.ts):
+  // past aspect 2 the stored grid rendition is a CROP, 2:1 in the item's
+  // orientation, and it is the crop the cell paints. Asserted through
+  // `cellTierForRow` rather than by hand-passing `(1, EXTREME_ASPECT)`, which
+  // is what let the card and this file drift.
+  const strip = { width: 800, height: 20000 }
+  const wideStrip = { width: 20000, height: 800 }
+  const portrait = { width: 1200, height: 1600 }
+  check("a TALL strip is asked about as a 1:2 crop",
+    cellTierForRow(strip, 266, AUTO_IMAGE_BOX_HEIGHT_PX, 1)
+      === tierForCellWidth(
+        coverBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX, 1, EXTREME_ASPECT), 1))
+  check("a WIDE strip is asked about as a 2:1 crop",
+    cellTierForRow(wideStrip, 266, AUTO_IMAGE_BOX_HEIGHT_PX, 1)
+      === tierForCellWidth(
+        coverBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX, EXTREME_ASPECT, 1), 1))
+  // A tall strip's crop binds on the WIDTH in the auto box, where the raw
+  // 800x20000 happens to agree — and would not in a box more than twice as
+  // tall as it is wide, which is why the substitution exists.
+  check("the crop and the strip disagree in a tall box",
+    coverBindingEdge(200, 500, 1, EXTREME_ASPECT) === 500
+      && coverBindingEdge(200, 500, 800, 20000) === 200)
+  check("a normal-aspect row is asked about as itself",
+    cellTierForRow(portrait, 266, AUTO_IMAGE_BOX_HEIGHT_PX, 1)
+      === tierForCellWidth(
+        coverBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX, 1200, 1600), 1))
+  // A host that measures nothing keeps its own answer, whatever the row is.
+  check("no measured width keeps the host's tier",
+    cellTierForRow(strip, undefined, undefined, 2, "grid-s") === "grid-s"
+      && cellTierForRow(strip, undefined, undefined, 2, undefined) === undefined)
+  // The DPR default, so a host that hands a box and no ratio is not silently
+  // given a tier for a ratio it never claimed.
+  check("an absent dpr is 1",
+    cellTierForRow(portrait, 500, 500) === cellTierForRow(portrait, 500, 500, 1))
 }
 {
   // "Not measured yet" must answer display, never the smallest tier: the
@@ -122,32 +325,6 @@ console.log("\n== the extreme-aspect test (§2) ==")
       && !isExtremeAspect(0, 0)
       && !isExtremeAspect(-5, 10)
       && !isExtremeAspect(NaN, 100))
-}
-
-console.log("\n== the URL the tier produces ==")
-{
-  const dbs = { index_db: "stdtest", user_data_db: null }
-  check("omitting the tier is the legacy bare URL",
-    getFileURL(dbs, "thumbnail", "sha256", "abc")
-      === "/api/items/item/thumbnail?id=abc&id_type=sha256&index_db=stdtest",
-    getFileURL(dbs, "thumbnail", "sha256", "abc"))
-  check("a tier appends size=",
-    getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-s")
-      === "/api/items/item/thumbnail?id=abc&id_type=sha256&index_db=stdtest&size=grid-s")
-  // The point of spelling `display` out (F4): it is a DIFFERENT URL from the
-  // bare one, so a cache entry stamped before the tier work cannot answer it.
-  check("an explicit display is a different URL from the bare one",
-    getFileURL(dbs, "thumbnail", "sha256", "abc", "display")
-      !== getFileURL(dbs, "thumbnail", "sha256", "abc"))
-  check("no index_db still produces a well-formed URL",
-    getFileURL({ index_db: null, user_data_db: null }, "thumbnail", "sha256", "abc", "grid-m")
-      === "/api/items/item/thumbnail?id=abc&id_type=sha256&size=grid-m")
-  check("still=true appends after the tier",
-    getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-m", true)
-      === "/api/items/item/thumbnail?id=abc&id_type=sha256&index_db=stdtest&size=grid-m&still=true")
-  check("a false still is the same URL as omitting it",
-    getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-m", false)
-      === getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-m"))
 }
 
 console.log("\n== does the picture move (F6) ==")
@@ -516,5 +693,4 @@ console.log("\n== the co-write snaps to whole rows (design §4's row invariant) 
     onV2.join(","))
 }
 
-console.log(all ? "\nALL PASS" : "\nFAILURES")
-process.exit(all ? 0 : 1)
+finish()

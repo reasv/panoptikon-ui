@@ -119,7 +119,12 @@ export function OpenDetailsButton({
                 onClick={() => onClick()}
                 title={!itemDetailsOpen ? "Open in Data View" : "Close Data View"}
                 aria-label={!itemDetailsOpen ? "Open in Data View" : "Close Data View"}
-                className="hover:scale-105 absolute bottom-(--cell-chrome-inset) left-(--cell-chrome-inset) bg-white rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.35)] h-(--cell-chrome-box) w-(--cell-chrome-box) p-(--cell-chrome-pad) opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                // `rounded-full bg-white` again beside the pill utility, on purpose: this is
+                // the one pill that is a shadcn <Button>, whose base classes carry
+                // `rounded-md` and a variant background, and tailwind-merge only drops
+                // those for utilities it knows — a custom `@utility` is not one, so
+                // without the explicit pair the cascade kept the square corners.
+                className="cell-chrome-pill rounded-full bg-white absolute bottom-(--cell-chrome-inset) left-(--cell-chrome-inset) h-(--cell-chrome-box) w-(--cell-chrome-box) opacity-0 group-hover:opacity-100 transition-opacity duration-300"
                 size="icon"
             >
                 {itemDetailsOpen ? <Book className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}

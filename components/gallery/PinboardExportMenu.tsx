@@ -23,7 +23,8 @@ import {
     useGalleryPinProportional,
 } from "@/lib/state/gallery"
 import { useSelectedDBs } from "@/lib/state/database"
-import { getFileURL, prettyPrintBytes } from "@/lib/utils"
+import { prettyPrintBytes } from "@/lib/utils"
+import { originalFileURL } from "@/lib/thumbnailURL"
 import {
     AnimatedItemRows,
     AnimatedMosaicRows,
@@ -235,7 +236,7 @@ export function useSelectionExport(keys: string[]) {
             ) {
                 progress.dismiss()
                 downloadURL(
-                    getFileURL(dbs, "file", "sha256", placement.sha256),
+                    originalFileURL(dbs, placement.sha256),
                     `${stem}-${stamp}${name.ext}`,
                 )
                 toast({

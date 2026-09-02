@@ -17,7 +17,7 @@ import { useMemo } from "react"
 import { PartitionBy, partitionBySerializer, usePartitionBy } from "@/lib/state/partitionBy"
 import { tierForCellWidth } from "@/lib/thumbnailTier"
 import { useDevicePixelRatio } from "@/hooks/useDevicePixelRatio"
-import { useAnimatedFloor } from "@/lib/useClientConfig"
+import { useAnimatedFloor, useDisplayLoopTrigger } from "@/lib/useClientConfig"
 
 // The nominal CSS width of one card in this list, for the rendition it asks
 // for (lib/thumbnailTier.ts). A NOMINAL rather than a measurement, unlike the
@@ -89,6 +89,11 @@ export function SimilarItemsView({
     // already serves an animating original. Animation here is preserved
     // behaviour, not new motion.
     const animatedFloor = useAnimatedFloor()
+    // And the display-loop bounds, read ONCE for the whole list on the same
+    // rule as the floor and the tier above it — never inside a card. This list
+    // is short and single-subject, but the rule is the card's contract rather
+    // than the host's convenience: SearchResultImage subscribes to nothing.
+    const displayLoopTrigger = useDisplayLoopTrigger()
     const [partitionBy] = usePartitionBy()
     const bookmarkNs = useBookmarkNs((state) => state.namespace)
     const { data, error, isError, refetch, isFetching, isLoading } = $api.useQuery(
@@ -275,12 +280,19 @@ export function SimilarItemsView({
                             result={result as any}
                             index={index}
                             dbs={dbs}
+                            // THIS HOST'S OWN BOX HEIGHTS, replacing the grid
+                            // card's `h-96 4xl:h-120 5xl:h-152`
+                            // (AUTO_IMAGE_BOX_HEIGHT_* in lib/gridCellSize.ts,
+                            // which says so): a sidebar column is not a grid
+                            // cell, and none of the numbers named there
+                            // describe this box.
                             imageContainerClassName="h-96 xl:h-80 4xl:h-80 5xl:h-80"
                             onImageClick={() => onImageClick(index)}
                             showLoadingSpinner={isLoading || isFetching}
                             overrideURL={indexToLinkMapping ? indexToLinkMapping[index] : undefined}
                             tier={cardTier}
                             animatedFloor={animatedFloor}
+                            displayLoopTrigger={displayLoopTrigger}
                         />
                     ))}
                 </div>

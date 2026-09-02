@@ -11,6 +11,7 @@
 // the hooks that call it (lib/searchHooks.ts) pull in React, nuqs and the API
 // client, none of which resolve outside a bundler. Exits non-zero on failure.
 
+import { createChecker } from "./harness.mjs"
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
@@ -59,12 +60,7 @@ const {
   sanitizeSearchDefaults,
 } = await import("../lib/searchDefaults.ts")
 
-let all = true
-function check(name, ok, detail = "") {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? `\n  ${detail}` : ""}`)
-  all &&= !!ok
-  return ok
-}
+const { check, finish } = createChecker()
 const shape = (value) => JSON.stringify(value)
 
 // ---- pages -> scroll --------------------------------------------------
@@ -1257,5 +1253,4 @@ const isVideo = (row) => row === "v"
   )
 }
 
-console.log(all ? "\nALL PASS" : "\nFAILURES")
-process.exit(all ? 0 : 1)
+finish()

@@ -11,6 +11,7 @@
 // The module imports fetchClient (a value, at module scope) — that is why the
 // resolver hook below also maps the "@/" alias.
 
+import { createChecker } from "./harness.mjs"
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
@@ -31,12 +32,7 @@ const {
   transcodeKey,
 } = await import("../lib/videoTranscode.ts")
 
-let all = true
-function check(name, ok, detail = "") {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? `\n  ${detail}` : ""}`)
-  all &&= !!ok
-  return ok
-}
+const { check, finish } = createChecker()
 const shape = (value) => JSON.stringify(value)
 
 // ---- events: the server's tagged envelope ------------------------------
@@ -397,4 +393,4 @@ check(
   claimArtifactRetry(OTHER) === true
 )
 
-process.exit(all ? 0 : 1)
+finish()

@@ -33,7 +33,7 @@
 // hiding in a value import list.
 import type { PinSource } from "@/lib/pinboardPreview"
 import { imageSource, loadImage } from "@/lib/pinboardPreview"
-import { getFileURL } from "@/lib/utils"
+import { originalFileURL, thumbnailStillURL } from "@/lib/thumbnailURL"
 
 type Dbs = { index_db: string | null; user_data_db: string | null }
 
@@ -224,8 +224,18 @@ export interface PinSourceRequest {
  * An original that fails to load falls back to the thumbnail rather than
  * failing the export — the file endpoint serves whatever is on disk, and
  * browsers decode fewer formats than the indexer accepts (TIFF, JXL, some
- * AVIF profiles), while the thumbnail is always a JPEG. A thumbnail that
- * fails too returns null, which drawPin renders as the placeholder tile.
+ * AVIF profiles), while the thumbnail is always something a browser decodes
+ * (JPEG or WebP, per the database's thumbnail-format policy — never assume
+ * which). A thumbnail that fails too returns null, which drawPin renders as
+ * the placeholder tile.
+ *
+ * `still=true` on that fallback, for the reason the pinboard's carry ghost
+ * spells out: an `<img>` is the only thing this can draw from, and above the
+ * server's display-loop bounds an animated item's display request answers
+ * `video/mp4` (docs/thumbnail-format-implementation.md R3), which would fail
+ * the load and cost the pin its picture. The flag is a no-op for everything
+ * else, so the only cost is a second cache entry on a path that is already
+ * the fallback of a fallback.
  */
 export async function loadPinSource(
   req: PinSourceRequest
@@ -235,7 +245,7 @@ export async function loadPinSource(
   if (req.original) {
     try {
       return imageSource(
-        await loadImage(getFileURL(req.dbs, "file", "sha256", req.sha256))
+        await loadImage(originalFileURL(req.dbs, req.sha256))
       )
     } catch {
       /* fall through to the thumbnail */
@@ -243,7 +253,7 @@ export async function loadPinSource(
   }
   try {
     return imageSource(
-      await loadImage(getFileURL(req.dbs, "thumbnail", "sha256", req.sha256))
+      await loadImage(thumbnailStillURL(req.dbs, req.sha256))
     )
   } catch {
     return null

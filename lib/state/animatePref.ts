@@ -22,7 +22,8 @@
  * it under plain node. The DOM is touched only from inside functions, so
  * importing this module starts nothing.
  */
-import { isSmallCell, type AnimateMode } from "../thumbnailTier"
+import { isSmallCell } from "../gridCellSize"
+import { type AnimateMode } from "../thumbnailTier"
 import { createValueBox } from "./valueBox"
 
 /** Which range a cell of a given width falls in. */

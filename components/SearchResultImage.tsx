@@ -2,7 +2,8 @@
 import Image from 'next/image'
 import { BookmarkBtn, FileActionCluster, FilePathComponent } from "@/components/imageButtons"
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { cn, getFileURL } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { originalFileURL } from "@/lib/thumbnailURL";
 import { ItemMetaLine } from "@/components/ItemMetaLine";
 import { PlayableBadge } from "@/components/PlayableBadge";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
@@ -12,12 +13,18 @@ import { useCellCallbacks, useCellFlags } from '@/lib/state/cellActions';
 import { PIN_SHA_PREFIX_LENGTH } from '@/lib/pinboardCrop';
 import {
     animatedCellMode,
-    isExtremeAspect,
     showsMotionBadge,
     type AnimateMode,
     type AnimatedFloor,
+    type DisplayLoopTrigger,
     type ThumbnailTier,
 } from '@/lib/thumbnailTier';
+import {
+    cellTierForRow,
+    planCellPicture,
+    type CellCrop,
+} from '@/lib/cellPicture';
+import { isSmallCell } from '@/lib/gridCellSize';
 import { LoopVideo } from '@/components/LoopVideo';
 import { CELL_HOVER_ROOT_ATTR, useArmedHover } from '@/hooks/useArmedHover';
 
@@ -27,20 +34,6 @@ import { CELL_HOVER_ROOT_ATTR, useArmedHover } from '@/hooks/useArmedHover';
 // hooks/useArmedHover.ts, which defines it because the filmstrip's cards carry
 // it too.
 const HOVER_ROOT_ATTR = CELL_HOVER_ROOT_ATTR
-
-/**
- * Which of the two picture elements a card's grid rendition needs. `"loop"`
- * carries both URLs because the loop and its poster are the same request with
- * and without `still=true`, and AnimatedCellPicture's fallback needs the second
- * one in hand the moment the first one fails.
- *
- * COMPUTED ONCE PER CARD (see `source` below) and then dispatched on, so the
- * `animated === "loop"` question is asked in one place rather than once per
- * JSX branch that happens to care.
- */
-type CellPictureSource =
-    | { kind: "image"; src: string }
-    | { kind: "loop"; src: string; poster: string }
 
 /**
  * The still `<img>` every non-loop picture on this card is, spelled once.
@@ -154,16 +147,32 @@ function CellOverlay({
 
 // Memoized: the virtualized grid re-renders on every scroll frame (tanstack
 // virtual mutates state under "use no memo"), and without this each visible
-// card re-executes per frame. Callers must keep object/function props
-// referentially stable for the memo to hold — which is why the two layout
-// props below are a plain string and a plain number rather than the style
-// object each of them stands for.
+// card re-executes per frame.
 //
-// `animatedFloor` is the one OBJECT prop, and the memo contract depends on the
-// host holding its identity: a floor rebuilt per render (an inline literal, or
-// a fresh object out of the client-config query) defeats this memo for every
-// visible card on every scroll frame — the exact per-frame re-execution it
-// exists to stop. See its own prop doc below for where the host reads it.
+// THE PROPS / CONTEXT BOUNDARY, spelled once here because both sides of it are
+// load-bearing and neither is obvious from a call site:
+//
+//   - PROPS are the HOST'S ONE ANSWER for every card it renders: its layout in
+//     numbers (`cellWidth`, `boxHeightPx`, `dpr`, `imageHeightPx`, or a
+//     `tier`), the server's two bounds objects, and the animate mode. They are
+//     part of the memo contract, so a host that rebuilds one per render — an
+//     inline literal, a fresh object straight out of the client-config query —
+//     defeats this memo for every visible card on every scroll frame, which is
+//     the exact per-frame re-execution it exists to stop. The layout ones are
+//     plain strings and numbers rather than the style objects they stand for
+//     precisely so they cannot be rebuilt by accident; `animatedFloor` and
+//     `displayLoopTrigger` are the two OBJECT props, and react-query holding
+//     their identity across refetches that change nothing is what makes
+//     reading them at the host safe.
+//   - `CellFlagsContext` (lib/state/cellActions.ts) is for REACTIVE values, and
+//     THIS CARD NEVER SUBSCRIBES TO IT. A `useCellFlags` read in the body would
+//     re-render every visible cell whenever a pin or a bookmark setting
+//     changed. It is read only inside `CellOverlay`, behind the hover gate,
+//     where it is a few bytes of decision — see that component's doc.
+//
+// `dbs` is deliberately a PROP even though every host reads `useSelectedDBs()`
+// for itself: the card takes it as data so that it subscribes to nothing and
+// stays memo-stable. The double read is the price of that, and it is cheap.
 export const SearchResultImage = memo(function SearchResultImage({
     result,
     index,
@@ -176,10 +185,13 @@ export const SearchResultImage = memo(function SearchResultImage({
     overrideURL,
     showLoadingSpinner,
     tier,
+    cellWidth,
+    boxHeightPx,
+    dpr,
     imageHeightPx,
     animatedFloor,
+    displayLoopTrigger,
     animateMode = "always",
-    smallCell = false,
 }: {
     result: SearchResult,
     index: number,
@@ -193,12 +205,45 @@ export const SearchResultImage = memo(function SearchResultImage({
     showLoadingSpinner?: boolean
     /**
      * Which stored rendition this card's picture box needs
-     * (lib/thumbnailTier.ts). Chosen by the HOST from the cell width it
-     * measures — never per card, which would be a measurement and a
-     * subscription in every cell — and passed down as a stable string.
-     * Omitted means the legacy bare URL (the display rendition).
+     * (lib/thumbnailTier.ts), CHOSEN BY THE HOST for every one of its cards.
+     *
+     * For a host whose cards all cover the same box and whose width is a
+     * nominal constant rather than a measurement — the similarity sidebar's
+     * two — that is the whole answer, and it stays theirs. A host that knows
+     * its box in numbers hands the numbers instead (`cellWidth` below), which
+     * is strictly better because the tier then depends on the ROW as well.
+     * Omitted with no numbers either means the legacy bare URL (the display
+     * rendition).
      */
     tier?: ThumbnailTier
+    /**
+     * THE PICTURE BOX, IN NUMBERS — width and height in CSS pixels, plus the
+     * device pixel ratio — from a host that measures it (the result grid).
+     * Present, they REPLACE `tier`: the card chooses its own rendition from
+     * them and its own dimensions, because the binding edge of an
+     * `object-cover` box depends on the picture in it (see `coverBindingEdge`,
+     * and the latch below for what the card then does with the answer).
+     *
+     * STILL NOT A MEASUREMENT IN HERE, which is the rule these three exist to
+     * keep: they are the host's one layout answer, handed down as stable
+     * primitives to hundreds of memoized cards. The card does arithmetic on
+     * them, never a subscription.
+     *
+     * `cellWidth` absent (or 0, the grid's "not measured yet") is what makes
+     * this whole branch stand down; `boxHeightPx` absent falls back to the
+     * width, and `dpr` absent to 1.
+     */
+    cellWidth?: number
+    /**
+     * The picture box's HEIGHT in CSS pixels — whichever policy set it: the
+     * breakpoint classes (`AUTO_IMAGE_BOX_HEIGHT_*`) or the explicit mode's
+     * inline style. Distinct from `imageHeightPx` below, which is the STYLE
+     * DIRECTIVE and exists only in the explicit mode; this one is the FACT,
+     * and the auto mode has one too.
+     */
+    boxHeightPx?: number
+    /** The host's device pixel ratio (hooks/useDevicePixelRatio.ts). */
+    dpr?: number
     /**
      * The picture box's height in CSS pixels, for the explicit cell-size mode
      * where it derives from the slider's width rather than from a breakpoint
@@ -217,6 +262,20 @@ export const SearchResultImage = memo(function SearchResultImage({
      */
     animatedFloor?: AnimatedFloor | null
     /**
+     * The server's display-loop bounds (`/api/client-config`,
+     * lib/thumbnailTier.ts), read ONCE by the host next to the floor above and
+     * passed down as a stable object — never a hook in here, on exactly the
+     * rule that governs the floor and the tier.
+     *
+     * Only the EXTREME-ASPECT card reads it, and only to decide whether its
+     * hover swap has a `display` rendition to swap TO: past these bounds that
+     * request answers `video/mp4`. Omitted or null means "no display loop
+     * exists", which is what an older Server reports and what holds while the
+     * config is in flight — every card then behaves exactly as it did before
+     * this prop existed.
+     */
+    displayLoopTrigger?: DisplayLoopTrigger | null
+    /**
      * Whether a loop cell animates unprompted or only while the pointer dwells
      * on it (D2). Resolved ONCE by the host from the cell width and the user's
      * preference (hooks/useAnimateMode.ts) and handed down as a stable string,
@@ -227,81 +286,57 @@ export const SearchResultImage = memo(function SearchResultImage({
      * knows nothing about this feature keeps the cells it always had.
      */
     animateMode?: AnimateMode
-    /**
-     * Is this cell in the SMALL range (lib/thumbnailTier.ts
-     * `SMALL_CELL_THRESHOLD_PX`)? Decides which of a VIDEO's two stored
-     * thumbnails the card requests (D9) — measured by the host, like the tier,
-     * because a measurement in the card is a measurement in every card.
-     */
-    smallCell?: boolean
 }) {
-    const fileUrl = overrideURL ? overrideURL : getFileURL(dbs, "file", "sha256", result.sha256)
-    // LATCHED AT MOUNT, and that is the whole of F4's no-flash rule for a tier
-    // switch. Changing the size slider (or resizing across a tier threshold)
-    // changes this prop for every visible card, and a changed `src` on a
-    // mounted <img> drops the bitmap it is painting: the blurhash placeholder
-    // would flash back in across the entire viewport for one network round
-    // trip. So the new tier applies to NEWLY MOUNTED cells only — which under
-    // virtualization is everything the user scrolls to next, and under a
-    // column-count change is every cell on screen anyway (the rows are keyed
-    // by index and their contents shift, so the cards remount).
+    const fileUrl = overrideURL ? overrideURL : originalFileURL(dbs, result.sha256)
+    // THE TIER, LATCHED AT MOUNT, and that is the whole of the no-flash rule
+    // for a tier switch. Changing the size slider (or resizing across a tier
+    // threshold) changes the answer for every visible card, and a changed `src`
+    // on a mounted <img> drops the bitmap it is painting: the blurhash
+    // placeholder would flash back in across the entire viewport for one
+    // network round trip. So the new tier applies to NEWLY MOUNTED cells only —
+    // which under virtualization is everything the user scrolls to next, and
+    // under a column-count change is every cell on screen anyway (the rows are
+    // keyed by index and their contents shift, so the cards remount).
     //
-    // The residual: a resize that crosses a tier threshold WITHOUT changing
-    // the column count leaves the cards on screen serving the old rendition
-    // until they are scrolled past. Slightly soft (or slightly heavy) for
-    // those cards, never a flash — which is the requirement, and the simpler
-    // of the two constructions the plan allows.
-    const tierRef = useRef(tier)
-    // NOT LATCHED, unlike the tier — and the difference is who changes them.
-    // The tier moves under a window resize the user is not looking at the
-    // grid for; `animateMode` and `smallCell` move only on a deliberate act on
-    // the grid itself (the Always / On hover toggle, the size slider crossing
-    // the threshold), and the whole point of that act is that the cells on
-    // screen change: a toggle that reached only the cells scrolled to next
-    // read as doing nothing until a refresh (user QA, 2026-09-02). The costs a
-    // latch would have avoided are one-shot and user-triggered — a loop card
-    // swapping its `<video>` for the poster it already carries, a video card
-    // fetching the other still — not the viewport-wide blurhash flash a
-    // resize-driven tier change would be.
-    // ONE COMPARISON ON ROW DATA (§2's zero-cost-for-normal invariant). It
-    // decides which of the picture components is rendered, so the hover
-    // swap's state and listeners exist only inside the extreme-aspect one —
-    // a normal card mounts no hook, no listener and no second <img>, exactly
-    // as before this feature existed.
-    const extreme = isExtremeAspect(result.width, result.height)
-    // ONE COMPARISON ON ROW DATA, exactly like `extreme` above and under the
-    // same rule (§2's zero-cost-for-normal invariant): the fields are already
-    // in the search payload, the floor is a prop, and a static card leaves
-    // here with `"static"` having mounted nothing. The three modes are
-    // documented on `animatedCellMode`; what they buy this card is which of
-    // two picture elements it renders and whether its `<img>` has to spell out
-    // `still=true` — a grid tier answers an animated item above the floor with
-    // `video/mp4`, which an `<img>` would show as a broken picture.
+    // What is latched is this card's own answer for its own row, so two cells
+    // side by side may hold different tiers — which is the point — but each
+    // still holds the one it was born with.
+    //
+    // The residual: a resize that crosses a tier threshold WITHOUT changing the
+    // column count leaves the cards on screen serving the old rendition until
+    // they are scrolled past. Slightly soft (or slightly heavy) for those
+    // cards, never a flash — which is the requirement.
+    const tierRef = useRef(
+        cellTierForRow(result, cellWidth, boxHeightPx, dpr, tier))
+    // THE PICTURE, rebuilt every render from the latched tier and the LIVE
+    // props (lib/cellPicture.ts). `animateMode` and the cell range are not
+    // latched, and the difference is who changes them: the tier moves under a
+    // window resize the user is not looking at the grid for, while these move
+    // only on a deliberate act on the grid itself (the Always / On hover
+    // toggle, the size slider crossing the threshold) whose whole point is that
+    // the cells on screen change — a toggle that reached only the cells
+    // scrolled to next read as doing nothing until a refresh (user QA,
+    // 2026-09-02). The costs a latch would have avoided are one-shot and
+    // user-triggered — a loop card swapping its `<video>` for the poster it
+    // already carries, a video card fetching the other still — not the
+    // viewport-wide blurhash flash a resize-driven tier change would be.
+    //
+    // ZERO-COST FOR NORMAL (§2) is structural: the plan is arithmetic over
+    // fields the row already carries and two stable props, and a static card
+    // leaves here with `"still"` having mounted no hook, no listener and no
+    // second element — exactly as before any of this existed.
+    const plan = planCellPicture(result, dbs, tierRef.current, {
+        animatedFloor,
+        displayLoopTrigger,
+        // The card's own comparison, not a prop: one number against one
+        // constant (lib/gridCellSize.ts), on a value it already has. A host
+        // that measures its box has already said everything this needs.
+        smallCell: isSmallCell(cellWidth),
+    })
+    // The badge rule's input, and the ONLY thing outside the plan that still
+    // needs the three-way mode: `"still"` and `"static"` paint the same element
+    // and differ only in what the badge means over them (D8).
     const animated = animatedCellMode(result, animatedFloor)
-    // D9: at small sizes a video's 2×2 frame mosaic is four thumbnails' worth
-    // of detail in a box too small to read any of them, so the cell asks for
-    // the single frame instead and swaps to the mosaic on an armed hover
-    // (VideoStillPicture). NOT applied to an extreme-aspect video, whose card
-    // already owns a hover swap of its own — two layers competing for the same
-    // gesture is one too many, and a strip-shaped video is rare enough that
-    // keeping today's rendition there costs nothing.
-    const smallVideo = smallCell && !extreme
-        && !!result.type?.startsWith("video/")
-    const thumbnailUrl = getFileURL(dbs, "thumbnail", "sha256", result.sha256, tierRef.current,
-        animated === "still", smallVideo ? false : undefined)
-    // THE ANSWER TO "what is this card's picture", computed once. Everything
-    // below dispatches on `source` rather than re-asking `animated === "loop"`
-    // — the extreme branch used to build this same object inline while the
-    // normal branch asked the question again, so the two could drift. The
-    // poster URL is the same request with `still=true`, and it is built only
-    // for a loop card.
-    const source: CellPictureSource = animated === "loop"
-        ? {
-            kind: "loop",
-            src: thumbnailUrl,
-            poster: getFileURL(dbs, "thumbnail", "sha256", result.sha256, tierRef.current, true),
-        }
-        : { kind: "image", src: thumbnailUrl }
     // Deliberately NOT a `useSearchParams` of its own. This card used to hold
     // one and rebuild its gallery href behind a `useMemo` keyed on the params
     // object — i.e. it recomputed on EVERY URL write, for every visible card,
@@ -400,30 +435,39 @@ export const SearchResultImage = memo(function SearchResultImage({
                     // are alternative policies for the same box, and leaving
                     // the classes in would have twMerge resolve a conflict
                     // that the inline style wins anyway.
+                    //
+                    // THESE THREE CLASSES ARE 384 / 480 / 608 CSS PX, and the
+                    // grid reasons about those numbers: they are the auto
+                    // layout's row height and, because the box is NOT square,
+                    // usually the edge that binds its rendition tier. Named
+                    // once as AUTO_IMAGE_BOX_HEIGHT_* in lib/gridCellSize.ts —
+                    // Tailwind needs the literal here, so changing one means
+                    // changing both.
                     className={cn("block relative mb-2",
                         imageHeightPx == null && "h-96 4xl:h-120 5xl:h-152",
                         imageContainerClassName)}
                     style={imageHeightPx == null ? undefined : { height: imageHeightPx }}
                 >
-                    {/* FOUR OUTCOMES, dispatched on `source` and on the two
-                        latched host decisions and nothing else: an
-                        extreme-aspect card (whose own component then handles
-                        both kinds of crop), a loop, a small video cell, or the
-                        still image every other card is. */}
-                    {extreme ? (
+                    {/* FOUR OUTCOMES, one per plan kind (lib/cellPicture.ts)
+                        and nothing else: an extreme-aspect card (whose own
+                        component then handles both kinds of crop), a loop, a
+                        small video cell, or the still image every other card
+                        is. The switch is exhaustive by type, so a fifth kind
+                        cannot be added to the plan and forgotten here. */}
+                    {plan.kind === "extreme" ? (
                         <ExtremeAspectPicture
-                            crop={source}
-                            displaySrc={getFileURL(dbs, "thumbnail", "sha256", result.sha256, "display")}
+                            crop={plan.crop}
+                            displaySrc={plan.displaySrc}
                             alt={`Result ${result.path}`}
                             blurDataURL={blurDataURL}
                             imageClassName={imageClassName}
                             disabled={!!showLoadingSpinner}
                             animateMode={animateMode}
                         />
-                    ) : source.kind === "loop" ? (
+                    ) : plan.kind === "loop" ? (
                         <CellLoopPicture
-                            src={source.src}
-                            poster={source.poster}
+                            src={plan.src}
+                            poster={plan.poster}
                             alt={`Result ${result.path}`}
                             blurDataURL={blurDataURL}
                             mode={animateMode}
@@ -437,10 +481,10 @@ export const SearchResultImage = memo(function SearchResultImage({
                                 showLoadingSpinner ? "" : "group-hover:object-contain group-hover:object-center",
                                 imageClassName)}
                         />
-                    ) : smallVideo ? (
+                    ) : plan.kind === "videoSmall" ? (
                         <VideoStillPicture
-                            src={source.src}
-                            mosaicSrc={getFileURL(dbs, "thumbnail", "sha256", result.sha256, tierRef.current)}
+                            src={plan.frame}
+                            mosaicSrc={plan.mosaic}
                             alt={`Result ${result.path}`}
                             blurDataURL={blurDataURL}
                             disabled={!!showLoadingSpinner}
@@ -451,7 +495,7 @@ export const SearchResultImage = memo(function SearchResultImage({
                         />
                     ) : (
                         <CellStillImage
-                            src={source.src}
+                            src={plan.src}
                             alt={`Result ${result.path}`}
                             blurDataURL={blurDataURL}
                             className={cn(
@@ -470,7 +514,7 @@ export const SearchResultImage = memo(function SearchResultImage({
                         Harmless inside the link because the badge takes no
                         pointer events, so the click and the drag still belong
                         to the anchor. */}
-                    {showsMotionBadge(result, animatedFloor, animateMode)
+                    {showsMotionBadge(result, animated, animateMode)
                         && <PlayableBadge />}
                 </a>
                 {showLoadingSpinner && (
@@ -537,8 +581,15 @@ function ExtremeAspectPicture({
      * geometry for both (§2 applies it in the encode), so the only thing that
      * changes here is which element paints it; the swap above it is identical.
      */
-    crop: CellPictureSource
-    displaySrc: string
+    crop: CellCrop
+    /**
+     * The whole-image rendition the hover swaps to, or NULL when there is no
+     * picture at that URL to swap to — an animated item past the server's
+     * display-loop bounds, whose `display` request answers `video/mp4`. Null
+     * mounts no layer, binds no listeners and requests nothing: see the call
+     * site, which is where the reason lives.
+     */
+    displaySrc: string | null
     alt: string
     blurDataURL: PlaceholderDataURL | undefined
     imageClassName?: string
@@ -576,6 +627,11 @@ function ExtremeAspectPicture({
     const [loaded, setLoaded] = useState(false)
     useEffect(() => {
         if (disabled) return
+        // Nothing to swap to (see `displaySrc`), so there is no gesture to
+        // listen for. Bailing here is what makes "no display layer" cost the
+        // card two listeners and two state writes less than nothing, rather
+        // than arming a swap that would then render null.
+        if (!displaySrc) return
         // Bound to the card's `group` element, found from our own node, so
         // the swap's hover region is the SAME box as the CSS hover's. Binding
         // to this <img> instead would leave the swap out of step with the
@@ -607,11 +663,12 @@ function ExtremeAspectPicture({
             root.removeEventListener("mouseenter", enter)
             root.removeEventListener("mouseleave", leave)
         }
-    }, [disabled, stickyDisplay])
+    }, [disabled, stickyDisplay, displaySrc])
     const showDisplay = hovered && loaded
     // Mounted while it is wanted. For a still that is "ever" (see the sticky
-    // note); for an animation it is "while the pointer is here".
-    const displayMounted = requested && (stickyDisplay || hovered)
+    // note); for an animation it is "while the pointer is here"; never at all
+    // when there is no whole-image rendition to show.
+    const displayMounted = displaySrc !== null && requested && (stickyDisplay || hovered)
     const cropClassName = cn(
         "object-cover object-top",
         // The fade OUT is a considered transition — the crop keeps painting
@@ -650,6 +707,20 @@ function ExtremeAspectPicture({
                     // animating one. The badge rule is untouched (D8): the
                     // crop under the swap is still a static poster, so it
                     // still says so.
+                    //
+                    // AND WHEN THERE IS NO SWAP EITHER — an animated strip
+                    // past the display-loop bounds, whose `displaySrc` is null
+                    // (see the call site) — THIS CARD HAS NO MOTION PATH IN
+                    // HOVER MODE AT ALL. Said plainly because it is a
+                    // deliberate choice and reads like an oversight: in hover
+                    // mode such a cell is a static top-crop that the pointer
+                    // does nothing to. The alternative is arming the crop loop
+                    // here, i.e. a multi-megabyte H.264 fetch on dwell over a
+                    // cell that shows a 2:1 sliver of a webtoon — the cost
+                    // hover mode exists to avoid, spent on the least
+                    // legible cell in the grid. ALWAYS mode is unaffected: the
+                    // crop loop is the picture there and plays under the
+                    // director like every other loop cell.
                     armable={false}
                 />
             ) : (
@@ -693,46 +764,20 @@ function ExtremeAspectPicture({
  * media element live in here, so a static card renders the plain `<Image>` it
  * always did and mounts none of it.
  *
- * Styled to be INDISTINGUISHABLE from that `<img>`: the caller hands down the
- * card's own object-fit classes verbatim, and `FILL_CLASSES` reproduces what
- * next/image's `fill` writes as inline style. `object-fit`/`object-position`
- * apply to a replaced element whatever its kind, so the CSS hover-contain and
- * the rounded corners work here untouched.
+ * WHAT THIS ADDS TO `LoopVideo`, which is everything else about the element
+ * (why it never autoplays, why the poster fallback exists, what the browser's
+ * video context menu does to a right-click) — read that component's doc for
+ * all of it, and do not copy it back here:
  *
- * THE POSTER FALLBACK IS THE POINT, not defensive polish. Two states answer a
- * grid-tier request for an animated item above the floor with the item's own
- * IMAGE bytes, and the client cannot tell either apart in advance:
- *
- *   - the backfill has not written the loop yet — transitional, and answered
- *     `no-cache` so it resolves the moment the scan lands;
- *   - no H.264 encode of this source came out smaller than the source, so the
- *     settled keep-the-original edge serves the file itself — PERMANENT, and
- *     answered immutable, so this fallback is the only thing that will ever
- *     render those items.
- *
- * A cell that only ever mounted `<video>` shows an empty box in both. The swap
- * hangs off the element's own `error` event — NO PROBE REQUEST, which would
- * double the request count for the common case to save one wasted fetch in the
- * rare one — and lands on `still=true`, a stored poster for every item above
- * the floor. It is a one-way latch: `failed` never goes back, so a failure
- * cannot loop, and the poster is already in cache because the `<video>` was
- * showing it. With `preload="none"` the failing response is not even fetched
- * until the director first plays this cell, so the swap now happens on the
- * first play of a visible cell rather than at mount — the poster is what the
- * cell was showing until then either way.
- *
- * NOTHING IS FETCHED UNTIL IT IS PLAYED. `preload="none"` and no `autoplay`:
- * the loop's bytes are requested by the director's own `play()`, and the
- * director only plays cells that are at least half on screen and inside the
- * cap. An earlier build carried `autoplay` and let the element decide, which
- * fetched and fully buffered EVERY mounted loop — measured at 16/16 buffered
- * with 14 of them off screen, ~4 MB nobody saw. The poster paints immediately
- * and the blurhash sits behind it, so a cell that has not been played yet is a
- * still picture rather than an empty box.
- *
- * KNOWN, ACCEPTED UX DELTA: right-clicking an animated cell gets the browser's
- * VIDEO context menu (Loop, Show controls, Save video as…) rather than the
- * image one. Inherent to being a real media element; flagged for user QA.
+ *   - the ONE-WAY `failed` latch. LoopVideo reports that the response was not
+ *     a video; deciding to stop asking is the card's, because the card is what
+ *     survives the swap. `failed` never goes back, so a failure cannot loop,
+ *     and the poster it lands on is already in cache — the `<video>` was
+ *     showing it;
+ *   - the `occluded` translation: a cell the extreme-aspect layer covers
+ *     deregisters rather than pausing, so the director gives its cap slot away;
+ *   - the blurhash, by the same direct-data-URL mechanism next/image's
+ *     `placeholder` uses on every other picture in this card.
  */
 function AnimatedCellPicture({
     src,

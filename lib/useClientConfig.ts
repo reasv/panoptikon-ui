@@ -4,7 +4,7 @@ import {
   ClientConfigResponse,
   deriveClientConfig,
 } from "./clientConfig"
-import type { AnimatedFloor } from "./thumbnailTier"
+import type { AnimatedFloor, DisplayLoopTrigger } from "./thumbnailTier"
 
 // Client-side counterpart of lib/serverApi.ts's getServerClientConfig: a
 // same-origin fetch, so in production the gateway (which serves
@@ -53,3 +53,15 @@ export const useVideoComposeEnabled = (): boolean =>
 // so passing the object down does not break the cells' memo.
 export const useAnimatedFloor = (): AnimatedFloor | null =>
   useClientConfig().data?.animatedFloor ?? null
+
+// The bounds past which an animated item's DISPLAY size is an H.264 loop
+// (lib/thumbnailTier.ts). Null while the config is in flight and against a
+// Server that reports none; both read as "the display size is always an
+// image", so a surface stays on today's `<img>` until the real numbers arrive.
+//
+// Unlike the floor above this is read by SINGLE-SUBJECT surfaces — the gallery
+// large view, the hover peek — one instance each, not one per card, so it is
+// read where it is used rather than threaded down from a host. The rule it
+// must not break is the grid's: nothing per cell may subscribe to this query.
+export const useDisplayLoopTrigger = (): DisplayLoopTrigger | null =>
+  useClientConfig().data?.displayLoopTrigger ?? null

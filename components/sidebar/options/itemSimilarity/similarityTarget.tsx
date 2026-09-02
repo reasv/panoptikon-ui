@@ -1,6 +1,7 @@
 import { $api } from "@/lib/api"
 import { keepPreviousData } from "@tanstack/react-query";
-import { downloadFileName, getFileURL, getLocale, prettyPrintBytes, prettyPrintVideoDuration } from "@/lib/utils";
+import { downloadFileName, getLocale, prettyPrintBytes, prettyPrintVideoDuration } from "@/lib/utils";
+import { originalFileURL } from "@/lib/thumbnailURL";
 import { useSelectedDBs } from "@/lib/state/database";
 import { SearchResultImage } from "@/components/SearchResultImage";
 import { ResultCellSkeleton } from "@/components/ResultCellSkeleton";
@@ -10,7 +11,7 @@ import { useItemSimilaritySearch, useSearchPage } from "@/lib/state/searchQuery/
 import { FilterContainer } from "../../base/FilterContainer";
 import { tierForCellWidth } from "@/lib/thumbnailTier";
 import { useDevicePixelRatio } from "@/hooks/useDevicePixelRatio";
-import { useAnimatedFloor } from "@/lib/useClientConfig";
+import { useAnimatedFloor, useDisplayLoopTrigger } from "@/lib/useClientConfig";
 
 // The nominal CSS width of this ONE card, which spans the sidebar's whole
 // content width (grid-cols-1): ~350px at a 1280px window, ~700px at 4K. The
@@ -25,6 +26,9 @@ export function SimilarityTarget() {
     // A grid-tier request, so it needs the floor for the same reason the
     // result grid does — see SearchResultImage's `animatedFloor` prop.
     const animatedFloor = useAnimatedFloor()
+    // Read here rather than in the card, exactly like the floor: one subject,
+    // one read, and SearchResultImage keeps its no-subscription contract.
+    const displayLoopTrigger = useDisplayLoopTrigger()
     const [filter, setFilter] = useItemSimilaritySearch()
     const [page, setPage] = useSearchPage()
     const currentTargetExists = filter.target.length > 0
@@ -111,13 +115,13 @@ export function SimilarityTarget() {
         >
             {currentTargetExists && <>
                 {resultItem
-                    ? <SearchResultImage className="mt-4 grid grid-cols-1" result={resultItem} index={0} dbs={dbs} tier={cardTier} animatedFloor={animatedFloor} />
+                    ? <SearchResultImage className="mt-4 grid grid-cols-1" result={resultItem} index={0} dbs={dbs} tier={cardTier} animatedFloor={animatedFloor} displayLoopTrigger={displayLoopTrigger} />
                     : <ResultCellSkeleton className="mt-4 grid grid-cols-1" />}
                 <div className="space-x-2 mt-4">
                     <p className="text-xs text-gray-500 mt-2">
                         {/* Real download, not open-in-tab (same-origin
                             `download` attribute names the file). */}
-                        <a href={getFileURL(dbs, "file", "sha256", filter.target)} download={downloadFileName(file?.path, filter.target)}>Download Original File ({sizeString})</a>
+                        <a href={originalFileURL(dbs, filter.target)} download={downloadFileName(file?.path, filter.target)}>Download Original File ({sizeString})</a>
                     </p>
                     {item && <p className="text-xs text-gray-500 mt-2">
                         Type: {item.type} {resolutionString && `(${resolutionString})`} {durationString && `(${durationString})`}
