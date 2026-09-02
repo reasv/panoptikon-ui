@@ -30,7 +30,8 @@ import { effectiveVideoTrim, outroCutPoint, outroProbeEligible, outroSkipGoverns
 import { useVideoEndProbe } from '@/lib/videoEndProbe'
 import { noteVideoPlaybackError, shouldDowngradeOnError, useVideoPlayability } from '@/lib/videoPlayability'
 import { useVideoPlayback } from '@/lib/videoTranscode'
-import { useVideoTranscodeEnabled } from '@/lib/useClientConfig'
+import { useDisplayLoopTrigger, useVideoTranscodeEnabled } from '@/lib/useClientConfig'
+import { exceedsDisplayLoopTrigger, type DisplayLoopTrigger } from '@/lib/thumbnailTier'
 import { CropGeometry, CropView } from './CropView'
 import { NativeControlsEscape, VideoPlayerSurface, playerSizeForWidth, useVideoPlayerSurface } from './VideoPlayerSurface'
 import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, Check, ChevronDown, ChevronsLeft, ChevronsRight, ChevronsUp, Columns3, Crop, Dices, Expand, FlipHorizontal, FlipHorizontal2, FlipVertical, FlipVertical2, FoldHorizontal, GripVertical, ImageDown, LayoutDashboard, LayoutGrid, ListX, LockOpen, Maximize, RotateCcw, RotateCw, Ruler, Scaling, Scan, SquareDashed, Trash2, X, type LucideIcon } from 'lucide-react'
@@ -309,6 +310,15 @@ export function PinBoard(
     }
 ) {
     const dbs = useSelectedDBs()[0]
+    // ONE READ FOR THE WHOLE BOARD, then handed to every pin as a prop — the
+    // rule the result grid follows for the animated floor, applied here for
+    // the same reason. A board holds an unbounded number of pins and each one
+    // already carries a client-config subscription of its own
+    // (`useVideoTranscodeEnabled`); a second one per pin would double that for
+    // three numbers that are identical in every pin. The object identity comes
+    // straight out of the query cache, so passing it down changes nothing
+    // about when a pin re-renders.
+    const displayLoopTrigger = useDisplayLoopTrigger()
     // Token-stripped records plus the board's grid parameters; writes migrate
     // v1 boards to the v2 grid (see lib/pinboardGrid.ts)
     const {
@@ -2721,6 +2731,7 @@ export function PinBoard(
                                     isV1={isV1}
                                     onUpgradeGrid={upgradeGrid}
                                     dbs={dbs}
+                                    displayLoopTrigger={displayLoopTrigger}
                                 />}
                         </div>
                     ))}
@@ -3321,9 +3332,15 @@ function PinBoardPin({
     isV1,
     onUpgradeGrid,
     dbs,
+    displayLoopTrigger,
 }: {
     layoutKey: string
     sha256: string
+    /**
+     * The board's bare `display` thumbnail URL for this sha, built from the
+     * sha ALONE (the board has no item metadata). Used as-is only until this
+     * pin's own item query resolves — see `pinThumbnail`.
+     */
     thumbnail: string
     file: string
     onLayoutChange: (
@@ -3391,6 +3408,13 @@ function PinBoardPin({
         index_db: string | null
         user_data_db: string | null
     }
+    /**
+     * The server's display-loop bounds (`/api/client-config`), read ONCE by
+     * the board and handed down — never a hook in here. Null means "no display
+     * loop exists", which is what an older Server reports and what holds while
+     * the config is in flight; every pin then paints exactly today's picture.
+     */
+    displayLoopTrigger: DisplayLoopTrigger | null
 }) {
     const { data } = $api.useQuery("get", "/api/items/item", {
         params: {
@@ -3401,6 +3425,30 @@ function PinBoardPin({
             },
         }
     })
+    // THE PIN'S PICTURE URL, rebuilt here rather than taken from the board.
+    //
+    // The board builds `thumbnail` from the sha alone — it holds no item
+    // metadata — so it cannot know that an animated item past the server's
+    // display-loop bounds answers that URL with `video/mp4`
+    // (docs/thumbnail-format-implementation.md R3). All three elements below
+    // that paint it are pictures (the crop ghost, the contain-fit <img>, the
+    // <Image>), so such a pin would show a broken picture AND never fire
+    // `noteMediaDims`, which is what the crop geometry is measured from. This
+    // query's row carries the four fields the test reads, so the pin can ask
+    // the question the board could not.
+    //
+    // UNTIL IT RESOLVES, THE BARE URL STANDS. `still=true` speculatively would
+    // freeze every small animated pin — the ones under the bounds, which are
+    // the common case — into a still poster for the length of a round trip and
+    // cost a second cache entry for nothing. The race is the one this file
+    // already documents for `naturalSize`: the picture arrives, the row
+    // arrives, and the URL settles on its final value. For an item under the
+    // bounds that value is the bare URL again, character for character, so the
+    // common case never re-requests anything.
+    const pinThumbnail = data?.item
+        ? getFileURL(dbs, "thumbnail", "sha256", sha256, undefined,
+            exceedsDisplayLoopTrigger(data.item, displayLoopTrigger))
+        : thumbnail
     // The playability tri-state (lib/videoPlayability.ts), the same ladder the
     // gallery runs: `unsupported` is the only verdict with no play affordance
     // (and no `data-playable` band), `needs-transcode` plays the server's
@@ -3784,7 +3832,7 @@ function PinBoardPin({
                                     naturalHeight={naturalSize?.h}
                                     orientation={orientation}
                                     onCropChange={onCropChange}
-                                    ghostSrc={showVideo ? undefined : thumbnail}
+                                    ghostSrc={showVideo ? undefined : pinThumbnail}
                                     renderMedia={(style) => showVideo ?
                                         <video
                                             ref={attachVideo}
@@ -3836,7 +3884,7 @@ function PinBoardPin({
                                         />
                                         :
                                         <img
-                                            src={thumbnail}
+                                            src={pinThumbnail}
                                             alt={`Sha256 Hash ${sha256}`}
                                             draggable={false}
                                             className="rounded select-none"
@@ -3855,7 +3903,7 @@ function PinBoardPin({
                                 />
                                 :
                                 <Image
-                                    src={thumbnail}
+                                    src={pinThumbnail}
                                     alt={`Sha256 Hash ${sha256}`}
                                     fill
                                     className="rounded object-contain"
