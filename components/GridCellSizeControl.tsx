@@ -24,6 +24,13 @@ import { MAX_CELL_WIDTH, MIN_CELL_WIDTH } from "@/lib/searchLimits"
 import { type AnimateMode } from "@/lib/thumbnailTier"
 import { cellRange, setAnimateSlot, type CellRange } from "@/lib/state/animatePref"
 import { useAnimateModeForRange } from "@/hooks/useAnimateMode"
+import {
+    hoverPreviewChoice,
+    setHoverPreviewChoice,
+    type HoverPreviewCapability,
+    type HoverPreviewChoice,
+} from "@/lib/state/hoverPreviewPref"
+import { useHoverPreview, useHoverPreviewCapability } from "@/lib/useClientConfig"
 import { useGridCellSize } from "@/lib/state/cellSize"
 import { useCellSizePageLock } from "@/lib/state/cellSizePageLock"
 import { EMPTY_GRID_METRICS, type GridMetricsStore } from "@/lib/state/gridMetricsBox"
@@ -196,6 +203,7 @@ export function GridCellSizeControl({ metricsStore }: {
                     </div>
                     <AnimateModeSegment mode={animateMode} range={range} />
                 </div>
+                <HoverPreviewRow />
                 {/* The only way back to the automatic policy: an explicit cell
                     size REPLACES it rather than adjusting it, so "auto" is not
                     a position on the track. Page size is deliberately left
@@ -258,6 +266,106 @@ function AnimateModeSegment({ mode, range }: {
         >
             {segment("always", "Always")}
             {segment("hover", "On hover")}
+        </div>
+    )
+}
+
+/**
+ * The video-preview toggle (A6): what a hovered video cell is allowed to do
+ * on this browser (docs/video-hover-preview-implementation.md V7).
+ *
+ * ITS OWN COMPONENT so that the two client-config reads below live behind the
+ * popover rather than in the header button that opens it: this whole control
+ * mounts once and only while the popover is open, and the strict rule the
+ * package is under is about the GRID's cards, not about a panel.
+ *
+ * THREE POSITIONS ON ONE SCALE, so a segmented control rather than two
+ * switches — "Originals" is not "All minus something", it is the middle of a
+ * range from "spend nothing" to "spend a server encode". Same `radiogroup`
+ * shape and the same straight-to-localStorage write as the Animate toggle
+ * above it; nothing here touches the URL or the creation-defaults layer.
+ *
+ * WHAT THE SEGMENTS SHOW is the EFFECTIVE answer, D4's rule: a stored "All"
+ * against a policy that denies the preview encode lights "Originals" and greys
+ * "All" beside it, rather than lighting a segment that does nothing.
+ */
+function HoverPreviewRow() {
+    // The RESOLVED answer (server ∧ preference), which is what the grid is
+    // actually doing, and the SERVER's half alone, which is what decides
+    // whether a segment is offered at all. Two reads of one cached query.
+    const resolved = useHoverPreview()
+    const server = useHoverPreviewCapability()
+    const choice = hoverPreviewChoice(resolved)
+    return (
+        <div className="mt-4 flex items-center justify-between">
+            <div className="pr-4">
+                <Label className="text-sm">Video previews</Label>
+                <p className="text-xs text-muted-foreground">
+                    {hoverPreviewHint(server)}
+                </p>
+            </div>
+            <HoverPreviewSegment choice={choice} server={server} />
+        </div>
+    )
+}
+
+/**
+ * WHY A SEGMENT IS UNAVAILABLE, in a sentence — and it has to be a sentence
+ * rather than a greyed button alone, because "your server will not do this"
+ * and "you turned this off" are the same picture otherwise.
+ */
+function hoverPreviewHint(server: HoverPreviewCapability | null): string {
+    if (!server) {
+        return "This server does not offer hover previews."
+    }
+    if (!server.direct) {
+        return "Hover previews are turned off for this server."
+    }
+    if (!server.transcode) {
+        return "Play a video by resting on its card. This server does not convert the ones your browser cannot play, so “All” is unavailable."
+    }
+    return "Play a video by resting on its card. “All” also converts the ones your browser cannot play, which asks the server for a short preview."
+}
+
+function HoverPreviewSegment({ choice, server }: {
+    choice: HoverPreviewChoice
+    server: HoverPreviewCapability | null
+}) {
+    const segment = (
+        value: HoverPreviewChoice,
+        label: string,
+        available: boolean
+    ) => (
+        <button
+            type="button"
+            role="radio"
+            aria-checked={choice === value}
+            disabled={!available}
+            onClick={() => setHoverPreviewChoice(value)}
+            className={cn(
+                "rounded-sm px-2 py-1 text-xs transition-colors",
+                !available && "opacity-40 cursor-not-allowed",
+                choice === value
+                    ? "bg-background text-foreground shadow-xs"
+                    : "text-muted-foreground",
+                available && choice !== value && "hover:text-foreground"
+            )}
+        >
+            {label}
+        </button>
+    )
+    // "Off" is always available: turning the feature off is a decision the
+    // browser is entitled to whatever the server says — and it is the only
+    // segment that means anything when the server offers nothing at all.
+    return (
+        <div
+            role="radiogroup"
+            aria-label="Video previews on hover"
+            className="flex shrink-0 items-center gap-0.5 rounded-md bg-muted p-0.5"
+        >
+            {segment("off", "Off", true)}
+            {segment("originals", "Originals", !!server?.direct)}
+            {segment("all", "All", !!server?.transcode)}
         </div>
     )
 }
