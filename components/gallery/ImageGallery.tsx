@@ -1575,26 +1575,35 @@ export function GalleryImageLarge(
     // never a 404 (§5). Both the `<video>`'s `poster` and one of the two
     // fallbacks below.
     const stillURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256, displaySize, true)
-    // THE FALLBACK WHEN THE ELEMENT SAYS THE LOOP IS NOT THERE: the STILL URL,
-    // on ANY error, with no reading of the error code at all.
+    // WHAT THIS SURFACE FALLS BACK TO WHEN THE `<video>` SAYS THE LOOP IS NOT
+    // THERE — A TWO-RUNG LADDER, walked on ANY error with no reading of the
+    // error code at all.
     //
-    // `still=true` at the display size is the one request the endpoint
-    // guarantees answers a picture (§5): the poster for a stored loop, and for
-    // the keep-the-original SENTINEL — an item over the bounds whose H.264
-    // encode came out no smaller than its source — the ORIGINAL FILE, which is
-    // an animated GIF or WebP and moves natively in an `<img>`. So the
-    // sentinel, the case that made the code split look worthwhile, is served
-    // exactly the picture it should be by this branch too. This is
-    // components/LoopVideo.tsx's idiom, unchanged: a loop that is not there
-    // falls back to the still of itself.
+    // THE CONTRACT: rung 1 is the BARE display URL in an `<img>`, rung 2 is the
+    // same request with `still=true`.
     //
-    // THE SPLIT IT REPLACES read MEDIA_ERR_SRC_NOT_SUPPORTED as "the sentinel,
-    // so re-render the SAME URL as an <img>" — which bought one saved request
-    // in that case and BROKE on a Chromium build with no H.264 decoder, where
-    // code 4 also covers "this is not media I can play" and "the fetch failed"
-    // (see `shouldDowngradeOnError`, which refuses that code for the same
-    // ambiguity). Those users got the mp4's bytes handed to an `<img>`: a
-    // broken picture where the poster was one request away.
+    // Rung 1 first because of the keep-the-original SENTINEL — an item over the
+    // bounds whose H.264 encode came out no smaller than its source, which the
+    // endpoint answers at the bare URL with the ORIGINAL FILE, an animated GIF
+    // or WebP that moves natively in an `<img>` at full size. `still=true` on
+    // such an item does NOT answer that file: above the raw floor it answers
+    // the stored ≤1024 grid-m POSTER, so landing there directly would downgrade
+    // the app's largest surface from the animating original to a static
+    // thumbnail. The `<img>` costs nothing extra either — the bytes are the ones
+    // the `<video>` already asked for, so a sentinel item hits the browser
+    // cache.
+    //
+    // Rung 2 exists because rung 1 can fail too, and for a reason no client-side
+    // test predicts: a Chromium build with no H.264 decoder rejects a real loop,
+    // and the bare URL then hands that `<img>` the mp4's bytes. `still=true` at
+    // the display size is the one request the endpoint guarantees answers an
+    // image (§5), so the ladder terminates there.
+    //
+    // NO ERROR CODE IS READ, deliberately. The split this replaces treated
+    // MEDIA_ERR_SRC_NOT_SUPPORTED as "the sentinel" — one saved request in that
+    // case, and a broken picture on the no-H.264 Chromium, where code 4 also
+    // covers "this is not media I can play" and "the fetch failed" (see
+    // `shouldDowngradeOnError`, which refuses that code for the same ambiguity).
     //
     // ONE SLOT, HOLDING ONE SHA, and CLEARED WHENEVER THE ITEM CHANGES. Within
     // a visit it holds, because an element that has errored must not be
@@ -1615,14 +1624,14 @@ export function GalleryImageLarge(
     //
     // Nothing here is remembered per sha for the session — that is
     // `videoPlayability`'s job, for a different question about a different URL.
-    const [loopFallback, setLoopFallback] = useState<{ sha: string; src: string } | null>(null)
+    const [loopFallback, setLoopFallback] = useState<{ sha: string; rung: 1 | 2 } | null>(null)
     if (loopFallback && loopFallback.sha !== item.sha256) {
         setLoopFallback(null)
     }
-    const loopFallbackSrc = loopFallback?.sha === item.sha256 ? loopFallback.src : null
+    const loopRung = loopFallback?.sha === item.sha256 ? loopFallback.rung : null
     const showDisplayLoop =
         exceedsDisplayLoopTrigger(item, displayLoopTrigger)
-        && loopFallbackSrc === null
+        && loopRung === null
 
     const searchLoading = useSearchLoading(state => state.loading)
 
@@ -2470,7 +2479,7 @@ export function GalleryImageLarge(
                                 // cannot fire twice.
                                 onError={() => setLoopFallback({
                                     sha: item.sha256,
-                                    src: stillURL,
+                                    rung: 1,
                                 })}
                                 // What next/image's `fill` writes as inline
                                 // style, plus the `<img>`'s own object-fit: the
@@ -2490,13 +2499,23 @@ export function GalleryImageLarge(
                             :
                             <Image
                                 // The thumbnail URL for every item that was
-                                // never a loop, and the `still=true` URL of the
-                                // same rendition when one turned out not to be
-                                // (see `loopFallback`).
-                                src={loopFallbackSrc ?? thumbnailURL}
+                                // never a loop AND for rung 1 of the ladder,
+                                // which is the same URL in a different element;
+                                // the `still=true` URL only at rung 2 (see
+                                // `loopFallback`).
+                                src={loopRung === 2 ? stillURL : thumbnailURL}
                                 alt={`${item.path}`}
                                 draggable={true}
                                 onDragStart={handleDragStart}
+                                // The second rung, and only from the first: a
+                                // plain picture that fails to load is the
+                                // ordinary broken-image case this surface has
+                                // always had, and re-requesting it with
+                                // `still=true` would ask a question nobody
+                                // asked.
+                                onError={loopRung === 1
+                                    ? () => setLoopFallback({ sha: item.sha256, rung: 2 })
+                                    : undefined}
                                 fill
                                 className="object-contain"
                                 unoptimized={true}

@@ -474,14 +474,15 @@ export function PreviewSurface({
     //     `<img>` writes, and what it paints is the poster frame of the very
     //     loop the gallery is playing — same pixels, same ratio.
     //
-    // AND ON THE FALLBACK PATH THE TWO URLS ARE ONE AGAIN. When that `<video>`
-    // errors — the keep-the-original sentinel, a decoder that has no H.264, a
-    // dropped connection — GalleryImageLarge re-renders the same box as its
-    // ordinary `<Image>` at the `still=true` URL, which is the peek's URL
-    // character for character (same `dbs`, same extreme-aspect clause, same
-    // flag). That element DOES report, through the same ref/onLoad pair every
-    // other still uses, so the store hears from both subjects here — and hears
-    // the same number twice, because it is one request answering one picture.
+    // AND ON THE FALLBACK PATH BOTH SUBJECTS PAINT AN `<img>` AGAIN. When that
+    // `<video>` errors — the keep-the-original sentinel, a decoder that has no
+    // H.264, a dropped connection — GalleryImageLarge walks a two-rung ladder
+    // (see its `loopFallback`): the BARE URL first, which for a sentinel is the
+    // animating original at full size, and `still=true` only if that fails too.
+    // Rung 2 is the peek's URL character for character, so the store hears the
+    // same number twice there; at rung 1 the two subjects paint different
+    // pictures of the same file, and the store keeps whichever reported — a
+    // ratio either way, both of them the item's own.
     //
     // TRAP — "same file" is NOT "same painted image", and a store keyed per
     // file cannot tell the difference. The peek's dwell upgrade loads the
