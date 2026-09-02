@@ -12,14 +12,6 @@ import type { AnimatedFloor, DisplayLoopTrigger } from "@/lib/thumbnailTier"
 export type ClientConfigResponse = components["schemas"]["ClientConfigResponse"] & {
   desktop_managed?: boolean
   desktop_shell_available?: boolean
-  // Optional here — and every field inside it optional — because this client
-  // must parse the response of a Server that predates the field. Absent reads
-  // as "this Server stores no display loops", which is exactly right for one.
-  display_loop_trigger?: {
-    max_bytes?: number
-    max_short_side?: number
-    max_pixels?: number
-  } | null
 }
 
 // The derived shape the UI actually consumes. Computed by deriveClientConfig
@@ -124,44 +116,55 @@ export function deriveClientConfig(response: ClientConfigResponse): ClientConfig
   }
 }
 
-// All THREE numbers have to be present and finite for the trigger to mean
-// anything: it is an OR of three bounds, so a missing one is not a bound that
-// simply never fires — it is a bound the server IS applying and this client
-// cannot see, and guessing would put a `<video>` where image bytes are or the
-// reverse. Anything short of complete is read as "no trigger reported", which
-// every consumer answers with today's `<img>`.
+/**
+ * ALL-OR-NOTHING, and that is the whole rule these two bounds objects are read
+ * under: read `keys` off `obj`, and answer `null` unless EVERY one of them is a
+ * finite, non-negative number.
+ *
+ * A missing member is not a bound that simply never fires — it is a bound the
+ * server IS applying and this client cannot see, so guessing would put a
+ * `<video>` where image bytes are, or the reverse. Everything short of complete
+ * reads as "not reported", which every consumer answers with today's `<img>`.
+ *
+ * The generated types say these are numbers, but the value crosses the wire
+ * from a Server whose version the client does not pin — and one older than the
+ * field sends nothing at all — so the guard is the contract rather than
+ * ceremony.
+ *
+ * Returns the values in `keys` order, for the caller to name.
+ */
+function wireNumbers(
+  obj: unknown,
+  keys: readonly string[]
+): number[] | null {
+  if (!obj || typeof obj !== "object") return null
+  const record = obj as Record<string, unknown>
+  const values: number[] = []
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+      return null
+    }
+    values.push(value)
+  }
+  return values
+}
+
 function normalizeDisplayLoopTrigger(
   trigger: ClientConfigResponse["display_loop_trigger"]
 ): DisplayLoopTrigger | null {
-  if (!trigger) return null
-  const {
-    max_bytes: maxBytes,
-    max_short_side: maxShortSide,
-    max_pixels: maxPixels,
-  } = trigger
-  for (const value of [maxBytes, maxShortSide, maxPixels]) {
-    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null
-  }
-  return {
-    maxBytes: maxBytes as number,
-    maxShortSide: maxShortSide as number,
-    maxPixels: maxPixels as number,
-  }
+  const values = wireNumbers(trigger, ["max_bytes", "max_short_side", "max_pixels"])
+  if (!values) return null
+  const [maxBytes, maxShortSide, maxPixels] = values
+  return { maxBytes, maxShortSide, maxPixels }
 }
 
-// The two numbers have to be finite and positive to mean anything; anything
-// else is read as "no floor reported", which every consumer treats as "no
-// loops exist" and answers with an <img>. The type says they are numbers, but
-// this value crosses the wire from a server whose version the client does not
-// pin, so the guard is cheap insurance rather than ceremony.
 function normalizeAnimatedFloor(
   floor: ClientConfigResponse["animated_floor"] | undefined
 ): AnimatedFloor | null {
-  if (!floor) return null
-  const { max_file_size: maxFileSize, max_side: maxSide } = floor
-  if (typeof maxFileSize !== "number" || !Number.isFinite(maxFileSize)) return null
-  if (typeof maxSide !== "number" || !Number.isFinite(maxSide)) return null
-  if (maxFileSize < 0 || maxSide < 0) return null
+  const values = wireNumbers(floor, ["max_file_size", "max_side"])
+  if (!values) return null
+  const [maxFileSize, maxSide] = values
   return { maxFileSize, maxSide }
 }
 
