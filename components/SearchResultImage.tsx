@@ -21,6 +21,7 @@ import {
 } from '@/lib/thumbnailTier';
 import {
     cellTierForRow,
+    extremeCropArmsHover,
     planCellPicture,
     type CellCrop,
 } from '@/lib/cellPicture';
@@ -696,32 +697,41 @@ function ExtremeAspectPicture({
                     // takes it out of the playing set for as long as that
                     // holds, and gives its cap slot to a cell on screen.
                     occluded={showDisplay}
-                    // NO HOVER ARM ON THIS CARD, in either sense — no dwell,
-                    // no <video>, no loop fetch. THE HOVER IS ALREADY SPOKEN
-                    // FOR: this card's own gesture swaps to the `display`
-                    // rendition, which is the ORIGINAL FILE and animates
-                    // natively in its <img>. Arming as well meant a cell that
-                    // fetched a loop, mounted it, and then unmounted it again
-                    // the moment the swap landed — a request and a decode
-                    // session spent on a picture that was replaced by an
-                    // animating one. The badge rule is untouched (D8): the
-                    // crop under the swap is still a static poster, so it
-                    // still says so.
+                    // ARMED EXACTLY WHEN NO SWAP OWNS THE HOVER. The rule
+                    // itself is `extremeCropArmsHover` (lib/cellPicture.ts),
+                    // named there because it is the plan's question and a pure
+                    // one — scripts/hoveranimate.test.mjs pins it.
                     //
-                    // AND WHEN THERE IS NO SWAP EITHER — an animated strip
-                    // past the display-loop bounds, whose `displaySrc` is null
-                    // (see the call site) — THIS CARD HAS NO MOTION PATH IN
-                    // HOVER MODE AT ALL. Said plainly because it is a
-                    // deliberate choice and reads like an oversight: in hover
-                    // mode such a cell is a static top-crop that the pointer
-                    // does nothing to. The alternative is arming the crop loop
-                    // here, i.e. a multi-megabyte H.264 fetch on dwell over a
-                    // cell that shows a 2:1 sliver of a webtoon — the cost
-                    // hover mode exists to avoid, spent on the least
-                    // legible cell in the grid. ALWAYS mode is unaffected: the
-                    // crop loop is the picture there and plays under the
-                    // director like every other loop cell.
-                    armable={false}
+                    // WITH A SWAP (`displaySrc` non-null) THE HOVER IS ALREADY
+                    // SPOKEN FOR: this card's own gesture swaps to the
+                    // `display` rendition, which is the ORIGINAL FILE and
+                    // animates natively in its <img>. Arming as well meant a
+                    // cell that fetched a loop, mounted it, and then unmounted
+                    // it again the moment the swap landed — a request and a
+                    // decode session spent on a picture that was replaced by an
+                    // animating one.
+                    //
+                    // WITH NO SWAP — an animated strip past the display-loop
+                    // bounds, whose `displaySrc` is null (see the call site) —
+                    // nothing else wants the gesture, so the crop loop ARMS and
+                    // hover-plays through the same director, the same dwell and
+                    // the same cap as every other loop cell. It is the only
+                    // motion path such a card has: un-armed, the pointer did
+                    // nothing whatever to a cell the grid had just badged as
+                    // playable, while every ordinary animated cell beside it
+                    // played. The swap's own mouseenter/mouseleave pair above
+                    // bails on a null `displaySrc`, so the hover root belongs
+                    // to the arming alone and no second listener competes for
+                    // it.
+                    //
+                    // The badge rule is untouched (D8): the crop paints a
+                    // static poster until something plays it — under a swap or
+                    // under an arm alike — so it still says so, and an armed
+                    // crop loop is just a hover-mode loop cell, which is the
+                    // case the predicate already answers. ALWAYS mode is
+                    // unaffected either way: the crop loop is the picture there
+                    // and plays under the director like every other loop cell.
+                    armable={extremeCropArmsHover(crop, displaySrc)}
                 />
             ) : (
                 <CellStillImage
@@ -913,9 +923,10 @@ interface LoopPictureProps {
      */
     occluded?: boolean
     /**
-     * May this cell arm a hover play at all? False on the extreme-aspect card,
-     * whose hover already means something else — see the site there. Distinct
-     * from `occluded`, which is about a moment; this is about the card.
+     * May this cell arm a hover play at all? False on an extreme-aspect card
+     * whose hover already means something else — the swap to the whole-image
+     * rendition; see `extremeCropArmsHover` and the site there. Distinct from
+     * `occluded`, which is about a moment; this is about the card.
      */
     armable?: boolean
 }

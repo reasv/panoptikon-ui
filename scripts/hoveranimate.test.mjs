@@ -42,6 +42,9 @@ const { animatedCellMode, showsMotionBadge } = await import(
 const { SMALL_CELL_THRESHOLD_PX, isSmallCell } = await import(
   "../lib/gridCellSize.ts"
 )
+const { extremeCropArmsHover, planCellPicture } = await import(
+  "../lib/cellPicture.ts"
+)
 
 
 const { check, finish } = createChecker()
@@ -419,6 +422,83 @@ console.log("\n== the badge predicate matrix (D8) ==")
   check(
     "with no floor known, an animation carries no badge",
     badge(gif(true), null, "hover") === false
+  )
+}
+
+console.log("\n== the extreme-aspect card's arming rule (D6/D7) ==")
+{
+  const dbs = { index_db: "stdtest", user_data_db: null }
+  const floor = { maxFileSize: 1024 * 1024, maxSide: 512 }
+  const trigger = {
+    maxBytes: 5 * 1024 * 1024,
+    maxShortSide: 4096,
+    maxPixels: 24_000_000,
+  }
+  const env = {
+    animatedFloor: floor,
+    displayLoopTrigger: trigger,
+    smallCell: false,
+  }
+  // A webtoon panel: extreme by aspect (past 2), above the raw floor, and —
+  // at 8.4 MiB — past the display-loop trigger, which is the case that has no
+  // whole-image swap because `?size=display` answers it with video/mp4.
+  const strip = (bytes) => ({
+    sha256: "abc",
+    type: "image/gif",
+    duration: 2,
+    size: bytes,
+    width: 2439,
+    height: 1080,
+  })
+  const staticStrip = {
+    sha256: "abc",
+    type: "image/png",
+    duration: null,
+    size: 900_000,
+    width: 2439,
+    height: 1080,
+  }
+  // Driven through the REAL plan rather than hand-built pairs: what the card
+  // asks is "does this plan's crop arm", and a fixture that agreed with the
+  // predicate while disagreeing with `planCellPicture` would prove nothing.
+  const plan = (row) => planCellPicture(row, dbs, "grid-s", env)
+  const arms = (row) => {
+    const p = plan(row)
+    return p.kind === "extreme" && extremeCropArmsHover(p.crop, p.displaySrc)
+  }
+
+  check(
+    "an OVER-TRIGGER animated strip has a loop crop and no swap",
+    plan(strip(8_800_000)).crop.kind === "loop"
+      && plan(strip(8_800_000)).displaySrc === null
+  )
+  // THE FIX: with no swap to own the gesture, the crop loop arms and
+  // hover-plays like every other loop cell. Un-armed it was the one animated
+  // cell in the grid the pointer did nothing to.
+  check("...and so it ARMS its crop loop", arms(strip(8_800_000)) === true)
+  // The swap is the card's hover when it exists: the display rendition is the
+  // original file and animates in its <img>, so a loop fetched on dwell would
+  // be unmounted again the moment the swap landed.
+  check(
+    "an under-trigger animated strip has a swap and does NOT arm",
+    plan(strip(2_000_000)).displaySrc !== null
+      && arms(strip(2_000_000)) === false
+  )
+  // A still crop has nothing to play, swap or no swap.
+  check(
+    "a static strip never arms",
+    plan(staticStrip).crop.kind === "image"
+      && extremeCropArmsHover(plan(staticStrip).crop, null) === false
+      && arms(staticStrip) === false
+  )
+  // THE PAIRING THE BADGE PROMISES (D8): the over-trigger strip's cell carries
+  // the play glyph in hover mode, and the badge means "this moves, but not
+  // right now" — which is only true of a cell the pointer can start.
+  check(
+    "a badged strip cell has a motion path in hover mode",
+    showsMotionBadge(strip(8_800_000), animatedCellMode(strip(8_800_000), floor),
+      "hover") === true
+      && arms(strip(8_800_000)) === true
   )
 }
 
