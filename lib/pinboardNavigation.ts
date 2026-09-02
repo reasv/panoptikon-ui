@@ -66,3 +66,36 @@ export function consumePinboardExplicitPlacement(): boolean {
   explicitPlacement = false
   return was
 }
+
+// Maximize pressed from a tab strip whose pinboard tab is NOT showing (the
+// tab chip's own maximize button, the one control that works from an
+// inactive tab because it activates the tab itself).
+//
+// Every other way to maximize is reached from a MOUNTED board, so the
+// board's viewport-growth effect sees `fs` go false -> true and re-fills to
+// the bigger fold. This path cannot: the tab activation and the `fs` write
+// land in one tick, so the board MOUNTS already maximized and that effect's
+// baseline — initialized from the current flags precisely so that a tab
+// switch back while maximized counts as navigation rather than a layout
+// request — reads "was already fullscreen". No growth, no fill, and the
+// ratchet expands under a layout built for the small fold.
+//
+// Hence a mark rather than a fix inside that effect: "mounted maximized" is
+// genuinely ambiguous, and only the button knows this particular mount was
+// asked for.
+
+let maximizeRequest = false
+
+// Call immediately before the paired tab-activation + `fs` writes.
+export function markPinboardMaximizeRequest() {
+  maximizeRequest = true
+}
+
+// Consumed by the auto-layout trigger on every records observation: true on
+// the trigger's FIRST run means this mount is a maximize the user asked for
+// and the board owes it a fill.
+export function consumePinboardMaximizeRequest(): boolean {
+  const was = maximizeRequest
+  maximizeRequest = false
+  return was
+}

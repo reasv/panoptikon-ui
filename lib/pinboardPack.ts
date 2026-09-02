@@ -23,7 +23,9 @@
 // width at its natural height.
 
 import type { LayoutItem } from "react-grid-layout"
-import { GridParams, rowStep } from "./pinboardGrid"
+// GridParams is type-only explicitly so node's type stripping erases it —
+// the test scripts load this module directly (see scripts/ts-hooks.mjs)
+import { type GridParams, rowStep } from "./pinboardGrid"
 
 export interface PackItem {
   key: string
@@ -1512,6 +1514,277 @@ export function packRowsAroundObstacles({
         for (const l of packed) layout.push({ ...l, x: l.x + seg.x, y: l.y + seg.y })
     })
     return layout
+}
+
+// ---------------------------------------------------------------------------
+// Uniform packing: tile the target rectangle with identical cells.
+//
+// The mosaic gives every item a cell of its own shape; uniform layout is
+// the other deliberate look — row-major placement in one repeated cell,
+// like a contact sheet. Perfect integer uniformity is impossible on the
+// lattice, so the cells are identical within one lattice unit:
+// apportionToTotal splits grid.columns across the chosen column count and
+// totalGridRows across the row count, which keeps the two invariants
+// packRows documents — the block spans the full width flush and fills the
+// target row count EXACTLY (a short block would let the cutting board
+// below the fold compact up into view). The last row is ragged and
+// left-aligned on purpose: stretching its members would break the one
+// thing this layout promises, identical cells.
+//
+// The cell SHAPE is a cost function, not a mode: every feasible
+// factorization (cols x ceil(n/cols)) is scored by the summed cover-crop
+// loss its cell pixel aspect inflicts on the items and ranked ascending.
+// The reroll cycles that ranking, and the choice sticks as a cell ASPECT
+// rather than a rank index — an index would teleport the shape whenever a
+// different item count reshuffles the list.
+
+export interface UniformFactorization {
+    cols: number
+    rows: number
+    // Ideal (fractional) cell pixel aspect at this factorization, margins
+    // included
+    cellAspect: number
+    // Summed cover-crop loss over the items: 1 - min(r,c)/max(r,c) each
+    loss: number
+}
+
+// The lattice one factorization produces: column/row spans apportioned to
+// the exact totals, plus their prefix positions
+function uniformLattice(
+    cols: number,
+    rows: number,
+    columns: number,
+    totalRows: number,
+    minW: number,
+    minH: number,
+): { widths: number[], heights: number[], xs: number[], ys: number[] } {
+    const widths = apportionToTotal(new Array<number>(cols).fill(1), columns, minW)
+    const heights = apportionToTotal(new Array<number>(rows).fill(1), totalRows, minH)
+    const xs = [0]
+    for (const w of widths) xs.push(xs[xs.length - 1] + w)
+    const ys = [0]
+    for (const h of heights) ys.push(ys[ys.length - 1] + h)
+    return { widths, heights, xs, ys }
+}
+
+// Free cells of a lattice in row-major order — the placement order and the
+// obstacle-feasibility count in one enumeration
+function uniformFreeCells(
+    lattice: ReturnType<typeof uniformLattice>,
+    obstacles: GridRect[],
+): { ci: number, ri: number }[] {
+    const free: { ci: number, ri: number }[] = []
+    for (let ri = 0; ri < lattice.heights.length; ri++) {
+        for (let ci = 0; ci < lattice.widths.length; ci++) {
+            const cell = {
+                x: lattice.xs[ci], y: lattice.ys[ri],
+                w: lattice.widths[ci], h: lattice.heights[ri],
+            }
+            if (!obstacles.some(o => rectsIntersect(cell, o))) free.push({ ci, ri })
+        }
+    }
+    return free
+}
+
+// Obstacles clipped to the target rectangle, packRegion's rule: the part
+// of an anchored item hanging below the fold doesn't block any cell
+function clipUniformObstacles(
+    obstacles: GridRect[], columns: number, total: number,
+): GridRect[] {
+    const clipped: GridRect[] = []
+    for (const o of obstacles) {
+        const x = Math.max(0, o.x)
+        const y = Math.max(0, o.y)
+        const w = Math.min(columns, o.x + o.w) - x
+        const h = Math.min(total, o.y + o.h) - y
+        if (w > 0 && h > 0) clipped.push({ x, y, w, h })
+    }
+    return clipped
+}
+
+// All feasible factorizations for the given items and target rectangle,
+// best-scored first. Feasible means the equal-share apportionment keeps
+// every cell at the minimum size — the narrowest column gets
+// floor(columns/cols) units, so that floor is what has to clear it — and,
+// with obstacles, that enough cells survive the blocking to hold every
+// item. No relaxation escape hatch here: an infeasible board yields an
+// empty list and the caller refuses, the standard "couldn't fill" path.
+export function rankUniformFactorizations({
+    items,
+    obstacles = [],
+    grid,
+    columnWidth,
+    totalGridRows,
+    minW = 1,
+    minH = 1,
+}: {
+    items: PackItem[],
+    obstacles?: GridRect[],
+    grid: GridParams,
+    columnWidth: number,
+    totalGridRows: number,
+    minW?: number,
+    minH?: number,
+}): UniformFactorization[] {
+    const n = items.length
+    if (n === 0) return []
+    const total = Math.max(1, totalGridRows)
+    // No upper clamp on the minimums (unlike relaxMinimums' escape hatch):
+    // a target rectangle that can't hold even one minimum-size cell is
+    // exactly the infeasibility this ranking must report as empty
+    const effMinW = Math.max(1, minW)
+    const effMinH = Math.max(1, minH)
+    const clipped = clipUniformObstacles(obstacles, grid.columns, total)
+    const out: UniformFactorization[] = []
+    // Obstacles consume lattice cells, so the sweep can't stop at n
+    // columns: a free strip narrower than the item count still tiles once
+    // the fold is cut finer than the items alone would need — the extra
+    // cells just sit under the obstacles
+    const maxCols = clipped.length > 0
+        ? Math.floor(grid.columns / effMinW) : n
+    const maxRows = Math.floor(total / effMinH)
+    for (let cols = 1; cols <= maxCols; cols++) {
+        if (Math.floor(grid.columns / cols) < effMinW) continue
+        let rows = Math.ceil(n / cols)
+        if (rows > maxRows) continue
+        if (clipped.length > 0) {
+            // The item-count division sizes the lattice as if every cell
+            // were usable, but blocked cells shrink its capacity below
+            // cols×rows — an anchored region covering half the fold
+            // rejects every such lattice outright. Search upward for the
+            // smallest row count whose lattice keeps n cells free: the
+            // items divide the space the obstacles leave them, and the
+            // smallest feasible count is the largest such cells.
+            for (; rows <= maxRows; rows++) {
+                const lattice = uniformLattice(
+                    cols, rows, grid.columns, total, effMinW, effMinH)
+                if (uniformFreeCells(lattice, clipped).length >= n) break
+            }
+            if (rows > maxRows) continue
+        }
+        // Ideal cell pixel dims — the fractional equal share through the
+        // same px-per-unit mapping pixelWidth and rowNaturalHeight use
+        const cellW =
+            (grid.columns / cols) * (columnWidth + grid.margin) - grid.margin
+        const cellH = (total / rows) * rowStep(grid) - grid.margin
+        if (cellW <= 0 || cellH <= 0) continue
+        const c = cellW / cellH
+        const loss = items.reduce((acc, it) => {
+            const r = ratio(it)
+            return acc + 1 - Math.min(r, c) / Math.max(r, c)
+        }, 0)
+        out.push({ cols, rows, cellAspect: c, loss })
+    }
+    out.sort((a, b) => a.loss - b.loss || a.cols - b.cols)
+    return out
+}
+
+// Which ranked factorization renders closest to a chosen cell aspect —
+// log-space distance, like the mosaic's aspect ranking; the better-scored
+// entry wins ties. Shared by packUniform and the reroll so the two can
+// never disagree about what "nearest" means.
+export function nearestUniformIndex(
+    ranked: UniformFactorization[],
+    aspect: number,
+): number {
+    let best = 0
+    for (let i = 1; i < ranked.length; i++) {
+        if (Math.abs(Math.log(ranked[i].cellAspect / aspect))
+            < Math.abs(Math.log(ranked[best].cellAspect / aspect))) best = i
+    }
+    return best
+}
+
+// Pack `items` (in reading order) into identical cells tiling the target
+// rectangle, row-major left-to-right top-to-bottom, flowing around the
+// obstacles by skipping the cells they intersect. Returns [] when no
+// factorization is feasible (minimum size, or not enough free cells), so
+// callers keep the existing layout.
+export function packUniform({
+    items,
+    obstacles = [],
+    grid,
+    columnWidth,
+    totalGridRows,
+    minW = 1,
+    minH = 1,
+    chosenAspect = null,
+}: {
+    items: PackItem[],
+    obstacles?: GridRect[],
+    grid: GridParams,
+    columnWidth: number,
+    totalGridRows: number,
+    // Minimum cell size in grid units — a refusal bound here, never
+    // relaxed (see rankUniformFactorizations)
+    minW?: number,
+    minH?: number,
+    // The session's sticky cell aspect (the reroll's choice): the nearest
+    // feasible factorization is used, whatever the item count. Null picks
+    // the best-scored one.
+    chosenAspect?: number | null,
+}): LayoutItem[] {
+    const n = items.length
+    if (n === 0) return []
+    const total = Math.max(1, totalGridRows)
+    const ranked = rankUniformFactorizations({
+        items, obstacles, grid, columnWidth, totalGridRows: total, minW, minH,
+    })
+    if (ranked.length === 0) return []
+    const pick = ranked[chosenAspect == null
+        ? 0 : nearestUniformIndex(ranked, chosenAspect)]
+    // The ranking's feasibility gate proved the minimums attainable, so
+    // they enter the lattice apportionment un-clamped too
+    const lattice = uniformLattice(pick.cols, pick.rows, grid.columns, total,
+        Math.max(1, minW), Math.max(1, minH))
+    // The ranking already proved this factorization has n free cells
+    const free = uniformFreeCells(
+        lattice, clipUniformObstacles(obstacles, grid.columns, total))
+    const layout: LayoutItem[] = []
+    for (let k = 0; k < n; k++) {
+        const { ci, ri } = free[k]
+        layout.push({
+            i: items[k].key,
+            x: lattice.xs[ci], y: lattice.ys[ri],
+            w: lattice.widths[ci], h: lattice.heights[ri],
+        })
+    }
+    return layout
+}
+
+// packUniform in an arbitrary sub-rectangle of the grid — the same
+// virtual-grid trick as packRegionInBox, obstacles in BOARD coordinates
+// translated into the box's frame and clipped to it. Used by "uniform the
+// selection within its bounding box".
+export function packUniformInBox({
+    items,
+    obstacles,
+    grid,
+    columnWidth,
+    box,
+    minW = 1,
+    minH = 1,
+    chosenAspect = null,
+}: {
+    items: PackItem[],
+    obstacles: GridRect[],
+    grid: GridParams,
+    columnWidth: number,
+    box: GridRect,
+    minW?: number,
+    minH?: number,
+    chosenAspect?: number | null,
+}): LayoutItem[] {
+    const virtual: GridParams = { ...grid, columns: Math.max(1, box.w) }
+    const packed = packUniform({
+        items,
+        obstacles: obstacles.map(o => ({ ...o, x: o.x - box.x, y: o.y - box.y })),
+        grid: virtual,
+        columnWidth,
+        totalGridRows: Math.max(1, box.h),
+        minW, minH, chosenAspect,
+    })
+    return packed.map(l => ({ ...l, x: l.x + box.x, y: l.y + box.y }))
 }
 
 // Group items into logical rows by y-overlap: a row is seeded by the

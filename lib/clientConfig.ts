@@ -1,4 +1,10 @@
-import { components } from "@/lib/panoptikon"
+// Type-only, both of them. `@/lib/panoptikon` is a .d.ts, so a VALUE import of
+// it is a runtime module the node test scripts cannot resolve (the rule
+// lib/videoTranscode.ts documents) — and with both erased this module has NO
+// runtime imports at all, which is what lets scripts/displayloop.test.mjs
+// execute `deriveClientConfig` under plain node.
+import type { components } from "@/lib/panoptikon"
+import type { AnimatedFloor, DisplayLoopTrigger } from "@/lib/thumbnailTier"
 
 // The gateway's GET /api/client-config response: the name of the policy that
 // matched the request, capability booleans derived from that policy's
@@ -19,6 +25,34 @@ export interface ClientConfig {
   desktopManaged: boolean
   desktopShellAvailable: boolean
   relayEnabled: boolean
+  pinboardSearchEnabled: boolean
+  videoTranscodeEnabled: boolean
+  videoComposeEnabled: boolean
+  /**
+   * The raw floor an animated item must clear before the scan stores an H.264
+   * loop for it, verbatim from the server (`animated_floor`). Grid cells decide
+   * `<img>` vs `<video>` against it; it is deliberately NOT duplicated as a
+   * constant on this side, so a backend change to the floor reaches the client
+   * on the next config fetch.
+   *
+   * Null when the server does not report one — an older Server than the one
+   * that ships the loop pipeline. Every consumer reads null as "no loops
+   * exist", which is exactly right for such a server and is also the state
+   * while the config request is still in flight.
+   */
+  animatedFloor: AnimatedFloor | null
+  /**
+   * The bounds past which the DISPLAY size of an animated item is an H.264
+   * loop rather than a picture (`display_loop_trigger`), verbatim from the
+   * server. The gallery's large view decides `<video>` vs `<img>` against it
+   * from row data alone — no wasted request, no error latch.
+   *
+   * Null when the server does not report one, which covers a Server older than
+   * the display-loop pipeline, a deployment where it is off, and the window
+   * while the config request is in flight. Every consumer reads null as "the
+   * display size is always an image", i.e. today's element.
+   */
+  displayLoopTrigger: DisplayLoopTrigger | null
 }
 
 // [policies.client] keys are free-form; these are the by-convention keys the
@@ -50,7 +84,88 @@ export function deriveClientConfig(response: ClientConfigResponse): ClientConfig
     desktopManaged: response.desktop_managed === true,
     desktopShellAvailable: response.desktop_shell_available === true,
     relayEnabled: client["relay_enabled"] !== false,
+    // The ruleset lets this policy *read* the pinboard library and search it.
+    // Consumers that fetch board data unprompted (the grid's Library tab)
+    // gate on it so a policy without board access never fires a request it
+    // would 403. Deliberately not the `pinboards` capability: that one probes
+    // a write (POST /api/pinboards), so a read-only-boards policy would lose
+    // the Library tab even though both of its requests would succeed.
+    pinboardSearchEnabled: capabilities.pinboard_search !== false,
+    // Probed off POST /api/video/transcode, so this is "may this client ask
+    // for a new encode", not "may it play one" — a policy that serves cached
+    // artifacts but denies conversions still reports false here. The
+    // playability ladder (lib/videoPlayability.ts) uses it to decide whether
+    // an unplayable file gets a play affordance at all; it never suppresses
+    // NATIVE playability, so a browser that decodes the file itself is
+    // unaffected by a policy that forbids transcoding.
+    videoTranscodeEnabled: capabilities.video_transcode !== false,
+    // Probed off POST /api/video/compose, which is a SEPARATE route from the
+    // single-file transcode and separately rule-able: composing N inputs is
+    // strictly heavier work, so a policy may well allow clips and deny
+    // mosaics. The animated pinboard rows gate on this one and never on
+    // `video_transcode` — they post here, and a client that read the other
+    // capability would offer rows whose press 403s.
+    videoComposeEnabled: capabilities.video_compose !== false,
+    // NOT a `[policies.client]` key and not capability-derived: the floor is a
+    // property of what the scan wrote, identical for every policy, so it rides
+    // at the top level of the response and is passed through as-is.
+    animatedFloor: normalizeAnimatedFloor(response.animated_floor),
+    // Top-level for the same reason as the floor above: it is a property of
+    // what the scan wrote, identical for every policy.
+    displayLoopTrigger: normalizeDisplayLoopTrigger(response.display_loop_trigger),
   }
+}
+
+/**
+ * ALL-OR-NOTHING, and that is the whole rule these two bounds objects are read
+ * under: read `keys` off `obj`, and answer `null` unless EVERY one of them is a
+ * finite, non-negative number.
+ *
+ * A missing member is not a bound that simply never fires — it is a bound the
+ * server IS applying and this client cannot see, so guessing would put a
+ * `<video>` where image bytes are, or the reverse. Everything short of complete
+ * reads as "not reported", which every consumer answers with today's `<img>`.
+ *
+ * The generated types say these are numbers, but the value crosses the wire
+ * from a Server whose version the client does not pin — and one older than the
+ * field sends nothing at all — so the guard is the contract rather than
+ * ceremony.
+ *
+ * Returns the values in `keys` order, for the caller to name.
+ */
+function wireNumbers(
+  obj: unknown,
+  keys: readonly string[]
+): number[] | null {
+  if (!obj || typeof obj !== "object") return null
+  const record = obj as Record<string, unknown>
+  const values: number[] = []
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+      return null
+    }
+    values.push(value)
+  }
+  return values
+}
+
+function normalizeDisplayLoopTrigger(
+  trigger: ClientConfigResponse["display_loop_trigger"]
+): DisplayLoopTrigger | null {
+  const values = wireNumbers(trigger, ["max_bytes", "max_short_side", "max_pixels"])
+  if (!values) return null
+  const [maxBytes, maxShortSide, maxPixels] = values
+  return { maxBytes, maxShortSide, maxPixels }
+}
+
+function normalizeAnimatedFloor(
+  floor: ClientConfigResponse["animated_floor"] | undefined
+): AnimatedFloor | null {
+  const values = wireNumbers(floor, ["max_file_size", "max_side"])
+  if (!values) return null
+  const [maxFileSize, maxSide] = values
+  return { maxFileSize, maxSide }
 }
 
 // Guard for home_redirect. The value is operator-controlled TOML, so this is

@@ -22,21 +22,40 @@
 // fidelity for legible thumbnails — the deliberate choice here.
 // screenfulH still marks one save-time screenful measured from the top of
 // the (cropped) image, for consumers that want the above-the-fold cut.
+//
+// The cell mapping this draws with lives in pinboardGeometry.ts, and the
+// per-pin draw step (drawPin) is exported from here: the mosaic export
+// (pinboardMosaic.ts) is the same compositor at a chosen width, and the
+// two must not be able to drift into two different pictures of one board.
 
-import { composeCrops, parseHField } from "@/lib/pinboardCrop"
-import { GridParams, parseBoard, rowStep } from "@/lib/pinboardGrid"
-import { computeRestGeometry } from "@/components/gallery/CropView"
-import { getFileURL } from "@/lib/utils"
+// The type is imported separately: node's --experimental-strip-types (how the
+// test scripts load this module's siblings) cannot erase a type hiding in a
+// value import list.
+import type { PinOrientation } from "@/lib/pinboardCrop"
+import { isIdentityOrientation } from "@/lib/pinboardCrop"
+import { effectiveGrid, gridScale, parseBoard } from "@/lib/pinboardGrid"
+import type { PinPlacement } from "@/lib/pinboardGeometry"
+import { parsePlacements, resolvePinDraw } from "@/lib/pinboardGeometry"
+import { thumbnailStillURL } from "@/lib/thumbnailURL"
 
 // Output width of the composited preview in pixels. One constant, tunable
 // without schema or API changes: preview_w/preview_h record what each
 // version was actually rendered at, and the serving endpoint downscales.
-export const PREVIEW_WIDTH = 1024
+//
+// This is the MASTER every displayed size derives from, so it has to be
+// wide enough for the largest consumer (the hover popover and the full-size
+// dialog, which now ask for the stored bytes untouched) rather than for the
+// cards. A full-width board composites at ~3440px, so 2048 still downscales
+// — but a 2-screenful WebP q0.82 at this width lands in the hundreds of KB,
+// far under MAX_PREVIEW_BYTES, and the serve endpoint's maxw clamp allows
+// up to 4096. Existing versions keep whatever they were saved at; "Refresh
+// Preview" is the opt-in way to re-render one at this width.
+export const PREVIEW_WIDTH = 2048
 // How many window-heights of board (from the top) the preview captures.
 export const CAPTURE_SCREENFULS = 2
 const WEBP_QUALITY = 0.82
 // Pin cards render with `rounded` (0.25rem); scaled into preview space.
-const PIN_CORNER_RADIUS_PX = 4
+export const PIN_CORNER_RADIUS_PX = 4
 
 export interface ComposedPreview {
   blob: Blob
@@ -46,63 +65,133 @@ export interface ComposedPreview {
   screenfulH: number
 }
 
-interface PinPlacement {
-  sha256: string
-  // Cell rect in board pixels
-  left: number
-  top: number
+// Set up the canvas so a source-proportioned drawImage lands with its
+// ORIENTED bounding box exactly filling (L,T,W,H); returns the destination
+// rect to draw at. Canvas transforms post-multiply, so the calls read in
+// the same order as the codec's composition
+// (display = flipH^flipped o rotateCW^quarterTurns) and as CropView's CSS
+// transform list: the mirror acts on the already-rotated box, and each
+// piece carries the translate that brings the result back into the
+// positive quadrant. Identity never touches the matrix, so unoriented pins
+// keep the exact draw call they had before orientation existed.
+function orientDraw(
+  ctx: CanvasRenderingContext2D,
+  L: number,
+  T: number,
+  W: number,
+  H: number,
+  o: PinOrientation | null
+): [number, number, number, number] {
+  if (isIdentityOrientation(o)) return [L, T, W, H]
+  ctx.translate(L, T)
+  if (o!.flipped) {
+    ctx.translate(W, 0)
+    ctx.scale(-1, 1)
+  }
+  if (o!.quarterTurns === 1) {
+    ctx.translate(W, 0)
+    ctx.rotate(Math.PI / 2)
+  } else if (o!.quarterTurns === 2) {
+    ctx.translate(W, H)
+    ctx.rotate(Math.PI)
+  } else if (o!.quarterTurns === 3) {
+    ctx.translate(0, H)
+    ctx.rotate(-Math.PI / 2)
+  }
+  return o!.quarterTurns % 2 ? [0, 0, H, W] : [0, 0, W, H]
+}
+
+/**
+ * Something drawable plus the intrinsic size to read the crop against.
+ *
+ * A pin's pixels do not always come from an <img>: a video that is on
+ * screen composites its CURRENT FRAME straight off the <video> element
+ * (see pinboardMedia.ts), which has videoWidth/videoHeight rather than
+ * naturalWidth/naturalHeight and no `complete` flag. Carrying the size
+ * alongside the source keeps drawPin from having to know which it got.
+ */
+export interface PinSource {
+  source: CanvasImageSource
   width: number
   height: number
-  crop: ReturnType<typeof composeCrops>
 }
 
-// react-grid-layout's cell-to-pixel mapping, as used by GalleryPinBoard
-function cellRect(
-  grid: GridParams,
-  boardWidth: number,
-  x: number,
-  y: number,
-  w: number,
-  h: number
-): { left: number; top: number; width: number; height: number } {
-  const colWidth =
-    (boardWidth - 2 * grid.padding - (grid.columns - 1) * grid.margin) /
-    grid.columns
-  return {
-    left: grid.padding + x * (colWidth + grid.margin),
-    top: grid.padding + y * rowStep(grid),
-    width: w * colWidth + (w - 1) * grid.margin,
-    height: h * grid.rowHeight + (h - 1) * grid.margin,
+// One pin onto the canvas, at a rect already in canvas coordinates: the
+// step both compositors share. `img` null (or a load failure the caller
+// turned into null) draws the placeholder tile instead of leaving a hole;
+// a source with no intrinsic size draws nothing, which is what the
+// preview has always done. `cornerRadius` 0 draws square (seamless
+// mosaics, where rounded corners would punch holes in the tiling).
+export function drawPin(
+  ctx: CanvasRenderingContext2D,
+  p: PinPlacement,
+  img: PinSource | null,
+  cellLeft: number,
+  cellTop: number,
+  cellW: number,
+  cellH: number,
+  cornerRadius: number
+): void {
+  ctx.save()
+  if (cornerRadius > 0 && typeof ctx.roundRect === "function") {
+    ctx.beginPath()
+    ctx.roundRect(cellLeft, cellTop, cellW, cellH, cornerRadius)
+    ctx.clip()
   }
-}
 
-function parsePlacements(
-  records: string[],
-  grid: GridParams,
-  boardWidth: number
-): PinPlacement[] {
-  const placements: PinPlacement[] = []
-  for (let i = 0; i + 4 < records.length; i += 5) {
-    const [sha256, x, y, w, hField] = records.slice(i, i + 5)
-    if (sha256 === "__preview") continue
-    const { h, crop, autoCrop } = parseHField(hField)
-    placements.push({
-      sha256,
-      ...cellRect(
-        grid,
-        boardWidth,
-        parseInt(x),
-        parseInt(y),
-        parseInt(w),
-        h
-      ),
-      crop: composeCrops(crop, autoCrop),
+  if (img) {
+    const nw = img.width
+    const nh = img.height
+    // Which part of the source lands in which part of the cell: the same
+    // answer the composition document is built from (lib/pinboardGeometry's
+    // resolvePinDraw), so a server-rendered mosaic and this canvas cannot
+    // frame one pin two ways. A source with no intrinsic size resolves to
+    // null and draws nothing, which is what the preview has always done.
+    const draw = resolvePinDraw(p, nw, nh, {
+      left: cellLeft,
+      top: cellTop,
+      width: cellW,
+      height: cellH,
     })
+    if (draw) {
+      const s = draw.src
+      ctx.save()
+      const [dx, dy, dw, dh] = orientDraw(
+        ctx,
+        draw.dest.left,
+        draw.dest.top,
+        draw.dest.width,
+        draw.dest.height,
+        p.orient
+      )
+      ctx.drawImage(
+        img.source,
+        s.x * nw,
+        s.y * nh,
+        s.w * nw,
+        s.h * nh,
+        dx,
+        dy,
+        dw,
+        dh
+      )
+      ctx.restore()
+    }
+  } else {
+    // Missing item (deleted from the index, network failure): a flat
+    // placeholder tile in the pin's spot rather than a hole.
+    ctx.fillStyle = "rgba(127, 127, 127, 0.35)"
+    ctx.fillRect(cellLeft, cellTop, cellW, cellH)
   }
-  return placements
+  ctx.restore()
 }
 
-function loadImage(src: string): Promise<HTMLImageElement> {
+/** A loaded <img> as a PinSource. */
+export function imageSource(img: HTMLImageElement): PinSource {
+  return { source: img, width: img.naturalWidth, height: img.naturalHeight }
+}
+
+export function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image()
     img.onload = () => resolve(img)
@@ -111,15 +200,20 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   })
 }
 
-function canvasToWebP(canvas: HTMLCanvasElement): Promise<Blob> {
+export function canvasToBlob(
+  canvas: HTMLCanvasElement,
+  mime: string,
+  quality: number
+): Promise<Blob> {
   return new Promise((resolve, reject) => {
-    // toBlob falls back to PNG when the browser can't encode WebP; the
-    // gateway sniffs the actual format on serve, so that's fine.
+    // toBlob falls back to PNG when the browser can't encode the requested
+    // format; the gateway sniffs the actual format on serve, so that's fine
+    // for previews, and a download just gets a bigger file.
     canvas.toBlob(
       (blob) =>
         blob ? resolve(blob) : reject(new Error("canvas export failed")),
-      "image/webp",
-      WEBP_QUALITY
+      mime,
+      quality
     )
   })
 }
@@ -130,18 +224,41 @@ export function findBoardElement(): HTMLElement | null {
 }
 
 /**
+ * The board's scroll viewport, when the board is on screen: the element
+ * whose clientHeight the fill verbs measure the fold against (see
+ * usePinboardLayoutActions.foldRows — it is handed this same node as
+ * `pinboardRef`). Probed from the DOM rather than published through the
+ * board API because the export surfaces (tab chevron, fullscreen bar) also
+ * run with the board unmounted, exactly like findBoardElement.
+ */
+export function findBoardViewport(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("[data-pinboard-area]")
+}
+
+/**
  * Composites a preview of the given board state (the raw `pinboard` URL
  * param array). `boardWidth` is the rendered board's pixel width; when the
  * board isn't currently rendered, callers fall back to window.innerWidth,
  * which is what the expanded view would give it.
+ *
+ * `proportional` is the board's "Scale With Window" flag (pbp). With it on,
+ * the board on screen is drawn on the token's reference width scaled to
+ * boardWidth, so the composite has to use the same effective grid or the
+ * saved preview would not match what the user is looking at.
  */
 export async function composeBoardPreview(
   savedLayout: string[],
   dbs: { index_db: string | null; user_data_db: string | null },
   boardWidth: number,
-  background: string
+  background: string,
+  proportional = false
 ): Promise<ComposedPreview | null> {
-  const { grid, records } = parseBoard(savedLayout)
+  const parsed = parseBoard(savedLayout)
+  const records = parsed.records
+  const grid = effectiveGrid(
+    parsed.grid,
+    gridScale(proportional, parsed.refWidth, boardWidth)
+  )
   const placements = parsePlacements(records, grid, boardWidth)
   if (placements.length === 0 || boardWidth <= 0) return null
 
@@ -191,56 +308,34 @@ export async function composeBoardPreview(
   const visible = placements.filter(
     (p) => (p.top - cropTop) * scale < outHeight
   )
+  // `still=true`: a canvas draw source has to be an <img>, and above the
+  // server's display-loop bounds an animated item's display request answers
+  // `video/mp4` (docs/thumbnail-format-implementation.md R3), which would
+  // reject and leave a placeholder tile in the saved preview. The flag is a
+  // no-op for every other item. Nothing here reads the media TYPE, so a WebP
+  // rendition needs no other change — the element decodes what it is sent.
   const images = await Promise.allSettled(
     visible.map((p) =>
-      loadImage(getFileURL(dbs, "thumbnail", "sha256", p.sha256))
+      loadImage(thumbnailStillURL(dbs, p.sha256))
     )
   )
 
   for (let i = 0; i < visible.length; i++) {
     const p = visible[i]
-    const cellLeft = (p.left - cropLeft) * scale
-    const cellTop = (p.top - cropTop) * scale
-    const cellW = p.width * scale
-    const cellH = p.height * scale
-
-    ctx.save()
-    if (typeof ctx.roundRect === "function") {
-      ctx.beginPath()
-      ctx.roundRect(cellLeft, cellTop, cellW, cellH, PIN_CORNER_RADIUS_PX)
-      ctx.clip()
-    }
-
     const loaded = images[i]
-    if (loaded.status === "fulfilled") {
-      const img = loaded.value
-      const nw = img.naturalWidth
-      const nh = img.naturalHeight
-      if (nw > 0 && nh > 0) {
-        const c = p.crop ?? { x: 0, y: 0, w: 1, h: 1 }
-        const geo = computeRestGeometry(cellW, cellH, c, nw, nh)
-        ctx.drawImage(
-          img,
-          c.x * nw,
-          c.y * nh,
-          c.w * nw,
-          c.h * nh,
-          cellLeft + geo.visL,
-          cellTop + geo.visT,
-          geo.visW,
-          geo.visH
-        )
-      }
-    } else {
-      // Missing item (deleted from the index, network failure): a flat
-      // placeholder tile in the pin's spot rather than a hole.
-      ctx.fillStyle = "rgba(127, 127, 127, 0.35)"
-      ctx.fillRect(cellLeft, cellTop, cellW, cellH)
-    }
-    ctx.restore()
+    drawPin(
+      ctx,
+      p,
+      loaded.status === "fulfilled" ? imageSource(loaded.value) : null,
+      (p.left - cropLeft) * scale,
+      (p.top - cropTop) * scale,
+      p.width * scale,
+      p.height * scale,
+      PIN_CORNER_RADIUS_PX
+    )
   }
 
-  const blob = await canvasToWebP(canvas)
+  const blob = await canvasToBlob(canvas, "image/webp", WEBP_QUALITY)
   return { blob, width: outWidth, height: outHeight, screenfulH }
 }
 

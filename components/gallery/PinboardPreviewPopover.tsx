@@ -7,8 +7,21 @@ import { createPortal } from "react-dom"
 // rows): a pointer-events-none image portaled to <body>. The portal matters:
 // callers live inside transformed containers (the translate-centered dialog),
 // where position:fixed would resolve against the transform, not the viewport.
-
-export const PREVIEW_POPOVER_WIDTH = 1024
+//
+// Callers pass no `maxw`: the popover is the largest consumer there is, and
+// the displayed size is computed from the board's stored preview_w/preview_h
+// against the viewport (see the box helpers below), never from the request
+// width. Asking for a specific width only bought a JPEG re-encode of an
+// already-lossy WebP master; the endpoint serves the stored bytes instead.
+//
+// The accepted cost: the master is 2048px wide while the popover is capped
+// at half the viewport, so a hover usually pulls on the order of 4× the
+// pixels it draws — a few hundred KB per board over the wire, which matters
+// on a LAN-served gateway in a way it does not on localhost. Kept anyway,
+// because the alternative reinstates the second lossy pass on every hover
+// for the one image whose entire job is to be looked at closely, and
+// because previews are served immutable: the download is once per board per
+// browser cache, not once per hover.
 
 const MARGIN = 8 // minimum gap to the viewport edges
 const GAP = 8 // gap between the popover and its anchor

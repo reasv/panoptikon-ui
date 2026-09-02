@@ -206,6 +206,14 @@ function OptionList({
                                     title={option.label}
                                     key={option.value}
                                     value={option.value}
+                                    // cmdk scores an item by its `value` alone, so options whose
+                                    // value is an opaque id (a pinboard id, say) are unreachable by
+                                    // typing the name the user actually sees. cmdk's default filter
+                                    // appends `keywords` to the scored string, which makes the label
+                                    // searchable while `onSelect` still hands back the value.
+                                    // Omitted when it would merely duplicate the value, so call
+                                    // sites where value === label score exactly as they did before.
+                                    keywords={option.label !== option.value ? [option.label] : undefined}
                                     onSelect={(value) => {
                                         toggleValue(value)
                                     }}

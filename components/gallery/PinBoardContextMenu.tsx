@@ -1,16 +1,213 @@
+import React from "react";
 import type { LayoutItem } from "react-grid-layout";
 import { ContextMenuCheckboxItem, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger } from "../ui/context-menu";
 import { useGalleryPinAutoCrop, useGalleryPinSelectionCrop } from "@/lib/state/gallery";
 import { BoardGlobalMenuItems, contextMenuKit } from "./PinboardGlobalMenu";
 import type { PinboardBoardApi } from "@/lib/state/pinboardBoardApi";
-import { CropRect, PinLock, TrimRange } from "@/lib/pinboardCrop";
+import { CropRect, PinLock, PinOrientation, TrimRange, isIdentityOrientation } from "@/lib/pinboardCrop";
 import { GridParams } from "@/lib/pinboardGrid";
 import { useFileOpenActions } from "@/hooks/fileOpen";
+import { useFileShare } from "@/hooks/fileShare";
 import { REGION_PRESETS, usePinboardLayoutActions } from "@/hooks/pinboardLayout";
 import { RegionIcon } from "./RegionIcon";
 import { useToast } from "@/components/ui/use-toast";
 import { usePinSelection } from "@/lib/state/pinboardSelection";
 import { usePinboardCarry } from "@/lib/state/pinboardCarry";
+import { SelectionExportSubmenu } from "./PinboardExportMenu";
+import { trimWithBound } from "@/lib/videoTrim";
+import { clipRequestFor, clipRows, exportClip, useClipBusy, webVersionRow } from "@/lib/videoClip";
+import { PLAYBACK_PRESET, useTranscodeState } from "@/lib/videoTranscode";
+import { useVideoPresets } from "@/lib/useVideoPresets";
+import { useCopyDelivery } from "@/lib/state/copyDelivery";
+import { useArtifactDelivery } from "@/hooks/artifactShare";
+
+/**
+ * What a pin needs to offer a clip of itself. Null until the item query
+ * resolves — the board's own records carry only a 10-char sha prefix, and the
+ * transcode POST is given the FULL hash so a pin and the gallery share one
+ * job and the server never has to disambiguate a prefix.
+ *
+ * Deliberately no `path`: the plan's U6 (a client-side transcode file name)
+ * was superseded by S3 — the server computes the download name and sends it
+ * on `ArtifactRef.filename` — so the pin has no use for the item's path.
+ */
+export type PinClipItem = {
+    sha256: string
+    /** The item's mime type; only `video/*` has anything to clip. */
+    mime: string | null | undefined
+    /**
+     * The item's recorded duration, in seconds. What an UNTRIMMED row would
+     * encode, which is how the animated-image rows know whether they are
+     * within the server's length cap (see lib/videoClip's `clipRows`).
+     */
+    duration: number | null | undefined
+}
+
+/**
+ * The clip rows of a pin's context menu. Radix `ContextMenuItem`s driven by
+ * the same engine as the player surface's own menu — one `clipRequestFor`,
+ * one `exportClip`, one per-item busy guard, so a pin and the gallery cannot
+ * start two encodes of one clip.
+ *
+ * Its own component because it needs hooks (the presets query and the busy
+ * subscription) and the menu around it is a plain render.
+ */
+/**
+ * The "Download web version" row: the already-encoded playable rendition of a
+ * needs-transcode pin, when this session has produced one (the store is
+ * shared with the gallery, so either surface's playback lights the row here).
+ * This menu can open before the pin ever played — the row is simply absent
+ * until the rendition exists, per webVersionRow's gate.
+ *
+ * Rendered next to "Download original" rather than with the clip rows: those
+ * sit far below among the loop verbs, where a noun-only row would read as a
+ * view toggle. Here the neighbour supplies the verb's meaning, and the
+ * spelled-out "Download" removes the rest of the doubt (the toasts still say
+ * "Web version", the row's name for the file itself).
+ *
+ * FROZEN at menu-open: this component mounts with the Radix content, and the
+ * initializer runs once per mount. The store is a live subscription, and a
+ * pin's playback job finishing while the menu is open would otherwise insert
+ * this row mid-open and shift every row below it under the cursor — onto a
+ * different verb. (The player surface's menu needs no freeze: it can only
+ * exist once the rendition does, because showVideo requires the artifact URL.)
+ */
+function WebVersionItem({
+    item,
+    dbs,
+}: {
+    item: PinClipItem | null
+    dbs: { index_db: string | null; user_data_db: string | null }
+}) {
+    const { presets } = useVideoPresets("playback")
+    const playbackState = useTranscodeState(item?.sha256, PLAYBACK_PRESET)
+    const busy = useClipBusy(item?.sha256)
+    // "Copy, don't download" (lib/state/copyDelivery.ts). The deliverer lives
+    // HERE rather than in PinBoardCtx for the reason that component's own
+    // §FIX 11 note gives: PinBoardCtx renders once PER PIN, while this one
+    // mounts with the open Radix content — so a 200-pin board holds one of
+    // these mutations at a time instead of two hundred.
+    const delivery = useArtifactDelivery()
+    const copyInstead = useCopyDelivery((state) => state.copyInstead)
+    const copyMode = copyInstead && delivery != null
+    const [webRow] = React.useState(() => webVersionRow(presets, playbackState))
+    if (!item || !item.mime?.startsWith("video/") || !webRow) return null
+    return (
+        <ContextMenuItem
+            // The row's own verb is spelled out (see above), so it has to
+            // follow the mode — unlike the player menu's noun-only twin, which
+            // names the file and lets the mode stay implicit. The per-item
+            // guard alone: exportClip awaits the deliverer inside it, so the
+            // delivery window is already a busy window.
+            disabled={busy}
+            // `onSelect`, not `onClick` — the same Radix disabled-item rule
+            // the clip rows document below.
+            onSelect={() => void exportClip({
+                sha256: item.sha256,
+                preset: webRow.preset,
+                request: null,
+                rowLabel: webRow.label,
+                dbs,
+                deliver: copyMode ? delivery.deliver : undefined,
+            })}
+        >
+            {copyMode ? "Copy web version" : "Download web version"}
+        </ContextMenuItem>
+    )
+}
+
+/**
+ * The mode switch itself, next to the download rows whose verb it names.
+ *
+ * Rendered by the open menu rather than by PinBoardCtx's body so it costs a
+ * board of pins nothing, and gated on the availability its parent already
+ * holds (`share.primaryVerb`) rather than asking the client config a second
+ * time. Absent where no copy route exists at all — a preference that could
+ * never take effect here is not worth a row.
+ */
+function CopyDeliveryItem({ available }: { available: boolean }) {
+    const copyInstead = useCopyDelivery((state) => state.copyInstead)
+    const setCopyInstead = useCopyDelivery((state) => state.setCopyInstead)
+    if (!available) return null
+    // The separator sits BELOW the toggle: the rows this mode governs are the
+    // ones above it (Copy original, the web/clip rows), and the File submenu
+    // past the fence deliberately does not obey it — its own copy row adapts
+    // by availability, not by this preference. A fence above the toggle would
+    // group it with exactly the rows it cannot touch.
+    return (
+        <>
+            <ContextMenuCheckboxItem
+                checked={copyInstead}
+                title="Copy files to the clipboard instead of downloading them"
+                // Radix closes the menu on a selection; this row's answer is
+                // drawn ON the row, and the rows above it change verb as it
+                // flips, so both halves of the feedback need the menu to stay
+                // open. The same keep-open select the lock checkboxes use.
+                onSelect={(e) => e.preventDefault()}
+                onCheckedChange={setCopyInstead}
+            >
+                Copy, don&apos;t download
+            </ContextMenuCheckboxItem>
+            <ContextMenuSeparator />
+        </>
+    )
+}
+
+function ClipExportItems({
+    item,
+    request,
+    dbs,
+}: {
+    item: PinClipItem | null
+    request: ReturnType<typeof clipRequestFor>
+    dbs: { index_db: string | null; user_data_db: string | null }
+}) {
+    // The capability lives inside the hook (a policy without it never fetches,
+    // so the list stays empty) — which is also what makes "no rows" the answer
+    // for a restricted profile, per the hide-don't-disable rule. The limits
+    // ride in the same envelope, and the length cap they carry is what decides
+    // whether an animated-image row is offered at all.
+    const { presets, limits } = useVideoPresets("clip")
+    const busy = useClipBusy(item?.sha256)
+    // Copy mode changes these rows' DELIVERY, never their identity: same
+    // labels, same order, same per-item busy guard. The label names the
+    // rendition it produces; where those bytes land is the mode's business,
+    // and renaming every row would make one preference look like several.
+    // (See WebVersionItem for why the deliverer is instantiated here.)
+    const delivery = useArtifactDelivery()
+    const copyInstead = useCopyDelivery((state) => state.copyInstead)
+    const copyMode = copyInstead && delivery != null
+    if (!item || !item.mime?.startsWith("video/")) return null
+    const rows = clipRows(presets, { request, duration: item.duration, limits })
+    if (rows.length === 0) return null
+    return (
+        <>
+            {rows.map(({ preset, label }) => (
+                <ContextMenuItem
+                    key={preset.id}
+                    // The per-item guard alone: exportClip awaits the deliverer
+                    // inside it, so a running delivery already reads as busy
+                    // and a second flag could only ever agree with this one.
+                    disabled={busy}
+                    // `onSelect`, not `onClick`: Radix gates the selection
+                    // event on `disabled` but the DOM click still fires on a
+                    // disabled item, so an onClick row would start a second
+                    // export of the item the busy guard is greying it out for.
+                    onSelect={() => void exportClip({
+                        sha256: item.sha256,
+                        preset,
+                        request,
+                        rowLabel: label,
+                        dbs,
+                        deliver: copyMode ? delivery.deliver : undefined,
+                    })}
+                >
+                    {label}
+                </ContextMenuItem>
+            ))}
+        </>
+    )
+}
 
 export function PinBoardCtx({
     layoutKey,
@@ -21,19 +218,32 @@ export function PinBoardCtx({
     crops,
     autoCrops,
     locks,
+    orients,
     highWater,
+    float,
+    uniform,
+    cropKey,
     cropMode,
     hasCrop,
     onToggleCrop,
     onClearCrop,
     trim,
     onTrimChange,
+    effectiveTrim,
+    outroGoverns,
+    clipItem,
+    videoRef,
+    videoLoaded,
     onDuplicate,
+    onUnpin,
+    onRemove,
+    onRemoveAllBut,
     lock,
     onLockChange,
     pinboardRef,
     dbs,
     grid,
+    gridWidth,
     isV1,
     onUpgradeGrid,
 }: {
@@ -42,30 +252,73 @@ export function PinBoardCtx({
     file_url: string
     // autoCropOverrides ride along with the layout so both land in one
     // record write (one URL update, one history entry); newHighWater
-    // updates the board's layout-height ratchet in the same write
+    // updates the board's layout-height ratchet in the same write, and the
+    // orientation/manual-crop maps carry the remaining hField slots the
+    // rotate/flip verbs rewrite alongside the geometry
     onLayoutChange: (
         layout: LayoutItem[],
         autoCropOverrides?: Record<string, CropRect | null>,
         newHighWater?: number,
+        orientationOverrides?: Record<string, PinOrientation | null>,
+        manualCropOverrides?: Record<string, CropRect | null>,
     ) => void
     layout: LayoutItem[],
     // Manual crops (the layout-math base) and derived fit-to-cell auto crops
     crops: Record<string, CropRect | null>,
     autoCrops: Record<string, CropRect | null>,
     locks: Record<string, PinLock>,
+    // Per-pin D4 orientations; the layout math needs them to read the
+    // natural dimensions in display space
+    orients: Record<string, PinOrientation | null>,
     highWater: number,
+    // Gravity off (the layout token's float switch): the size and rotation
+    // verbs this menu owns resolve their own overlaps then
+    float: boolean
+    // Uniform auto-layout (the token's uniform switch): the fill verbs
+    // this menu's layout-actions instance runs route by it
+    uniform: boolean,
+    // The BOARD's open crop item (cropMode below is only whether it is this
+    // pin): an overlap resolution run for another pin's verb has to hold it
+    // still, so the crop window never moves mid-session
+    cropKey: string | null,
     cropMode: boolean,
     hasCrop: boolean,
     onToggleCrop: () => void,
     onClearCrop: () => void,
     trim: TrimRange | null,
     onTrimChange: (trim: TrimRange | null) => void,
+    // The trim the PLAYER enforces (the user's, with the outro cut standing in
+    // for an absent end bound) and whether that default is what currently ends
+    // playback. Both are the pin's own already-computed values, threaded in
+    // rather than recomputed, so an exported clip can never end somewhere the
+    // pin did not play to.
+    effectiveTrim: TrimRange | null,
+    outroGoverns: boolean,
+    // This pin's item, once its query resolves; null until then, and the clip
+    // rows simply do not exist meanwhile
+    clipItem: PinClipItem | null,
+    // The pin's <video>, for the set-at-playhead loop verbs; videoLoaded is
+    // whether it exists (a playhead to read), which the menu cannot learn
+    // from a ref during render
+    videoRef: React.RefObject<HTMLVideoElement | null>,
+    videoLoaded: boolean,
     onDuplicate: () => void,
+    // Record splices, owned by the board: this pin's own removal (the
+    // context-menu twin of the overlay unpin button) and the two
+    // selection-scoped removals, which also back the below-viewport purge
+    // in the board-global section
+    onUnpin: () => void,
+    onRemove: (keys: string[]) => void,
+    onRemoveAllBut: (keys: string[]) => void,
     // This pin's layout lock and its setter
     lock: PinLock,
     onLockChange: (lock: PinLock) => void,
     pinboardRef: React.RefObject<HTMLDivElement | null>,
+    // The EFFECTIVE grid the board renders with (the proportional scale is
+    // already folded in), and the board's measured pixel width — published
+    // onward as the board API's boardWidth
     grid: GridParams,
+    gridWidth: number,
     isV1: boolean,
     onUpgradeGrid: () => void,
     dbs: {
@@ -76,9 +329,32 @@ export function PinBoardCtx({
     function openURL() {
         window.open(file_url, "_blank")
     }
+    // Set one loop bound to the video's current time — the same verb as the
+    // player surface's set-start/set-end buttons and the gallery's I/O keys,
+    // sharing their bound-placement rule (see trimWithBound).
+    const setLoopBound = (which: "start" | "end") => {
+        const video = videoRef.current
+        if (!video) return
+        const next = trimWithBound(trim, which, video.currentTime)
+        onTrimChange(next)
+        // Setting the end mid-playback parks the playhead exactly at the end
+        // point, from which crossing detection would never fire — restart the
+        // loop, which doubles as "here's your loop" feedback
+        if (which === "end" && !video.paused) video.currentTime = next?.start ?? 0
+    }
     // The pinboard stores the 10-char sha256 prefix; the open/folder endpoints
     // accept a prefix as the sha256 id, same as the pin's own item lookup.
     const { openFile, showInFolder, disableBackendOpen, relayEnabled } = useFileOpenActions({ sha256 })
+    const share = useFileShare({ sha256 })
+    // "Copy, don't download" for the original-file row below. `primaryVerb` is
+    // already the availability answer (copy iff a relay or a server route
+    // exists — one useCopyAvailability, shared), so the mode costs this
+    // component no extra hook, which is what matters in a body that runs once
+    // PER PIN. Everything heavier — the artifact deliverer the transcode rows
+    // need — is instantiated inside the menu-open children instead.
+    const copyInstead = useCopyDelivery((state) => state.copyInstead)
+    const copyAvailable = share.primaryVerb === "copy"
+    const copyMode = copyInstead && copyAvailable
     // In restricted mode the File actions degrade to things this pin already
     // offers: Open File becomes a new browser tab (== "Open in New Tab" below)
     // and Show in Folder becomes the FindButton the pin already renders. Only
@@ -96,13 +372,19 @@ export function PinBoardCtx({
         clearAutoCropSelection,
         changeItemSize: changeItemSizeByKey,
         setItemSize: setItemSizeByKey,
+        orientItem,
+        resetOrientation,
+        orientSelection,
         shiftLayout,
         shiftSelection,
+        compressSelection,
         mirrorLayout,
         mirrorSelection,
         rerollLayout,
         refitToView,
         reflowKeepProportions,
+        uniformLayout,
+        uniformSelection,
         growInPlace,
         growSelection,
         swapItems,
@@ -110,8 +392,11 @@ export function PinBoardCtx({
         sendSelectionToRegion,
         hasLocks,
         hasAnchors,
+        belowViewportKeys,
     } = usePinboardLayoutActions({
-        layout, crops, autoCrops, locks, highWater, dbs, grid, pinboardRef, onLayoutChange,
+        layout, crops, autoCrops, locks, orients, highWater, float, uniform,
+        cropKey,
+        dbs, grid, pinboardRef, onLayoutChange,
         layoutAutoCrop: autoLayoutCrop,
         selectionAutoCrop: selectionCrop,
     })
@@ -129,14 +414,23 @@ export function PinBoardCtx({
     // The size actions target this menu's own pin
     const changeItemSize = (increase: number) => changeItemSizeByKey(layoutKey, increase)
     const setItemSize = (size: number) => setItemSizeByKey(layoutKey, size)
+    // This pin's orientation, read from the map the board already threads
+    // through for the layout math; null is identity and hides the reset
+    const orientation = orients[layoutKey] ?? null
+    // Undoing an odd number of quarter turns turns the box back too, so
+    // that alone is the case a lock can forbid (a 180 or a bare mirror
+    // leaves the box aspect untouched)
+    const resetTurnsBox = !!orientation && orientation.quarterTurns % 2 === 1
     // The board-global section (shared with the pinboard tab menu) gets
     // its verbs from this menu's own layout-actions instance
     const boardApi: PinboardBoardApi = {
         changeLayout, fillViewport, fillViewportRows, justifyCurrentRows,
         autoCropToCells, clearAutoCrops, shiftLayout, mirrorLayout,
-        rerollLayout, refitToView, reflowKeepProportions, growInPlace,
-        hasLocks, hasAnchors,
-        highWater, isV1, upgradeGrid: onUpgradeGrid,
+        rerollLayout, refitToView, reflowKeepProportions, uniformLayout,
+        growInPlace, hasLocks, hasAnchors,
+        highWater, isV1, boardWidth: gridWidth, upgradeGrid: onUpgradeGrid,
+        belowViewportCount: () => belowViewportKeys()?.length ?? null,
+        removeBelowViewport: () => onRemove(belowViewportKeys() ?? []),
     }
     // Width presets are fixed fractions of the board width, so the menu is
     // the same on every grid resolution; the step sizes scale with the
@@ -154,28 +448,77 @@ export function PinBoardCtx({
     return (
         <ContextMenuContent>
             <ContextMenuItem onClick={() => openURL()}>Open in New Tab</ContextMenuItem>
+            {/* Saving the original file is a pure client-side capability that
+                the backend-open policy has no bearing on, so it sits OUTSIDE
+                the File submenu's gate — a restricted remote server would
+                otherwise lose the pinboard's download affordance while the
+                grid card's own share button still offers it.
+
+                In copy mode it becomes the copy instead. That is a policy-gated
+                verb, but `copyMode` already carries the gate (it requires
+                `primaryVerb === "copy"`), so the row falls back to the
+                unconditional download exactly where the copy could not run.
+                Distinct from the File submenu's "Copy file", which adapts to
+                AVAILABILITY rather than to this preference and is left alone. */}
+            {copyMode ? (
+                <ContextMenuItem disabled={share.busy} onClick={() => void share.execute()}>Copy original</ContextMenuItem>
+            ) : (
+                <ContextMenuItem disabled={share.busy} onClick={() => void share.download()}>Download original</ContextMenuItem>
+            )}
+            <WebVersionItem item={clipItem} dbs={dbs} />
+            {/* The mode switch, with the two rows above it rather than beside
+                the clip rows far below: those are behind a video-only gate,
+                and the row this toggle renames ("Download original") is on
+                every pin. Its trailing separator closes the group it governs
+                — toggle and file rows on one side, the File submenu (whose
+                copy row adapts by availability, not by this preference) on
+                the other. */}
+            <CopyDeliveryItem available={copyAvailable} />
             {showFileMenu && (
                 <ContextMenuSub>
                     <ContextMenuSubTrigger inset>File</ContextMenuSubTrigger>
                     <ContextMenuSubContent className="w-48">
                         <ContextMenuItem onClick={openFile}>Open File</ContextMenuItem>
                         <ContextMenuItem onClick={showInFolder}>Show File in Folder</ContextMenuItem>
+                        {share.primaryVerb === "copy" && (
+                            <ContextMenuItem disabled={share.busy} onClick={() => void share.execute()}>Copy file</ContextMenuItem>
+                        )}
                     </ContextMenuSubContent>
                 </ContextMenuSub>
             )}
+            {/* This pin as a file on disk, cropped and oriented as it is on
+                the board — the one export that needs no selection at all,
+                and the reason the crop/rotate tools are usable as an image
+                editor. Deliberately scoped to THIS pin even when a
+                selection exists: the selection's own export lives in the
+                Selection submenu below, next to the verbs it belongs with. */}
+            <SelectionExportSubmenu
+                kit={contextMenuKit}
+                keys={[layoutKey]}
+                inset
+            />
             <ContextMenuItem onClick={onDuplicate}>Duplicate</ContextMenuItem>
+            {/* Removes THIS copy, not the first record matching the sha256 —
+                the layout key carries the record offset. Same weight as the
+                hover overlay's unpin button (a single click there too). */}
+            <ContextMenuItem onClick={onUnpin}>Unpin</ContextMenuItem>
             {/* Layout locks for this pin; the same toggles exist as overlay
                 buttons. Anchored = position+size fixed (RGL static, an
                 obstacle every fill packs around); size-locked = keeps w x h
-                but may be moved. */}
+                but may be moved. These two are the kit's checkbox rows
+                spelled out (the kit is for sections shared between menus),
+                so they repeat its keep-open select — a toggle shows its
+                answer on the row and has no business closing the menu. */}
             <ContextMenuCheckboxItem
                 checked={lock === "anchor"}
+                onSelect={(e) => e.preventDefault()}
                 onCheckedChange={(checked) => onLockChange(checked ? "anchor" : null)}
             >
                 Anchor in Place
             </ContextMenuCheckboxItem>
             <ContextMenuCheckboxItem
                 checked={lock === "size"}
+                onSelect={(e) => e.preventDefault()}
                 onCheckedChange={(checked) => onLockChange(checked ? "size" : null)}
             >
                 Lock Size
@@ -196,6 +539,12 @@ export function PinBoardCtx({
                             <ContextMenuItem disabled={selected.length < 2}
                                 onClick={() => runVerb("Arrange", arrangeSelection(selected))}>
                                 Arrange
+                            </ContextMenuItem>
+                            {/* Arrange's identical-cells sibling: the same
+                                bounding box split into one repeated cell */}
+                            <ContextMenuItem disabled={selected.length < 2}
+                                onClick={() => runVerb("Uniform", uniformSelection(selected))}>
+                                Uniform
                             </ContextMenuItem>
                             <ContextMenuItem disabled={selected.length !== 2}
                                 onClick={() => runVerb("Swap", swapItems(selected[0], selected[1]))}>
@@ -230,6 +579,12 @@ export function PinBoardCtx({
                                     ))}
                                 </ContextMenuSubContent>
                             </ContextMenuSub>
+                            {/* The selection as one image file, the twin of
+                                the toolbar's own export row */}
+                            <SelectionExportSubmenu
+                                kit={contextMenuKit}
+                                keys={selected}
+                            />
                             {/* Enters the board's targeting mode (via the
                                 carry store — the board owns that state):
                                 hover highlights holes, click places the
@@ -237,6 +592,16 @@ export function PinBoardCtx({
                             <ContextMenuItem
                                 onClick={() => usePinboardCarry.getState().requestHoleTarget()}>
                                 Move to Hole…
+                            </ContextMenuItem>
+                            {/* Enters the board's Scale & Move session the
+                                same way (drag the selection box to move the
+                                group, its handles to scale it). Anchors
+                                grey it like the mirrors — every member must
+                                travel; the board toasts on size locks. */}
+                            <ContextMenuItem
+                                disabled={selected.length < 2 || selHasAnchor}
+                                onClick={() => usePinboardCarry.getState().requestTransform()}>
+                                Scale &amp; Move…
                             </ContextMenuItem>
                             <ContextMenuSeparator />
                             <ContextMenuItem onClick={() => shiftSelection(selected, "left")}>
@@ -251,6 +616,27 @@ export function PinBoardCtx({
                             <ContextMenuItem onClick={() => shiftSelection(selected, "right")}>
                                 Shift Right
                             </ContextMenuItem>
+                            {/* Same family as the Shifts, one step further:
+                                each letterboxed item also loses its bars on
+                                that axis, and every item keeps the gap it
+                                had toward the compression side instead of
+                                falling flush. Up needs no gap logic — the
+                                vertical compactor closes the freed rows,
+                                and with gravity off it is simply an
+                                in-place letterbox trim (nothing closes
+                                them; see verbTitle in GalleryPinBoard). */}
+                            <ContextMenuItem
+                                onClick={() => runVerb("Compress Left", compressSelection(selected, "left"))}>
+                                Compress Left
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                                onClick={() => runVerb("Compress Right", compressSelection(selected, "right"))}>
+                                Compress Right
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                                onClick={() => runVerb("Compress Up", compressSelection(selected, "up"))}>
+                                Compress Up
+                            </ContextMenuItem>
                             <ContextMenuItem disabled={selHasAnchor}
                                 onClick={() => mirrorSelection(selected, "horizontal")}>
                                 Mirror Horizontally
@@ -258,6 +644,26 @@ export function PinBoardCtx({
                             <ContextMenuItem disabled={selHasAnchor}
                                 onClick={() => mirrorSelection(selected, "vertical")}>
                                 Mirror Vertically
+                            </ContextMenuItem>
+                            {/* The Mirror pair above rearranges the items;
+                                these turn the pictures themselves. Rotation
+                                is all-or-nothing on a locked selection and
+                                says so in a toast rather than greying. */}
+                            <ContextMenuItem
+                                onClick={() => runVerb("Flip Images", orientSelection(selected, "flipH"))}>
+                                Flip Images Horizontally
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                                onClick={() => runVerb("Flip Images", orientSelection(selected, "flipV"))}>
+                                Flip Images Vertically
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                                onClick={() => runVerb("Rotate Images", orientSelection(selected, "ccw"))}>
+                                Rotate Images Left
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                                onClick={() => runVerb("Rotate Images", orientSelection(selected, "cw"))}>
+                                Rotate Images Right
                             </ContextMenuItem>
                             <ContextMenuItem onClick={() => clearAutoCropSelection(selected)}>
                                 Clear Auto-Crops
@@ -273,6 +679,22 @@ export function PinBoardCtx({
                                 Clear Selection
                                 <ContextMenuShortcut>Esc</ContextMenuShortcut>
                             </ContextMenuItem>
+                            {/* The removal pair sits last, below Clear
+                                Selection. No confirm dialog and no
+                                destructive styling: one record write is one
+                                history entry, so the browser Back button
+                                restores the removed pins (the toast says
+                                so), and a filled red row would advertise a
+                                finality these verbs don't have. The
+                                separator alone does the fencing. */}
+                            <ContextMenuSeparator />
+                            <ContextMenuItem onClick={() => onRemove(selected)}>
+                                Remove Selected
+                                <ContextMenuShortcut>Del</ContextMenuShortcut>
+                            </ContextMenuItem>
+                            <ContextMenuItem onClick={() => onRemoveAllBut(selected)}>
+                                Remove All but Selected
+                            </ContextMenuItem>
                         </ContextMenuSubContent>
                     </ContextMenuSub>
                 )
@@ -281,6 +703,15 @@ export function PinBoardCtx({
                 {cropMode ? "Finish Cropping" : "Crop Image"}
             </ContextMenuItem>
             {hasCrop && <ContextMenuItem onClick={onClearCrop}>Clear Crop</ContextMenuItem>}
+            {/* The loop verbs work at every pin size — the player's own row
+                drops its trim button on narrow pins, and its rail vanishes
+                below ~90px, but the context menu is always full size. */}
+            {videoLoaded && <ContextMenuItem onClick={() => setLoopBound("start")}>
+                Set Loop Start at Playhead
+            </ContextMenuItem>}
+            {videoLoaded && <ContextMenuItem onClick={() => setLoopBound("end")}>
+                Set Loop End at Playhead
+            </ContextMenuItem>}
             {trim?.start != null && <ContextMenuItem
                 onClick={() => onTrimChange(trim.end != null ? { start: null, end: trim.end } : null)}
             >
@@ -294,6 +725,14 @@ export function PinBoardCtx({
             {trim?.start != null && trim?.end != null && <ContextMenuItem onClick={() => onTrimChange(null)}>
                 Clear Loop Range
             </ContextMenuItem>}
+            {/* Clip export, right after the verbs that DEFINE the window it
+                exports: the loop range above is the clip, and an outro-skipping
+                pin with no user trim exports the cut the server re-derives. */}
+            <ClipExportItems
+                item={clipItem}
+                request={clipRequestFor(trim, effectiveTrim, outroGoverns)}
+                dbs={dbs}
+            />
             {/* Resizing is the one thing a lock legitimately forbids —
                 greyed instead of silently ignoring the clicks */}
             <ContextMenuSub>
@@ -315,6 +754,40 @@ export function PinBoardCtx({
                     <ContextMenuItem onClick={() => changeItemSize(-stepUnit)}>-{stepUnit}/{grid.columns} Width</ContextMenuItem>
                     <ContextMenuItem onClick={() => changeItemSize(-4 * stepUnit)}>-{4 * stepUnit}/{grid.columns} Width</ContextMenuItem>
                     <ContextMenuItem onClick={() => changeItemSize(-6 * stepUnit)}>-{6 * stepUnit}/{grid.columns} Width</ContextMenuItem>
+                </ContextMenuSubContent>
+            </ContextMenuSub>
+            {/* Orientation of the IMAGE (the Selection submenu's Mirror
+                entries move items instead). A quarter turn swaps the box's
+                pixel dimensions, so it follows Resize Item's lock rule —
+                greyed, not silently ignored; flips move nothing and stay
+                available. Repeating composes: two turns are 180 degrees,
+                and every op is exactly undone by its opposite. */}
+            <ContextMenuSub>
+                <ContextMenuSubTrigger inset>Rotate / Flip</ContextMenuSubTrigger>
+                <ContextMenuSubContent className="w-48">
+                    <ContextMenuItem disabled={lock !== null}
+                        onClick={() => void orientItem(layoutKey, "ccw")}>
+                        Rotate Left
+                    </ContextMenuItem>
+                    <ContextMenuItem disabled={lock !== null}
+                        onClick={() => void orientItem(layoutKey, "cw")}>
+                        Rotate Right
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={() => void orientItem(layoutKey, "flipH")}>
+                        Flip Horizontally
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={() => void orientItem(layoutKey, "flipV")}>
+                        Flip Vertically
+                    </ContextMenuItem>
+                    {!isIdentityOrientation(orientation) && (
+                        <>
+                            <ContextMenuSeparator />
+                            <ContextMenuItem disabled={lock !== null && resetTurnsBox}
+                                onClick={() => void resetOrientation(layoutKey)}>
+                                Reset Orientation
+                            </ContextMenuItem>
+                        </>
+                    )}
                 </ContextMenuSubContent>
             </ContextMenuSub>
             <BoardGlobalMenuItems kit={contextMenuKit} api={boardApi} />

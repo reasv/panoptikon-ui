@@ -13,10 +13,22 @@ const ToastViewport = React.forwardRef<
   React.ElementRef<typeof ToastPrimitives.Viewport>,
   React.ComponentPropsWithoutRef<typeof ToastPrimitives.Viewport>
 >(({ className, ...props }, ref) => (
+  // The bottom offset yields to --pinboard-bottom-inset, like every other
+  // occupant of the bottom band (SidebarOverlay, HoleTargetOverlay,
+  // PinboardHistory — docs/maximized-pinboard-search-overlay-design.md §7).
+  // Without it a toast lands ON the maximized search dock's bottom-right
+  // corner — over the view-mode toggle and part of the pagination bar — for
+  // its whole duration, which routinely means covering the very control that
+  // raised it (the toggle's save/clear-defaults menu toasts).
+  //
+  // Global component, so the 0px fallback is what keeps every other surface
+  // unchanged: the property is only ever set while the dock is SHOWN, and
+  // `bottom: var(--pinboard-bottom-inset, 0px)` is the same computed 0px as
+  // the `sm:bottom-0` it replaces everywhere else.
   <ToastPrimitives.Viewport
     ref={ref}
     className={cn(
-      "fixed top-0 z-100 flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]",
+      "fixed top-0 z-100 flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-[var(--pinboard-bottom-inset,0px)] sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]",
       className
     )}
     {...props}
@@ -88,13 +100,32 @@ const ToastClose = React.forwardRef<
 ))
 ToastClose.displayName = ToastPrimitives.Close.displayName
 
+/**
+ * Wrapping belongs on both primitives, not on the call sites: a toast's text
+ * is routinely a *file name*, and the ones that hurt have no break
+ * opportunities at all (base64 stems, hashes, Windows paths). The title needs
+ * this every bit as much as the description — most toasts here are title-only
+ * (`Copied <name> to clipboard`), which is exactly what a description-only
+ * fix missed while looking correct on error toasts.
+ *
+ * `anywhere` and NOT Tailwind's `break-words`, which the two differ on in the
+ * way that matters here: both split an unbreakable token, but only `anywhere`
+ * also shrinks the element's *min-content* width, which is what lets the flex
+ * row and grid track narrow to the toast instead of sizing to the longest
+ * token. Measured in the app: `break-words` alone renders the title 635px wide
+ * in a 420px toast (215px of it clipped by the root's `overflow-hidden`),
+ * `anywhere` alone renders 362px and fits. They also must not be combined —
+ * `break-words` wins the cascade and silently reinstates the wide behaviour.
+ */
+const WRAPS_ANYWHERE = "min-w-0 [overflow-wrap:anywhere]"
+
 const ToastTitle = React.forwardRef<
   React.ElementRef<typeof ToastPrimitives.Title>,
   React.ComponentPropsWithoutRef<typeof ToastPrimitives.Title>
 >(({ className, ...props }, ref) => (
   <ToastPrimitives.Title
     ref={ref}
-    className={cn("text-sm font-semibold", className)}
+    className={cn("text-sm font-semibold", WRAPS_ANYWHERE, className)}
     {...props}
   />
 ))
@@ -106,7 +137,7 @@ const ToastDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <ToastPrimitives.Description
     ref={ref}
-    className={cn("text-sm opacity-90", className)}
+    className={cn("text-sm opacity-90", WRAPS_ANYWHERE, className)}
     {...props}
   />
 ))

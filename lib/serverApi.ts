@@ -2,6 +2,7 @@ import createFetchClient from "openapi-fetch"
 import { headers } from "next/headers"
 import type { paths } from "@/lib/panoptikon"
 import { ClientConfig, deriveClientConfig } from "@/lib/clientConfig"
+import { retargetRequest } from "@/lib/policyTokenOrigin"
 
 // Server-only module. The repo doesn't depend on the `server-only` marker
 // package, but the next/headers import serves the same purpose: importing
@@ -19,8 +20,26 @@ import { ClientConfig, deriveClientConfig } from "@/lib/clientConfig"
 // listener/host matching on the gateway side.
 const POLICY_TOKEN_HEADER = "x-panoptikon-policy"
 
+// Where SSR API calls go, in order of precedence:
+//
+// 1. PANOPTIKON_API_URL. Authoritative when set (non-empty). The gateway
+//    sets it on every UI server it launches (`[upstreams.ui] local = true`),
+//    and an operator running this server by hand sets it to name the
+//    gateway — or the specific listener — SSR must use.
+// 2. The origin claim in the policy token the gateway stamped on the
+//    incoming request (lib/policyTokenOrigin.ts): the loopback URL of the
+//    gateway listener that is actually serving this page. Per request, so
+//    one UI server behind several listeners routes each render correctly.
+// 3. The default port, for a request that carries no usable token. It is
+//    right only when the one gateway on this machine is the primary
+//    listener on 6342 and silently wrong otherwise — a hand-run `next start`
+//    behind a gateway on another port once served another instance's whole
+//    library through it — which is what (2) exists to prevent.
+const ENV_API_URL = process.env.PANOPTIKON_API_URL || null
+const DEFAULT_API_URL = "http://127.0.0.1:6342"
+
 export const serverFetchClient = createFetchClient<paths>({
-  baseUrl: process.env.PANOPTIKON_API_URL || "http://127.0.0.1:6342",
+  baseUrl: ENV_API_URL ?? DEFAULT_API_URL,
   fetch: fetch,
   cache: "no-cache",
 })
@@ -31,10 +50,11 @@ serverFetchClient.use({
     // forces dynamic rendering. That is intended: responses vary by policy,
     // so policy-scoped pages must never be statically cached.
     const token = (await headers()).get(POLICY_TOKEN_HEADER)
-    if (token) {
-      request.headers.set(POLICY_TOKEN_HEADER, token)
+    if (!token) {
+      return request
     }
-    return request
+    request.headers.set(POLICY_TOKEN_HEADER, token)
+    return retargetRequest(request, token, ENV_API_URL)
   },
 })
 

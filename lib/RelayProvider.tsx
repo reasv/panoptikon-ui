@@ -116,17 +116,34 @@ export function RelayProvider({ children }: { children: ReactNode }) {
     }
   }, [handleAuthFailure, session.data])
 
+  const share = useCallback(async (file: client.RelayShareFile, options?: client.RelayShareOptions) => {
+    const relay = session.data
+    if (!relay?.credential) throw new Error("Local Relay is not paired")
+    try {
+      await client.relayShare(relay, file, options)
+    } catch (error) {
+      if (error instanceof client.RelayRequestError && error.code === "invalid_credential") {
+        await handleAuthFailure()
+      }
+      throw error
+    }
+  }, [handleAuthFailure, session.data])
+
   const value = useMemo(() => ({
     detected: !!session.data,
     paired: !!session.data?.credential,
     pairing: pairing.isPending,
     pairingPending: session.data?.pairingStatus === "pending",
+    // Copy-as-file needs both the pairing credential and the advertised feature
+    // — an old Relay is paired but cannot execute the verb.
+    canCopyFiles: !!session.data?.credential && (session.data?.features?.includes("copy_to_clipboard") ?? false),
     target,
     setTarget,
     pair: async () => { await pairing.mutateAsync() },
     run,
+    share,
     refresh: async () => { await session.refetch() },
-  }), [pairing, run, session, target])
+  }), [pairing, run, share, session, target])
 
   return <RelayContext.Provider value={value}>{children}</RelayContext.Provider>
 }

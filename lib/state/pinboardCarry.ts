@@ -18,18 +18,24 @@ interface PinboardCarryState {
   // Bumped to ask the mounted board to enter Move-to-Hole targeting for
   // the current selection (the board does the anchored check + toast)
   holeRequest: number
+  // Same channel for the Scale & Move session (the board does the lock
+  // checks + toast there too)
+  transformRequest: number
   start: (sha256: string) => void
   cancel: () => void
   setBoardMounted: (mounted: boolean) => void
   requestHoleTarget: () => void
+  requestTransform: () => void
 }
 
 export const usePinboardCarry = create<PinboardCarryState>()((set) => ({
   sha256: null,
   boardMounted: false,
   holeRequest: 0,
+  transformRequest: 0,
   start: (sha256) => set({ sha256 }),
   cancel: () => set({ sha256: null }),
   setBoardMounted: (boardMounted) => set({ boardMounted }),
   requestHoleTarget: () => set((s) => ({ holeRequest: s.holeRequest + 1 })),
+  requestTransform: () => set((s) => ({ transformRequest: s.transformRequest + 1 })),
 }))

@@ -1,4 +1,4 @@
-import { components } from "@/lib/panoptikon"
+import type { components } from "@/lib/panoptikon"
 import * as def from "nuqs/server"
 
 export type OrderArgsType = {
@@ -155,6 +155,22 @@ export const inBookmarksKeyMap = (p: typeof def) =>
     include_wildcard: p.parseAsBoolean.withDefault(true),
   })
 
+// How the pinboard membership filter is composed into the query:
+// - "any": member of any of the user's boards (empty `pinboard_ids`)
+// - "boards": member of at least one of the selected boards
+// - "unpinned": the NOT composition — pinned to no board at all
+export type inPinboardsMode = "any" | "boards" | "unpinned"
+
+export const inPinboardsKeyMap = (p: typeof def) =>
+  applyOptionsToMap({
+    filter: p.parseAsBoolean.withDefault(false),
+    mode: p
+      .parseAsStringEnum<inPinboardsMode>(["any", "boards", "unpinned"])
+      .withDefault("any"),
+    pinboard_ids: p.parseAsArrayOf(p.parseAsInteger).withDefault([]),
+    user: p.parseAsString.withDefault("user"),
+  })
+
 export const semanticTextSearchKeyMap = (p: typeof def) =>
   applyOptionsToMap({
     query: p.parseAsString.withDefault(""),
@@ -166,7 +182,6 @@ export const semanticTextSearchKeyMap = (p: typeof def) =>
       .parseAsStringEnum<vectorIndexMode>(["auto", "exact", "quant"])
       .withDefault("auto"),
     variant: p.parseAsString.withDefault(""),
-    k: p.parseAsInteger.withDefault(10000),
   })
 
 export const sourceTextKeyMap = (p: typeof def) =>
@@ -194,7 +209,6 @@ export const semanticImageSearchKeyMap = (p: typeof def) =>
       .parseAsStringEnum<vectorIndexMode>(["auto", "exact", "quant"])
       .withDefault("auto"),
     variant: p.parseAsString.withDefault(""),
-    k: p.parseAsInteger.withDefault(10000),
   })
 
 export const itemSimilarityKeyMap = (p: typeof def) =>
@@ -214,7 +228,6 @@ export const itemSimilarityKeyMap = (p: typeof def) =>
       .parseAsStringEnum<vectorIndexMode>(["auto", "exact", "quant"])
       .withDefault("auto"),
     variant: p.parseAsString.withDefault(""),
-    k: p.parseAsInteger.withDefault(10000),
   })
 
 export const filterSortKeyMap = (p: typeof def) =>
@@ -305,26 +318,26 @@ export type ATMatchPath = Required<
   Omit<components["schemas"]["MatchPathArgs"], "match" | "raw_fts5_match">
 >
 
-// The AnyText surfaces share the dedicated filters' keymaps, so index/variant/k
+// The AnyText surfaces share the dedicated filters' keymaps, so index/variant
 // are per-filter state here too, and each renders its own index controls.
 // `index` is re-declared because the schema admits the reserved `ann`, which
 // the URL parsers refuse.
 export type ATSemanticText = Required<
   Omit<
     components["schemas"]["SemanticTextArgs"],
-    "query" | "embed" | "src_text" | "index"
+    "query" | "embed" | "src_text" | "index" | "k"
   >
 > & { index: vectorIndexMode }
 export type ATSemanticImage = Required<
   Omit<
     components["schemas"]["SemanticImageArgs"],
-    "query" | "embed" | "src_text" | "index"
+    "query" | "embed" | "src_text" | "index" | "k"
   >
 > & { index: vectorIndexMode }
 export type ATSemanticAudio = Required<
   Omit<
     components["schemas"]["SemanticImageArgs"],
-    "query" | "embed" | "src_text" | "index"
+    "query" | "embed" | "src_text" | "index" | "k"
   >
 > & { index: vectorIndexMode }
 
@@ -359,12 +372,21 @@ export type KeymapComponents = {
   MatchText: Required<components["schemas"]["MatchTextArgs"]>
   EmbedArgs: Required<components["schemas"]["EmbedArgs"]>
   InBookmarks: Required<components["schemas"]["InBookmarksArgs"]>
+  // `mode` is UI-only state: the three modes are three different compositions
+  // of the same filter args (see `inPinboardsMode`), and "unpinned" is the
+  // element wrapped in `not_`, which has no representation in the args.
+  InPinboards: Required<components["schemas"]["InPinboardArgs"]> & {
+    mode: inPinboardsMode
+  }
   MatchPath: Required<components["schemas"]["MatchPathArgs"]>
   OrderArgs: Required<OrderArgsType>
   MatchTags: Required<MatchTagsArgs>
   FileFilters: FileFilters
   SemanticTextSearch: Required<
-    Omit<components["schemas"]["SemanticTextArgs"], "embed" | "src_text" | "index">
+    Omit<
+      components["schemas"]["SemanticTextArgs"],
+      "embed" | "src_text" | "index" | "k"
+    >
   > & { index: vectorIndexMode }
   SemanticTextSource: NonNullableProps<
     Required<components["schemas"]["SourceArgs"]>
@@ -374,13 +396,13 @@ export type KeymapComponents = {
   SemanticImageSearch: Required<
     Omit<
       components["schemas"]["SemanticImageArgs"],
-      "embed" | "src_text" | "force_distance_function" | "index"
+      "embed" | "src_text" | "force_distance_function" | "index" | "k"
     >
   > & { index: vectorIndexMode }
   ItemSimilarity: Required<
     Omit<
       components["schemas"]["SimilarityArgs"],
-      "embed" | "src_text" | "force_distance_function" | "index"
+      "embed" | "src_text" | "force_distance_function" | "index" | "k"
     >
   > & { index: vectorIndexMode }
   ItemSimilarityTextSource: Required<components["schemas"]["SourceArgs"]>
@@ -411,7 +433,7 @@ export type SimilaritySideBarComponents = {
   CLIPSimilarity: Required<
     Omit<
       components["schemas"]["SimilarityArgs"],
-      "target" | "distance_function" | "src_text" | "force_distance_function" | "index"
+      "target" | "distance_function" | "src_text" | "force_distance_function" | "index" | "k"
     >
   > & { index: vectorIndexMode }
   CLIPTextSource: Required<components["schemas"]["SourceArgs"]>
@@ -427,6 +449,7 @@ export type SimilaritySideBarComponents = {
       | "xmodal_i2i"
       | "force_distance_function"
       | "index"
+      | "k"
     >
   > & { index: vectorIndexMode }
   TextSource: Required<components["schemas"]["SourceArgs"]>

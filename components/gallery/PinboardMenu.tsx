@@ -7,11 +7,18 @@ import {
     Grid2x2Plus,
     Grid3x3,
     History,
+    LayoutDashboard,
+    LayoutGrid,
     LibraryBig,
+    Magnet,
+    Maximize2,
     Minimize2,
     PenLine,
+    Proportions,
+    RefreshCw,
     Save,
     SaveAll,
+    Scaling,
     Trash2,
     WandSparkles,
 } from "lucide-react"
@@ -32,7 +39,11 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import { usePinboardActions } from "@/lib/pinboardSave"
+import {
+    layoutsEqual,
+    usePinboardActions,
+    useRefreshingPreview,
+} from "@/lib/pinboardSave"
 import { usePinBoard } from "@/lib/state/pinboard"
 import { useSelectedDBs } from "@/lib/state/database"
 import { $api } from "@/lib/api"
@@ -44,11 +55,22 @@ import {
     useGalleryPinAutoLayout,
     useGalleryPinBoardId,
     useGalleryPinGrid,
+    useGalleryPinProportional,
+    useGalleryPinResizeHandles,
 } from "@/lib/state/gallery"
 import { usePinboardBoardApi } from "@/lib/state/pinboardBoardApi"
+import { markPinboardMaximizeRequest } from "@/lib/pinboardNavigation"
 import { PinboardLibraryDialog } from "./PinboardLibrary"
 import { PinboardHistoryPanel } from "./PinboardHistory"
-import { BoardGlobalMenuItems, LayoutMenuItems, dropdownMenuKit } from "./PinboardGlobalMenu"
+import {
+    BoardGlobalMenuItems,
+    DESTRUCTIVE_MENU_ITEM,
+    LayoutMenuItems,
+    NewBoardDefaultsItems,
+    dropdownMenuKit,
+    useToggleUniform,
+} from "./PinboardGlobalMenu"
+import { MosaicMenuItems, MosaicSubmenu } from "./PinboardMosaicMenu"
 
 // The library actions and their dialogs, shared by the two surfaces that
 // offer them: the tab chevron's dropdown and the fullscreen toolbar. Save
@@ -58,7 +80,7 @@ import { BoardGlobalMenuItems, LayoutMenuItems, dropdownMenuKit } from "./Pinboa
 // state (including unsaved modifications) as a new board and leaves the
 // original untouched.
 function usePinboardDialogs() {
-    const { save, rename, pbid } = usePinboardActions()
+    const { save, rename, refreshPreview, savedLayout, pbid } = usePinboardActions()
     const { updateRecords } = usePinBoard()
     const setPbid = useGalleryPinBoardId()[1]
     const { toast } = useToast()
@@ -69,7 +91,11 @@ function usePinboardDialogs() {
     const [renameValue, setRenameValue] = useState("")
     const [clearOpen, setClearOpen] = useState(false)
 
-    const { data: board } = $api.useQuery(
+    const {
+        data: board,
+        isPending: boardPending,
+        isError: boardError,
+    } = $api.useQuery(
         "get",
         "/api/pinboards/{pinboard_id}",
         {
@@ -80,6 +106,7 @@ function usePinboardDialogs() {
         },
         { enabled: pbid != null }
     )
+    const refreshingPreview = useRefreshingPreview()
 
     const openRename = () => {
         setRenameValue(board?.name ?? "")
@@ -152,10 +179,43 @@ function usePinboardDialogs() {
             />
         </>
     )
+    // "Refresh Preview" re-renders the HEAD version's picture from the live
+    // board, so it needs a saved board whose head is exactly what is on
+    // screen: with unsaved edits the new picture would show something that
+    // version does not contain. Same layout-equality predicate the History
+    // panel highlights the current version with.
+    const headInSync =
+        board?.head != null && layoutsEqual(board.head.layout, savedLayout)
+    // Why the row is unavailable has three distinct causes, and they must
+    // not share a tooltip: "unsaved changes" is a claim about the layout,
+    // and asserting it while the board query is still in flight (or failed,
+    // so `board` is simply absent) accuses the user of an edit that may not
+    // exist. Only a fetched head that disagrees with the live layout is a
+    // genuine mismatch.
+    const boardLoading = pbid != null && boardPending && !boardError
+    const noHead = boardError || board?.head == null
+    const saveFirstTitle = "Save this pinboard in order to refresh its"
+        + " preview image"
+    const refreshTitle = pbid == null
+        ? saveFirstTitle
+        : refreshingPreview
+            ? "Refreshing the preview image…"
+            : boardLoading
+                ? "Loading board…"
+                : noHead
+                    ? saveFirstTitle
+                    : !headInSync
+                        ? "Save first — the board has unsaved changes"
+                        : "Re-render this board's preview image at the current"
+                            + " window size and today's resolution"
+
     return {
         save,
         pbid,
         board,
+        refreshPreview,
+        canRefreshPreview: pbid != null && headInSync && !refreshingPreview,
+        refreshTitle,
         openLibrary: () => setLibraryOpen(true),
         openHistory: () => setHistoryOpen(true),
         openRename,
@@ -177,8 +237,19 @@ function usePinboardDialogs() {
 // loading it. Only the board-global section needs the mounted board's
 // verb registry, and it simply doesn't render while that's empty.
 export function PinboardMenu() {
-    const { save, pbid, board, openLibrary, openHistory, openRename, openClear, dialogs } =
-        usePinboardDialogs()
+    const {
+        save,
+        pbid,
+        board,
+        refreshPreview,
+        canRefreshPreview,
+        refreshTitle,
+        openLibrary,
+        openHistory,
+        openRename,
+        openClear,
+        dialogs,
+    } = usePinboardDialogs()
     const boardApi = usePinboardBoardApi(s => s.api)
 
     return (
@@ -215,6 +286,30 @@ export function PinboardMenu() {
                     <DropdownMenuItem onClick={() => save(true)}>
                         <SaveAll className="mr-2 h-4 w-4" />
                         Save as new copy
+                    </DropdownMenuItem>
+                    {/* Saving the board as a picture sits with the two
+                        saves: same verb, different destination (the disk,
+                        not the server) — and like them it captures the
+                        live board, unsaved edits included. */}
+                    <MosaicSubmenu kit={dropdownMenuKit} boardName={board?.name} />
+                    {/* Re-renders the saved head version's thumbnail from
+                        the board as it is on screen right now. Deliberately
+                        only here and not in the fullscreen bar: it is a
+                        one-time cleanup verb for boards saved at an older
+                        preview resolution, not part of the working set the
+                        bar keeps stable. Looks disabled and ignores selects
+                        (same trade as History/Rename below) so the title
+                        can explain what would enable it. */}
+                    <DropdownMenuItem
+                        title={refreshTitle}
+                        className={cn(!canRefreshPreview && "opacity-50")}
+                        onSelect={(e) => {
+                            if (!canRefreshPreview) { e.preventDefault(); return }
+                            void refreshPreview()
+                        }}
+                    >
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        Refresh Preview
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={openLibrary}>
@@ -262,12 +357,14 @@ export function PinboardMenu() {
                     <DropdownMenuSeparator />
                     {/* The destructive verb sits last, below everything.
                         It confirms first (see usePinboardDialogs), so a
-                        stray click can't wipe the board. Explicit red text
-                        tones, NOT text-destructive: the dark theme's
-                        --destructive is a 30%-lightness button background
-                        that reads as disabled grey when used as text. */}
+                        stray click can't wipe the board. Styled with the
+                        shared destructive-row class (filled, like the
+                        destructive button) — the same dropdown already
+                        shows it on Remove Below Viewport a few rows up,
+                        and two looks for the same class of verb in one
+                        menu reads as two different things. */}
                     <DropdownMenuItem
-                        className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
+                        className={DESTRUCTIVE_MENU_ITEM}
                         onClick={openClear}
                     >
                         <Trash2 className="mr-2 h-4 w-4" />
@@ -328,6 +425,103 @@ export function AutoLayoutToggle({
             )}
         >
             <WandSparkles className={iconClassName} />
+        </button>
+    )
+}
+
+// Maximize, as a permanent segment of the Pinboard tab rather than a row
+// buried in the chevron menu. Deliberately NOT gated on the tab being
+// active, unlike every other segment: it activates the tab itself on the
+// way in. Maximizing a board the host is not showing would otherwise
+// produce a fullscreen view of nothing — so the two writes go together, in
+// one tick, which also makes them one history entry and one Back press.
+//
+// `onActivate` rather than a flag read here because the two hosts select
+// their pinboard tab differently (ghp for the gallery header, gpb plus the
+// library flag for the grid strip); reading either one directly would
+// wire the wrong host's tab. Same reason AutoLayoutToggle takes `active`.
+//
+// Only ever means "maximize": both tab strips are unmounted while
+// fullscreen (the gallery header hides whole, the grid strip is behind
+// `!fs`), so this button cannot be pressed to restore. The toolbar's own
+// Minimize button and Ctrl+Shift+M are the way back.
+export function PinboardFullscreenButton({
+    className,
+    active,
+    onActivate,
+}: {
+    className?: string
+    active: boolean
+    onActivate: () => void
+}) {
+    const setFs = useGalleryFullscreen()[1]
+    return (
+        <button
+            onClick={() => {
+                if (!active) {
+                    // Mark BEFORE the writes: the board mounts in the commit
+                    // they produce, and its auto-layout trigger consumes the
+                    // mark on that mount. Only on the inactive path — with
+                    // the tab already showing, the board is mounted and its
+                    // own viewport-growth effect sees the `fs` transition, so
+                    // marking as well would be a second claim on one press.
+                    markPinboardMaximizeRequest()
+                    onActivate()
+                }
+                void setFs(true)
+            }}
+            aria-label="Maximize pinboard"
+            title={active
+                ? "Maximize the pinboard (Ctrl+Shift+M)"
+                : "Show the pinboard and maximize it (Ctrl+Shift+M)"}
+            className={cn(
+                "inline-flex shrink-0 items-center justify-center px-1.5 transition-colors hover:bg-foreground/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+                className,
+            )}
+        >
+            <Maximize2 className="h-4 w-4" />
+        </button>
+    )
+}
+
+// The auto-layout ALGORITHM switch, as a tab segment next to the wand.
+//
+// Drawn as a MODE button, not a lit/unlit toggle: both states are equally
+// "on" (one packs a mosaic, the other identical cells), so the icon says
+// which one is in force and pressing it switches. The toolbar and the menu
+// keep their lit-when-uniform look instead — there the button sits in a row
+// of genuine on/off toggles, and a second icon that changes shape would
+// read as a different control rather than the same one in another state.
+export function UniformLayoutToggle({
+    className,
+    disabled = false,
+}: {
+    className?: string
+    disabled?: boolean
+}) {
+    const { uniform, records } = usePinBoard()
+    const toggleUniform = useToggleUniform()
+    // Same gate as the menu row: the switch rides in the layout token, so
+    // with no pins there is nothing to write it to.
+    const hasPins = records.length > 0
+    return (
+        <button
+            onClick={() => toggleUniform(!uniform)}
+            disabled={disabled || !hasPins}
+            aria-label="Toggle uniform auto-layout"
+            title={!hasPins
+                ? "Pin something first — the algorithm choice is stored in the board layout"
+                : uniform
+                    ? "Uniform Auto-Layout: pins are arranged in identical cells. Click to compose a mosaic instead."
+                    : "Mosaic Auto-Layout: pins are composed into a mosaic. Click to arrange them in identical cells instead."}
+            className={cn(
+                "inline-flex shrink-0 items-center justify-center px-1.5 transition-colors hover:bg-foreground/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
+                className,
+            )}
+        >
+            {uniform
+                ? <LayoutGrid className="h-4 w-4" />
+                : <LayoutDashboard className="h-4 w-4" />}
         </button>
     )
 }
@@ -393,20 +587,54 @@ function ToolbarDivider() {
 // the bar shows itself briefly when entering fullscreen.
 export function PinboardFullscreenBar() {
     const setFs = useGalleryFullscreen()[1]
+    // No search button here: the search overlay is a bottom-edge dock with
+    // its own edge handles and pin control (app/search/SearchOverlay.tsx) —
+    // a top control toggling a bottom panel would be a pointer round trip
+    // for nothing (docs/maximized-pinboard-search-overlay-design.md §5.1).
+    // This bar stays HOVER-revealed while those docks are click-revealed:
+    // it is small, low-collision, and its own handles sit where compaction
+    // rarely puts board content (§5.1).
     const [showGrid, setShowGrid] = useGalleryPinGrid()
+    const [allHandles, setAllHandles] = useGalleryPinResizeHandles()
     const [autoLayout] = useGalleryPinAutoLayout()
     const [autoLayoutCrop, setAutoLayoutCrop] = useGalleryPinAutoCrop()
+    // Gravity is token state, not a board flag: read off the parsed board.
+    // An empty board has no token, so setFloat can't store the switch and
+    // float is not the board's answer — the toggle stays disabled there.
+    // "Scale With Window" is a flag whose two edges both write the token,
+    // so it is gated on a board existing for the same reason.
+    const [proportional] = useGalleryPinProportional()
+    const { float, setFloat, uniform, setProportional, records } =
+        usePinBoard()
+    const hasPins = records.length > 0
     const boardApi = usePinboardBoardApi(s => s.api)
+    const toggleUniform = useToggleUniform(boardApi)
     const { save, pbid, board, openLibrary, openHistory, openRename, dialogs } =
         usePinboardDialogs()
     const [hover, setHover] = useState(false)
-    const [menuOpen, setMenuOpen] = useState(false)
+    // The bar's two dropdowns (Layout, Mosaic) share one exclusive slot.
+    // Left uncontrolled they could BOTH end up open: the bar forces
+    // pointer-events-auto on itself, which pierces a modal menu's
+    // body-wide pointer lock, so a press on the other trigger opens the
+    // second menu — and once that menu registers as the topmost modal
+    // layer, the first menu's own outside-press dismissal is suppressed.
+    // One controlled slot makes opening either menu close the other.
+    const [openMenu, setOpenMenu] =
+        useState<"layout" | "mosaic" | "defaults" | null>(null)
+    // Functional update: when a press moves from one menu to the other,
+    // the loser's close and the winner's open land in the same batch in
+    // either order — the close must only clear its own slot.
+    const menuProps = (id: "layout" | "mosaic" | "defaults") => ({
+        open: openMenu === id,
+        onOpenChange: (o: boolean) =>
+            setOpenMenu(prev => (o ? id : prev === id ? null : prev)),
+    })
     const [peek, setPeek] = useState(true)
     useEffect(() => {
         const t = setTimeout(() => setPeek(false), 2500)
         return () => clearTimeout(t)
     }, [])
-    const show = hover || menuOpen || peek
+    const show = hover || openMenu !== null || peek
     return (
         <>
             {/* The hot band: full width but only as tall as the board's own
@@ -502,13 +730,80 @@ export function PinboardFullscreenBar() {
                     >
                         <Grid3x3 className="h-5 w-5" />
                     </ToolbarButton>
+                    {/* All Resize Handles: all eight handles on every normal
+                        item instead of the bottom-right corner alone (the
+                        top-edge three only with gravity off — compaction
+                        re-glues the top edge, see GRAVITY_RESIZE_HANDLES in
+                        GalleryPinBoard). A pure view preference — no token,
+                        no board needed. */}
+                    <ToolbarButton
+                        title={allHandles
+                            ? "All Resize Handles on: resize from every edge and corner (top-edge handles need Gravity off). Click to go back to the bottom-right corner only"
+                            : "All Resize Handles off: items resize from the bottom-right corner only. Click to resize from every edge and corner (top-edge handles need Gravity off)"}
+                        active={allHandles}
+                        onClick={() => setAllHandles(!allHandles)}
+                    >
+                        <Scaling className="h-5 w-5" />
+                    </ToolbarButton>
+                    {/* Gravity: items settle upward automatically. Lives in
+                        the layout token, so this is a layout write — Back
+                        undoes the settle it produces. An empty board has no
+                        token to write it to (and no state to report), so
+                        the button waits for the first pin. */}
+                    <ToolbarButton
+                        title={!hasPins
+                            ? "Pin something first — gravity is stored in the board layout"
+                            : float
+                                ? "Gravity off: items stay where you put them. Click to turn on and settle the board upward"
+                                : "Gravity on: items settle upward automatically. Click to turn off"}
+                        active={hasPins && !float}
+                        disabled={!hasPins}
+                        onClick={() => setFloat(!float)}
+                    >
+                        <Magnet className="h-5 w-5" />
+                    </ToolbarButton>
+                    {/* The auto-layout ALGORITHM: identical cells instead
+                        of the mosaic, for the fill verbs and the
+                        auto-layout trigger. Token state like gravity, so it
+                        waits for the first pin the same way; flipping it
+                        moves nothing until the next fill. */}
+                    <ToolbarButton
+                        title={!hasPins
+                            ? "Pin something first — the algorithm choice is stored in the board layout"
+                            : uniform
+                                ? "Uniform Auto-Layout on: Fill Viewport and auto-layout arrange items in identical cells. Click to compose a mosaic instead"
+                                : "Uniform Auto-Layout off: Fill Viewport and auto-layout compose a mosaic. Click to arrange in identical cells instead"}
+                        active={hasPins && uniform}
+                        disabled={!hasPins}
+                        onClick={() => toggleUniform(!uniform)}
+                    >
+                        <LayoutGrid className="h-5 w-5" />
+                    </ToolbarButton>
+                    {/* Scale With Window: freeze the cell shape and let the
+                        whole grid zoom with the container. Needs the mounted
+                        board's measured width, so it waits for the board API
+                        exactly like the other token-writing toggles wait for
+                        a first pin. */}
+                    <ToolbarButton
+                        title={!hasPins || !boardApi
+                            ? "Pin something first — the frozen cell shape is stored in the board layout"
+                            : proportional
+                                ? "Scale With Window on: the board keeps its cell shape and scales with the window. Click to bake the current size in and turn off"
+                                : "Scale With Window off: resizing the window re-letterboxes the board. Click to freeze the current cell shape"}
+                        active={hasPins && proportional}
+                        disabled={!hasPins || !boardApi}
+                        onClick={() => boardApi
+                            && setProportional(!proportional, boardApi.boardWidth)}
+                    >
+                        <Proportions className="h-5 w-5" />
+                    </ToolbarButton>
                     {boardApi?.isV1 && (
                         <ToolbarButton title="Upgrade Board Grid" onClick={() => boardApi.upgradeGrid()}>
                             <Grid2x2Plus className="h-5 w-5" />
                         </ToolbarButton>
                     )}
                     {boardApi && (
-                        <DropdownMenu onOpenChange={setMenuOpen}>
+                        <DropdownMenu {...menuProps("layout")}>
                             {/* Lit while its menu is open (Radix stamps
                                 data-state on the trigger), like the
                                 selection toolbar's menus */}
@@ -528,6 +823,62 @@ export function PinboardFullscreenBar() {
                             </DropdownMenuContent>
                         </DropdownMenu>
                     )}
+                    {/* Save the board as an image. Its own dropdown rather
+                        than a submenu here: the toolbar has no parent menu
+                        to hang one off, exactly like Layout. Nothing to
+                        composite without pins, so it goes disabled — but it
+                        stays in the bar, like History and Rename above, and
+                        the tooltip says what would enable it. */}
+                    <DropdownMenu {...menuProps("mosaic")}>
+                        <DropdownMenuTrigger asChild>
+                            <button
+                                disabled={!hasPins}
+                                title={hasPins
+                                    ? "Save the board as an image file"
+                                    : "Pin something first — there is nothing to composite yet"}
+                                className={cn(
+                                    "inline-flex shrink-0 items-center gap-1 px-2.5 text-sm transition-colors hover:bg-foreground/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:hover:bg-transparent",
+                                    "data-[state=open]:bg-blue-500/15 data-[state=open]:text-blue-600 dark:data-[state=open]:text-blue-400",
+                                )}
+                            >
+                                Mosaic
+                                <ChevronDown className="h-4 w-4" />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-56">
+                            <MosaicMenuItems
+                                kit={dropdownMenuKit}
+                                boardName={board?.name}
+                            />
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                    {/* The one thing from the board menu this bar had no
+                        path to. Its own dropdown, like Layout and Mosaic —
+                        not a mirror of the whole chevron menu, which would
+                        put a second copy of every verb already sitting in
+                        this bar one row away from the original. Needs no
+                        board: the rows write the CREATION defaults, which
+                        is a preference about future boards, and the flags
+                        they capture all read fine on an empty one. */}
+                    <DropdownMenu {...menuProps("defaults")}>
+                        <DropdownMenuTrigger asChild>
+                            <button
+                                title={"What new pinboards start with — save"
+                                    + " this board's settings as the default,"
+                                    + " or go back to the built-in ones"}
+                                className={cn(
+                                    "inline-flex shrink-0 items-center gap-1 px-2.5 text-sm transition-colors hover:bg-foreground/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+                                    "data-[state=open]:bg-blue-500/15 data-[state=open]:text-blue-600 dark:data-[state=open]:text-blue-400",
+                                )}
+                            >
+                                Defaults
+                                <ChevronDown className="h-4 w-4" />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-64">
+                            <NewBoardDefaultsItems kit={dropdownMenuKit} />
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                     <ToolbarDivider />
                     <ToolbarButton
                         title="Restore pinboard size (Ctrl+Shift+M)"

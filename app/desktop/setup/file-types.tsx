@@ -19,7 +19,17 @@ const choices: { key: keyof WizardFileTypes; label: string; extensions: string; 
   { key: "html", label: "HTML documents", extensions: "HTML, HTM", description: "Index saved web pages and render previews when a compatible browser is available." },
 ]
 
-export function WizardFileTypeSelection({ value, onChange }: { value: WizardFileTypes; onChange(value: WizardFileTypes): void }) {
+export function WizardFileTypeSelection({
+  value,
+  onChange,
+  detectOutros,
+  onDetectOutrosChange,
+}: {
+  value: WizardFileTypes
+  onChange(value: WizardFileTypes): void
+  detectOutros: boolean
+  onDetectOutrosChange(value: boolean): void
+}) {
   return (
     <section className="max-w-3xl space-y-5">
       <div className="space-y-2">
@@ -35,6 +45,11 @@ export function WizardFileTypeSelection({ value, onChange }: { value: WizardFile
               <Label htmlFor={`scan-${choice.key}`} className="text-base font-medium">{choice.label}</Label>
               <p className="text-sm text-muted-foreground">{choice.description}</p>
               <p className="text-xs text-muted-foreground">{choice.extensions}</p>
+              {choice.key === "html" && value.html && (
+                <p className="mt-2 text-sm text-amber-700 dark:text-amber-300" role="note">
+                  HTML indexing requires an installed Chromium-based browser such as Chrome, Chromium, Brave, or Edge. Files are skipped until a compatible browser is available.
+                </p>
+              )}
             </div>
             <Switch
               id={`scan-${choice.key}`}
@@ -46,6 +61,19 @@ export function WizardFileTypeSelection({ value, onChange }: { value: WizardFile
       </div>
 
       {!Object.values(value).some(Boolean) && <p className="text-sm text-destructive" role="alert">Select at least one file type to continue.</p>}
+
+      <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
+        <div className="space-y-1">
+          <Label htmlFor="scan-detect-outros" className="text-base font-medium">TikTok Detection</Label>
+          <p className="text-sm text-muted-foreground">Detect TikTok end cards so thumbnails, AI and video playback skip them.</p>
+          <p className="text-xs text-muted-foreground">This does not change which files are indexed. Turning it off later also stops serving already-detected end cards, which disables outro skip in the player.</p>
+        </div>
+        <Switch
+          id="scan-detect-outros"
+          checked={detectOutros}
+          onCheckedChange={onDetectOutrosChange}
+        />
+      </div>
     </section>
   )
 }

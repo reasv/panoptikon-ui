@@ -51,6 +51,7 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
   const [excludedFolders, setExcludedFolders] = useState("")
   const [folderErrors, setFolderErrors] = useState<FolderValidationIssue[]>([])
   const [fileTypes, setFileTypes] = useState<WizardFileTypes>({ images: true, video: true, audio: false, pdf: false, html: false })
+  const [detectOutros, setDetectOutros] = useState(true)
   const [continuousScanEnabled, setContinuousScanEnabled] = useState(false)
   const [continuousScanMode, setContinuousScanMode] = useState<ContinuousScanMode>("watcher")
   const [pollInterval, setPollInterval] = useState("60")
@@ -60,6 +61,8 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
   const [modelSettings, setModelSettings] = useState<WizardModelSettings>({})
   const [externalInputsReady, setExternalInputsReady] = useState(false)
   const [schedule, setSchedule] = useState<WizardSchedule>({ enabled: true, mode: "daily", time: "03:00", everyHours: "3", weekday: "0", cron: "0 3 * * *" })
+  const [schedulePreviewCron, setSchedulePreviewCron] = useState("0 3 * * *")
+  const [lastValidScheduleCron, setLastValidScheduleCron] = useState("0 3 * * *")
   const [scheduleValid, setScheduleValid] = useState(true)
   const [scheduleNextRun, setScheduleNextRun] = useState<string | null>(null)
   const [scheduleError, setScheduleError] = useState<string | null>(null)
@@ -89,10 +92,12 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
     }
     return null
   }, [existingNames, mode, trimmedDatabaseName])
-  const handleSchedulePreview = useCallback((valid: boolean, nextRun: string | null, error: string | null) => {
+  const handleSchedulePreview = useCallback((cron: string, valid: boolean, nextRun: string | null, error: string | null) => {
+    setSchedulePreviewCron(cron)
     setScheduleValid(valid)
     setScheduleNextRun(nextRun)
     setScheduleError(error)
+    if (valid) setLastValidScheduleCron(cron)
   }, [])
 
   async function startScan() {
@@ -126,6 +131,7 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
         scan_audio: fileTypes.audio,
         scan_pdf: fileTypes.pdf,
         scan_html: fileTypes.html,
+        detect_outros: detectOutros,
         cron_jobs: selectedModels.map((inferenceId) => {
           const settings = modelSettings[inferenceId]
           return {
@@ -136,7 +142,7 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
           }
         }),
         enable_cron_job: schedule.enabled,
-        cron_schedule: effectiveCronSchedule(schedule),
+        cron_schedule: scheduleCronToSave,
         new_index_db: newIndexDb,
       }),
     })
@@ -227,6 +233,15 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
 
   const pollingIntervalIsValid = continuousScanMode !== "poller"
     || (Number.isInteger(Number(pollInterval)) && Number(pollInterval) >= 1)
+  const scheduleCron = effectiveCronSchedule(schedule)
+  const currentScheduleCronIsValid = schedulePreviewCron === scheduleCron && scheduleValid
+  const scheduleCronToSave = schedule.mode !== "custom" || currentScheduleCronIsValid
+    ? scheduleCron
+    : lastValidScheduleCron
+  const scheduleCanContinue = !schedule.enabled
+    || (schedule.mode === "custom"
+      ? currentScheduleCronIsValid
+      : scheduleCron.length > 0)
   const canContinue = currentStep === "database"
     ? databaseNameError === null
     : currentStep === "folders"
@@ -237,7 +252,7 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
           ? !continuousScanEnabled || pollingIntervalIsValid
           : currentStep === "configuration"
             ? externalInputsReady
-            : currentStep !== "schedule" || scheduleValid
+            : currentStep !== "schedule" || scheduleCanContinue
   const showDatabaseNameError = databaseName.length > 0
   const defaultDatabaseName = databases?.index.current ?? "default"
   const exampleDatabaseName = defaultDatabaseName.toLocaleLowerCase() === "photos" ? "family_photos" : "photos"
@@ -331,7 +346,7 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
             onExcludedChange={(value) => { setExcludedFolders(value); setFolderErrors([]) }}
           />
         )}
-        {currentStep === "file-types" && <WizardFileTypeSelection value={fileTypes} onChange={setFileTypes} />}
+        {currentStep === "file-types" && <WizardFileTypeSelection value={fileTypes} onChange={setFileTypes} detectOutros={detectOutros} onDetectOutrosChange={setDetectOutros} />}
         {currentStep === "continuous" && (
           <WizardContinuousScan
             enabled={continuousScanEnabled}
@@ -359,7 +374,7 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
           </section>
         )}
         {currentStep === "schedule" && <WizardScheduleSelection value={schedule} selectedModelCount={selectedModels.length} valid={scheduleValid} nextRun={scheduleNextRun} error={scheduleError} onChange={setSchedule} onPreviewChange={handleSchedulePreview} />}
-        {currentStep === "review" && <WizardReview database={mode === "new-database" ? trimmedDatabaseName : defaultDatabaseName} includedFolders={lines(includedFolders)} excludedFolders={lines(excludedFolders)} fileTypes={fileTypes} continuousEnabled={continuousScanEnabled} continuousMode={continuousScanMode} pollInterval={pollInterval} continuousFolders={lines(continuousFolders)} selectedModels={selectedModels} modelSettings={modelSettings} schedule={schedule} scheduleNextRun={scheduleNextRun} />}
+        {currentStep === "review" && <WizardReview database={mode === "new-database" ? trimmedDatabaseName : defaultDatabaseName} includedFolders={lines(includedFolders)} excludedFolders={lines(excludedFolders)} fileTypes={fileTypes} detectOutros={detectOutros} continuousEnabled={continuousScanEnabled} continuousMode={continuousScanMode} pollInterval={pollInterval} continuousFolders={lines(continuousFolders)} selectedModels={selectedModels} modelSettings={modelSettings} schedule={schedule} scheduleNextRun={scheduleNextRun} />}
         {currentStep === "progress" && completion && <WizardProgress completion={completion} />}
         </div>
       </ScrollArea>

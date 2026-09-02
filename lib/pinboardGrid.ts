@@ -71,21 +71,143 @@ export function minPinUnits(
   }
 }
 
+// The proportional grid ("Scale With Window", the pbp board flag): with a
+// reference width stored in the token, the board's cell ASPECT is frozen at
+// the shape it had at that width and the whole vertical axis scales with the
+// container instead of letterboxing. Freezing the aspect while keeping
+// multi-cell items letterbox-free requires margin and padding to scale too
+// (an item's height is h*rowHeight + (h-1)*margin), so it is one uniform
+// zoom factor, not a rowHeight tweak. Columns never scale: they are
+// container-relative already.
+//
+// Scale 1 (feature off, no reference width, unmeasured container) returns
+// the base grid OBJECT — identity, so every memo keyed on the grid is
+// unchanged for boards that never touch the feature.
+export function gridScale(
+  proportional: boolean,
+  refWidth: number,
+  boardWidth: number
+): number {
+  return proportional && refWidth > 0 && boardWidth > 0
+    ? boardWidth / refWidth
+    : 1
+}
+
+// The grid every RENDER consumer must use. Floats are fine: RGL computes
+// item pixel rects from these values and rounds per item, absolutely (never
+// cumulatively), so fractional steps can't drift.
+export function effectiveGrid(grid: GridParams, scale: number): GridParams {
+  if (scale === 1) return grid
+  return {
+    columns: grid.columns,
+    rowHeight: grid.rowHeight * scale,
+    margin: grid.margin * scale,
+    padding: grid.padding * scale,
+  }
+}
+
+// The same values baked back to the integers a token can carry — what
+// turning the feature OFF stores, so the board keeps the size it had on
+// screen. Exact at scale 1 (identity), approximate everywhere else, and
+// the approximation is worth stating honestly: each value rounds by under
+// half a pixel, but what item positions accumulate is the ROW STEP
+// (rowHeight + margin), whose error is therefore up to a full pixel per
+// row — and every item's top offset is its row index times that step, so
+// the whole board stretches or shrinks by up to one pixel per row step it
+// spans. In relative terms the error is bounded by 1/(step*scale), which
+// is invisible near scale 1 and large when the scale is small: a v2 board
+// (step 10px) authored at 3440px and switched off in a ~1030px window has
+// an exact step of 2.99px, which bakes to 1 + 1 = 2px — the board comes
+// out a third shorter. Small scales cannot do better; integers are all the
+// token can carry.
+export function bakeGrid(grid: GridParams, scale: number): GridParams {
+  if (scale === 1) return grid
+  return {
+    columns: grid.columns,
+    rowHeight: Math.max(1, Math.round(grid.rowHeight * scale)),
+    margin: Math.max(0, Math.round(grid.margin * scale)),
+    padding: Math.max(0, Math.round(grid.padding * scale)),
+  }
+}
+
 // The optional "!<rows>" suffix is the board's layout-height ratchet: the
 // largest grid-row count any fill action has ever targeted. Fill actions
 // target max(current fold, ratchet), so adding items while the board is
 // shown in a smaller view never recompacts a layout made for a bigger one;
 // an explicit "refit to current view" resets it.
-const TOKEN_RE = /^v(\d+)(?:\.(\d+)\.(\d+)\.(\d+)\.(\d+))?(?:!(\d+))?$/
+//
+// The optional "~<ext>" suffix carries the board's remaining version-scoped
+// switches as one compact lowercase string in a fixed order:
+//
+//   f        free-float: gravity/compaction OFF (absent = ON, the original
+//            behavior)
+//   u        uniform auto-layout: the fill verbs and auto-layout tile
+//            identical cells instead of composing a mosaic (absent =
+//            mosaic, the original behavior)
+//   w<int>   reference width in px for the proportional grid (absent = none)
+//
+// e.g. "v2~f", "v2!40~w1503", "v2.108.5.5.5!40~fuw1503". The segment is
+// append-only and parsed leniently: an unknown letter must never make the
+// whole token unparseable, since falling back to the v1 branch would
+// reinterpret the token as a record and wreck the board. Hence the ext
+// capture accepts any run of characters that cannot be confused with the
+// earlier sections (anything but "!" and "~"), and unrecognized content
+// simply reads as switches at their defaults.
+export interface GridExt {
+  // Gravity off: items stay exactly where they were put
+  float: boolean
+  // Uniform auto-layout: the fill verbs tile identical cells (absent =
+  // mosaic)
+  uniform: boolean
+  // Board width the layout's cell aspects were authored at (0 = unset)
+  refWidth: number
+}
+
+// Frozen: this is the shared module default handed out by parseExt and
+// spread into ParsedBoard, so a stray mutation on any value that aliased it
+// would poison every later parse.
+export const NO_EXT: GridExt = Object.freeze({
+  float: false,
+  uniform: false,
+  refWidth: 0,
+})
+
+const TOKEN_RE =
+  /^v(\d+)(?:\.(\d+)\.(\d+)\.(\d+)\.(\d+))?(?:!(\d+))?(?:~([^!~]*))?$/
+
+function parseExt(ext: string | undefined): GridExt {
+  if (!ext) return NO_EXT
+  const w = /w(\d+)/.exec(ext)
+  return {
+    float: ext.startsWith("f"),
+    // "u" can't be confused with the other switches: "f" is positional and
+    // "w" carries only digits — and clients from before the switch existed
+    // simply read past it (the ext charset was tolerant from the start)
+    uniform: ext.includes("u"),
+    refWidth: w ? parseInt(w[1]) : 0,
+  }
+}
+
+// Emits nothing at all when every switch is at its default, so boards
+// that never touch them keep their exact historical token.
+function formatExt(ext?: Partial<GridExt>): string {
+  if (!ext) return ""
+  const refWidth =
+    ext.refWidth && ext.refWidth > 0 ? Math.round(ext.refWidth) : 0
+  const body = `${ext.float ? "f" : ""}${ext.uniform ? "u" : ""}${
+    refWidth > 0 ? `w${refWidth}` : ""}`
+  return body ? `~${body}` : ""
+}
 
 export function parseVersionToken(
   token: string | undefined
-): { grid: GridParams; highWater: number } | null {
+): ({ grid: GridParams; highWater: number } & GridExt) | null {
   if (!token) return null
   const m = TOKEN_RE.exec(token)
   if (!m || parseInt(m[1]) < 2) return null
   const highWater = m[6] ? parseInt(m[6]) : 0
-  if (!m[2]) return { grid: V2_GRID, highWater }
+  const ext = parseExt(m[7])
+  if (!m[2]) return { grid: V2_GRID, highWater, ...ext }
   return {
     grid: {
       columns: parseInt(m[2]),
@@ -94,11 +216,16 @@ export function parseVersionToken(
       padding: parseInt(m[5]),
     },
     highWater,
+    ...ext,
   }
 }
 
-export function formatVersionToken(grid: GridParams, highWater = 0): string {
-  const suffix = highWater > 0 ? `!${highWater}` : ""
+export function formatVersionToken(
+  grid: GridParams,
+  highWater = 0,
+  ext?: Partial<GridExt>
+): string {
+  const suffix = `${highWater > 0 ? `!${highWater}` : ""}${formatExt(ext)}`
   if (
     grid.columns === V2_GRID.columns &&
     grid.rowHeight === V2_GRID.rowHeight &&
@@ -110,7 +237,10 @@ export function formatVersionToken(grid: GridParams, highWater = 0): string {
   return `v2.${grid.columns}.${grid.rowHeight}.${grid.margin}.${grid.padding}${suffix}`
 }
 
-export interface ParsedBoard {
+// ParsedBoard carries the ext switches too, so every write path can hand
+// them straight back to serializeBoard: whatever a board's token says must
+// survive every verb, drag, save and migration untouched.
+export interface ParsedBoard extends GridExt {
   grid: GridParams
   // The 5-string records, with the version token stripped. All layout keys
   // (`${offset}-${sha256}`) use offsets into THIS array, so they are stable
@@ -124,16 +254,29 @@ export interface ParsedBoard {
 export function parseBoard(param: string[]): ParsedBoard {
   const parsed = parseVersionToken(param[0])
   if (parsed) {
-    return { grid: parsed.grid, records: param.slice(1), isV1: false, highWater: parsed.highWater }
+    return {
+      grid: parsed.grid,
+      records: param.slice(1),
+      isV1: false,
+      highWater: parsed.highWater,
+      float: parsed.float,
+      uniform: parsed.uniform,
+      refWidth: parsed.refWidth,
+    }
   }
-  return { grid: V1_GRID, records: param, isV1: true, highWater: 0 }
+  return { grid: V1_GRID, records: param, isV1: true, highWater: 0, ...NO_EXT }
 }
 
 // An empty board serializes to [] so nuqs clears the param entirely and the
 // next board starts fresh (on the v2 grid)
-export function serializeBoard(grid: GridParams, records: string[], highWater = 0): string[] {
+export function serializeBoard(
+  grid: GridParams,
+  records: string[],
+  highWater = 0,
+  ext?: Partial<GridExt>
+): string[] {
   if (records.length === 0) return []
-  return [formatVersionToken(grid, highWater), ...records]
+  return [formatVersionToken(grid, highWater, ext), ...records]
 }
 
 // Integer factors mapping v1 lattice coordinates onto another grid: x and w
@@ -147,21 +290,22 @@ export function v1ScaleFactors(to: GridParams): { sx: number; sy: number } {
 }
 
 // Rewrite v1 records on the target grid. Geometry scales by the lattice
-// factors; crop (manual and auto) and trim suffixes are normalized values
-// independent of the grid, so they pass through unchanged.
+// factors; every h-field extra (crops, trim, lock, orientation) is either a
+// normalized value or a flag, all independent of the grid, so they pass
+// through unchanged.
 export function migrateRecords(records: string[], to: GridParams): string[] {
   const { sx, sy } = v1ScaleFactors(to)
   const next: string[] = []
   for (let i = 0; i < records.length; i += 5) {
     const [sha256, x, y, w, hField] = records.slice(i, i + 5)
     if (hField === undefined) break
-    const { h, crop, autoCrop, trim, lock } = parseHField(hField)
+    const { h, ...extras } = parseHField(hField)
     next.push(
       sha256,
       Math.round(parseInt(x) * sx).toString(),
       Math.round(parseInt(y) * sy).toString(),
       Math.max(1, Math.round(parseInt(w) * sx)).toString(),
-      packHField(Math.max(1, Math.round(h * sy)), crop, autoCrop, trim, lock)
+      packHField(Math.max(1, Math.round(h * sy)), extras)
     )
   }
   return next

@@ -1,7 +1,14 @@
 'use client'
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { CropRect, FULL_CROP, MIN_CROP_FRAC, clampCrop } from '@/lib/pinboardCrop'
+import { CropRect, FULL_CROP, MIN_CROP_FRAC, PinOrientation, clampCrop, isIdentityOrientation, orientedSize, sourceRect } from '@/lib/pinboardCrop'
+import { computeRestGeometry } from '@/lib/pinboardGeometry'
+// The rest-mode fit now lives in the pure geometry module, where the
+// composition builder (and the node scripts that assert its numbers) can
+// reach it without pulling a React component in. Re-exported from here
+// because this is where every existing consumer imports it from, and because
+// this component is still its primary reader.
+export { computeRestGeometry } from '@/lib/pinboardGeometry'
 
 // Crop-mode model: the box (card interior) IS the window. The image is a
 // free transform (uniform scale + offset) behind it; the crop committed at
@@ -13,49 +20,6 @@ interface Transform {
     // Image top-left relative to the container, px
     x: number
     y: number
-}
-
-interface Geometry {
-    // All in container-local pixels.
-    // vis* is the visible (cropped) region, img* the full media element.
-    visL: number
-    visT: number
-    visW: number
-    visH: number
-    imgL: number
-    imgT: number
-    imgW: number
-    imgH: number
-}
-
-// Fit the crop region into the container ("contain" semantics: the crop
-// rect is treated as the source image, letterboxing on aspect mismatch).
-// Exported for the pinboard preview compositor, which must place each pin
-// exactly as rest-mode rendering does.
-export function computeRestGeometry(
-    W: number,
-    H: number,
-    c: CropRect,
-    nw: number,
-    nh: number,
-): Geometry {
-    const cropPxW = c.w * nw
-    const cropPxH = c.h * nh
-    const scale = Math.min(W / cropPxW, H / cropPxH)
-    const visW = cropPxW * scale
-    const visH = cropPxH * scale
-    const visL = (W - visW) / 2
-    const visT = (H - visH) / 2
-    return {
-        visL,
-        visT,
-        visW,
-        visH,
-        imgL: visL - c.x * nw * scale,
-        imgT: visT - c.y * nh * scale,
-        imgW: nw * scale,
-        imgH: nh * scale,
-    }
 }
 
 // Constrain the image between its two flush-against-the-window positions
@@ -127,12 +91,53 @@ export interface CropGeometry {
     box: Rect
 }
 
+// Media-element style for a placement rect given in DISPLAY (oriented)
+// space. Every other computation in this file runs in display space, so
+// the element — which carries SOURCE pixels — is laid out at source
+// proportions (w/h swapped back for odd quarter turns) and a transform
+// maps it onto the placement rect.
+//
+// CSS transform lists apply RIGHT TO LEFT, which is exactly the codec's
+// composition order (display = flipH^flipped o rotateCW^quarterTurns): the
+// rotation sits last and acts on the source first, the mirror wraps it.
+// CSS rotate() is clockwise (the y axis points down) and scaleX(-1)
+// mirrors about the element's own vertical axis, so each piece carries the
+// translate that brings the result back into the positive quadrant —
+// leaving the oriented bounding box exactly filling [0,W]x[0,H] from a
+// "0 0" origin. Identity returns the plain rect with no transform at all,
+// so unoriented pins keep byte-identical styles (and no extra stacking
+// context).
+function orientedPlacement(
+    L: number,
+    T: number,
+    W: number,
+    H: number,
+    orientation: PinOrientation | null,
+): React.CSSProperties {
+    if (isIdentityOrientation(orientation)) return { left: L, top: T, width: W, height: H }
+    const { quarterTurns: q, flipped } = orientation!
+    const pieces: string[] = []
+    if (flipped) pieces.push(`translate(${W}px, 0) scaleX(-1)`)
+    if (q === 1) pieces.push(`translate(${W}px, 0) rotate(90deg)`)
+    else if (q === 2) pieces.push(`translate(${W}px, ${H}px) rotate(180deg)`)
+    else if (q === 3) pieces.push(`translate(0, ${H}px) rotate(270deg)`)
+    return {
+        left: L,
+        top: T,
+        width: q % 2 ? H : W,
+        height: q % 2 ? W : H,
+        transform: pieces.join(' '),
+        transformOrigin: '0 0',
+    }
+}
+
 export function CropView({
     crop,
     cropMode,
     boxResizing,
     naturalWidth,
     naturalHeight,
+    orientation = null,
     onCropChange,
     imageExtentRef,
     ghostSrc,
@@ -141,11 +146,16 @@ export function CropView({
     crop: CropRect | null
     cropMode: boolean
     // True while the grid box is being resized via a handle in crop mode.
-    // The image stays anchored in screen space so the box edges cut into
-    // it (or move away from it, consuming/growing letterbox).
+    // The image stays anchored to the surrounding grid (see anchorFrame)
+    // so the box edges cut into it (or move away from it,
+    // consuming/growing letterbox).
     boxResizing: boolean
+    // SOURCE dimensions as the media element reports them; the display
+    // (oriented) ones are derived below
     naturalWidth?: number | null
     naturalHeight?: number | null
+    // D4 orientation of the source image; null is identity
+    orientation?: PinOrientation | null
     onCropChange: (crop: CropRect) => void
     // While in crop mode, receives a getter for the image's and the crop
     // window's viewport extents so the grid layer can stop box edges at
@@ -159,8 +169,12 @@ export function CropView({
     const [containerSize, setContainerSize] = useState<{ w: number; h: number } | null>(null)
     const [transform, setTransform] = useState<Transform | null>(null)
 
-    const nw = naturalWidth || 0
-    const nh = naturalHeight || 0
+    // Everything below — rest geometry, the crop-mode transform, the zoom
+    // limits, the extent getter the grid layer clamps against, and the
+    // committed crop rects themselves — works in DISPLAY space, so the
+    // natural dimensions enter it oriented. The orientation resurfaces only
+    // in the final element style (orientedPlacement).
+    const [nw, nh] = orientedSize(naturalWidth || 0, naturalHeight || 0, orientation)
 
     const transformRef = useRef<Transform | null>(null)
     transformRef.current = transform
@@ -171,8 +185,29 @@ export function CropView({
     const onCropChangeRef = useRef(onCropChange)
     onCropChangeRef.current = onCropChange
     const lastCommittedRef = useRef<CropRect | null>(null)
-    // Image position in viewport coordinates, frozen while the box resizes
+    // D4 code (quarterTurns + 4·flipped, identity 0 like the codec) the
+    // live transform was initialized against
+    const orientCodeRef = useRef<number>(0)
+    // Image position in the anchor frame (see anchorFrame), frozen while
+    // the box resizes
     const anchorRef = useRef<{ left: number; top: number; scale: number } | null>(null)
+    // The frozen image's frame of reference: the surrounding RGL content
+    // element, not the viewport. The two frames only differ by the scroll
+    // position, but that difference MOVES mid-gesture: shrinking the
+    // lowest item's south edge shrinks the grid's height and with it the
+    // scroll range, the browser clamps scrollTop, and the whole board —
+    // crop box included — shifts down on screen. An image frozen in
+    // viewport space then slides up out of the window, and the box∩image
+    // read at mouseup commits that sheared view as the crop. In grid
+    // space the box only ever moves by the handle's own travel, and the
+    // image stays glued to the board through any scroll. Falls back to
+    // the viewport (a zero frame) if no grid element surrounds the view.
+    const anchorFrame = (): { left: number; top: number } => {
+        const grid = containerRef.current?.closest(".react-grid-layout")
+        if (!grid) return { left: 0, top: 0 }
+        const r = grid.getBoundingClientRect()
+        return { left: r.left, top: r.top }
+    }
     const lastSizeRef = useRef<{ w: number; h: number } | null>(null)
     const panStateRef = useRef<{ startX: number; startY: number; t: Transform } | null>(null)
     const wheelCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -209,17 +244,23 @@ export function CropView({
                 // into the re-fit branch below, which re-centers the image
                 // on every step and eats BOTH sides of the resized axis.
                 if (boxResizingRef.current && !anchorRef.current) {
-                    anchorRef.current = { left: rect.left + t.x, top: rect.top + t.y, scale: t.scale }
+                    const f = anchorFrame()
+                    anchorRef.current = {
+                        left: rect.left - f.left + t.x,
+                        top: rect.top - f.top + t.y,
+                        scale: t.scale,
+                    }
                 }
                 const anchor = anchorRef.current
                 if (anchor) {
-                    // Box edges move around the screen-fixed image while the
+                    // Box edges move around the grid-fixed image while the
                     // handle is held; the region in the window is the crop
                     // that will be committed on release
+                    const f = anchorFrame()
                     const anchored = {
                         scale: anchor.scale,
-                        x: anchor.left - rect.left,
-                        y: anchor.top - rect.top,
+                        x: f.left + anchor.left - rect.left,
+                        y: f.top + anchor.top - rect.top,
                     }
                     applyTransform(anchored)
                 } else if (lastSizeRef.current &&
@@ -271,16 +312,19 @@ export function CropView({
                 right: rect.right,
                 bottom: rect.bottom,
             }
-            // Mid-drag the image is frozen at the anchor's screen position
+            // Mid-drag the image is frozen at the anchor's grid-frame
+            // position; the caller wants viewport rects, so map it out
+            // through the frame's current viewport origin
             const anchor = anchorRef.current
             if (anchor) {
+                const f = anchorFrame()
                 return {
                     box,
                     image: {
-                        left: anchor.left,
-                        top: anchor.top,
-                        right: anchor.left + nw * anchor.scale,
-                        bottom: anchor.top + nh * anchor.scale,
+                        left: f.left + anchor.left,
+                        top: f.top + anchor.top,
+                        right: f.left + anchor.left + nw * anchor.scale,
+                        bottom: f.top + anchor.top + nh * anchor.scale,
                     },
                 }
             }
@@ -305,12 +349,27 @@ export function CropView({
             return
         }
         if (!containerSize || !nw || !nh) return
-        if (!transformRef.current || !cropEq(crop, lastCommittedRef.current)) {
+        // An orientation change while crop mode is open must force a
+        // re-init, and the crop guard cannot detect it: nw/nh swap under a
+        // transform built against the pre-swap dims (and for flips or 180°
+        // they don't even swap), while a null or centered crop compares
+        // equal across the change — so a stale transform would survive and
+        // the next pan/wheel commit would store a crop read off the wrong
+        // frame. Hence the D4 code as its own trigger; the cropEq guard
+        // stays exactly as it was, since it is what keeps the editor from
+        // re-centering on its own commits echoing back through the prop.
+        const orientCode = orientation
+            ? orientation.quarterTurns + (orientation.flipped ? 4 : 0)
+            : 0
+        if (!transformRef.current || orientCode !== orientCodeRef.current
+            || !cropEq(crop, lastCommittedRef.current)) {
+            orientCodeRef.current = orientCode
             lastCommittedRef.current = crop
             applyTransform(initTransform(containerSize.w, containerSize.h, nw, nh, crop))
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [cropMode, containerSize, nw, nh, crop?.x, crop?.y, crop?.w, crop?.h])
+    }, [cropMode, containerSize, nw, nh, crop?.x, crop?.y, crop?.w, crop?.h,
+        orientation?.quarterTurns, orientation?.flipped])
 
     // Box-resize lifecycle. The COMMIT for a box-resize does not happen
     // here: the grid layer computes box∩image synchronously at mouseup
@@ -337,7 +396,12 @@ export function CropView({
             // captures the anchor lazily in that case
             if (!el || !t) return
             const rect = el.getBoundingClientRect()
-            anchorRef.current = { left: rect.left + t.x, top: rect.top + t.y, scale: t.scale }
+            const f = anchorFrame()
+            anchorRef.current = {
+                left: rect.left - f.left + t.x,
+                top: rect.top - f.top + t.y,
+                scale: t.scale,
+            }
         } else {
             anchorRef.current = null
         }
@@ -445,10 +509,11 @@ export function CropView({
         if (transform && nw && nh) {
             mediaStyle = {
                 position: 'absolute',
-                left: transform.x,
-                top: transform.y,
-                width: nw * transform.scale,
-                height: nh * transform.scale,
+                ...orientedPlacement(
+                    transform.x, transform.y,
+                    nw * transform.scale, nh * transform.scale,
+                    orientation,
+                ),
                 maxWidth: 'none',
                 objectFit: 'fill',
             }
@@ -459,27 +524,49 @@ export function CropView({
         clipStyle = { left: geom.visL, top: geom.visT, width: geom.visW, height: geom.visH }
         mediaStyle = {
             position: 'absolute',
-            left: geom.imgL - geom.visL,
-            top: geom.imgT - geom.visT,
-            width: geom.imgW,
-            height: geom.imgH,
+            ...orientedPlacement(
+                geom.imgL - geom.visL, geom.imgT - geom.visT,
+                geom.imgW, geom.imgH,
+                orientation,
+            ),
             maxWidth: 'none',
             objectFit: 'fill',
         }
-    } else if (crop) {
-        // A crop exists but the geometry to apply it isn't known yet: on
-        // the server, during hydration, and while natural dimensions load.
+    } else if (crop || !isIdentityOrientation(orientation)) {
+        // A crop or an orientation exists but the geometry to apply it
+        // isn't known yet: on the server, during hydration, and while
+        // natural dimensions load.
         // object-view-box makes the browser contain-fit exactly the crop
         // region without JS knowing the image's dimensions, so the SSR
         // HTML itself paints the cropped view — no empty box and no
         // uncropped flash before the JS geometry takes over (which
         // produces the same centered contain fit, so the handoff is
         // seamless). Browsers without object-view-box support ignore it
-        // and briefly show the full contain fit instead.
+        // and briefly show the full contain fit instead. The inset must be
+        // mapped back to SOURCE space (sourceRect): object-view-box selects
+        // a region of the replaced element's own content, consumed BEFORE
+        // `transform` applies, so a display-space rect would select the
+        // wrong region under every non-identity orientation. With the
+        // mapping the even quarter-turn states (q=0 flipped, q=2) render
+        // this fallback exactly; the odd ones stay a one-frame
+        // approximation, because the orientation rides on top as an
+        // origin-CENTER transform while the contain fit sizes the SOURCE
+        // box, not the oriented one — so an odd quarter turn in a
+        // non-square cell is framed wrong until the measured geometry above
+        // takes over. One pre-hydration frame, deliberately not worth more.
+        const vb = crop ? sourceRect(crop, orientation) : null
         mediaStyle = {
             ...fallbackStyle,
-            objectViewBox: `inset(${crop.y * 100}% ${(1 - crop.x - crop.w) * 100}% `
-                + `${(1 - crop.y - crop.h) * 100}% ${crop.x * 100}%)`,
+            ...(vb ? {
+                objectViewBox: `inset(${vb.y * 100}% ${(1 - vb.x - vb.w) * 100}% `
+                    + `${(1 - vb.y - vb.h) * 100}% ${vb.x * 100}%)`,
+            } : {}),
+            ...(isIdentityOrientation(orientation) ? {} : {
+                transform: [
+                    orientation!.flipped ? 'scaleX(-1)' : '',
+                    orientation!.quarterTurns ? `rotate(${orientation!.quarterTurns * 90}deg)` : '',
+                ].filter(Boolean).join(' '),
+            }),
         } as React.CSSProperties
     }
 

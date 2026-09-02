@@ -11,6 +11,17 @@ export const useJobHistoryTab = () =>
       .withDefault("files")
   )
 
+export const useFailedFilesTab = () =>
+  useQueryState(
+    `fft`,
+    parseAsStringEnum(["extraction", "scan"])
+      .withOptions({
+        history: "push",
+        clearOnDefault: true,
+      })
+      .withDefault("extraction")
+  )
+
 export const useExtractionGroupTabs = () =>
   useQueryState(
     `grouptab`,

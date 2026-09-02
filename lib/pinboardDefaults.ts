@@ -18,13 +18,21 @@
 // board menu ("Save Current Settings as Default"). A user default equal to
 // the codec default simply stamps nothing — blank already means that.
 
-export type PinboardDefaultableKey = "pba" | "pbc" | "psc" | "pg"
+export type PinboardDefaultableKey =
+  | "pba"
+  | "pbc"
+  | "psc"
+  | "pg"
+  | "pbp"
+  | "prh"
 
 export const PINBOARD_DEFAULTABLE_KEYS: PinboardDefaultableKey[] = [
   "pba",
   "pbc",
   "psc",
   "pg",
+  "pbp",
+  "prh",
 ]
 
 interface DefaultableFlag {
@@ -32,6 +40,12 @@ interface DefaultableFlag {
   codecDefault: boolean
   // What a newly created board starts with (before user overrides)
   creationDefault: boolean
+  // How the flag is named in the "settings saved as default" summary, so
+  // adding a key to the registry updates that sentence too. Use the
+  // control's own on-screen label, capitalized exactly as the menu shows
+  // it: the sentence sends the user looking for these switches, and a name
+  // that appears nowhere in the UI sends them looking for nothing.
+  label: string
 }
 
 // New boards start with auto-layout + auto-crop ON: without them a fresh
@@ -42,13 +56,62 @@ export const PINBOARD_DEFAULTABLE_FLAGS: Record<
   PinboardDefaultableKey,
   DefaultableFlag
 > = {
-  pba: { codecDefault: false, creationDefault: true }, // auto-layout
-  pbc: { codecDefault: false, creationDefault: true }, // auto-crop to cells
-  psc: { codecDefault: true, creationDefault: true }, // selection-verb crop
-  pg: { codecDefault: false, creationDefault: false }, // grid background
+  // auto-layout
+  pba: { codecDefault: false, creationDefault: true, label: "Auto-Layout" },
+  // auto-crop to cells
+  pbc: {
+    codecDefault: false,
+    creationDefault: true,
+    label: "Auto-Crop to Cells",
+  },
+  // selection-verb crop (a toolbar icon toggle, so it has no menu label of
+  // its own — named for what it does, in the same Title Case as the rest)
+  psc: { codecDefault: true, creationDefault: true, label: "Selection Crop" },
+  // grid background
+  pg: { codecDefault: false, creationDefault: false, label: "Show Grid" },
+  // proportional grid
+  pbp: {
+    codecDefault: false,
+    creationDefault: false,
+    label: "Scale With Window",
+  },
+  // all eight resize handles instead of the bottom-right corner alone.
+  // Off out of the box: the one-corner simplification is what every board
+  // has had, and it is the defense against accidental edge grabs.
+  prh: {
+    codecDefault: false,
+    creationDefault: false,
+    label: "All Resize Handles",
+  },
+}
+
+// The flag names for the defaults-saved toast, in registry order.
+export function defaultableFlagLabels(): string[] {
+  return PINBOARD_DEFAULTABLE_KEYS.map(
+    (key) => PINBOARD_DEFAULTABLE_FLAGS[key].label
+  )
 }
 
 const STORAGE_KEY = "pinboardUserDefaults"
+
+// Gravity and uniform auto-layout are creation defaults too, but they are
+// NOT defaultable flags: they live in the layout param's grid token (see
+// pinboardGrid.ts), not in a URL parameter and not in pinboards.flags. So
+// they ride the same localStorage payload as extra keys, and the first-pin
+// edge stamps them by serializing the initial token with "~f"/"~u" instead
+// of by writing parameters.
+export interface PinboardUserDefaults
+  extends Partial<Record<PinboardDefaultableKey, boolean>> {
+  gravity?: boolean
+  uniform?: boolean
+}
+
+// What a newly created board starts with when the user saved no default:
+// gravity on is the behavior every board has had until now.
+export const GRAVITY_CREATION_DEFAULT = true
+
+// ...and the mosaic packer is what every fill has always used.
+export const UNIFORM_CREATION_DEFAULT = false
 
 // Only allowlisted keys with boolean values survive, so neither stale
 // localStorage nor junk in the database's stored board flags can stamp
@@ -65,21 +128,38 @@ export function sanitizeBoardFlags(
   return out
 }
 
-export function loadUserDefaults(): Partial<
-  Record<PinboardDefaultableKey, boolean>
-> {
+// The stored-flags sanitizer plus the token-backed gravity and uniform
+// keys. Kept separate from sanitizeBoardFlags on purpose: that one also
+// guards the board flags the gateway stores, where the token switches have
+// no business appearing. Absence is tolerated everywhere — payloads written
+// before a switch existed simply resolve it to its creation default.
+export function sanitizeUserDefaults(value: unknown): PinboardUserDefaults {
+  const flags = sanitizeBoardFlags(value)
+  if (!flags) return {}
+  const out: PinboardUserDefaults = { ...flags }
+  const gravity = (value as Record<string, unknown>).gravity
+  if (typeof gravity === "boolean") out.gravity = gravity
+  const uniform = (value as Record<string, unknown>).uniform
+  if (typeof uniform === "boolean") out.uniform = uniform
+  return out
+}
+
+export function loadUserDefaults(): PinboardUserDefaults {
   if (typeof window === "undefined") return {}
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return {}
-    return sanitizeBoardFlags(JSON.parse(raw)) ?? {}
+    return sanitizeUserDefaults(JSON.parse(raw))
   } catch {
     return {}
   }
 }
 
 export function saveUserDefaults(
-  values: Record<PinboardDefaultableKey, boolean>
+  values: Record<PinboardDefaultableKey, boolean> & {
+    gravity: boolean
+    uniform: boolean
+  }
 ): void {
   if (typeof window === "undefined") return
   try {
@@ -102,11 +182,16 @@ export function clearUserDefaults(): void {
 export function effectiveCreationDefaults(): Record<
   PinboardDefaultableKey,
   boolean
-> {
+> & { gravity: boolean; uniform: boolean } {
   const user = loadUserDefaults()
-  const out = {} as Record<PinboardDefaultableKey, boolean>
+  const out = {} as Record<PinboardDefaultableKey, boolean> & {
+    gravity: boolean
+    uniform: boolean
+  }
   for (const key of PINBOARD_DEFAULTABLE_KEYS) {
     out[key] = user[key] ?? PINBOARD_DEFAULTABLE_FLAGS[key].creationDefault
   }
+  out.gravity = user.gravity ?? GRAVITY_CREATION_DEFAULT
+  out.uniform = user.uniform ?? UNIFORM_CREATION_DEFAULT
   return out
 }

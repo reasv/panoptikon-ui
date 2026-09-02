@@ -1,6 +1,6 @@
 {
   "name": "panoptikon-ui",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "scripts": {
@@ -9,7 +9,29 @@
     "prebuild": "node scripts/sync-sqlite-wasm.mjs",
     "build": "next build",
     "start": "next start",
-    "gen:api": "openapi-typescript ../panoptikon/openapi.json -o lib/panoptikon.d.ts --default-non-nullable=false"
+    "gen:api": "openapi-typescript ../panoptikon/openapi.json -o lib/panoptikon.d.ts --default-non-nullable=false",
+    "test": "node scripts/all.test.mjs",
+    "test:overlap": "node --experimental-strip-types scripts/overlap.test.mjs",
+    "test:crop": "node --experimental-strip-types scripts/crop.test.mjs",
+    "test:mosaic": "node --experimental-strip-types scripts/mosaic.test.mjs",
+    "test:uniform": "node --experimental-strip-types scripts/uniform.test.mjs",
+    "test:trimparam": "node --experimental-strip-types scripts/trimparam.test.mjs",
+    "test:outroskip": "node --experimental-strip-types scripts/outroskip.test.mjs",
+    "test:endaction": "node --experimental-strip-types scripts/endaction.test.mjs",
+    "test:playability": "node --experimental-strip-types scripts/playability.test.mjs",
+    "test:transcode": "node --experimental-strip-types scripts/transcode.test.mjs",
+    "test:cliprequest": "node --experimental-strip-types scripts/clipRequest.test.mjs",
+    "test:compose": "node --experimental-strip-types scripts/compose.test.mjs",
+    "test:fileshare": "node --experimental-strip-types scripts/fileshare.test.mjs",
+    "test:artifactshare": "node --experimental-strip-types scripts/artifactShare.test.mjs",
+    "test:scrollmode": "node --experimental-strip-types scripts/scrollmode.test.mjs",
+    "test:gridcells": "node --experimental-strip-types scripts/gridcells.test.mjs",
+    "test:playback": "node --experimental-strip-types scripts/playback.test.mjs",
+    "test:hoveranimate": "node --experimental-strip-types scripts/hoveranimate.test.mjs",
+    "test:displayloop": "node --experimental-strip-types scripts/displayloop.test.mjs",
+    "test:thumbnailurl": "node --experimental-strip-types scripts/thumbnailurl.test.mjs",
+    "test:thumbnailformats": "node --experimental-strip-types scripts/thumbnailformats.test.mjs",
+    "test:policytoken": "node --experimental-strip-types scripts/policytoken.test.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.1.2",

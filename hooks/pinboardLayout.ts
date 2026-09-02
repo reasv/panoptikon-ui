@@ -3,8 +3,22 @@ import type { LayoutItem } from "react-grid-layout";
 import { fetchClient } from "@/lib/api";
 import { components } from "@/lib/panoptikon";
 import { RefObject, useEffect, useRef } from "react";
-import { CropRect, PinLock, computeAutoCrop } from "@/lib/pinboardCrop";
+import {
+    AUTO_CROP_MAX_LETTERBOX_PX,
+    CropRect,
+    OrientationOp,
+    PinLock,
+    PinOrientation,
+    composeCrops,
+    composeOrientation,
+    computeAutoCrop,
+    isIdentityOrientation,
+    orientRect,
+    orientedSize,
+} from "@/lib/pinboardCrop";
 import { GridParams, minPinUnits, rowStep } from "@/lib/pinboardGrid";
+import { resolveOverlapsDown } from "@/lib/pinboardOverlap";
+import { fastVerticalCompactor } from "react-grid-layout/extras";
 import {
     ArrangedItem,
     GridRect,
@@ -15,11 +29,15 @@ import {
     growToFill,
     growToFillInBox,
     justifyRows,
+    nearestUniformIndex,
     packMosaic,
     packRegion,
     packRegionInBox,
     packRows,
     packRowsAroundObstacles,
+    packUniform,
+    packUniformInBox,
+    rankUniformFactorizations,
 } from "@/lib/pinboardPack";
 
 // Session-wide reroll counter: every fill-type action renders the variant
@@ -28,6 +46,25 @@ import {
 // purpose — the hook is instantiated once per pin menu plus once for the
 // board, and they must agree.
 let mosaicVariant = 0
+
+// The uniform packer's counterpart of mosaicVariant: the cell ASPECT the
+// last uniform reroll chose, which later uniform fills track by picking
+// the nearest feasible factorization — never a rank index, which a
+// different item count would teleport (see rankUniformFactorizations).
+// Null until a reroll chooses; module-level for the same reason as above.
+let uniformAspect: number | null = null
+
+// The aspect the last committed uniform fill actually used (its best-scored
+// pick when no reroll has chosen): the reroll's starting point, so a reroll
+// advances from what's on screen — not from the ranking's head, which would
+// skip the best factorization when uniform has never been shown yet.
+let uniformShownAspect: number | null = null
+
+// Default for the optional `orients` param. Module-scope because it sits in
+// the build-data invalidation deps below: an inline `= {}` default would be
+// a fresh object every render, so any caller omitting the param would throw
+// away the cached measurements on every render.
+const NO_ORIENTS: Record<string, PinOrientation | null> = Object.freeze({})
 
 // Layout keys are `${recordIndex}-${sha256Prefix}` (the same image can be
 // pinned more than once); the sha256 part is what the API understands
@@ -44,7 +81,11 @@ export function usePinboardLayoutActions({
     crops,
     autoCrops,
     locks = {},
+    orients = NO_ORIENTS,
     highWater = 0,
+    float = false,
+    uniform = false,
+    cropKey = null,
     layoutAutoCrop = false,
     selectionAutoCrop = true,
     dbs,
@@ -60,8 +101,27 @@ export function usePinboardLayoutActions({
     // every fill packs around) or "size" (treated the same by layout
     // actions; only manual drags distinguish them)
     locks?: Record<string, PinLock>,
+    // Per-item D4 orientations. The whole of this file works in DISPLAY
+    // space (crops are stored there too), so orientation enters only by
+    // swapping the natural dimensions of odd quarter turns — see
+    // croppedDimensions, which every fit, pack and resize path reads from.
+    orients?: Record<string, PinOrientation | null>,
     // The board's layout-height ratchet in grid rows (see pinboardGrid.ts)
     highWater?: number,
+    // Gravity OFF (the token's float switch): RGL's compactor is not
+    // running, so the verbs that grow an item's footprint must resolve the
+    // collisions they create themselves — see resolveGrowth.
+    float?: boolean,
+    // The board's auto-layout algorithm (the token's uniform switch): the
+    // fill-type verbs and the auto-layout trigger tile identical cells
+    // instead of composing a mosaic. The explicit Uniform verbs force the
+    // uniform packer regardless.
+    uniform?: boolean,
+    // The board's open crop item, if any. A verb fired from another pin
+    // mid-session must never move the crop window, so with gravity off it
+    // enters the overlap resolution as an immovable wall (with gravity on
+    // the board's own crop-mode compaction does that job).
+    cropKey?: string | null,
     // The standing auto-crop settings, one per verb class: layoutAutoCrop
     // (the pbc URL flag) governs the board-layout family — fills, reroll,
     // refit, reflow, rows, justify, grow — and selectionAutoCrop (the psc
@@ -77,25 +137,60 @@ export function usePinboardLayoutActions({
     pinboardRef: RefObject<HTMLDivElement | null>,
     // autoCropOverrides ride along with the layout so both land in one
     // record write (one URL update, one history entry); newHighWater, when
-    // given, updates the board's ratchet in that same write
+    // given, updates the board's ratchet in that same write.
+    // orientationOverrides/manualCropOverrides are the same mechanism for
+    // the remaining two hField slots — the orientation verbs need all four
+    // in ONE write, since a rotation changes the geometry AND both crop
+    // rects AND the orientation, and two record writes in a tick clobber
+    // each other (see rebuildRecords in GalleryPinBoard).
+    // history overrides the write's history mode; only doFill's callers
+    // reach it (see its `history` option). Omitted everywhere else, which
+    // means push — a verb the user invoked is its own undo step.
     onLayoutChange: (
         layout: LayoutItem[],
         autoCropOverrides?: Record<string, CropRect | null>,
         newHighWater?: number,
+        orientationOverrides?: Record<string, PinOrientation | null>,
+        manualCropOverrides?: Record<string, CropRect | null>,
+        history?: "push" | "replace",
     ) => void,
 }) {
     const layoutBuildData = useRef<LayoutBuildData | null>(null)
     useEffect(() => {
         layoutBuildData.current = null
-    }, [layout, crops, dbs, grid])
+    }, [layout, crops, orients, dbs, grid])
 
     // Cached build data, or null when the container can't be measured (in
     // which case layout actions no-op rather than destroy the arrangement)
     async function ensureBuildData(): Promise<LayoutBuildData | null> {
         if (!layoutBuildData.current) {
-            layoutBuildData.current = await getLayoutBuildData({ layout, crops, dbs, grid, pinboardRef })
+            layoutBuildData.current = await getLayoutBuildData({ layout, crops, orients, dbs, grid, pinboardRef })
         }
         return layoutBuildData.current
+    }
+
+    // The gravity-off completion of a footprint-growing verb (Resize Item /
+    // Set Size, the rotations' box swap). With gravity ON this is identity:
+    // RGL's compactor resolves the overlaps the new footprint creates, which
+    // is what those verbs have always relied on. With it OFF nothing does,
+    // so the colliders are pushed down here instead (see pinboardOverlap).
+    // The changed boxes are clamped into the grid first: RGL's own
+    // correctBounds would otherwise slide an over-wide box left AFTER this
+    // pass, straight into a neighbour nothing would then move.
+    // An open crop session pins its own item: with gravity on the crop-mode
+    // block in GalleryPinBoard's onLayoutChange walls it off for the same
+    // reason, and with gravity off that block is skipped, so the wall has to
+    // come from here.
+    function resolveGrowth(newLayout: LayoutItem[], changedKeys: string[]): LayoutItem[] {
+        if (!float) return newLayout
+        const changed = new Set(changedKeys)
+        const clamped = newLayout.map(l => {
+            if (!changed.has(l.i)) return l
+            const w = Math.min(l.w, grid.columns)
+            const x = Math.max(0, Math.min(l.x, grid.columns - w))
+            return w === l.w && x === l.x ? l : { ...l, x, w }
+        })
+        return resolveOverlapsDown(clamped, changed, cropKey ? [cropKey] : undefined)
     }
 
     const isLocked = (key: string) => !!locks[key]
@@ -116,10 +211,13 @@ export function usePinboardLayoutActions({
     }
 
     // Grid rows above the fold: the block a fill action must span exactly,
-    // so that items parked below the fold can't compact up into view
-    function foldRows(buildData: LayoutBuildData): number {
+    // so that items parked below the fold can't compact up into view.
+    // Takes the raw container height rather than build data: the removal
+    // verbs need this line synchronously, and ensureBuildData is an async
+    // metadata fetch a record splice has no use for.
+    function foldRows(containerHeight: number): number {
         return Math.max(1, Math.floor(
-            (buildData.containerHeight - 2 * grid.padding + grid.margin) / rowStep(grid)
+            (containerHeight - 2 * grid.padding + grid.margin) / rowStep(grid)
         ))
     }
 
@@ -185,8 +283,26 @@ export function usePinboardLayoutActions({
     // ratcheted high water, whichever is larger. Fills report the height
     // they targeted back through onLayoutChange, so the ratchet only ever
     // moves when a fill actually runs.
-    function targetRows(buildData: LayoutBuildData): number {
-        return Math.max(foldRows(buildData), highWater)
+    function targetRows(containerHeight: number): number {
+        return Math.max(foldRows(containerHeight), highWater)
+    }
+
+    // Keys of the items parked below the board's working area — the staging
+    // band evictions and region sends push things into. The line is the fill
+    // target (fold or ratchet, whichever is deeper): using the ratchet keeps
+    // the cut conservative on a window smaller than the one the board was
+    // laid out for. "Mostly below" is the vertical midpoint STRICTLY past
+    // the line, so an item the line bisects survives. Null when the
+    // container can't be measured (hidden tab, unmounted scroll area) —
+    // callers disable the verb rather than compute against a 0px viewport.
+    // Locks are ignored: a lock pins geometry, not existence.
+    function belowViewportKeys(): string[] | null {
+        const containerHeight = pinboardRef.current?.clientHeight || 0
+        if (containerHeight < 100) return null
+        const line = targetRows(containerHeight)
+        return layout
+            .filter(l => !l.i.endsWith("__preview") && l.y + l.h / 2 > line)
+            .map(l => l.i)
     }
 
     // Anchored items inside the target rectangle, as obstacles to pack
@@ -252,6 +368,9 @@ export function usePinboardLayoutActions({
         skipIfCovered = false,
         keepProportions = false,
         resetRatchet = false,
+        algorithm,
+        advanceUniform = false,
+        history,
     }: {
         visibleOnly?: boolean,
         skipIfCovered?: boolean,
@@ -261,10 +380,27 @@ export function usePinboardLayoutActions({
         // Refit to the current view: target the fold even when the ratchet
         // is higher, and lower the ratchet to it
         resetRatchet?: boolean,
+        // The packer to fill with; absent means the board's algorithm flag
+        // decides. The explicit Uniform verb is the one caller that forces
+        // a value.
+        algorithm?: "mosaic" | "uniform",
+        // Reroll on a uniform fill: advance the session's sticky cell
+        // aspect to the next ranked factorization before packing (the
+        // uniform counterpart of bumping mosaicVariant — done in here
+        // because the ranking needs the fill's own measured inputs)
+        advanceUniform?: boolean,
+        // History mode for the resulting record write. Default (push) is
+        // right for every fill the user asked for — it is its own undo
+        // step. "replace" is for a fill that merely FOLLOWS someone else's
+        // structural write and belongs in that write's history entry: this
+        // fill is async (it awaits a metadata fetch), so nuqs cannot merge
+        // it with the write that triggered it, and a push would park a
+        // second entry between the user and the board they want back.
+        history?: "push" | "replace",
     }): Promise<string | null> {
         const buildData = await ensureBuildData()
         if (!buildData) return null
-        const total = resetRatchet ? foldRows(buildData) : targetRows(buildData)
+        const total = resetRatchet ? foldRows(buildData.containerHeight) : targetRows(buildData.containerHeight)
         // A layout already reaching the target was made for this viewport or
         // a bigger one (both viewport-growth triggers are height-only, so the
         // width can't have changed under it) — repainting it would make
@@ -295,43 +431,107 @@ export function usePinboardLayoutActions({
         const obstacles = [...anchorObstacles, ...placement.rects]
         const items = participants.map(l => toPackItem(buildData, l))
         const weights = keepProportions ? participants.map(l => l.w * l.h) : undefined
-        const packed = items.length === 0 ? [] : obstacles.length > 0
-            ? packRegion({
+        const mins = minPinUnits(grid, buildData.columnWidth)
+        const algo = algorithm ?? (uniform ? "uniform" : "mosaic")
+        let packed: LayoutItem[]
+        if (items.length === 0) {
+            packed = []
+        } else if (algo === "uniform") {
+            // Identical cells, flowing around the obstacle rects by
+            // skipping their cells. Weights don't apply — every cell is
+            // the same by definition, so "keep proportions" has nothing
+            // to keep here.
+            const ranked = rankUniformFactorizations({
+                items, obstacles, grid,
+                columnWidth: buildData.columnWidth,
+                totalGridRows: total, ...mins,
+            })
+            if (advanceUniform && ranked.length > 0) {
+                // Advance from whatever is on screen: the reroll choice if
+                // one exists, else the last uniform fill's own pick. With
+                // neither (the flag was just flipped over a mosaic
+                // arrangement) the first reroll must show the best-scored
+                // factorization, not skip past it to the runner-up.
+                const base = uniformAspect ?? uniformShownAspect
+                uniformAspect = base == null
+                    ? ranked[0].cellAspect
+                    : ranked[(nearestUniformIndex(ranked, base) + 1)
+                        % ranked.length].cellAspect
+            }
+            packed = packUniform({
                 items, obstacles, grid,
                 columnWidth: buildData.columnWidth,
                 totalGridRows: total,
-                variant: mosaicVariant, weights,
-                ...minPinUnits(grid, buildData.columnWidth),
+                chosenAspect: uniformAspect, ...mins,
             })
-            : packMosaic({
-                items, grid,
-                columnWidth: buildData.columnWidth,
-                totalGridRows: total,
-                fill: rest.length > 0 ? "force" : "auto",
-                variant: mosaicVariant, weights,
-                ...minPinUnits(grid, buildData.columnWidth),
-            })
+            if (packed.length > 0 && ranked.length > 0) {
+                uniformShownAspect = ranked[uniformAspect == null
+                    ? 0 : nearestUniformIndex(ranked, uniformAspect)].cellAspect
+            }
+        } else {
+            packed = obstacles.length > 0
+                ? packRegion({
+                    items, obstacles, grid,
+                    columnWidth: buildData.columnWidth,
+                    totalGridRows: total,
+                    variant: mosaicVariant, weights, ...mins,
+                })
+                : packMosaic({
+                    items, grid,
+                    columnWidth: buildData.columnWidth,
+                    totalGridRows: total,
+                    fill: rest.length > 0 ? "force" : "auto",
+                    variant: mosaicVariant, weights, ...mins,
+                })
+        }
         // A packer that can't produce a composition returns [] — committing
         // that would erase the packed items' records (rebuildRecords drops
         // records absent from the reported layout). No layout beats data loss.
         if (items.length > 0 && packed.length === 0) {
-            return "Couldn't fill the viewport around the fixed items"
+            return algo === "uniform"
+                ? "Couldn't fit identical cells at the minimum item size"
+                : "Couldn't fill the viewport around the fixed items"
         }
         const newLayout = [...packed, ...placement.placed, ...rest]
         onLayoutChange(newLayout,
             verbAutoCrops(buildData, newLayout,
-                new Set(participants.map(l => l.i)), layoutAutoCrop), total)
+                new Set(participants.map(l => l.i)), layoutAutoCrop), total,
+            undefined, undefined, history)
         return null
     }
 
-    function fillViewport(visibleOnly: boolean, skipIfCovered = false) {
-        return doFill({ visibleOnly, skipIfCovered })
+    function fillViewport(
+        visibleOnly: boolean,
+        skipIfCovered = false,
+        history?: "push" | "replace",
+        // Force a packer instead of routing by the board's `uniform`
+        // switch. Exists for ONE caller: the Uniform Auto-Layout toggle,
+        // which re-fills the board in the same handler that flips the
+        // switch. `uniform` reaches this hook as a render-time ARGUMENT
+        // parsed out of the `pinboard` URL param, so at that moment it
+        // still holds the pre-toggle value — routing by it would fill with
+        // the algorithm the user just turned OFF. (The layout write itself
+        // is safe without this: updateRecords re-parses `prev`
+        // functionally and carries the freshly written switch forward.)
+        algorithm?: "mosaic" | "uniform",
+    ) {
+        return doFill({ visibleOnly, skipIfCovered, history, algorithm })
     }
 
-    // Cycle to the next distinct near-best composition and re-fill. The
-    // counter is session-wide, so subsequent auto-fills keep the chosen
-    // variant instead of snapping back to the first one.
+    // The one-shot uniform fill: Fill Viewport's semantics exactly, with
+    // the uniform packer forced regardless of the board's algorithm flag
+    function uniformLayout() {
+        return doFill({ algorithm: "uniform" })
+    }
+
+    // Cycle to the next distinct near-best composition and re-fill with
+    // whatever algorithm the board flag selects. The choice is
+    // session-wide either way — mosaicVariant, or the uniform cell aspect
+    // (advanced inside doFill, where the ranking's inputs live) — so
+    // subsequent auto-fills keep the chosen variant instead of snapping
+    // back to the first one.
     function rerollLayout() {
+        if (uniform) return doFill({ advanceUniform: true })
         mosaicVariant++
         return doFill({})
     }
@@ -343,9 +543,12 @@ export function usePinboardLayoutActions({
     }
 
     // Reflow freely but aim every item at its current share of the board:
-    // importance is expressed by how you've already sized things
+    // importance is expressed by how you've already sized things. Always
+    // mosaic, even on a uniform board: identical cells have no proportions
+    // to keep, so routing by the flag would silently turn this verb into a
+    // plain uniform fill.
     function reflowKeepProportions() {
-        return doFill({ keepProportions: true })
+        return doFill({ keepProportions: true, algorithm: "mosaic" })
     }
 
     // "Split the space evenly among N rows" — explicitly row-based. With
@@ -355,7 +558,7 @@ export function usePinboardLayoutActions({
     async function fillViewportRows(rowCount: number): Promise<string | null> {
         const buildData = await ensureBuildData()
         if (!buildData) return null
-        const total = targetRows(buildData)
+        const total = targetRows(buildData.containerHeight)
         const travellers = buildData.sortedLayout.filter(l => isSizeLocked(l.i))
         const participants = buildData.sortedLayout.filter(l => !isLocked(l.i))
         if (participants.length === 0 && travellers.length === 0) return null
@@ -487,7 +690,7 @@ export function usePinboardLayoutActions({
     async function growInPlace(): Promise<string | null> {
         const buildData = await ensureBuildData()
         if (!buildData) return null
-        const total = targetRows(buildData)
+        const total = targetRows(buildData.containerHeight)
         const mins = minPinUnits(grid, buildData.columnWidth)
         if (layout.some(l => isLocked(l.i) && l.y < total)) {
             const travellers = buildData.sortedLayout.filter(l =>
@@ -726,6 +929,67 @@ export function usePinboardLayoutActions({
         return null
     }
 
+    // Uniform the selected items within their combined bounding box:
+    // arrangeSelection's exact structure — the box is claimed, intruders
+    // are evicted or become obstacles, anchored selected items hold still,
+    // size-locked ones travel — with the uniform packer splitting the box
+    // into identical cells instead of the mosaic. The box is never grown:
+    // cells below the minimum size refuse, the standard "couldn't fill"
+    // path. The session's rerolled cell aspect deliberately doesn't apply
+    // — that stickiness belongs to the fills.
+    async function uniformSelection(keys: string[]): Promise<string | null> {
+        const buildData = await ensureBuildData()
+        if (!buildData) return null
+        const keySet = new Set(keys)
+        const selectedItems = buildData.sortedLayout.filter(l => keySet.has(l.i))
+        const travellers = selectedItems.filter(l => isSizeLocked(l.i))
+        const participants = selectedItems.filter(l => !isLocked(l.i))
+        if (participants.length + travellers.length < 2) return null
+        const x0 = Math.min(...selectedItems.map(l => l.x))
+        const y0 = Math.min(...selectedItems.map(l => l.y))
+        const x1 = Math.max(...selectedItems.map(l => l.x + l.w))
+        const y1 = Math.max(...selectedItems.map(l => l.y + l.h))
+        const box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+        const packedKeys = new Set([...participants, ...travellers].map(l => l.i))
+        const mins = minPinUnits(grid, buildData.columnWidth)
+        const { rest, extraObstacles } = evictFromBox({
+            layout, box,
+            participantKeys: packedKeys,
+            sizeLockedKeys: new Set(layout.filter(l => isSizeLocked(l.i)).map(l => l.i)),
+            anchoredKeys: new Set(layout.filter(l => isAnchored(l.i)).map(l => l.i)),
+            columns: grid.columns,
+            ...mins,
+        })
+        const baseObstacles = [
+            ...layout
+                .filter(l => isAnchored(l.i)
+                    && l.x < x1 && l.x + l.w > x0 && l.y < y1 && l.y + l.h > y0)
+                .map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h })),
+            ...extraObstacles,
+        ]
+        const placement = placeTravellers(travellers, box, baseObstacles,
+            l => ({ x: l.x, y: l.y }))
+        if (typeof placement === "string") return placement
+        const packed = participants.length > 0
+            ? packUniformInBox({
+                items: participants.map(l => toPackItem(buildData, l)),
+                obstacles: [...baseObstacles, ...placement.rects],
+                grid,
+                columnWidth: buildData.columnWidth,
+                box,
+                ...mins,
+            })
+            : []
+        if (participants.length > 0 && packed.length === 0) {
+            return "Couldn't fit identical cells in the selection's area — the items would go below the minimum size"
+        }
+        const newLayout = [...packed, ...placement.placed, ...rest]
+        onLayoutChange(newLayout,
+            verbAutoCrops(buildData, newLayout,
+                new Set(participants.map(l => l.i)), selectionAutoCrop))
+        return null
+    }
+
     // Send the selection to a preset region: the region is cleared out and
     // the selected items are packed to tile it completely, reflow-style
     // (each aims at its current share of the space, so relative sizes
@@ -763,7 +1027,7 @@ export function usePinboardLayoutActions({
         }
         const sizeLocked = selectedItems.filter(l => locks[l.i] === "size")
         const flexible = selectedItems.filter(l => !isLocked(l.i))
-        const total = targetRows(buildData)
+        const total = targetRows(buildData.containerHeight)
         const box = regionBox(preset, grid.columns, total)
         const overlapping = (a: GridRect, b: GridRect) =>
             a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
@@ -881,6 +1145,80 @@ export function usePinboardLayoutActions({
         return null
     }
 
+    // Commit one gesture of the Scale & Move session: the board hands in
+    // the snapped grid rects for the selected items, computed from the
+    // overlay's continuous transform. The rects are trusted geometry — the
+    // session already clamped them into the board's columns and above the
+    // snap-proof minimum size — so this verb only resolves the collisions
+    // the new footprints create and maintains the members' auto crops.
+    // Locks never reach here: the session refuses to open over anchored
+    // or size-locked items.
+    async function transformSelection(
+        keys: string[], rects: Record<string, GridRect>,
+    ): Promise<string | null> {
+        const keySet = new Set(keys)
+        const buildData = await ensureBuildData()
+        if (!buildData) return null
+        let changed = false
+        const newLayout = layout.map(l => {
+            const r = rects[l.i]
+            if (!r || !keySet.has(l.i)) return l
+            if (r.x === l.x && r.y === l.y && r.w === l.w && r.h === l.h) return l
+            changed = true
+            return { ...l, x: r.x, y: r.y, w: r.w, h: r.h }
+        })
+        if (!changed) return null
+        // Collision resolution follows the board's physics. Gravity OFF:
+        // push what the group now overlaps straight down, like every other
+        // footprint-growing verb (resolveGrowth). Gravity ON, two stages:
+        // first the same eviction pass (bystanders the group now overlaps
+        // drop below it), THEN the full skyline settle — because RGL
+        // re-runs its compactor on every layout sync, so whatever this
+        // verb writes is going to be settled, and settling it HERE with
+        // the same compactor makes the write the fixed point the board
+        // will display. Neither stage alone survives contact with RGL:
+        // committing raw rects lets RGL's own pass resolve the overlaps,
+        // and compacting WITHOUT evicting first does the same thing that
+        // pass would — both process items in original-y order, so a
+        // bystander the group grew over settles into the vacated space
+        // before the group's lower members are placed, and those members
+        // then yield to IT: the bystander wedges into the group's span
+        // and the group tears apart ("items rearrange after release").
+        // Evicted first, it starts below the whole group and the settle
+        // lands it at the group's bottom edge instead. Anchors enter both
+        // stages as immovable statics (the layout rows carry their
+        // flags), and no correctBounds pass is needed: the board's snap
+        // already clamped the rects into the columns.
+        const resolved = float
+            ? resolveGrowth(newLayout, keys)
+            : [...fastVerticalCompactor.compact(
+                resolveOverlapsDown(newLayout, keys), grid.columns)]
+        // Auto-crop maintenance: with the selection toolbar's auto-crop
+        // toggle on, re-fit every member to its new cell like the other
+        // selection verbs do. With it off, a member that already carries a
+        // fit-to-cell crop gets that crop RE-FIT rather than dropped: the
+        // gesture-resize rule (drop the stale crop, let the true image
+        // letterbox) reads here as members shrinking in one direction for
+        // no reason, since a group scale barely changes the cell's aspect.
+        // Members that never had an auto crop keep their natural
+        // letterbox, exactly as it looked before the scale.
+        let overrides: Record<string, CropRect | null>
+        if (selectionAutoCrop) {
+            overrides = verbAutoCrops(buildData, resolved, keySet, true)
+        } else {
+            overrides = {}
+            const oldSize = new Map(layout.map(l => [l.i, `${l.w}x${l.h}`]))
+            for (const l of resolved) {
+                if (!keySet.has(l.i) || !autoCrops[l.i]) continue
+                if (oldSize.get(l.i) === `${l.w}x${l.h}`) continue
+                const next = autoCropForCell(buildData, l.i, l.w, l.h)
+                if (next !== undefined) overrides[l.i] = next
+            }
+        }
+        onLayoutChange(resolved, overrides)
+        return null
+    }
+
     // Fit each given item to its current cell — the selection toolbar's
     // crop-now action, fired when its auto-crop toggle turns on
     async function autoCropSelection(keys: string[]) {
@@ -901,7 +1239,7 @@ export function usePinboardLayoutActions({
         const buildData = await ensureBuildData()
         if (!buildData) return
         const { minW, minH } = minPinUnits(grid, buildData.columnWidth)
-        const newLayout = layout.map(l => {
+        const newLayout = resolveGrowth(layout.map(l => {
             if (l.i === layoutKey) {
                 const [w, h] = croppedDimensions(buildData, l.i)
                 const newW = Math.max(minW, l.w + increase)
@@ -912,7 +1250,7 @@ export function usePinboardLayoutActions({
                 }
             }
             return l
-        })
+        }), [layoutKey])
         // An explicit size command is gesture-like: it does not re-fit, it
         // just drops the auto crop its own resize made stale
         onLayoutChange(newLayout, verbAutoCrops(buildData, newLayout, new Set(), false))
@@ -922,7 +1260,7 @@ export function usePinboardLayoutActions({
         const buildData = await ensureBuildData()
         if (!buildData) return
         const { minW, minH } = minPinUnits(grid, buildData.columnWidth)
-        const newLayout = layout.map(l => {
+        const newLayout = resolveGrowth(layout.map(l => {
             if (l.i === layoutKey) {
                 const [w, h] = croppedDimensions(buildData, l.i)
                 const newW = Math.max(minW, size)
@@ -933,9 +1271,190 @@ export function usePinboardLayoutActions({
                 }
             }
             return l
-        })
+        }), [layoutKey])
         onLayoutChange(newLayout, verbAutoCrops(buildData, newLayout, new Set(), false))
     }
+
+    // ---- Orientation (rotate / flip) ----------------------------------
+    //
+    // The three hField slots an orientation change touches, collected for
+    // one write. Both crop slots are ALWAYS emitted for every key touched:
+    // rebuildRecords reads the manual slot's presence as "the base moved",
+    // and the explicit auto entry is what tells it the auto crop travelled
+    // with it instead of going stale.
+    interface OrientOverrides {
+        orient: Record<string, PinOrientation | null>
+        manual: Record<string, CropRect | null>
+        auto: Record<string, CropRect | null>
+    }
+
+    // Carry one item through a sequence of user ops: the orientation
+    // composes, and each crop slot is remapped through the SAME op so the
+    // region it selects keeps framing the same content (a flip happens
+    // inside the crop window, not behind it). The two slots are remapped
+    // INDEPENDENTLY and never as their composition — composeCrops clamps at
+    // MIN_CROP_FRAC, so remapping the composite is not the same map for
+    // sub-2% composites. The auto slot's rect is expressed in the manual
+    // window's own normalized frame, where the op is the identical map.
+    function orientOne(key: string, ops: OrientationOp[], out: OrientOverrides) {
+        let orient = orients[key] ?? null
+        let manual = crops[key] ?? null
+        let auto = autoCrops[key] ?? null
+        for (const op of ops) {
+            orient = composeOrientation(orient, op)
+            if (manual) manual = orientRect(manual, op)
+            if (auto) auto = orientRect(auto, op)
+        }
+        out.orient[key] = isIdentityOrientation(orient) ? null : orient
+        out.manual[key] = manual
+        out.auto[key] = auto
+    }
+    const emptyOrientOverrides = (): OrientOverrides =>
+        ({ orient: {}, manual: {}, auto: {} })
+
+    // The op sequence that returns an orientation to identity, built by
+    // construction rather than by inverting the D4 closed form: undo the
+    // mirror first (flipH is self-inverse and leaves the stored
+    // quarterTurns alone), then unwind the turns one user-level "rotate
+    // left" at a time. Each step is a real user op, so the crop rects can
+    // ride the same sequence through orientRect and land exactly where a
+    // manual undo would have put them.
+    function inverseOps(o: PinOrientation): OrientationOp[] {
+        const ops: OrientationOp[] = []
+        let cur: PinOrientation = o
+        if (cur.flipped) {
+            ops.push("flipH")
+            cur = composeOrientation(cur, "flipH")
+        }
+        while (cur.quarterTurns !== 0) {
+            ops.push("ccw")
+            cur = composeOrientation(cur, "ccw")
+        }
+        return ops
+    }
+
+    // A quarter turn swaps the box's PIXEL dimensions, not its grid units
+    // (columns and rows have different pixel scales): the new column span is
+    // the one whose pixel width best matches the current pixel height, and
+    // the new row span the one whose pixel height best matches the current
+    // pixel width. Taken unclamped that is a GENUINE pixel swap, which is
+    // exactly what keeps the remapped auto crop an exact fit — the cell
+    // shape rotates with the content, so the cell that framed the crop
+    // before still frames the turned crop after. Re-deriving the height from
+    // an aspect instead would be wrong for every item whose cell does not
+    // match its base aspect (auto-cropped items — the default-on path — and
+    // hand-letterboxed ones): it strands the remapped crop in a wrong-shaped
+    // cell, letterboxed and with a jumped footprint. The aspect path is only
+    // the FALLBACK for when the width clamps (board narrower than the former
+    // height, or the min-pin floor) and the swap is unattainable: then
+    // findOptimalHeight restores the aspect at the clamped width. That
+    // aspect is the turned one — the natural dims swap with the quarter turn
+    // AND the manual crop's w/h swap with it (orientRect), so the product's
+    // factors just trade places; that is why the fallback can read the OLD
+    // stored maps through croppedDimensions and pass them in ch/cw order and
+    // still be exact. x/y are kept: RGL's compactor resolves the footprint
+    // change, pushing neighbors down as it does for a resize — or, with
+    // gravity off, resolveGrowth does it in the compactor's stead.
+    function turnedBox(
+        buildData: LayoutBuildData,
+        l: LayoutItem,
+        minW: number,
+        minH: number,
+    ): { w: number, h: number } {
+        const [cw, ch] = croppedDimensions(buildData, l.i)
+        const wantW = Math.round(
+            (pixelHeight(l.h, grid) + grid.margin)
+            / (buildData.columnWidth + grid.margin)
+        )
+        const newW = Math.min(grid.columns, Math.max(minW, wantW))
+        return {
+            w: newW,
+            h: newW === wantW
+                ? Math.max(minH, Math.round(
+                    (pixelWidth(l.w, buildData.columnWidth, grid.margin) + grid.margin)
+                    / rowStep(grid)))
+                : findOptimalHeight(newW, grid, buildData.columnWidth, ch, cw, minH),
+        }
+    }
+
+    // Turning ops resize the box, so they follow Resize Item's lock rule;
+    // flips move nothing and are allowed on locked items.
+    const isTurn = (op: OrientationOp) => op === "cw" || op === "ccw"
+
+    // Commit an orientation change: the geometry (unchanged for flips) and
+    // all three record slots in ONE write. `turnKeys` non-empty means the
+    // boxes of those keys swap their pixel dimensions, which needs the
+    // measured column width — unmeasurable container means no write at all,
+    // like every other geometry verb.
+    async function commitOrientation(
+        out: OrientOverrides,
+        turnKeys: string[],
+    ): Promise<void> {
+        if (turnKeys.length === 0) {
+            onLayoutChange(layout, out.auto, undefined, out.orient, out.manual)
+            return
+        }
+        const buildData = await ensureBuildData()
+        if (!buildData) return
+        const { minW, minH } = minPinUnits(grid, buildData.columnWidth)
+        const turning = new Set(turnKeys)
+        const newLayout = resolveGrowth(layout.map(l => turning.has(l.i)
+            ? { ...l, ...turnedBox(buildData, l, minW, minH) }
+            : l), turnKeys)
+        onLayoutChange(newLayout, out.auto, undefined, out.orient, out.manual)
+    }
+
+    // Rotate or flip a single item's IMAGE. Silent no-op on a locked item
+    // for the turning ops (the menu greys them; the guard is what makes the
+    // rule hold for any other caller).
+    async function orientItem(layoutKey: string, op: OrientationOp): Promise<void> {
+        if (isTurn(op) && isLocked(layoutKey)) return
+        const out = emptyOrientOverrides()
+        orientOne(layoutKey, [op], out)
+        await commitOrientation(out, isTurn(op) ? [layoutKey] : [])
+    }
+
+    // Back to the stored image, crops included. The box turns back only
+    // when the orientation held an odd number of quarter turns — a 180 or a
+    // bare mirror leaves the aspect alone — so that is also the only case
+    // a lock can block.
+    async function resetOrientation(layoutKey: string): Promise<void> {
+        const current = orients[layoutKey] ?? null
+        if (isIdentityOrientation(current)) return
+        const turns = current!.quarterTurns % 2 === 1
+        if (turns && isLocked(layoutKey)) return
+        const out = emptyOrientOverrides()
+        orientOne(layoutKey, inverseOps(current!), out)
+        await commitOrientation(out, turns ? [layoutKey] : [])
+    }
+
+    // The same over a selection, one write for the whole group. Flips are
+    // per-item, geometry-free and self-inverse, so they apply regardless of
+    // locks. Rotation resizes every box, so a locked member makes it refuse
+    // outright ("atomic or not at all", the placeTravellers convention) —
+    // turning only part of the group would be the footgun the region-send
+    // refusal already guards against.
+    async function orientSelection(
+        keys: string[], op: OrientationOp,
+    ): Promise<string | null> {
+        const keySet = new Set(keys)
+        const items = layout.filter(l => keySet.has(l.i))
+        if (items.length === 0) return null
+        const turning = isTurn(op)
+        if (turning) {
+            const locked = items.filter(l => isLocked(l.i)).length
+            if (locked > 0) {
+                return locked === 1
+                    ? "A locked item is selected — unlock or deselect it first"
+                    : `${locked} locked items are selected — unlock or deselect them first`
+            }
+        }
+        const out = emptyOrientOverrides()
+        for (const l of items) orientOne(l.i, [op], out)
+        await commitOrientation(out, turning ? items.map(l => l.i) : [])
+        return null
+    }
+
     // Fit every item (or only those starting above the fold) to its current
     // cell by writing its auto-crop slot. Near-fits (>= 98% of the base)
     // get null. The geometry is untouched: the current layout plus the
@@ -944,7 +1463,7 @@ export function usePinboardLayoutActions({
     async function autoCropToCells(visibleOnly: boolean) {
         const buildData = await ensureBuildData()
         if (!buildData) return
-        const total = foldRows(buildData)
+        const total = foldRows(buildData.containerHeight)
         const overrides: Record<string, CropRect | null> = {}
         for (const l of layout) {
             if (visibleOnly && l.y >= total) continue
@@ -1125,7 +1644,7 @@ export function usePinboardLayoutActions({
         // Vertically: bounded by items overlapping the EXPANDED width, so
         // diagonal neighbors bound the bands rather than sit inside them
         let top = 0
-        let bottom = Math.max(targetRows(buildData), y1)
+        let bottom = Math.max(targetRows(buildData.containerHeight), y1)
         for (const o of fixed) {
             if (o.x < right && o.x + o.w > left) {
                 if (o.y + o.h <= y0) top = Math.max(top, o.y + o.h)
@@ -1177,6 +1696,267 @@ export function usePinboardLayoutActions({
         return null
     }
 
+    // ---- Compress ------------------------------------------------------
+    //
+    // Effective content size in DISPLAY (oriented) space: the oriented
+    // natural dimensions scaled by the EFFECTIVE crop — the manual rebase
+    // COMPOSED with the auto slot. croppedDimensions deliberately excludes
+    // the auto crop (it is derived from cell sizes, so feeding it back would
+    // make every layout action see the previous one's output as truth), but
+    // the letterbox test asks a different question: what is on screen in
+    // this cell right now. An auto-cropped item fills its cell exactly, and
+    // reading it through the composition is what makes compress leave it
+    // alone. Null when the natural dimensions are unknown (metadata fetch
+    // failed): croppedDimensions' 1:1 fallback would read as letterboxing in
+    // every non-square cell and trigger a resize the user never asked for,
+    // so such an item is skipped instead of guessed at.
+    function effectiveDimensions(
+        buildData: LayoutBuildData, key: string,
+    ): [number, number] | null {
+        const item = buildData.metadata[key]?.item
+        if (!item?.width || !item?.height) return null
+        const [w, h] = orientedSize(item.width, item.height, buildData.orients[key])
+        // autoCrops is read from the hook's props, not from buildData (which
+        // caches only the manual slot) — always the live map
+        const eff = composeCrops(buildData.crops[key] ?? null, autoCrops[key] ?? null)
+        return [w * (eff?.w ?? 1), h * (eff?.h ?? 1)]
+    }
+
+    // Whether compressedSpan can measure this item at all. It returns null
+    // for two different reasons — "no letterbox on this axis" and "no usable
+    // natural dimensions" — and only the caller's refusal message needs to
+    // tell them apart, so the unmeasurable case is probed separately rather
+    // than widening compressedSpan's return type.
+    function measurable(buildData: LayoutBuildData, key: string): boolean {
+        const eff = effectiveDimensions(buildData, key)
+        return !!eff && eff[0] > 0 && eff[1] > 0
+    }
+
+    // The un-letterboxed span of one axis in grid units, or null when there
+    // is nothing to remove there. The bar width is `cell - content` at the
+    // contain-fit size, so a NEGATIVE difference (cell tighter than the
+    // content on this axis — bars on the other one) fails the threshold test
+    // too: compress only ever shrinks, it never grows a box back. Bars
+    // thinner than AUTO_CROP_MAX_LETTERBOX_PX are ignored for the same
+    // reason computeAutoCrop refuses to crop them, and sub-grid-unit bars
+    // round away through the [min, current] clamp.
+    function compressedSpan(
+        buildData: LayoutBuildData,
+        l: LayoutItem,
+        axis: "w" | "h",
+        minW: number,
+        minH: number,
+    ): number | null {
+        const eff = effectiveDimensions(buildData, l.i)
+        if (!eff) return null
+        const [effW, effH] = eff
+        if (!(effW > 0) || !(effH > 0)) return null
+        const aspect = effW / effH
+        const cellW = pixelWidth(l.w, buildData.columnWidth, buildData.grid.margin)
+        const cellH = pixelHeight(l.h, buildData.grid)
+        if (axis === "w") {
+            // Vertical bars: the contain-fit is height-bound, so the content
+            // spans aspect * cellH px and the rest is letterbox
+            const targetPx = aspect * cellH
+            if (cellW - targetPx < AUTO_CROP_MAX_LETTERBOX_PX) return null
+            const w = Math.min(l.w, Math.max(minW, Math.round(
+                (targetPx + buildData.grid.margin) / (buildData.columnWidth + buildData.grid.margin))))
+            return w < l.w ? w : null
+        }
+        const targetPx = cellW / aspect
+        if (cellH - targetPx < AUTO_CROP_MAX_LETTERBOX_PX) return null
+        const h = Math.min(l.h, Math.max(minH, Math.round(
+            (targetPx + buildData.grid.margin) / rowStep(buildData.grid))))
+        return h < l.h ? h : null
+    }
+
+    // Shrink each letterboxed selected item on one axis and keep the result
+    // compact — gap PRESERVATION, not gravity: nothing is re-homed, each
+    // mover keeps the distance it had toward the compression direction and
+    // simply follows whatever shrank ahead of it. Nothing outside the
+    // selection ever moves (the shiftSelection contract). Anchored selected
+    // items neither move nor resize and stay obstacles; size-locked ones
+    // take the push but not the resize (a move is inside their contract).
+    async function compressSelection(
+        keys: string[], dir: CompressDir,
+    ): Promise<string | null> {
+        const buildData = await ensureBuildData()
+        if (!buildData) return null
+        const keySet = new Set(keys)
+        const selectedItems = buildData.sortedLayout.filter(l => keySet.has(l.i))
+        if (selectedItems.length === 0) return null
+        const { minW, minH } = minPinUnits(grid, buildData.columnWidth)
+        const movers = selectedItems.filter(l => !isAnchored(l.i))
+        if (movers.length === 0) {
+            return selectedItems.length === 1
+                ? "The selected item is anchored — unanchor it to compress it"
+                : "Every selected item is anchored — unanchor one to compress them"
+        }
+        // Only cells that actually changed size need crop maintenance; a
+        // pushed-but-unresized item's stored auto crop is still exact
+        const resized = new Set<string>()
+        // Size-locked items that WOULD have shrunk: the difference between
+        // "nothing here is letterboxed" and "the locks are in the way"
+        let blocked = 0
+        // Items whose natural dimensions aren't known yet (metadata still in
+        // flight or the fetch failed). They can't be tested for letterboxing
+        // at all, so reporting "nothing is letterboxed" would be a lie the
+        // user can't act on — a retry once metadata lands is the real advice.
+        let unknown = 0
+        // Refusal priority, most actionable first: a lock the user can
+        // release beats a wait, and both beat the generic no-op message.
+        // (The all-anchored case returns earlier, ahead of all three.)
+        const refusal = () => blocked > 0
+            ? (blocked === 1
+                ? "A letterboxed item in the selection is size-locked — unlock it to compress it"
+                : `${blocked} letterboxed items in the selection are size-locked — unlock one to compress them`)
+            : unknown > 0
+                ? (unknown === 1
+                    ? "Couldn't measure a selected item — try again once its metadata loads"
+                    : `Couldn't measure ${unknown} selected items — try again once their metadata loads`)
+                : "Nothing in the selection is letterboxed that way"
+        const byKey = new Map<string, LayoutItem>()
+        if (dir === "up") {
+            // Height shrink only, y untouched: the board's vertical
+            // compactor pulls everything up into the freed rows by itself,
+            // so gap bookkeeping here would only fight it. That is also why
+            // there is no Compress Down — the engine maintains vertical
+            // adjacency in one direction.
+            for (const l of movers) {
+                if (!measurable(buildData, l.i)) { unknown++; continue }
+                const h = compressedSpan(buildData, l, "h", minW, minH)
+                if (h === null) continue
+                if (isSizeLocked(l.i)) { blocked++; continue }
+                byKey.set(l.i, { ...l, h })
+                resized.add(l.i)
+            }
+            if (resized.size === 0) return refusal()
+            const newLayout = layout.map(l => byKey.get(l.i) ?? l)
+            const overrides =
+                verbAutoCrops(buildData, newLayout, resized, selectionAutoCrop)
+            // COMPRESS EXEMPTION from the stale-crop rule. With the setting
+            // OFF verbAutoCrops drops the auto crop of every cell whose size
+            // changed, on the premise that a crop fitted to the old cell is
+            // now wrong. That premise is false for the cells compress itself
+            // resized: compressedSpan measures the COMPOSED (manual x auto)
+            // content and sizes the cell to it, so the stored auto slot is
+            // the exact fit for the new cell BY CONSTRUCTION — the freshest
+            // it has ever been. Dropping it would restore the full frame and
+            // letterbox the item on the other axis, i.e. undo the verb. The
+            // stale-drop rule still governs bystanders, whose cells this
+            // write resized without consulting their content.
+            if (!selectionAutoCrop) for (const k of resized) delete overrides[k]
+            onLayoutChange(newLayout, overrides)
+            return null
+        }
+        const rowOverlap = (a: GridRect, b: GridRect) =>
+            a.y < b.y + b.h && b.y < a.y + a.h
+        // ENTITLEMENT geometry: the gap each mover is entitled to keep is
+        // measured against the ORIGINAL rects of EVERYTHING — statics AND
+        // other movers. The invariant this verb preserves is "each item keeps
+        // the distance it had to its direction-side neighbour, whether or not
+        // that neighbour is itself compressing", which is what makes a row of
+        // flush items stay flush: A shrinks and B, whose original gap to A's
+        // original edge was 0, follows to A's NEW edge and re-flushes.
+        // Measuring the gap against statics only was the bug — with the
+        // facing scan monotone in the settled set (settled ⊇ statics implies
+        // facing(settled) >= facing(statics)), the clamp
+        // min(l.x, facing(settled) + (l.x - facing(statics))) collapses to
+        // l.x for every mover, so movers never followed their moved
+        // neighbours and compression opened gaps instead of closing them.
+        // A mover's own rect is excluded for free: the facing predicates
+        // (o.x + o.w <= l.x on the left, o.x >= l.x + l.w on the right) are
+        // both false for the item being placed.
+        const originals: GridRect[] = layout
+            .map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h }))
+        // Everything this verb never moves — non-selected items plus the
+        // anchored selected ones. Used only to SEED the settled set (the
+        // board edges enter as the facing scan's default value).
+        const moverKeys = new Set(movers.map(l => l.i))
+        const statics: GridRect[] = layout
+            .filter(l => !moverKeys.has(l.i))
+            .map(l => ({ x: l.x, y: l.y, w: l.w, h: l.h }))
+        // The settled set grows with each processed mover's NEW rect, so a
+        // mover placed against it lands behind whatever already shrank and
+        // slid. Leading-edge order (ascending x for Left, descending right
+        // edge for Right) is what guarantees a mover's direction-side
+        // neighbours are settled before it is placed.
+        const settled: GridRect[] = [...statics]
+        const order = [...movers].sort((a, b) => dir === "left"
+            ? a.x - b.x
+            : (b.x + b.w) - (a.x + a.w))
+        let moved = 0
+        for (const l of order) {
+            // Unmeasurable items still take the push — a move is not a
+            // resize — they just can't contribute a shrink, so they are
+            // counted for the refusal message and otherwise placed as-is
+            if (!measurable(buildData, l.i)) unknown++
+            const span = compressedSpan(buildData, l, "w", minW, minH)
+            let w = l.w
+            if (span !== null) {
+                if (isSizeLocked(l.i)) blocked++
+                else { w = span; resized.add(l.i) }
+            }
+            let x = l.x
+            if (dir === "left") {
+                // Facing edge of the nearest direction-side obstacle,
+                // measured over the ORIGINAL geometry (the gap this item is
+                // entitled to keep) and again over the settled set (where
+                // that side is now). Flush items (gap 0) stay flush through
+                // the whole cascade; free-floating ones keep their air.
+                const facing = (rects: GridRect[]) => rects.reduce((acc, o) =>
+                    rowOverlap(o, l) && o.x + o.w <= l.x
+                        ? Math.max(acc, o.x + o.w) : acc, 0)
+                const gap = l.x - facing(originals)
+                // MONOTONICITY INVARIANT: a Compress Left mover never ends
+                // up right of where it started. That plus the scan's
+                // `o.x + o.w <= l.x` filter is the whole overlap-safety
+                // argument. Left side: facing(settled) <= l.x, so
+                // x = min(l.x, facing(settled) + gap) >= facing(settled) —
+                // clear of every settled row-overlapping rect on the left.
+                // Right side: x <= l.x and w <= l.w put the new span inside
+                // the original one, which was already conflict-free; movers
+                // still to be placed there see THIS rect once it joins the
+                // settled set. The filter costs nothing for settled movers,
+                // ASSUMING A VALID INPUT BOARD: row-overlapping rects in a
+                // compacted layout are x-disjoint, so a mover processed
+                // earlier had its right edge <= l.x to begin with and only
+                // moved left. A pathological record (hand-edited URL state)
+                // carrying pre-existing overlaps is not repaired here, but
+                // it is never made worse either — on the no-move path the
+                // new rect is a subset of the old one. The 0 floor is
+                // likewise implied (facing >= 0) and kept as a cheap
+                // board-edge guard.
+                x = Math.max(0, Math.min(l.x, facing(settled) + gap))
+            } else {
+                // Mirror image: the RIGHT edge is the anchored one and moves
+                // monotonically rightward, bounded above by facing(settled)
+                // (>= l.x + l.w by the filter, <= columns by its default),
+                // so x = right - w >= l.x — the left edge only ever moves
+                // right, clearing everything on that side.
+                const facing = (rects: GridRect[]) => rects.reduce((acc, o) =>
+                    rowOverlap(o, l) && o.x >= l.x + l.w
+                        ? Math.min(acc, o.x) : acc, grid.columns)
+                const gap = facing(originals) - (l.x + l.w)
+                x = Math.max(l.x + l.w, facing(settled) - gap) - w
+            }
+            settled.push({ x, y: l.y, w, h: l.h })
+            if (x !== l.x || w !== l.w) byKey.set(l.i, { ...l, x, w })
+            if (x !== l.x) moved++
+        }
+        if (resized.size === 0 && moved === 0) return refusal()
+        const newLayout = layout.map(l => byKey.get(l.i) ?? l)
+        const overrides =
+            verbAutoCrops(buildData, newLayout, resized, selectionAutoCrop)
+        // Same compress exemption as the Up branch: these cells were sized
+        // from their COMPOSED content, so their stored auto crop is the fit
+        // for the new cell by construction and must survive the psc-off
+        // stale-drop, which would otherwise re-letterbox them vertically.
+        if (!selectionAutoCrop) for (const k of resized) delete overrides[k]
+        onLayoutChange(newLayout, overrides)
+        return null
+    }
+
     return {
         ensureBuildData,
         changeLayout,
@@ -1187,21 +1967,33 @@ export function usePinboardLayoutActions({
         clearAutoCrops,
         changeItemSize,
         setItemSize,
+        orientItem,
+        resetOrientation,
+        orientSelection,
         shiftLayout,
         shiftSelection,
+        compressSelection,
         mirrorLayout,
         mirrorSelection,
         rerollLayout,
         refitToView,
         reflowKeepProportions,
+        uniformLayout,
+        uniformSelection,
         growInPlace,
         growSelection,
         swapItems,
         arrangeSelection,
         sendSelectionToRegion,
         sendSelectionToRect,
+        transformSelection,
         autoCropSelection,
         clearAutoCropSelection,
+        // Key set for the below-viewport purge. The splice itself is a
+        // RECORD write, which this hook has no access to (it writes
+        // geometry through onLayoutChange), so the caller owning
+        // updateRecords does the removal.
+        belowViewportKeys,
         // Lock presence flags for the menus: hasLocks greys the verbs that
         // rebuild whole rows (any lock breaks them), hasAnchors the ones
         // that only a fixed position breaks (center, mirror)
@@ -1255,36 +2047,42 @@ interface LayoutBuildData {
         } | undefined
     },
     crops: Record<string, CropRect | null>,
+    orients: Record<string, PinOrientation | null>,
     columnWidth: number,
     grid: GridParams,
     containerHeight: number,
     sortedLayout: LayoutItem[],
 }
 
-// Effective source dimensions of an item: the image size scaled by its
+// Effective DISPLAY dimensions of an item: the image size as the pin's
+// orientation shows it (w/h swapped on odd quarter turns) scaled by its
 // MANUAL crop rect (the rebase), so cropped items keep the aspect of the
-// user's chosen region. Auto crops are deliberately excluded: they are
-// derived from cell sizes, so feeding them back into the layout math would
-// make every layout action see the previous action's output as the truth.
+// user's chosen region. Orienting first is what keeps the crop fractions —
+// which are stored in display space — applying to the right axes; every
+// fit, pack and resize path reads its aspects from here, so that single
+// swap is the whole of orientation support in the layout math. Auto crops
+// are deliberately excluded: they are derived from cell sizes, so feeding
+// them back into the layout math would make every layout action see the
+// previous action's output as the truth.
 function croppedDimensions(buildData: LayoutBuildData, key: string): [number, number] {
     const item = buildData.metadata[key]?.item
     const crop = buildData.crops[key]
-    return [
-        (item?.width || 1) * (crop?.w ?? 1),
-        (item?.height || 1) * (crop?.h ?? 1),
-    ]
+    const [w, h] = orientedSize(item?.width || 1, item?.height || 1, buildData.orients[key])
+    return [w * (crop?.w ?? 1), h * (crop?.h ?? 1)]
 }
 
 async function getLayoutBuildData(
     {
         layout,
         crops,
+        orients,
         dbs,
         grid,
         pinboardRef,
     }: {
         layout: LayoutItem[],
         crops: Record<string, CropRect | null>,
+        orients: Record<string, PinOrientation | null>,
         dbs: {
             index_db: string | null,
             user_data_db: string | null,
@@ -1306,7 +2104,7 @@ async function getLayoutBuildData(
     // and the margins between columns, split evenly
     const columnWidth = Math.max(1, (clientWidth - 2 * grid.padding - (grid.columns - 1) * grid.margin) / grid.columns)
     const sortedLayout = sortLayout(layout)
-    return { metadata, crops, columnWidth, grid, containerHeight, sortedLayout }
+    return { metadata, crops, orients, columnWidth, grid, containerHeight, sortedLayout }
 }
 
 function sortLayout(layout: LayoutItem[]): LayoutItem[] {
@@ -1378,6 +2176,10 @@ function regionBox(preset: RegionPreset, columns: number, rows: number): GridRec
 }
 
 export type ShiftMode = "left" | "right" | "center"
+
+// Compression directions. No "down": the grid compacts upward only, so a
+// downward variant would be undone by the engine on the next settle.
+export type CompressDir = "left" | "right" | "up"
 
 // Repack every item horizontally against one edge of its row (or centered),
 // preserving each item's row, width and height — only `x` changes. Rows are

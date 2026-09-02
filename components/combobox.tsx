@@ -124,6 +124,10 @@ function OptionList({
                                 <CommandItem
                                     key={option.value}
                                     value={option.value}
+                                    // See multiCombobox: cmdk scores by `value` only, so the label
+                                    // is passed as a keyword to make it searchable. Omitted when it
+                                    // duplicates the value so existing call sites are unaffected.
+                                    keywords={option.label !== option.value ? [option.label] : undefined}
                                     onSelect={(value) => {
                                         onChangeValue(value === resetValue ? null : value)
                                         setOpen(false)

@@ -1,5 +1,6 @@
-import { createSerializer, Options } from "nuqs"
-import { ParserBuilder } from "nuqs/server"
+import { createSerializer } from "nuqs"
+import type { Options } from "nuqs"
+import type { ParserBuilder } from "nuqs/server"
 import { getScopedUrlKeys } from "./getScopedQueryStates"
 
 interface ScopedSearializerOptions extends Pick<Options, "clearOnDefault"> {

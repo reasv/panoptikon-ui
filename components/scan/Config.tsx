@@ -14,6 +14,13 @@ import { DataTable } from "../table/dataTable"
 import { RowSelectionState } from "@tanstack/react-table"
 import { scheduleColumns } from "../table/columns/scheduled"
 import { useSystemConfig } from "@/lib/useSystemConfig"
+import { useClientConfig } from "@/lib/useClientConfig"
+import { MultiBoxResponsive } from "../multiCombobox"
+import {
+    THUMBNAIL_FORMAT_OPTIONS,
+    effectiveThumbnailFormats,
+    mergeThumbnailFormats,
+} from "@/lib/thumbnailFormats"
 
 function formatRunTime(time: string | null | undefined) {
     if (!time) {
@@ -26,6 +33,7 @@ function formatRunTime(time: string | null | undefined) {
 export function Config() {
     const [dbs] = useSelectedDBs()
     const { config: data, changeConfig } = useSystemConfig()
+    const clientConfig = useClientConfig()
     const queryClient = useQueryClient()
     const { toast } = useToast()
     const { data: schedule } = $api.useQuery(
@@ -117,10 +125,12 @@ export function Config() {
     }
     const guiKnownKeys = new Set([
         "remove_unavailable_files", "scan_images", "scan_video", "scan_audio", "scan_html", "scan_pdf",
+        "detect_outros",
         "enable_cron_job", "cron_schedule", "cron_jobs", "job_settings", "included_folders", "excluded_folders",
         "preload_embedding_models", "prewarm_embedding_models", "continuous_filescan", "job_filters", "filescan_filter",
-        "vector_quants",
+        "vector_quants", "thumbnail_formats",
     ])
+    const thumbnailFormats = effectiveThumbnailFormats(data?.thumbnail_formats)
     const tomlOnlyKeys = data
         ? Object.keys(data as Record<string, unknown>).filter((key) => !guiKnownKeys.has(key))
         : []
@@ -178,7 +188,13 @@ export function Config() {
                     />
                     <SwitchFilter
                         label="HTML Files"
-                        description="Include HTML Files in the scan"
+                        description={<>
+                            <p>Include HTML Files in the scan</p>
+                            {clientConfig.data?.desktopManaged === true && data.scan_html &&
+                                <p className="mt-2 text-amber-700 dark:text-amber-300" role="note">
+                                    HTML indexing requires an installed Chromium-based browser such as Chrome, Chromium, Brave, or Edge. Files are skipped until a compatible browser is available.
+                                </p>}
+                        </>}
                         value={data.scan_html}
                         onChange={(value) => changeConfig((currentConfig) => ({
                             ...currentConfig,
@@ -194,6 +210,100 @@ export function Config() {
                             remove_unavailable_files: value,
                         }))}
                     />
+                    <SwitchFilter
+                        label="TikTok Detection"
+                        description="Detect TikTok end cards so thumbnails, AI and video playback skip them. Turning this off also stops serving already-detected end cards, which disables outro skip in the player"
+                        value={data.detect_outros}
+                        onChange={(value) => changeConfig((currentConfig) => ({
+                            ...currentConfig,
+                            detect_outros: value,
+                        }))}
+                    />
+                    <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
+                        <div className="flex flex-row items-center justify-between">
+                            <div className="space-y-0.5">
+                                <Label className="text-base">Thumbnail Formats</Label>
+                                <div className="text-gray-400">
+                                    Which image formats the scan may store thumbnails in
+                                </div>
+                            </div>
+                            <MultiBoxResponsive
+                                options={THUMBNAIL_FORMAT_OPTIONS}
+                                currentValues={thumbnailFormats}
+                                placeholder="Formats"
+                                maxDisplayed={2}
+                                // AT LEAST ONE, ALWAYS. The server reads an empty
+                                // list as the default rather than rejecting the
+                                // save, so this is not a validation gate — it is
+                                // the control declining to offer a selection whose
+                                // meaning ("all of them, actually") contradicts
+                                // what it would be showing.
+                                //
+                                // The refusal is measured against the MERGED list,
+                                // not against the checkboxes: a database storing a
+                                // format STRING this build does not model still has
+                                // one after both boxes are cleared, so refusing
+                                // there would be refusing something that is not
+                                // empty. Non-string junk does not count — see
+                                // `mergeThumbnailFormats`, which drops it.
+                                //
+                                // AND IT SAYS SO. A control that silently ignores
+                                // a click reads as broken — the user clears the
+                                // last box, the box stays checked, and nothing
+                                // explains why. The toast is this page's own idiom
+                                // for "the thing you asked for did not happen"
+                                // (see the maintenance and cron mutations), and
+                                // the help text below states the rule before the
+                                // user has to meet it.
+                                onSelectionChange={(values) => {
+                                    const next = mergeThumbnailFormats(
+                                        data?.thumbnail_formats, values)
+                                    if (next.length === 0) {
+                                        toast({
+                                            title: "Thumbnail Formats",
+                                            description: "At least one format must stay selected — thumbnails have to be stored in something.",
+                                            // The page's own variant for "the
+                                            // thing you asked for did not
+                                            // happen" (see Maintenance
+                                            // Failed): the two toasts that
+                                            // merely CONFIRM a queued job are
+                                            // the default, and a refusal that
+                                            // looked like one of those would
+                                            // read as a receipt.
+                                            variant: "destructive",
+                                        })
+                                        return
+                                    }
+                                    changeConfig((currentConfig) => ({
+                                        ...currentConfig,
+                                        thumbnail_formats: next,
+                                    }))
+                                }}
+                            />
+                        </div>
+                        <div className="text-gray-400 text-sm mt-2">
+                            <p>
+                                By default grid thumbnails are JPEG, which decodes
+                                more than twice as fast per megapixel and is what a
+                                screenful of cells is bound by. Full-size gallery
+                                renditions of lossless originals (PNG, BMP, TIFF)
+                                and every rendition of an image with transparent
+                                pixels are WebP, which is far smaller at the same
+                                quality and is the only one of the two with an
+                                alpha channel.
+                            </p>
+                            <p className="mt-2">
+                                Deselecting a format does not delete anything: the
+                                renditions stored in the wrong format are rewritten
+                                over the next scan, one decode per image. The
+                                database file itself only shrinks after a
+                                Database Maintenance pass reclaims the freed space.
+                            </p>
+                            <p className="mt-2">
+                                At least one format must stay selected.
+                            </p>
+                        </div>
+                    </div>
                     <SwitchFilter
                         label="Keep embedding models loaded"
                         description="Fastest searches, but keeps full model weights in system or GPU memory even while idle"

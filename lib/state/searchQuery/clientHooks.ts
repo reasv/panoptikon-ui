@@ -10,6 +10,7 @@ import {
   matchPathKeyMap,
   matchTextKeyMap,
   inBookmarksKeyMap,
+  inPinboardsKeyMap,
   semanticTextSearchKeyMap,
   semanticImageSearchKeyMap,
   queryOptionsKeyMap,
@@ -195,6 +196,29 @@ export function useSearchPage(): [number, SetFn<number>] {
   return [state, setState] as const
 }
 
+/**
+ * The options WITHOUT the reset-page setter — which is what most callers want,
+ * `useQueryOptions()[0]` being the shape they are written in today.
+ *
+ * The setter is what costs something, and it costs it at a distance:
+ * `useResetPage` has to know the current `page`, `gi` and scroll anchor to
+ * decide what a query change invalidates, so merely BUILDING it subscribes the
+ * caller to `top` — the param the result grid rewrites on every scroll stop. A
+ * header that reads two booleans out of the options (app/search/SearchBarRow.tsx
+ * reads `tag_mode` and `e_iss`) was re-rendering on every scroll stop for a
+ * value that cannot have changed. Reading and writing are different
+ * subscriptions; this is the reading half.
+ *
+ * It does NOT take a caller to zero renders per URL write: Next's app router
+ * patches `history.pushState`/`replaceState`, so `useSearchParams` — and with
+ * it every nuqs hook mounted in the tree — invalidates once per write, whatever
+ * key moved. That floor belongs to the adapter. What this removes is the second
+ * render, the one the caller asked for by name.
+ */
+export function useQueryOptionsValue(): SearchQueryOptions {
+  return useQueryStates(queryOptionsKeyMap(def as any))[0]
+}
+
 export function useQueryOptions(): [
   SearchQueryOptions,
   SetFn<SearchQueryOptions>
@@ -248,6 +272,14 @@ export function useBookmarksFilter(): [
   SetFn<KeymapComponents["InBookmarks"]>
 ] {
   const [state, set] = useScopedQueryStates("bm", inBookmarksKeyMap(def as any))
+  return [state, useResetPage(set)] as const
+}
+
+export function usePinboardsFilter(): [
+  KeymapComponents["InPinboards"],
+  SetFn<KeymapComponents["InPinboards"]>
+] {
+  const [state, set] = useScopedQueryStates("pb", inPinboardsKeyMap(def as any))
   return [state, useResetPage(set)] as const
 }
 
@@ -432,6 +464,7 @@ export const useSearchQueryState = () => {
     MatchTags: useMatchTags()[0],
     FileFilters: useFileFilters()[0],
     InBookmarks: useBookmarksFilter()[0],
+    InPinboards: usePinboardsFilter()[0],
     SemanticTextSearch: useSemanticTextSearch()[0],
     SemanticTextSource: useSemanticTextSource()[0],
     SemanticImageSearch: useSemanticImageSearch()[0],
@@ -471,6 +504,7 @@ export const useResetSearchQueryState = () => {
     useMatchTags()[1],
     useFileFilters()[1],
     useBookmarksFilter()[1],
+    usePinboardsFilter()[1],
     useSemanticTextSearch()[1],
     useSemanticImageSearch()[1],
     useQueryOptions()[1],

@@ -1,10 +1,13 @@
 import Image from 'next/image'
-import { cn, getFileURL } from "@/lib/utils"
+import { cn, downloadFileName } from "@/lib/utils"
+import { originalFileURL, thumbnailMediaURL, thumbnailPictureURL, thumbnailStillURL } from "@/lib/thumbnailURL"
 import { useSelectedDBs } from "@/lib/state/database"
-import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid, useGalleryPinSelectionCrop } from '@/lib/state/gallery'
-import { consumePinboardExplicitPlacement, consumePinboardNavigation, consumePinboardPendingEdit, markPinboardExplicitPlacement } from '@/lib/pinboardNavigation'
+import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid, useGalleryPinProportional, useGalleryPinResizeHandles, useGalleryPinSelectionCrop, useGalleryTrim } from '@/lib/state/gallery'
+import { newPinHField } from '@/lib/galleryTrim'
+import { consumePinboardExplicitPlacement, consumePinboardMaximizeRequest, consumePinboardNavigation, consumePinboardPendingEdit, markPinboardExplicitPlacement } from '@/lib/pinboardNavigation'
 import { usePinBoard } from '@/lib/state/pinboard'
-import { GridParams, minPinUnits, rowStep, v1ScaleFactors } from '@/lib/pinboardGrid'
+import { GridParams, effectiveGrid, gridScale, minPinUnits, rowStep, v1ScaleFactors } from '@/lib/pinboardGrid'
+import { placeNearest, placeNewPin } from '@/lib/pinboardPlace'
 import { PinButton } from './PinButton'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { GridLayout, noCompactor, useContainerWidth, type LayoutItem } from "react-grid-layout"
@@ -22,17 +25,23 @@ import { PinBoardCtx } from './PinBoardContextMenu'
 import { $api } from '@/lib/api'
 import { MediaControls } from './PlayButton'
 import React from 'react'
-import { useVideoPlayerState } from '@/lib/videoPlayerState'
-import { CropRect, PinLock, TrimRange, clampCrop, composeCrops, isEmptyTrim, packHField, parseHField } from '@/lib/pinboardCrop'
-import { useVideoTrim } from '@/lib/videoTrim'
+import { useOutroSkipEnabled, useVideoPlayerState } from '@/lib/videoPlayerState'
+import { CropRect, PIN_SHA_PREFIX_LENGTH, PinAudioState, PinLock, PinOrientation, TrimRange, clampCrop, composeCrops, isEmptyTrim, isIdentityOrientation, packHField, parseHField } from '@/lib/pinboardCrop'
+import { effectiveVideoTrim, outroCutPoint, outroProbeEligible, outroSkipGoverns, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
+import { useVideoEndProbe } from '@/lib/videoEndProbe'
+import { noteVideoPlaybackError, shouldDowngradeOnError, useVideoPlayability } from '@/lib/videoPlayability'
+import { useVideoPlayback } from '@/lib/videoTranscode'
+import { useDisplayLoopTrigger, useVideoTranscodeEnabled } from '@/lib/useClientConfig'
+import { type DisplayLoopTrigger } from '@/lib/thumbnailTier'
 import { CropGeometry, CropView } from './CropView'
-import { VideoTimeline } from './VideoTimeline'
-import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightFromLine, ArrowRightToLine, Check, ChevronDown, Columns3, Crop, Dices, Expand, FlipHorizontal2, FlipVertical2, FoldHorizontal, GripVertical, LayoutDashboard, LockOpen, Maximize, Ruler, Scaling, SquareDashed, X, type LucideIcon } from 'lucide-react'
+import { NativeControlsEscape, VideoPlayerSurface, playerSizeForWidth, useVideoPlayerSurface } from './VideoPlayerSurface'
+import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, Check, ChevronDown, ChevronsLeft, ChevronsRight, ChevronsUp, Columns3, Crop, Dices, Expand, FlipHorizontal, FlipHorizontal2, FlipVertical, FlipVertical2, FoldHorizontal, GripVertical, ImageDown, LayoutDashboard, LayoutGrid, ListX, LockOpen, Maximize, RotateCcw, RotateCw, Ruler, Scaling, Scan, SquareDashed, Trash2, X, type LucideIcon } from 'lucide-react'
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuSeparator,
+    DropdownMenuShortcut,
     DropdownMenuSub,
     DropdownMenuSubContent,
     DropdownMenuSubTrigger,
@@ -47,16 +56,33 @@ import { GridRect, groupRowsByOverlap } from '@/lib/pinboardPack'
 import { maximalFreeRects, pickRectAt, rectsOverlap } from '@/lib/pinboardHoles'
 import { usePinboardCarry } from '@/lib/state/pinboardCarry'
 import { HoleTargetOverlay } from './HoleTargetOverlay'
+import { PinboardTransformOverlay, TransformPxRect, TransformScale } from './PinboardTransformOverlay'
 import { PinboardBoardApi, usePinboardBoardApi } from '@/lib/state/pinboardBoardApi'
 import { PinboardFullscreenBar } from './PinboardMenu'
+import { SelectionExportMenuItems, selectionExportLabel } from './PinboardExportMenu'
+import { dropdownMenuKit } from './PinboardGlobalMenu'
 
 const ALL_RESIZE_HANDLES: LayoutItem["resizeHandles"] =
     ["s", "w", "e", "n", "sw", "nw", "se", "ne"]
+// The subset a gravity-ON board can actually offer. RGL v2's GridItem
+// re-derives the resize anchor from the item's CURRENT layout position on
+// every event, and vertical compaction snaps that position back to the
+// compacted edge between events — so a north handle (n/nw/ne) reads as
+// "top edge glued, shrink from the bottom" and is functionally INVERTED,
+// the same failure the crop-mode compactor comment documents below. The
+// three are dropped rather than fixed because under gravity the top edge
+// is pinned by the layout physics anyway: "drag the top edge" has no
+// coherent meaning on a board that re-glues it after every event. Turn
+// Gravity off (the layout token's float switch, which also turns the
+// compactor off) to get all eight.
+const GRAVITY_RESIZE_HANDLES: LayoutItem["resizeHandles"] =
+    ["s", "w", "e", "sw", "se"]
 
 // Static grid configs (referentially stable so the grid's internal memos
 // don't churn). The board's own drags start only from .drag-handle layers;
 // resize handles come from react-resizable with the default 'se' unless an
-// item overrides resizeHandles (the crop-mode item gets all eight).
+// item overrides resizeHandles (the crop-mode item always gets all eight;
+// a normal item gets the flag's set while "All Resize Handles" is on).
 // threshold: 0 is v1 drag semantics (drag starts on mousedown) and is NOT
 // optional: RGL v2's external-drop placeholder drives its grid item through a
 // synthetic drag whose fake events never move, so a nonzero threshold leaves
@@ -65,6 +91,13 @@ const ALL_RESIZE_HANDLES: LayoutItem["resizeHandles"] =
 // they sit outside the .drag-handle layer.
 const DRAG_CONFIG = { enabled: true, handle: ".drag-handle", threshold: 0 }
 const RESIZE_CONFIG = { enabled: true }
+// A pin's video player can take element fullscreen, which owns the screen
+// and the keyboard while it runs: a board shortcut fired there would act on
+// pins nobody can see, and Escape belongs to the browser's own exit. Read at
+// fire time — nothing re-renders the board on fullscreenchange.
+function inElementFullscreen() {
+    return document.fullscreenElement !== null
+}
 // Shift-held external drags switch to hole mode: rejecting the dragover
 // here removes RGL's placeholder and its live cascade — the board's own
 // dragover tracking and HoleTargetOverlay take over (and its onDropCapture
@@ -99,11 +132,28 @@ interface SelectionVerb {
     min?: number
     exact?: number
     noAnchors?: boolean
+    // Removes pins: grouped last on every surface (the bar keeps
+    // BAR_ORDER, so a pinned removal lands at the end of the pinned run).
+    // Position only — these rows look like every other verb. They carry no
+    // destructive treatment because they are not destructive: one record
+    // write is one history entry, so the browser Back button restores the
+    // board whole, and a filled red row overstates an undoable edit.
+    removal?: boolean
+    // Keyboard equivalent, shown on the dropdown row the way the context
+    // menu's twin already shows it — the two surfaces offer the same verb
+    // and must advertise the same key
+    shortcut?: string
 }
 const SELECTION_VERBS: SelectionVerb[] = [
     {
         id: "arrange", label: "Arrange", icon: LayoutDashboard, min: 2,
         title: "Rearrange the selected items within their combined bounding box",
+    },
+    // Arrange's identical-cells sibling: same bounding box, same eviction,
+    // but the box splits into one repeated cell instead of a mosaic
+    {
+        id: "uniform", label: "Uniform", icon: LayoutGrid, min: 2,
+        title: "Arrange the selected items in identical cells within their combined bounding box",
     },
     {
         id: "swap", label: "Swap", icon: ArrowLeftRight, exact: 2,
@@ -112,6 +162,16 @@ const SELECTION_VERBS: SelectionVerb[] = [
     {
         id: "hole", label: "Move to Hole", icon: SquareDashed,
         title: "Pick an empty area to move the selection into — click a hole, or drag to carve a spot",
+    },
+    // Modal like Move to Hole: enters the Scale & Move session, a bounding
+    // box around the selection whose interior drags the group and whose
+    // handles scale it (see PinboardTransformOverlay). Anchors grey it for
+    // the mirror rule's reason — every member must travel — and size locks
+    // refuse at entry with a toast, the rotation rule's reason: scaling
+    // resizes every member.
+    {
+        id: "transform", label: "Scale & Move", icon: Scan, min: 2, noAnchors: true,
+        title: "Move and scale the selected items as one group — drag the box to move it, its handles to scale it; Esc or a click outside finishes",
     },
     {
         id: "reflow", label: "Reflow (Keep Proportions)", icon: Scaling, min: 2,
@@ -137,6 +197,25 @@ const SELECTION_VERBS: SelectionVerb[] = [
         id: "shiftRight", label: "Shift Right", icon: ArrowRightToLine,
         title: "Slide the selected items right until they hit something",
     },
+    // Compress belongs to the Shift family — same "tidy this up sideways"
+    // gesture, except it also removes the letterboxing it finds and each
+    // item keeps its gap instead of falling flush. Chevrons, so the bar
+    // never confuses them with the Shift arrows.
+    {
+        id: "compressLeft", label: "Compress Left", icon: ChevronsLeft, min: 1,
+        title: "Shrink letterboxed items along this axis and close the gaps toward the left",
+    },
+    {
+        id: "compressRight", label: "Compress Right", icon: ChevronsRight, min: 1,
+        title: "Shrink letterboxed items along this axis and close the gaps toward the right",
+    },
+    {
+        id: "compressUp", label: "Compress Up", icon: ChevronsUp, min: 1,
+        title: "Shrink letterboxed items' heights; the board compacts the freed space upward",
+    },
+    // (Compress Up is the one verb whose MEANING depends on gravity: with
+    // it off nothing closes the rows the shrink frees, so the verb is a
+    // pure in-place letterbox trim. See verbTitle.)
     {
         id: "mirrorH", label: "Mirror Horizontally", icon: FlipHorizontal2, min: 2, noAnchors: true,
         title: "Mirror the selected items' arrangement about their vertical middle",
@@ -145,22 +224,72 @@ const SELECTION_VERBS: SelectionVerb[] = [
         id: "mirrorV", label: "Mirror Vertically", icon: FlipVertical2, min: 2, noAnchors: true,
         title: "Mirror the selected items' arrangement about their horizontal middle",
     },
+    // Image orientation, not arrangement: the Mirror pair above moves the
+    // items, these turn the pictures. Deliberately the non-"2" lucide
+    // glyphs so the two families read differently on the bar. Rotation is
+    // NOT statically greyed on locks — the verb refuses with a toast saying
+    // how many locked items are in the way, which beats an unexplained grey.
+    {
+        id: "flipImageH", label: "Flip Images Horizontally", icon: FlipHorizontal, min: 1,
+        title: "Flip each selected image left-to-right (the pictures themselves, not their positions)",
+    },
+    {
+        id: "flipImageV", label: "Flip Images Vertically", icon: FlipVertical, min: 1,
+        title: "Flip each selected image top-to-bottom (the pictures themselves, not their positions)",
+    },
+    {
+        id: "rotateImageL", label: "Rotate Images Left", icon: RotateCcw, min: 1,
+        title: "Turn each selected image a quarter turn left; every box swaps its width and height (refused while the selection holds a locked item)",
+    },
+    {
+        id: "rotateImageR", label: "Rotate Images Right", icon: RotateCw, min: 1,
+        title: "Turn each selected image a quarter turn right; every box swaps its width and height (refused while the selection holds a locked item)",
+    },
     {
         id: "clearCrop", label: "Clear Auto-Crops", icon: Maximize,
         title: "Remove the selected items' auto crops, letterboxing the full image",
     },
+    // The removal pair sits last everywhere. No confirm dialog: one record
+    // write is one history entry, so the browser Back button restores the
+    // board whole — the toast says so.
+    {
+        id: "removeSel", label: "Remove Selected", icon: Trash2, min: 1, removal: true,
+        shortcut: "Del",
+        title: "Remove the selected items from the board (Del; the browser Back button restores them)",
+    },
+    {
+        id: "removeRest", label: "Remove All but Selected", icon: ListX, min: 1, removal: true,
+        title: "Remove every item that is NOT selected (the browser Back button restores them)",
+    },
 ]
+// A verb's hover text at the board's current gravity. Only Compress Up
+// differs: its static title describes the settle that follows the shrink,
+// which simply does not happen on a free-floating board.
+function verbTitle(v: SelectionVerb, gravity: boolean): string {
+    if (v.id !== "compressUp" || gravity) return v.title
+    return "Shrink letterboxed items' heights in place, trimming the"
+        + " letterboxing; the freed space stays empty"
+}
 const TOOLBAR_VERBS_KEY = "pinboardToolbarVerbs"
 const DEFAULT_TOOLBAR_VERBS = ["arrange", "swap"]
 // Pinnable non-verb: the Send to Region submenu. On the bar it becomes an
 // icon button opening the preset menu rather than acting directly.
 const REGION_MENU_ID = "region"
+// Pinnable non-verb: the Save Image submenu (the selection as a mosaic, or
+// a single item as a picture — see PinboardExportMenu). Like the region
+// menu it opens rather than acting, and it is the one control here that
+// takes the selection OUT of the app.
+const EXPORT_MENU_ID = "export"
 // Bar display order for pinned controls: the dropdown's own verb order,
-// with the region menu slotted right after Swap. Rendering follows this
-// list rather than pin-toggle order, so the bar is stable no matter when
-// each control was pinned.
-const BAR_ORDER = SELECTION_VERBS.flatMap(v =>
-    v.id === "swap" ? [v.id, REGION_MENU_ID] : [v.id])
+// with the region menu slotted right after Swap and the export menu last —
+// the same places they sit in the dropdown. Rendering follows this list
+// rather than pin-toggle order, so the bar is stable no matter when each
+// control was pinned.
+const BAR_ORDER = [
+    ...SELECTION_VERBS.flatMap(v =>
+        v.id === "swap" ? [v.id, REGION_MENU_ID] : [v.id]),
+    EXPORT_MENU_ID,
+]
 
 export function PinBoard(
     {
@@ -182,13 +311,173 @@ export function PinBoard(
     }
 ) {
     const dbs = useSelectedDBs()[0]
+    // ONE READ FOR THE WHOLE BOARD, then handed to every pin as a prop — the
+    // rule the result grid follows for the animated floor, applied here for
+    // the same reason. A board holds an unbounded number of pins and each one
+    // already carries a client-config subscription of its own
+    // (`useVideoTranscodeEnabled`); a second one per pin would double that for
+    // three numbers that are identical in every pin. The object identity comes
+    // straight out of the query cache, so passing it down changes nothing
+    // about when a pin re-renders.
+    const displayLoopTrigger = useDisplayLoopTrigger()
     // Token-stripped records plus the board's grid parameters; writes migrate
     // v1 boards to the v2 grid (see lib/pinboardGrid.ts)
-    const { grid, records, isV1, highWater, updateRecords, upgradeGrid } = usePinBoard()
+    const {
+        grid, records, isV1, highWater, float, uniform, refWidth,
+        updateRecords, upgradeGrid, stampRefWidth,
+    } = usePinBoard()
+    // "Scale With Window" (the pbp board flag): see effGrid below
+    const [proportional] = useGalleryPinProportional()
+    // "All Resize Handles" (the prh board flag): all eight handles on every
+    // normal item instead of the bottom-right corner alone (see the layout
+    // memo). A pure view preference — nothing is stored per item.
+    const [allHandles] = useGalleryPinResizeHandles()
     // Key of the item currently in crop mode, if any
     const [cropKey, setCropKey] = useState<string | null>(null)
     // True while the crop-mode item's box is being resized via a grid handle
     const [cropResizing, setCropResizing] = useState(false)
+    // Height floor held for the duration of ANY drag/resize gesture, in
+    // px: the grid-area content height captured at gesture start. RGL
+    // measures gesture positions against the grid container's on-screen
+    // rect (the item's offsetParent), so if a gesture shrinks the lowest
+    // item — pulling a south edge up, dragging the bottom item upward —
+    // the grid's height drop shrinks the ScrollArea's scroll range, the
+    // browser clamps scrollTop, the container shifts on screen, and a
+    // STATIONARY pointer reads as having moved further: each increment
+    // of shrink clamps more scroll and feeds itself, multiplying a small
+    // pull into a runaway jump. Holding the height for the gesture's
+    // duration breaks the loop.
+    //
+    // The floor is a min-height on the .react-grid-layout element
+    // itself, applied through the pinboard-freeze class and the
+    // --pinboard-freeze variable stamped on the wrapper (see
+    // globals.css). The grid is the wrapper's in-flow child whose height
+    // already defines the scroll range at rest, so flooring it holds the
+    // range in every engine (an earlier absolutely-positioned spacer
+    // relied on abspos overflow reaching the Radix viewport's scrollable
+    // area — propagation that varies with engine and intermediate boxes)
+    // and pins the board's visible bottom edge at the same time. The
+    // floor must NOT be an inline min-height on the wrapper: the wrapper
+    // is a block inside the Radix ScrollArea's display:table inner div,
+    // and giving IT a min-height resets the viewport's scrollTop to 0
+    // outright — which shifted the grid rect by a full viewport at
+    // mousedown and made RGL collapse the grabbed item to its minimum
+    // before the pointer ever moved. Release doesn't drop the floor
+    // instantly: the pinboard-freeze-releasing class transitions the
+    // grid's min-height to 0 over 300ms, so the freed range collapses as
+    // a followable glide (the browser clamps scrollTop continuously
+    // along the way) instead of a snap fighting RGL's own 200ms
+    // container-height easing. Re-grabbing mid-glide re-captures the
+    // CURRENT rendered height, so successive adjustments never jump.
+    const [gestureFreeze, setGestureFreeze] = useState<
+        { h: number; releasing: boolean } | null>(null)
+    // The LIVE floor value, ratcheted upward mid-gesture by the
+    // autoscroll loop below (state alone would re-render the whole board
+    // per scrolled frame). Render reads it too, so a mid-gesture
+    // re-render can't stamp a stale variable over a ratcheted one.
+    const freezeHRef = useRef<number | null>(null)
+    const freezeScrollRange = () => {
+        const areaEl = gridAreaRef.current
+        const gridEl = areaEl?.querySelector<HTMLElement>(".react-grid-layout")
+        const h = Math.max(areaEl?.clientHeight ?? 0, gridEl?.offsetHeight ?? 0)
+        freezeHRef.current = h > 0 ? h : null
+        setGestureFreeze(h > 0 ? { h, releasing: false } : null)
+        startGestureAutoscroll()
+    }
+    const releaseScrollFloor = () => {
+        stopGestureAutoscroll()
+        setGestureFreeze((f) => f && !f.releasing ? { ...f, releasing: true } : f)
+    }
+    // Deliberate, speed-capped auto-scroll while an RGL gesture is
+    // active — the sanctioned way to reach past the viewport edge in
+    // either direction (grow the bottom item downward, pull something
+    // toward content above the fold). Unlike the marquee's eager
+    // 40px-inside-the-viewport zone, this one engages only when the
+    // pointer is BEYOND the viewport edge: the resize corner of the
+    // lowest item usually sits within an inside-zone's reach, so an
+    // inside trigger starts a growth conveyor the instant the handle is
+    // grabbed — pushing past the boundary is an unambiguous "keep
+    // going", and the gentler cap keeps the conveyor's growth rate
+    // (which is 1:1 with scroll, every scrolled px re-measures into a px
+    // of box travel) hand-controllable. After each scroll step a
+    // synthetic mousemove at the parked pointer position is dispatched
+    // so RGL re-measures against the moved container rect and the
+    // dragged box keeps following the pointer in CONTENT space — without
+    // it the board would slide under a stationary pointer until the next
+    // real move, then snap. Every downward step also RATCHETS the
+    // gesture floor up to scrollTop+clientHeight — exactly the invariant
+    // that makes clamping impossible — because the start-captured floor
+    // only covers the region below the gesture-start height: after
+    // autoscroll has carried the view down into gesture-grown territory,
+    // pulling back up would otherwise shrink the live range above the
+    // floor and re-enter the clamp feedback loop mid-gesture. The
+    // ratchet writes --pinboard-freeze imperatively; the accumulated
+    // overshoot collapses in the release glide like everything else.
+    const GESTURE_SCROLL_MAX = 16
+    const gestureScrollRef = useRef<{
+        onMove: (e: MouseEvent) => void
+        viewport: HTMLElement
+        raf: number
+        lastX: number
+        lastY: number
+    } | null>(null)
+    const stopGestureAutoscroll = () => {
+        const g = gestureScrollRef.current
+        if (!g) return
+        window.removeEventListener("mousemove", g.onMove)
+        if (g.raf) cancelAnimationFrame(g.raf)
+        gestureScrollRef.current = null
+    }
+    const startGestureAutoscroll = () => {
+        stopGestureAutoscroll()
+        const viewport = scrollAreaRef.current
+            ?.querySelector<HTMLElement>("[data-radix-scroll-area-viewport]")
+        if (!viewport) return
+        const step = () => {
+            const g = gestureScrollRef.current
+            if (!g) return
+            g.raf = 0
+            const vr = g.viewport.getBoundingClientRect()
+            let dy = 0
+            if (g.lastY > vr.bottom) {
+                dy = Math.min(GESTURE_SCROLL_MAX, (g.lastY - vr.bottom) / 2)
+            } else if (g.lastY < vr.top) {
+                dy = -Math.min(GESTURE_SCROLL_MAX, (vr.top - g.lastY) / 2)
+            }
+            if (dy === 0) return
+            const before = g.viewport.scrollTop
+            g.viewport.scrollTop += dy
+            if (g.viewport.scrollTop === before) return // hit the end
+            if (dy > 0) {
+                const needed = Math.ceil(
+                    g.viewport.scrollTop + g.viewport.clientHeight)
+                if (needed > (freezeHRef.current ?? 0)) {
+                    freezeHRef.current = needed
+                    gridAreaRef.current?.style.setProperty(
+                        "--pinboard-freeze", `${needed}px`)
+                }
+            }
+            // Schedule before dispatching: the synthetic move re-enters
+            // onMove, which must see the loop as already running
+            g.raf = requestAnimationFrame(step)
+            document.dispatchEvent(new MouseEvent("mousemove", {
+                bubbles: true, cancelable: true, view: window,
+                clientX: g.lastX, clientY: g.lastY, buttons: 1,
+            }))
+        }
+        const g = {
+            viewport, raf: 0, lastX: 0, lastY: 0,
+            onMove: (e: MouseEvent) => {
+                if (!e.isTrusted) return // our own synthetic moves
+                g.lastX = e.clientX
+                g.lastY = e.clientY
+                if (!g.raf) g.raf = requestAnimationFrame(step)
+            },
+        }
+        gestureScrollRef.current = g
+        window.addEventListener("mousemove", g.onMove)
+    }
+    useEffect(() => () => stopGestureAutoscroll(), [])
     // Getter for the crop-mode image's viewport extent, set by its CropView
     const cropImageExtentRef = useRef<(() => CropGeometry | null) | null>(null)
     // Width of the grid area, observed by RGL's own hook (the successor of
@@ -197,37 +486,105 @@ export function PinBoard(
     // positions, see rglSettling below). Declared above the layout memo
     // because the minimum-size floors depend on the measured column width.
     const { width: gridWidth, containerRef: gridAreaRef } = useContainerWidth()
-    const [layout, pinnedFiles, crops, autoCrops, trims, itemLocks]: [
+    // The grid the board is RENDERED with. With "Scale With Window" on and a
+    // reference width in the layout token, the cell aspect is frozen at the
+    // shape it had at that width: the vertical axis — row height, margin and
+    // padding alike — scales by currentWidth/refWidth, so the whole board
+    // zooms with the window instead of letterboxing (see pinboardGrid.ts).
+    // Every grid CONSUMER below reads effGrid; the base `grid` stays the one
+    // and only serialization source, and `gridKey` stays keyed on it (keying
+    // the remount on effGrid would remount the board on every resize pixel).
+    // With the feature off this IS `grid`, by object identity, so nothing
+    // downstream can tell the difference.
+    //
+    // gridWidth is RGL's 1280px SSR placeholder until the observer's first
+    // measurement lands, so a board with a reference width far from 1280
+    // paints one frame at the wrong scale and reflows on hydration.
+    // Deliberately NOT gated on "the width is real": the server renders
+    // this same expression, so a client-only gate would paint a different
+    // first frame than the SSR HTML (a hydration mismatch) — and it would
+    // paint it at scale 1, which for a board authored at 3440px and shown
+    // at ~1030px is three times further off than the placeholder scale is.
+    // One frame at 1280/refWidth is the cheapest wrong answer available.
+    const scale = gridScale(proportional, refWidth, gridWidth)
+    const effGrid = useMemo(
+        () => effectiveGrid(grid, scale), [grid, scale])
+    // A board whose flag is on but whose token carries no reference width —
+    // created with the flag as its creation default, or saved before the
+    // feature existed — adopts the width it is first measured at. Until then
+    // the scale is 1, so this is inert; the write replaces rather than
+    // pushes, since the user didn't ask for it. The measurement must come
+    // from the DOM, not from gridWidth: that starts at RGL's 1280 SSR
+    // placeholder, and stamping THAT would freeze the board at a width it
+    // was never rendered at.
+    // The latch keeps the stamp to ONE write while the URL update is in
+    // flight (this effect deliberately has no dep array — it needs a fresh
+    // DOM read every render until a real measurement exists); it clears
+    // itself as soon as the write lands or another board takes over.
+    //
+    // v1 boards are excluded: the stamp writes the token, and writing a v1
+    // token migrates the board onto the v2 lattice — as a replace, so Back
+    // could not even undo it. Merely RENDERING a v1-era version whose flags
+    // carry pbp would then convert it, which is precisely what the
+    // lazy-migration rule forbids (see lib/state/pinboard.ts). A v1 board
+    // keeps no reference width, so its scale stays 1 and it renders exactly
+    // as it always has; the first real mutation migrates it, and from then
+    // on this effect stamps it like any other board. stampRefWidth refuses
+    // v1 boards itself as well — this is the cheap half of that guard.
+    const refWidthStamped = useRef(false)
+    useEffect(() => {
+        if (!proportional || refWidth > 0 || records.length === 0 || isV1) {
+            refWidthStamped.current = false
+            return
+        }
+        if (refWidthStamped.current) return
+        const measured = gridAreaRef.current?.offsetWidth ?? 0
+        if (measured <= 0) return
+        refWidthStamped.current = true
+        stampRefWidth(measured)
+    })
+    // Orientation is decoded alongside the other extras so every per-pin map
+    // is keyed by the same layout key.
+    const [layout, pinnedFiles, crops, autoCrops, trims, itemLocks, orients, audios]: [
         LayoutItem[],
-        [string, string, string, string][],
+        [string, string, string][],
         Record<string, CropRect | null>,
         Record<string, CropRect | null>,
         Record<string, TrimRange | null>,
         Record<string, PinLock>,
+        Record<string, PinOrientation | null>,
+        Record<string, PinAudioState | null>,
     ] = useMemo(() => {
         const newLayout: LayoutItem[] = []
-        const pinned: [string, string, string, string][] = []
+        const pinned: [string, string, string][] = []
         const cropsMap: Record<string, CropRect | null> = {}
         const autoCropsMap: Record<string, CropRect | null> = {}
         const trimsMap: Record<string, TrimRange | null> = {}
         const locksMap: Record<string, PinLock> = {}
+        const orientsMap: Record<string, PinOrientation | null> = {}
+        const audiosMap: Record<string, PinAudioState | null> = {}
         // Minimum-size floors for resize gestures. RGL applies minW/minH
         // through gesture-time constraints only — the layout sync never
         // clamps — so records already below the minimum (legacy boards,
         // relaxed degenerate layouts) render untouched and only snap up to
         // the minimum when actually resized. The crop-mode item is exempt:
         // its box is the crop window, which may legitimately be tiny.
-        const colWidth = (gridWidth - 2 * grid.padding
-            - (grid.columns - 1) * grid.margin) / grid.columns
-        const { minW, minH } = minPinUnits(grid, colWidth)
+        const colWidth = (gridWidth - 2 * effGrid.padding
+            - (effGrid.columns - 1) * effGrid.margin) / effGrid.columns
+        const { minW, minH } = minPinUnits(effGrid, colWidth)
+        // Gravity gates the handle set: only a float board can offer the
+        // north handles (see GRAVITY_RESIZE_HANDLES)
+        const handleSet = float ? ALL_RESIZE_HANDLES : GRAVITY_RESIZE_HANDLES
         for (let i = 0; i < records.length; i += 5) {
             const [sha256, x, y, w, hField] = records.slice(i, i + 5)
             const index = `${i}-${sha256}`
-            const { h, crop, autoCrop, trim, lock } = parseHField(hField)
+            const { h, crop, autoCrop, trim, lock, orient, audio } = parseHField(hField)
             cropsMap[index] = crop
             autoCropsMap[index] = autoCrop
             trimsMap[index] = trim
             locksMap[index] = lock
+            orientsMap[index] = orient
+            audiosMap[index] = audio
             newLayout.push({
                 i: index,
                 x: parseInt(x),
@@ -236,7 +593,22 @@ export function PinBoard(
                 h,
                 ...(index === cropKey
                     ? { resizeHandles: ALL_RESIZE_HANDLES }
-                    : { minW, minH }),
+                    // "All Resize Handles" (the prh board flag) gives every
+                    // normal item the full eight — minus the north three
+                    // while gravity is on, where compaction makes them
+                    // inverted (see GRAVITY_RESIZE_HANDLES). Only items
+                    // that actually resize get them: RGL hides the handles
+                    // of a static or isResizable:false item
+                    // (react-resizable-hide), so handing them a handle set
+                    // would be inert either way — but it would still render
+                    // dead spans per locked item, so the locked cases keep
+                    // the plain minW/minH shape they had. The drop
+                    // placeholder is exempt too: it is a transient sentinel
+                    // record, never resized.
+                    : allHandles && sha256 !== "__preview"
+                        && lock !== "anchor" && lock !== "size"
+                        ? { minW, minH, resizeHandles: handleSet }
+                        : { minW, minH }),
                 // An anchored item is a native RGL static: drags can't
                 // displace it and the compactor treats it as a wall.
                 // Size-locked items just lose their resize handles. The
@@ -250,19 +622,17 @@ export function PinBoard(
                     index,
                     sha256,
                     "/logo.svg", // Placeholder for the preview box
-                    "/logo.svg", // Placeholder for the preview box
                 ])
                 continue
             }
             pinned.push([
                 index,
                 sha256,
-                getFileURL(dbs, "thumbnail", "sha256", sha256),
-                getFileURL(dbs, "file", "sha256", sha256),
+                originalFileURL(dbs, sha256),
             ])
         }
-        return [newLayout, pinned, cropsMap, autoCropsMap, trimsMap, locksMap]
-    }, [records, cropKey, dbs, grid, gridWidth])
+        return [newLayout, pinned, cropsMap, autoCropsMap, trimsMap, locksMap, orientsMap, audiosMap]
+    }, [records, cropKey, dbs, effGrid, gridWidth, allHandles, float])
 
     // Rebuilds the packed records from RGL's reported layout, in the EXISTING
     // record order: the item keys embed each record's offset, so persisting in
@@ -295,11 +665,21 @@ export function PinBoard(
     // tick do not compose — nuqs resolves each functional updater against
     // a stateRef that only advances when React runs the queued updater, so
     // the second write rebuilds from the first one's base and clobbers it.
+    // orientationOverrides is the same for the ORIENTATION slot (null =
+    // identity), which the rotate/flip verbs write together with the
+    // geometry and both remapped crop rects — one write, one history entry.
+    // PRECEDENCE between the two crop overrides: an explicit
+    // autoCropOverride for a key wins over the implicit clear a manual-crop
+    // write performs. The clear exists because a new manual crop is a new
+    // base for the derived auto crop; an orientation remap moves BOTH slots
+    // through the same transform, so the auto crop is still an exact fit
+    // and the verb states it explicitly rather than losing it.
     const rebuildRecords = (
         prev: string[],
         currentLayout: LayoutItem[],
         autoCropOverrides?: Record<string, CropRect | null>,
         manualCropOverrides?: Record<string, CropRect | null>,
+        orientationOverrides?: Record<string, PinOrientation | null>,
     ) => {
         const byKey = new Map(
             currentLayout.filter((e) => e.i !== "__preview").map((l) => [l.i, l])
@@ -312,22 +692,33 @@ export function PinBoard(
                 next.push(...prev.slice(i, i + 5))
                 continue
             }
-            const { crop, autoCrop, trim, lock } = parseHField(prev[i + 4])
+            const { crop, autoCrop, trim, lock, orient, audio } = parseHField(prev[i + 4])
             const hasManual = manualCropOverrides && key in manualCropOverrides
+            const hasAuto = autoCropOverrides && key in autoCropOverrides
             const nextCrop = hasManual ? manualCropOverrides[key] : crop
-            const nextAuto = hasManual
-                ? null // manual crop is the auto crop's base; the old auto is stale
-                : autoCropOverrides && key in autoCropOverrides
-                    ? autoCropOverrides[key]
+            const nextAuto = hasAuto
+                ? autoCropOverrides[key]
+                : hasManual
+                    ? null // manual crop is the auto crop's base; the old auto is stale
                     : autoCrop
+            const nextOrient = orientationOverrides && key in orientationOverrides
+                ? orientationOverrides[key]
+                : orient
             next.push(
                 prev[i],
                 item.x.toString(),
                 item.y.toString(),
                 item.w.toString(),
-                // Crop/trim/lock suffixes stored in the h field survive box
-                // moves/resizes
-                packHField(item.h, nextCrop, nextAuto, trim, lock),
+                // Crop/trim/lock/orientation/audio suffixes stored in the h
+                // field survive box moves/resizes
+                packHField(item.h, {
+                    crop: nextCrop,
+                    autoCrop: nextAuto,
+                    trim,
+                    lock,
+                    orient: nextOrient,
+                    audio,
+                }),
             )
         }
         return next
@@ -374,11 +765,77 @@ export function PinBoard(
         currentLayout: LayoutItem[],
         autoCropOverrides?: Record<string, CropRect | null>,
         newHighWater?: number,
-        echo = false,
+        orientationOverrides?: Record<string, PinOrientation | null>,
+        verbManualCrops?: Record<string, CropRect | null>,
+        // History mode for the record write; undefined means the hook's
+        // default push. Two kinds of caller ask for "replace": RGL's own
+        // normalization reports (see gestureRef), and a fill that rides
+        // someone else's structural write (see the pin-count trigger).
+        history?: "push" | "replace",
         manualGesture = false,
+        // True only for RGL's own layout reports (the wrapper on the
+        // GridLayout prop below); everything else is a verb write.
+        fromRgl = false,
     ) => {
-        const manualCropOverrides = pendingManualCropRef.current ?? undefined
-        pendingManualCropRef.current = null
+        // Verb writes during crop mode get compacted HERE: the compactor
+        // prop is off while a crop session runs (see GridLayout below), so
+        // a verb's computed layout — which relies on compaction to resolve
+        // its overlaps (Resize Item growth, rotation footprint swaps,
+        // Compress Up's freed rows) — would otherwise commit and render
+        // overlapping until crop exit. The crop-mode item is held as a
+        // static wall so the open crop window never moves under the
+        // session, and anchors are walls here for the same reason they are
+        // in RGL's own pass. RGL reports are exempt: a gesture release must
+        // commit exactly what's on screen, echo normalizations must stay
+        // identity, and the crop-release write must not reflow the board
+        // mid-session — the rows the box vacates on a shrink have to stay
+        // free for the next handle pull.
+        // Skipped entirely while gravity is off: there the compactor prop is
+        // off for the whole board, not just for the crop session, and a verb
+        // write that settled anyway would be the one place the board still
+        // fell upward. The verbs resolve their own overlaps there instead
+        // (resolveGrowth in pinboardLayout), and the crop item is threaded
+        // into that pass as a wall — same invariant, other mechanism.
+        if (cropKey !== null && !fromRgl && !float) {
+            // compact() clones its input and returns the compacted clone,
+            // so the caller's layout — often the render memo's array itself
+            // on orientation-only writes — stays untouched; the map only
+            // injects the wall flags and the bounds clamp.
+            currentLayout = [...fastVerticalCompactor.compact(
+                currentLayout.map((l) => {
+                    // RGL's correctBounds clamp (not exported), applied
+                    // before compacting the way RGL's layout sync applies
+                    // it: verbs may emit out-of-bounds boxes (Resize Item
+                    // grows w in place, past the right edge), and clamping
+                    // only later — in RGL's post-write sync — would slide
+                    // the box into neighbours AFTER this pass compacted.
+                    let x = l.x
+                    let w = l.w
+                    if (x + w > grid.columns) x = grid.columns - w
+                    if (x < 0) { x = 0; w = grid.columns }
+                    const wall = l.i === cropKey || itemLocks[l.i] === "anchor"
+                    return wall || x !== l.x || w !== l.w
+                        ? { ...l, x, w, static: wall || l.static }
+                        : l
+                }),
+                grid.columns)]
+        }
+        // Verbs hand their manual-crop remap in directly; the pending ref
+        // exists only for the crop-mode resize release, which cannot pass
+        // anything (RGL fires that layout report itself). The direct
+        // argument takes precedence. The two can't collide, but not because
+        // verbs are unreachable in crop mode — they are, from any other
+        // pin's menu and from the toolbar. What rules it out is the ref's
+        // lifetime: onResizeStop sets it and RGL's own layout report
+        // consumes it in the SAME synchronous tick, so no click-driven verb
+        // can interleave. The clear is conditional anyway, so if that
+        // invariant is ever broken a verb write can't silently swallow a
+        // queued crop — it stays queued for the write that consumes it.
+        const pending = pendingManualCropRef.current
+        const manualCropOverrides = verbManualCrops ?? pending ?? undefined
+        if (pending !== null && manualCropOverrides === pending) {
+            pendingManualCropRef.current = null
+        }
         // RGL fires onLayoutChange on every layouts-prop change and on mount,
         // not only on user interaction. If nothing actually moved, writing an
         // equal value back would push a redundant history entry and re-trigger
@@ -386,7 +843,8 @@ export function PinBoard(
         // guard is also what keeps merely *viewing* a v1 board from migrating
         // it: updateRecords only converts on writes. A fill that changed only
         // the ratchet still writes (updateRecords compares the ratchet too).
-        const candidate = rebuildRecords(records, currentLayout, autoCropOverrides, manualCropOverrides)
+        const candidate = rebuildRecords(records, currentLayout,
+            autoCropOverrides, manualCropOverrides, orientationOverrides)
         if (
             candidate.length === records.length &&
             candidate.every((v, i) => v === records[i]) &&
@@ -411,10 +869,11 @@ export function PinBoard(
             })
         }
         updateRecords(
-            (prev) => rebuildRecords(prev, currentLayout, autoCropOverrides, manualCropOverrides),
+            (prev) => rebuildRecords(prev, currentLayout,
+                autoCropOverrides, manualCropOverrides, orientationOverrides),
             {
                 ...(newHighWater !== undefined ? { highWater: newHighWater } : {}),
-                ...(echo ? { history: "replace" as const } : {}),
+                ...(history ? { history } : {}),
             },
         )
     }
@@ -426,8 +885,8 @@ export function PinBoard(
             const next = [...prev]
             for (let i = 0; i < prev.length; i += 5) {
                 if (!keySet.has(`${i}-${prev[i]}`)) continue
-                const parsed = parseHField(prev[i + 4])
-                next[i + 4] = packHField(parsed.h, parsed.crop, parsed.autoCrop, parsed.trim, lock)
+                const { h, ...extras } = parseHField(prev[i + 4])
+                next[i + 4] = packHField(h, { ...extras, lock })
             }
             return next
         })
@@ -435,14 +894,87 @@ export function PinBoard(
 
     // Append an identical copy of the pin's 5-string record (sha256, x, y, w,
     // packed h+crop). The offset embedded in the layout key locates the source
-    // record; compactType="vertical" then nudges the copy off the original.
+    // record; vertical compaction then nudges the copy off the original —
+    // except with gravity off, where nothing would ever separate the two, so
+    // the copy is placed explicitly at the free cell nearest the original.
     const onDuplicatePin = (key: string) => {
-        updateRecords((prev) => {
+        updateRecords((prev, grid) => {
             const offset = parseInt(key.split("-")[0])
             const record = prev.slice(offset, offset + 5)
             if (record.length < 5) return prev
-            return [...prev, ...record]
+            if (!float) return [...prev, ...record]
+            const { h } = parseHField(record[4])
+            const { x, y } = placeNearest(prev, grid, parseInt(record[3]), h,
+                { x: parseInt(record[1]), y: parseInt(record[2]) })
+            return [...prev, record[0], x.toString(), y.toString(),
+                record[3], record[4]]
         })
+    }
+
+    // Remove one pin by its exact record — the context menu's Unpin, the
+    // same removal the overlay pin button does (silent: a single unpin is a
+    // one-click action the button has always performed without ceremony).
+    // Key-matched against `prev` like every other writer here, never a bare
+    // splice at the render-time offset: the key embeds both the offset AND
+    // the sha256, and only the pair identifies the record inside the
+    // functional updater's own (possibly newer) base.
+    const onUnpinPin = (key: string) => {
+        updateRecords((prev) => {
+            const next: string[] = []
+            for (let i = 0; i < prev.length; i += 5) {
+                if (`${i}-${prev[i]}` !== key) next.push(...prev.slice(i, i + 5))
+            }
+            return next
+        })
+    }
+
+    // Bulk removal, the one write every multi-remove surface goes through
+    // (the selection verbs, the Delete key, the below-viewport purge).
+    // Key-matched filtering rather than offset splices, so a key that no
+    // longer names a record simply matches nothing instead of cutting a
+    // stranger out of the middle of the array. ONE updateRecords call is
+    // one URL write and one history entry — so the browser Back button
+    // restores the board whole, which is what the toast promises instead
+    // of a confirm dialog. Locks are ignored: a lock pins geometry, not
+    // existence (Clear Board ignores them too). The selection is
+    // deliberately not preserved — every surviving key's offset shifts, so
+    // the board's own prune clears it.
+    const removePins = (keys: string[]) => {
+        const keySet = new Set(keys)
+        // The count the toast reports is resolved OUTSIDE the mutate,
+        // against the live records: mutate runs twice (updateRecords
+        // precomputes against its own records to detect the lifecycle
+        // edges, then again inside the functional write) and must stay
+        // free of side effects. Stale keys match nothing, so this is the
+        // true removed count — zero of them means nothing to write at all.
+        let count = 0
+        for (let i = 0; i < records.length; i += 5) {
+            if (keySet.has(`${i}-${records[i]}`)) count++
+        }
+        if (count === 0) return
+        updateRecords((prev) => {
+            const next: string[] = []
+            for (let i = 0; i < prev.length; i += 5) {
+                if (!keySet.has(`${i}-${prev[i]}`)) next.push(...prev.slice(i, i + 5))
+            }
+            return next
+        })
+        toast({
+            title: `Removed ${count} ${count === 1 ? "pin" : "pins"}`,
+            description: "Press the browser Back button to restore them.",
+            duration: 4000,
+        })
+    }
+    // "All but Selected" inverts against the LIVE board; with everything
+    // selected it removes nothing and updateRecords' no-change guard
+    // swallows the write. The drag preview's sentinel record is never a
+    // removal target (menus can't normally be open mid-drag, but the
+    // marquee can outlive one).
+    const removeAllBut = (keys: string[]) => {
+        const keep = new Set(keys)
+        removePins(layout
+            .map(l => l.i)
+            .filter(k => !keep.has(k) && !k.endsWith("__preview")))
     }
 
     // Writing the manual crop also clears the auto slot: the manual crop is
@@ -453,8 +985,8 @@ export function PinBoard(
             const next = [...prev]
             for (let i = 0; i < prev.length; i += 5) {
                 if (`${i}-${prev[i]}` === key) {
-                    const parsed = parseHField(prev[i + 4])
-                    next[i + 4] = packHField(parsed.h, crop, null, parsed.trim, parsed.lock)
+                    const { h, ...extras } = parseHField(prev[i + 4])
+                    next[i + 4] = packHField(h, { ...extras, crop, autoCrop: null })
                     break
                 }
             }
@@ -467,8 +999,8 @@ export function PinBoard(
             const next = [...prev]
             for (let i = 0; i < prev.length; i += 5) {
                 if (`${i}-${prev[i]}` === key) {
-                    const parsed = parseHField(prev[i + 4])
-                    next[i + 4] = packHField(parsed.h, parsed.crop, parsed.autoCrop, trim, parsed.lock)
+                    const { h, ...extras } = parseHField(prev[i + 4])
+                    next[i + 4] = packHField(h, { ...extras, trim })
                     break
                 }
             }
@@ -476,21 +1008,44 @@ export function PinBoard(
         })
     }
 
+    // Playback-snapshot writes REPLACE rather than push: pressing play or
+    // dragging a volume slider must not become a back-button entry — Back
+    // through a viewing session should walk the layout edits, not every
+    // mute toggle between them.
+    const onItemAudioChange = (key: string, audio: PinAudioState | null) => {
+        updateRecords((prev) => {
+            const next = [...prev]
+            for (let i = 0; i < prev.length; i += 5) {
+                if (`${i}-${prev[i]}` === key) {
+                    const { h, ...extras } = parseHField(prev[i + 4])
+                    next[i + 4] = packHField(h, { ...extras, audio })
+                    break
+                }
+            }
+            return next
+        }, { history: "replace" })
+    }
+
     const [fs, setFs] = useGalleryFullscreen()
     const [showGrid] = useGalleryPinGrid()
     const scrollAreaRef = useRef<HTMLDivElement>(null);
     // v1 boards use v1-unit sizes for new/dropped pins so they stay
     // consistent pre-migration; on the finer v2 grid the same physical size
-    // is these units times the lattice scale factors
+    // is these units times the lattice scale factors.
+    // BASE grid on purpose: these are the GRID-UNIT sizes new pins get
+    // (drop ghost, carry ghost, the pin button's default), and the record
+    // writers that consume them work in base units too. The proportional
+    // scale then applies to them exactly as it applies to every other item
+    // on the board — scaling them here as well would double-count it.
     const { sx, sy } = v1ScaleFactors(grid)
     // Grid measurement config for RGL; identity keyed on the scalar params so
     // unrelated re-renders don't churn the grid's internal position memos
     const gridConfig = useMemo(() => ({
-        cols: grid.columns,
-        rowHeight: grid.rowHeight,
-        margin: [grid.margin, grid.margin] as [number, number],
-        containerPadding: [grid.padding, grid.padding] as [number, number],
-    }), [grid.columns, grid.rowHeight, grid.margin, grid.padding])
+        cols: effGrid.columns,
+        rowHeight: effGrid.rowHeight,
+        margin: [effGrid.margin, effGrid.margin] as [number, number],
+        containerPadding: [effGrid.padding, effGrid.padding] as [number, number],
+    }), [effGrid.columns, effGrid.rowHeight, effGrid.margin, effGrid.padding])
     // Height of the grid content for the debug grid background, which must
     // cover the full grid height — it grows past the viewport when an item
     // extends below the fold. Comes from RGL's own root element rather than
@@ -509,6 +1064,16 @@ export function PinBoard(
         if (gridEl) ro.observe(gridEl)
         return () => ro.disconnect()
     }, [records, gridAreaRef])
+    // BASE grid, never effGrid: the remount exists for grid-parameter
+    // changes (the v1 -> v2 migration), and a key that followed the
+    // proportional scale would remount the whole board on every resize pixel
+    // — including the rounded effective values, which change constantly
+    // while dragging a window edge.
+    // Turning "Scale With Window" OFF bakes the scaled values into the base
+    // grid, so it changes this key too and remounts once. The board's
+    // geometry is unchanged across that remount (that is what the bake is
+    // for); the mount fly-in it would replay is suppressed by the effect
+    // below.
     const gridKey = `grid-${grid.columns}-${grid.rowHeight}-${grid.margin}-${grid.padding}`
     // Keep RGL's transitions off while HYDRATING only (see globals.css:
     // .rgl-mount-still): the SSR HTML paints items at percentage positions,
@@ -532,7 +1097,25 @@ export function PinBoard(
         const t = setTimeout(() => setRglSettling(false), 300)
         return () => clearTimeout(t)
     }, [rglSettling])
+    // The same suppression, re-armed for the ONE remount a base-grid change
+    // causes (gridKey above). RGL positions items in percentages until its
+    // own mount effect flips to px transforms — on every mount, not just
+    // hydration — so a remount replays the fly-in from the container
+    // origin. That is a flash on two transitions documented as inert: the
+    // OFF edge of "Scale With Window", which bakes the scaled values into
+    // the base grid, and the explicit v1 -> v2 grid upgrade. RGL sets its
+    // flag from a passive effect too, so this update batches into the same
+    // commit and the class is on the element before the transform changes.
+    const settledGridKey = useRef(gridKey)
+    useEffect(() => {
+        if (settledGridKey.current === gridKey) return
+        settledGridKey.current = gridKey
+        setRglSettling(true)
+    }, [gridKey])
     const pinItem = usePinItem()
+    // For the carry's free placement below, which appends a record itself
+    // instead of routing through pinItem
+    const galleryTrim = useGalleryTrim()
     // The board's own layout-actions instance shares the machinery the
     // context menu uses (autoLayout itself is declared above
     // onLayoutChange, next to the gesture auto-off that consumes it).
@@ -541,12 +1124,22 @@ export function PinBoard(
     const {
         fillViewport, arrangeSelection, swapItems, autoCropSelection,
         clearAutoCropSelection, growSelection, mirrorSelection, shiftSelection,
-        sendSelectionToRegion, sendSelectionToRect,
+        compressSelection,
+        sendSelectionToRegion, sendSelectionToRect, transformSelection,
+        orientSelection,
         changeLayout, fillViewportRows, justifyCurrentRows, autoCropToCells,
         clearAutoCrops, shiftLayout, mirrorLayout, rerollLayout, refitToView,
-        reflowKeepProportions, growInPlace, hasLocks, hasAnchors,
+        reflowKeepProportions, uniformLayout, uniformSelection,
+        growInPlace, hasLocks, hasAnchors,
+        belowViewportKeys,
     } = usePinboardLayoutActions({
-        layout, crops, autoCrops, locks: itemLocks, highWater, dbs, grid,
+        layout, crops, autoCrops, locks: itemLocks, orients, highWater, float,
+        uniform,
+        cropKey,
+        // Every packer and fit works in px against the RENDERED cell size,
+        // so the layout verbs take the effective grid (their measurement
+        // cache is keyed on it too, and drops when the scale changes)
+        dbs, grid: effGrid,
         layoutAutoCrop: autoLayoutCrop,
         selectionAutoCrop: selectionCrop,
         pinboardRef: scrollAreaRef,
@@ -561,9 +1154,11 @@ export function PinBoard(
         Object.assign(boardApiRef.current, {
             changeLayout, fillViewport, fillViewportRows, justifyCurrentRows,
             autoCropToCells, clearAutoCrops, shiftLayout, mirrorLayout,
-            rerollLayout, refitToView, reflowKeepProportions, growInPlace,
-            hasLocks, hasAnchors,
-            highWater, isV1, upgradeGrid,
+            rerollLayout, refitToView, reflowKeepProportions, uniformLayout,
+            growInPlace, hasLocks, hasAnchors,
+            highWater, isV1, boardWidth: gridWidth, upgradeGrid,
+            belowViewportCount: () => belowViewportKeys()?.length ?? null,
+            removeBelowViewport: () => removePins(belowViewportKeys() ?? []),
         } satisfies PinboardBoardApi)
     })
     useEffect(() => {
@@ -655,9 +1250,9 @@ export function PinBoard(
         if (!holeMode) return 0
         const areaH = gridAreaRef.current?.clientHeight ?? 0
         const fold = Math.max(1, Math.floor(
-            (areaH - 2 * grid.padding + grid.margin) / rowStep(grid)))
+            (areaH - 2 * effGrid.padding + effGrid.margin) / rowStep(effGrid)))
         return Math.max(highWater, fold)
-    }, [holeMode, highWater, grid, gridAreaRef])
+    }, [holeMode, highWater, effGrid, gridAreaRef])
     // Occupancy for the free mask. The verb MOVES the selection, so it
     // counts as lifted — its own cells are free to land back onto (e.g.
     // merging with an adjacent hole). Carried/dragged items are new;
@@ -676,9 +1271,9 @@ export function PinBoard(
     // toasts. For the verb: every size-locked item must fit at its exact
     // size and the rect must have room for everyone at minimum size; for
     // single-item drops just the minimum pin size.
-    const holeColW = (gridWidth - 2 * grid.padding
-        - (grid.columns - 1) * grid.margin) / grid.columns
-    const { minW: holeMinW, minH: holeMinH } = minPinUnits(grid, holeColW)
+    const holeColW = (gridWidth - 2 * effGrid.padding
+        - (effGrid.columns - 1) * effGrid.margin) / effGrid.columns
+    const { minW: holeMinW, minH: holeMinH } = minPinUnits(effGrid, holeColW)
     const validHole = (r: GridRect): boolean => {
         if (holeMode !== "verb") return r.w >= holeMinW && r.h >= holeMinH
         const sel = layout.filter(l => selectedSet.has(l.i))
@@ -759,8 +1354,9 @@ export function PinBoard(
             }
             return [
                 ...next,
-                sha256.slice(0, 10),
-                r.x.toString(), r.y.toString(), r.w.toString(), r.h.toString(),
+                sha256.slice(0, PIN_SHA_PREFIX_LENGTH),
+                r.x.toString(), r.y.toString(), r.w.toString(),
+                newPinHField(r.h, sha256, galleryTrim),
             ]
         })
     }
@@ -810,6 +1406,178 @@ export function PinBoard(
             window.removeEventListener("click", onClick)
         }
     }, [carrySha])
+    // ---- Scale & Move session -------------------------------------------
+    // The group-transform modal (see PinboardTransformOverlay): while it
+    // runs, the overlay owns the board's pointer and the selection toolbar
+    // stands down (its automatic anchor hangs exactly where the bbox's top
+    // handles sit). The session is FOR the selection the same way hole
+    // targeting is: any selection change ends it.
+    const [transformOn, setTransformOn] = useState(false)
+    const transformActiveRef = useRef(false)
+    transformActiveRef.current = transformOn
+    // True while a session gesture is in flight: the grid wears the
+    // transition-disable class (globals.css) so the imperative preview
+    // isn't smeared by RGL's 200ms transitions
+    const [transformGesture, setTransformGesture] = useState(false)
+    // Entry checks mirror the other selection verbs' precedents: anchors
+    // grey the verb statically (noAnchors — but the context-menu path
+    // can't grey, so the check re-runs here with the hole verb's toast
+    // strings), size locks refuse with a counting toast the way the
+    // rotations do — a scale resizes every member, which is exactly what
+    // the lock forbids.
+    const enterTransform = () => {
+        if (cropKey !== null || selected.length < 2) return
+        const anchoredCount = selected.filter(k => itemLocks[k] === "anchor").length
+        if (anchoredCount > 0) {
+            toast({
+                title: "Scale & Move",
+                description: anchoredCount === 1
+                    ? "An anchored item is selected — unanchor or deselect it first"
+                    : `${anchoredCount} anchored items are selected — unanchor or deselect them first`,
+                duration: 4000,
+            })
+            return
+        }
+        const sizeLockedCount = selected.filter(k => itemLocks[k] === "size").length
+        if (sizeLockedCount > 0) {
+            toast({
+                title: "Scale & Move",
+                description: sizeLockedCount === 1
+                    ? "A size-locked item is selected — unlock or deselect it first"
+                    : `${sizeLockedCount} size-locked items are selected — unlock or deselect them first`,
+                duration: 4000,
+            })
+            return
+        }
+        setTransformOn(true)
+    }
+    // The context menu requests the session through the carry store, the
+    // same channel as its Move to Hole row (no prop path from the per-pin
+    // popper to this state)
+    const transformRequest = usePinboardCarry(s => s.transformRequest)
+    const transformRequestSeen = useRef(transformRequest)
+    useEffect(() => {
+        if (transformRequest === transformRequestSeen.current) return
+        transformRequestSeen.current = transformRequest
+        enterTransform()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [transformRequest])
+    // The session is FOR the selection: any change to it — including the
+    // prune after a removal — ends the session (every mutator hands the
+    // store a fresh array, so identity is the change signal)
+    useEffect(() => {
+        setTransformOn(false)
+    }, [selected])
+    // Crop mode is its own modal session; the two never overlap
+    useEffect(() => {
+        if (cropKey !== null) setTransformOn(false)
+    }, [cropKey])
+    // The selected items' resting rects in content px — what the overlay
+    // draws its bbox from and restores the preview to
+    const transformItems: TransformPxRect[] | null = useMemo(() => {
+        if (!transformOn || !gridWidth) return null
+        const colW = (gridWidth - 2 * effGrid.padding
+            - (effGrid.columns - 1) * effGrid.margin) / effGrid.columns
+        const unitX = colW + effGrid.margin
+        const stepY = rowStep(effGrid)
+        return layout
+            .filter(l => selectedSet.has(l.i) && !l.i.endsWith("__preview"))
+            .map(l => ({
+                key: l.i,
+                l: effGrid.padding + l.x * unitX,
+                t: effGrid.padding + l.y * stepY,
+                w: l.w * unitX - effGrid.margin,
+                h: l.h * stepY - effGrid.margin,
+            }))
+    }, [transformOn, gridWidth, layout, selectedSet, effGrid])
+    // Snap one released gesture onto the lattice and commit it as a verb
+    // write. Returns false when the snap changes nothing — the overlay
+    // then restores its preview instead of waiting for a write.
+    const commitTransform = (rects: TransformPxRect[], kind: "move" | "scale",
+        scale?: TransformScale): boolean => {
+        const unitX = holeColW + effGrid.margin
+        const stepY = rowStep(effGrid)
+        const pad = effGrid.padding
+        const byKey = new Map(layout.map(l => [l.i, l]))
+        const out: Record<string, GridRect> = {}
+        if (kind === "move") {
+            // One integer delta for the whole group, from any member: the
+            // relative geometry survives the snap exactly
+            const first = rects[0]
+            const cur0 = first && byKey.get(first.key)
+            if (!cur0) return false
+            const members = rects.flatMap(r => byKey.get(r.key) ?? [])
+            let dgx = Math.round((first.l - (pad + cur0.x * unitX)) / unitX)
+            let dgy = Math.round((first.t - (pad + cur0.y * stepY)) / stepY)
+            const minX = Math.min(...members.map(l => l.x))
+            const maxX2 = Math.max(...members.map(l => l.x + l.w))
+            const minY = Math.min(...members.map(l => l.y))
+            dgx = Math.max(-minX, Math.min(dgx, effGrid.columns - maxX2))
+            dgy = Math.max(-minY, dgy)
+            if (dgx === 0 && dgy === 0) return false
+            for (const l of members) {
+                out[l.i] = { x: l.x + dgx, y: l.y + dgy, w: l.w, h: l.h }
+            }
+        } else {
+            // Scale: map each member's INTEGER lattice edges about the
+            // anchor's lattice edge and round. A shared edge is the same
+            // integer on both sides, the map is monotone, and monotone
+            // rounding preserves order — so flush members stay flush
+            // EXACTLY and no scale can round two members into each other.
+            // The previous px-edge snap could: the margins between items
+            // scale with the group while the snap added the unscaled
+            // margin, so on shrinks two flush px edges drifted apart by
+            // the scaled-margin delta and could round one unit INTO the
+            // neighbour, which the eviction pass then "fixed" by dropping
+            // a member below the group (the reported intra-group shuffle).
+            if (!scale) return false
+            const { minW, minH } = minPinUnits(effGrid, holeColW)
+            const members = rects.flatMap(r => byKey.get(r.key) ?? [])
+            if (members.length === 0) return false
+            // The anchor edge is a member edge, so both are exact integers
+            const axL = scale.handle.includes("w")
+                ? Math.max(...members.map(l => l.x + l.w))
+                : Math.min(...members.map(l => l.x))
+            const ayL = scale.handle.includes("n")
+                ? Math.max(...members.map(l => l.y + l.h))
+                : Math.min(...members.map(l => l.y))
+            const mapped = members.map(l => ({
+                l,
+                x: Math.round(axL + scale.sx * (l.x - axL)),
+                x2: Math.round(axL + scale.sx * (l.x + l.w - axL)),
+                y: Math.round(ayL + scale.sy * (l.y - ayL)),
+                y2: Math.round(ayL + scale.sy * (l.y + l.h - ayL)),
+            }))
+            // Board bounds as UNIFORM group shifts: a per-item clamp could
+            // fold an edge member onto its neighbour. The overlay's px
+            // clamps keep any excursion to a unit of rounding slack.
+            const dx = -Math.max(0,
+                Math.max(...mapped.map(m => m.x2)) - effGrid.columns)
+            const dy = Math.max(0, -Math.min(...mapped.map(m => m.y)))
+            let changed = false
+            for (const m of mapped) {
+                const x = Math.max(0, m.x + dx)
+                let w = Math.max(1, Math.min(m.x2 + dx, effGrid.columns) - x)
+                const y = m.y + dy
+                let h = Math.max(1, m.y2 + dy - y)
+                // The mutation-time size floor (see minPinUnits), guarded
+                // per axis so a gesture that left an axis alone (or a
+                // legacy sub-minimum member the clamp held at scale 1)
+                // never grows: the scale clamp keeps every SCALED size at
+                // or above the floor already, so a firing floor here is
+                // pure rounding slack.
+                if (w < minW && w < m.l.w) w = Math.min(minW, effGrid.columns)
+                if (h < minH && h < m.l.h) h = minH
+                const fx = Math.min(x, effGrid.columns - w)
+                out[m.l.i] = { x: fx, y, w, h }
+                if (fx !== m.l.x || y !== m.l.y || w !== m.l.w || h !== m.l.h)
+                    changed = true
+            }
+            if (!changed) return false
+        }
+        runVerb("Scale & Move", transformSelection(selected, out))
+        return true
+    }
     // ---------------------------------------------------------------------
     // Floating toolbar placement, in CONTENT coordinates (it scrolls with
     // the board, staying glued to the selection). The bar hangs just above
@@ -817,9 +1585,39 @@ export function PinBoard(
     // different heights, where it hangs above the LOWER item's top edge:
     // a two-item bbox is mostly empty diagonal space, and two items are
     // usually selected to swap, so the seam between them is where the
-    // mouse is. When the anchor is too close to the board's top for the
-    // bar to fit, it pins just below the top edge instead (over the
-    // selection — the drag grip below is the escape hatch for that).
+    // mouse is.
+    //
+    // FLIP BELOW: when EVERY selected item is against the board's top
+    // edge, the bar goes below the selection's bottom edge instead of
+    // being clamped over its top — the old clamp smeared it across the
+    // pin/crop/anchor/lock overlay buttons that live at a pin's top edge.
+    // "Against the top" is fit-based, not y === 0: an item counts iff a
+    // bar cannot hang above IT (py(l.y) < EDGE + h + GAP). A v2 row is
+    // 10px, so items at y = 1..3 sit inside that same smear strip and a
+    // literal y === 0 test would miss them; the threshold tracks the
+    // measured bar height like the rest of this math. The "every"
+    // quantifier is deliberate: a mixed selection reaching lower rows
+    // would put a below-the-bbox bar far from the action, so it keeps the
+    // above/clamp behavior. The flip also wins BEFORE the two-item seam
+    // rule — both items against the top means there is no usable seam.
+    //
+    // FITS-OR-FALL-BACK: the flip is taken only when the below position
+    // fully clears the selection inside the VISIBLE viewport, i.e. is at
+    // or above scrollTop + clientHeight - h - EDGE (one-shot read of the
+    // scroll viewport at placement time — the bar stays in content
+    // coordinates and scrolls with the board afterwards; this memo does
+    // not re-run on scroll, by design). That spot routinely sits below
+    // clampPos's content-bottom cap, since the flip fires precisely on
+    // boards whose content ends near the selection — so the cap itself is
+    // relaxed to `max(content bottom, viewport bottom)` rather than being
+    // bypassed for the flip alone. A bar may legitimately hang past the
+    // last row into empty board space, and the manual park and the
+    // release snap below share that same envelope, so a flipped bar can be
+    // nudged sideways without jumping back over the selection. If the
+    // below spot can't clear the selection (an item filling the whole
+    // view), the flip is not taken at all and the existing top placement
+    // applies unchanged: covering the top beats hovering over the video
+    // timeline and loop controls at a pin's bottom edge.
     const toolbarRef = useRef<HTMLDivElement | null>(null)
     const [toolbarSize, setToolbarSize] = useState({ w: 320, h: 34 })
     // ResizeObserver rather than a one-shot measure: the bar's width also
@@ -846,49 +1644,103 @@ export function PinBoard(
     const [toolbarManual, setToolbarManual] = useState<{ x: number; y: number } | null>(null)
     const selKey = useMemo(() => [...selected].sort().join("|"), [selected])
     useEffect(() => { setToolbarManual(null) }, [selKey])
+    // Anchored off the layout memo, which only updates when the record write
+    // lands at gesture end: with a non-'se' handle (west/north edges move the
+    // box's own origin) the bar visually detaches from the selection until
+    // release. Cosmetic, and accepted.
     const toolbarPos = useMemo(() => {
         if (selected.length === 0 || !gridWidth) return null
-        const colW = (gridWidth - 2 * grid.padding - (grid.columns - 1) * grid.margin) / grid.columns
-        const unitX = colW + grid.margin
-        const px = (x: number) => grid.padding + x * unitX
-        const py = (y: number) => grid.padding + y * rowStep(grid)
+        const colW = (gridWidth - 2 * effGrid.padding - (effGrid.columns - 1) * effGrid.margin) / effGrid.columns
+        const unitX = colW + effGrid.margin
+        const px = (x: number) => effGrid.padding + x * unitX
+        const py = (y: number) => effGrid.padding + y * rowStep(effGrid)
         const maxY = layout.reduce((acc, l) => Math.max(acc, l.y + l.h), 0)
+        // Radix scrolls the viewport child, not the root the ref is on; its
+        // scroll coordinates are this content space (the grid area is the
+        // viewport's content, at offset 0). One-shot read at placement
+        // time — the bar stays in content coordinates and scrolls with the
+        // board afterwards; this memo does not re-run on scroll, by design.
+        // No viewport element = nothing to measure against = the viewport
+        // relaxation below contributes nothing (-Infinity).
+        const view = scrollAreaRef.current
+            ?.querySelector<HTMLElement>("[data-radix-scroll-area-viewport]")
+        const viewportCapY = view
+            ? view.scrollTop + view.clientHeight - toolbarSize.h - TOOLBAR_EDGE
+            : -Infinity
         // The bar never leaves the board: x within the inner width, y
-        // between the top edge and the bottom of the board's content
+        // between the top edge and the LOWER of two caps — the bottom of
+        // the board's content, or the bottom of the currently visible
+        // viewport. A bar may legitimately hang past the last row into
+        // empty board space (that is exactly what the flip below does on a
+        // short board), so the content cap alone is too tight; the viewport
+        // cap keeps such a bar on screen. Reachability envelope = content
+        // bottom OR visible viewport, whichever is lower.
+        //
+        // Behavior-neutral for the automatic anchor: its y = py(l.y) - GAP
+        // - h sits at least rowStep + GAP - margin - EDGE ABOVE the content
+        // cap (a selected item's y + h <= maxY), and rowStep + GAP > margin
+        // + EDGE on both grids (v1 66 > 14, v2 16 > 9). Only manual parks
+        // and the flip can reach the relaxed zone.
         const clampPos = (x: number, y: number) => ({
             x: Math.min(
                 Math.max(x, TOOLBAR_EDGE),
                 Math.max(TOOLBAR_EDGE, gridWidth - toolbarSize.w - TOOLBAR_EDGE)),
             y: Math.min(
                 Math.max(y, TOOLBAR_EDGE),
-                Math.max(TOOLBAR_EDGE, py(maxY) - grid.margin - toolbarSize.h - TOOLBAR_EDGE)),
+                Math.max(TOOLBAR_EDGE, Math.max(
+                    py(maxY) - effGrid.margin - toolbarSize.h - TOOLBAR_EDGE,
+                    viewportCapY))),
         })
+        // Manual park runs through the same relaxed cap as the flip, so
+        // grabbing the grip while the bar is in a flipped position does not
+        // yank it up by GAP + h + EDGE and refuse to be dragged back down.
         if (toolbarManual) return clampPos(toolbarManual.x, toolbarManual.y)
         const rects = layout.filter(l => selectedSet.has(l.i))
         if (rects.length === 0) return null
+        const bboxCenterX = () => {
+            const x0 = Math.min(...rects.map(l => l.x))
+            const x1 = Math.max(...rects.map(l => l.x + l.w))
+            return (px(x0) + px(x1) - effGrid.margin) / 2
+        }
+        // Flip below a wholly top-edge selection, when it fits (see above).
+        // No viewport element = viewportCapY is -Infinity = nothing to fit
+        // against = no flip.
+        if (rects.every(l => py(l.y) < TOOLBAR_EDGE + toolbarSize.h + TOOLBAR_GAP)) {
+            const y1 = Math.max(...rects.map(l => l.y + l.h))
+            const flipY = py(y1) - effGrid.margin + TOOLBAR_GAP
+            if (flipY <= viewportCapY) {
+                // Both axes go through clampPos: the fits gate IS
+                // `flipY <= viewportCapY`, so the relaxed y cap passes it
+                // through untouched (it is the max of that and the content
+                // cap). Uniform with every other return here.
+                return clampPos(bboxCenterX() - toolbarSize.w / 2, flipY)
+            }
+        }
         let anchorTop: number
         let centerX: number
         if (rects.length === 2 && rects[0].y !== rects[1].y) {
             const lower = rects[0].y > rects[1].y ? rects[0] : rects[1]
             anchorTop = py(lower.y)
-            centerX = px(lower.x) + (lower.w * unitX - grid.margin) / 2
+            centerX = px(lower.x) + (lower.w * unitX - effGrid.margin) / 2
         } else {
-            const x0 = Math.min(...rects.map(l => l.x))
-            const x1 = Math.max(...rects.map(l => l.x + l.w))
             anchorTop = py(Math.min(...rects.map(l => l.y)))
-            centerX = (px(x0) + px(x1) - grid.margin) / 2
+            centerX = bboxCenterX()
         }
         return clampPos(centerX - toolbarSize.w / 2, anchorTop - TOOLBAR_GAP - toolbarSize.h)
-    }, [selected.length, toolbarManual, layout, selectedSet, gridWidth, grid, toolbarSize])
+    }, [selected.length, toolbarManual, layout, selectedSet, gridWidth, effGrid, toolbarSize])
     // Dragging the grip moves the bar freely; on release it snaps
     // vertically to the nearest resting spot — just above an item's top
-    // edge, or pinned below the board's top — so a parked bar sits at the
-    // same kind of place the automatic anchor picks. Only items the bar
-    // horizontally overlaps at its drop position count as snap targets: a
-    // top edge on the far side of the board is not a visible line here,
-    // and snapping to it would park the bar at a seemingly random height
-    // through the middle of whatever it IS over. Horizontal stays
-    // wherever it was dropped (clamped to the board).
+    // edge, just below an item's bottom edge (the automatic anchor rests
+    // there too, since the top-edge flip), or pinned below the board's
+    // top — so a parked bar sits at the same kind of place the automatic
+    // anchor picks. Only items the bar horizontally overlaps at its drop
+    // position count as snap targets: an edge on the far side of the
+    // board is not a visible line here, and snapping to it would park the
+    // bar at a seemingly random height through the middle of whatever it
+    // IS over. Horizontal stays wherever it was dropped (clamped to the
+    // board). Vertically the snap shares the renderer's reachability
+    // envelope (content bottom OR visible viewport, whichever is lower),
+    // so every spot it picks survives the next clampPos unchanged.
     const onToolbarGripDown = (e: React.PointerEvent) => {
         if (e.button !== 0) return
         const area = gridAreaRef.current
@@ -908,21 +1760,42 @@ export function PinBoard(
             window.removeEventListener("pointermove", onMove)
             window.removeEventListener("pointerup", onUp)
             const raw = posFrom(ev)
-            const colW = (gridWidth - 2 * grid.padding - (grid.columns - 1) * grid.margin) / grid.columns
-            const unitX = colW + grid.margin
-            const px = (x: number) => grid.padding + x * unitX
-            const py = (y: number) => grid.padding + y * rowStep(grid)
+            const colW = (gridWidth - 2 * effGrid.padding - (effGrid.columns - 1) * effGrid.margin) / effGrid.columns
+            const unitX = colW + effGrid.margin
+            const px = (x: number) => effGrid.padding + x * unitX
+            const py = (y: number) => effGrid.padding + y * rowStep(effGrid)
             // The bar's resting x-span (clamped like the renderer clamps),
             // for the horizontal-overlap test
             const xl = Math.min(
                 Math.max(raw.x, TOOLBAR_EDGE),
                 Math.max(TOOLBAR_EDGE, gridWidth - toolbarSize.w - TOOLBAR_EDGE))
             const xr = xl + toolbarSize.w
+            // Below-edge candidates are held to the renderer's own y cap: a
+            // spot clampPos would immediately drag back up over the item is
+            // not a resting spot. That cap is the RELAXED one — content
+            // bottom or visible viewport bottom, whichever is lower — so
+            // the below-the-last-row spot still exists on short boards,
+            // which is exactly where the flip fires; with the content cap
+            // alone the nearest surviving candidate was TOOLBAR_EDGE and
+            // the bar parked over the very overlay buttons this placement
+            // exists to uncover. Fresh viewport read: this is a release
+            // handler, so the board may have been scrolled since placement.
+            // An accepted b satisfies EDGE <= b <= belowCap, so the
+            // renderer's clampPos leaves it exactly where it was dropped.
+            const maxY = layout.reduce((acc, l) => Math.max(acc, l.y + l.h), 0)
+            const view = scrollAreaRef.current
+                ?.querySelector<HTMLElement>("[data-radix-scroll-area-viewport]")
+            const belowCap = Math.max(
+                py(maxY) - effGrid.margin - toolbarSize.h - TOOLBAR_EDGE,
+                view ? view.scrollTop + view.clientHeight - toolbarSize.h - TOOLBAR_EDGE : -Infinity)
             let best = TOOLBAR_EDGE
             for (const l of layout) {
-                if (px(l.x) >= xr || px(l.x + l.w) - grid.margin <= xl) continue
+                if (px(l.x) >= xr || px(l.x + l.w) - effGrid.margin <= xl) continue
                 const c = py(l.y) - TOOLBAR_GAP - toolbarSize.h
                 if (c >= TOOLBAR_EDGE && Math.abs(c - raw.y) < Math.abs(best - raw.y)) best = c
+                const b = py(l.y + l.h) - effGrid.margin + TOOLBAR_GAP
+                if (b >= TOOLBAR_EDGE && b <= belowCap
+                    && Math.abs(b - raw.y) < Math.abs(best - raw.y)) best = b
             }
             setToolbarManual({ x: raw.x, y: best })
         }
@@ -1094,7 +1967,10 @@ export function PinBoard(
     // In fullscreen the board effectively IS the screen, so the surface
     // widens to the whole viewport: any press not claimed by the board
     // itself (whose background handler already arms), a pin, an overlay
-    // control or a floating panel starts a marquee.
+    // control or a floating panel starts a marquee. The maximized search
+    // overlay is one of those panels: a press on its own padding must not
+    // rubber-band the board underneath it
+    // (docs/maximized-pinboard-search-overlay-design.md §7).
     useEffect(() => {
         const onDown = (e: PointerEvent) => {
             if (e.button !== 0) return
@@ -1103,7 +1979,8 @@ export function PinBoard(
             const onFrame = t.hasAttribute?.("data-pinboard-frame")
             const fromViewport = fs && !isInteractiveTarget(t) && !t.closest?.(
                 '[data-pinboard-area], [data-pin-key], [data-selection-toolbar],'
-                + ' [data-pinboard-history], [data-radix-popper-content-wrapper],'
+                + ' [data-pinboard-history], [data-search-overlay],'
+                + ' [data-radix-popper-content-wrapper],'
                 + ' [role="menu"], [role="dialog"]'
             )
             if (!onFrame && !fromViewport) return
@@ -1118,10 +1995,13 @@ export function PinBoard(
     useEffect(() => {
         if (!escActive) return
         const onKey = (e: KeyboardEvent) => {
-            if (e.key !== "Escape") return
+            if (e.key !== "Escape" || inElementFullscreen()) return
             // While hole targeting is active Esc belongs to it (its own
             // listener cancels the targeting); the selection survives
             if (holeActiveRef.current) return
+            // Same for the Scale & Move session: its overlay's listener
+            // cancels the gesture or ends the session
+            if (transformActiveRef.current) return
             endMarqueeRef.current()
             usePinSelection.getState().clear()
         }
@@ -1134,7 +2014,7 @@ export function PinBoard(
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
             if ((e.key !== "a" && e.key !== "A") || !(e.ctrlKey || e.metaKey)
-                || e.altKey || e.shiftKey) return
+                || e.altKey || e.shiftKey || inElementFullscreen()) return
             const t = e.target as HTMLElement | null
             if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return
             const keys = readingOrder.filter(k => !k.endsWith("__preview"))
@@ -1145,11 +2025,46 @@ export function PinBoard(
         window.addEventListener("keydown", onKey)
         return () => window.removeEventListener("keydown", onKey)
     }, [readingOrder])
+    // Delete runs Remove Selected — the keyboard twin of the toolbar verb.
+    // Backspace is deliberately NOT bound: it is the browser-back gesture
+    // on some setups, and Back is this feature's undo.
+    useEffect(() => {
+        if (selected.length === 0) return
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key !== "Delete" || inElementFullscreen()) return
+            // A press aimed at a text field is that field's own edit
+            const t = e.target as HTMLElement | null
+            if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return
+            // Crop mode, hole targeting, a live carry and the Scale & Move
+            // session each own the keyboard while they run (Escape already
+            // routes to them first), and a splice under them would shift
+            // the record offsets they are holding mid-gesture
+            if (cropKey !== null || holeActiveRef.current || carrySha
+                || transformActiveRef.current) return
+            // An open dialog OWNS Delete: the library dialog, the rename
+            // dialog and the confirm dialogs (deleting a saved version,
+            // say) all sit over the board, and a press aimed at one of
+            // them must not silently take the board's pins away behind
+            // the overlay. Matched against the document rather than the
+            // event target — Radix parks focus on the dialog content or
+            // on <body>, neither of which a closest() from the press can
+            // relate back to the board.
+            if (document.querySelector('[role="dialog"]')) return
+            e.preventDefault()
+            removePins(selected)
+        }
+        window.addEventListener("keydown", onKey)
+        return () => window.removeEventListener("keydown", onKey)
+        // records: the splice closes over this render's board state, so the
+        // listener must be re-bound when the board changes underneath it
+    }, [selected, records, cropKey, carrySha])
     // Pressing anywhere that isn't a pin, the selection toolbar or a popup
     // menu — the board background, the rest of the app — deselects, the
     // way every file manager does. Ctrl/shift presses are exempt so
     // additive marquees and range clicks can start anywhere. Capture
-    // phase on document, so this runs before any React handler.
+    // phase on document, so this runs before any React handler. The
+    // maximized search overlay is exempt too: running a search over the
+    // board must not clear the pin selection (design doc §7).
     useEffect(() => {
         if (selected.length === 0) return
         const onDown = (e: PointerEvent) => {
@@ -1163,7 +2078,8 @@ export function PinBoard(
             if (!t || t === document.documentElement || t === document.body) return
             if (t.closest?.(
                 '[data-pin-key], [data-selection-toolbar], [data-scroll-area-scrollbar],'
-                + ' [data-radix-popper-content-wrapper], [role="menu"], [data-hole-overlay]'
+                + ' [data-radix-popper-content-wrapper], [role="menu"], [data-hole-overlay],'
+                + ' [data-transform-overlay], [data-search-overlay]'
             )) return
             usePinSelection.getState().clear()
         }
@@ -1238,6 +2154,7 @@ export function PinBoard(
         const wasNavigation = consumePinboardNavigation()
         const pendingEdit = consumePinboardPendingEdit()
         const explicitPlacement = consumePinboardExplicitPlacement()
+        const maximizeRequest = consumePinboardMaximizeRequest()
         if (prev === null) {
             // First observation is normally just the baseline — but a
             // pending-edit mark means pins were added/removed from outside
@@ -1246,8 +2163,8 @@ export function PinBoard(
             // takes precedence: a restored version replaced those records.
             if (pendingEdit && !wasNavigation && count > 0 && autoLayoutRef.current) {
                 void fillViewportRef.current(false)
-            } else if (variant === "grid" && !wasNavigation && count > 0
-                && autoLayoutRef.current) {
+            } else if ((maximizeRequest || variant === "grid") && !wasNavigation
+                && count > 0 && autoLayoutRef.current) {
                 // Opening the board in the grid host is an intent to expand:
                 // its viewport is the gallery's with the thumbnail row gone,
                 // so the fill targets the bigger fold and ratchets the high
@@ -1257,6 +2174,16 @@ export function PinBoard(
                 // Not in the gallery: a tab switch back there is navigation,
                 // not a layout request. (The pending-edit fill above already
                 // targets the current fold, so it subsumes this trigger.)
+                //
+                // `maximizeRequest` is the SAME intent arriving by a route
+                // the viewport-growth effect below cannot see: the tab
+                // chip's maximize button activates the tab and sets `fs` in
+                // one tick, so the board mounts already fullscreen and that
+                // effect's baseline reads "was already maximized" (see
+                // lib/pinboardNavigation.ts). Handled HERE rather than
+                // there so the grid host cannot fill twice for one press —
+                // both routes share this single branch, and skipIfCovered
+                // makes a second attempt a no-op anyway.
                 void fillViewportRef.current(false, true)
             }
             return
@@ -1276,8 +2203,18 @@ export function PinBoard(
         if (explicitPlacement) return
         if (!autoLayoutRef.current) return
         // Fire-and-forget: fillViewport is async (fetches metadata) and
-        // no-ops on its own when the container can't be measured
-        void fillViewportRef.current(false)
+        // no-ops on its own when the container can't be measured.
+        // REPLACE, not push: this fill is the tail of somebody else's
+        // structural write (a pin add, or a removal), and it must land in
+        // that write's history entry. Being async — it awaits a metadata
+        // fetch — nuqs cannot merge it, so a push would leave a second
+        // entry holding the removed-but-not-repacked board. That entry is
+        // what one Back press would reach, while removePins' toast
+        // promises Back restores the pins; the same asymmetry would make
+        // Back after a pin add land on a half-integrated board. Only the
+        // explicit fills (menu verbs, the viewport-growth trigger) are
+        // their own undo step and keep push.
+        void fillViewportRef.current(false, false, "replace")
     }, [records])
     // Viewport-growth trigger: explicit user actions that give the board
     // more room — maximizing it, hiding the gallery thumbnails — re-run the
@@ -1313,8 +2250,47 @@ export function PinBoard(
             reappear as a hover-revealed bar at the top of the viewport */}
         {fs && <PinboardFullscreenBar />}
         {/* data-pinboard-area: the version-history panel docks into this
-            box's corners (PinboardHistory measures it by this attribute) */}
-        <ScrollArea ref={scrollAreaRef} data-pinboard-area className="overflow-y-auto">
+            box's corners (PinboardHistory measures it by this attribute)
+
+            h-[97vh] WHILE MAXIMIZED IS LOAD-BEARING AND SUBTLE — do not
+            remove it as redundant with the wrapper's own h-[97vh] below.
+            Without a DEFINITE height on this Root the bottom-dock scroll
+            reservation (the two spacers further down) adds exactly ZERO net
+            range, and it corrupts every measurement taken off this element.
+            Why: Radix's Viewport is `h-full`, so with an auto-height Root
+            (this box is a flex item in an auto-height [data-pinboard-frame])
+            the percentage resolves against an auto containing block and the
+            Viewport is auto too — it then GROWS by the spacer's height 1:1,
+            cancelling the reservation term for term, and drags this Root's
+            own clientHeight up with it. That clientHeight is consumed by
+            hooks/pinboardLayout.ts (the fill/mosaic FOLD, which is
+            PERSISTED), PinboardExportMenu / PinboardMosaicMenu /
+            lib/pinboardAnimatedExport (export height — a dock-height empty
+            band in the output), and PinboardHistory's corner docking; the
+            Viewport's rect drives the drag autoscroll edge and the selection
+            toolbar's viewport cap. Measured at 1920x1080 with a 400px dock,
+            in a static harness reproducing this exact chain:
+
+              auto Root + spacers: Root clientHeight 1448 (was 1048),
+                                   range 600 tall / 0 fits — no gain at all
+              97vh Root + spacers: Root clientHeight 1048 (unchanged),
+                                   range 1000 tall / 400 fits — +inset, no
+                                   double count
+
+            NOT h-full on the grid wrapper below either: Radix wraps the
+            Viewport's children in a `display:table; min-width:100%` div, so
+            a percentage height there resolves against an auto table box and
+            collapses the wrapper to its content (measured: wrapper 2048
+            instead of 1048, range double-counted at 1400). The wrapper keeps
+            its own 97vh, which is the same number this Root now has.
+
+            Non-maximized is untouched: no class is added, and the Root goes
+            back to being sized by its content. */}
+        <ScrollArea
+            ref={scrollAreaRef}
+            data-pinboard-area
+            className={cn("overflow-y-auto", fs && "h-[97vh]")}
+        >
             <div
                 ref={gridAreaRef}
                 // Rubber-band start from the board background (presses on
@@ -1363,8 +2339,8 @@ export function PinBoard(
                         return
                     }
                     const rect = e.currentTarget.getBoundingClientRect()
-                    const gx = (e.clientX - rect.left - grid.padding) / (holeColW + grid.margin)
-                    const gy = (e.clientY - rect.top - grid.padding) / rowStep(grid)
+                    const gx = (e.clientX - rect.left - effGrid.padding) / (holeColW + effGrid.margin)
+                    const gy = (e.clientY - rect.top - effGrid.padding) / rowStep(effGrid)
                     const r = pickRectAt(holeRects, gx, gy)
                     if (!r || !validHole(r)) {
                         holeToast("No hole under the drop — nothing was added")
@@ -1373,7 +2349,30 @@ export function PinBoard(
                     markPinboardExplicitPlacement()
                     pinItem.pinItem(sha256, r)
                 }}
-                className={`relative grow ${rglSettling ? "rgl-mount-still " : ""}${fs ? "h-[97vh]" : (
+                // The gesture floor (see gestureFreeze): the wrapper only
+                // stamps the variable and the phase class — the min-height
+                // itself lives on .react-grid-layout via globals.css. Never
+                // move it onto this wrapper as an inline style: a
+                // min-height HERE (block inside the Radix viewport's
+                // display:table div) resets the viewport's scrollTop to 0.
+                // On release the grid's min-height transitions to 0 and the
+                // browser walks scrollTop down with it, one followable
+                // glide; the bubbled transitionend below ends the phase.
+                style={gestureFreeze ? {
+                    // The ref, not state.h: autoscroll ratchets the floor
+                    // mid-gesture without re-rendering (see freezeHRef)
+                    ["--pinboard-freeze" as string]:
+                        `${freezeHRef.current ?? gestureFreeze.h}px`,
+                } as React.CSSProperties : undefined}
+                onTransitionEnd={(e) => {
+                    if (e.propertyName === "min-height"
+                        && e.target instanceof HTMLElement
+                        && e.target.classList.contains("react-grid-layout")) {
+                        freezeHRef.current = null
+                        setGestureFreeze((f) => f?.releasing ? null : f)
+                    }
+                }}
+                className={`relative grow ${rglSettling ? "rgl-mount-still " : ""}${transformGesture ? "pinboard-transforming " : ""}${gestureFreeze ? (gestureFreeze.releasing ? "pinboard-freeze-releasing " : "pinboard-freeze ") : ""}${fs ? "h-[97vh]" : (
                     variant === "grid" ?
                         // Grid host: gallery-without-thumbnails sizing, with
                         // the 48px update-ribbon offset the grid view
@@ -1399,10 +2398,10 @@ export function PinBoard(
                     <GridBackground
                         className="z-0"
                         width={gridWidth}
-                        cols={grid.columns}
-                        rowHeight={grid.rowHeight}
-                        margin={[grid.margin, grid.margin]}
-                        containerPadding={[grid.padding, grid.padding]}
+                        cols={effGrid.columns}
+                        rowHeight={effGrid.rowHeight}
+                        margin={[effGrid.margin, effGrid.margin]}
+                        containerPadding={[effGrid.padding, effGrid.padding]}
                         rows="auto"
                         height={gridContentHeight}
                         color="rgba(128,128,128,0.18)"
@@ -1447,8 +2446,14 @@ export function PinBoard(
                                 }
                             }
                         }
-                        onLayoutChange([...currentLayout], drops, undefined, echo, manual)
+                        onLayoutChange([...currentLayout], drops, undefined,
+                            undefined, undefined, echo ? "replace" : undefined,
+                            manual, true)
                     }}
+                    // Drags shrink the grid too (compaction pulls the rest
+                    // up when the bottom item moves), so they get the same
+                    // scroll-range freeze as resizes
+                    onDragStart={() => freezeScrollRange()}
                     // The crop-mode exemption: there the drag/resize IS the
                     // crop edit, not a layout statement — it composes with
                     // auto-layout (the manual crop survives as the base of
@@ -1456,6 +2461,7 @@ export function PinBoard(
                     onDragStop={() => {
                         gestureRef.current = true
                         if (cropKey === null) markManualGesture()
+                        releaseScrollFloor()
                     }}
                     // Size of the grey preview box (10x10 in v1 units)
                     droppingItem={{ i: '__preview', x: 0, y: 0, w: Math.round(10 * sx), h: Math.round(10 * sy) }}
@@ -1470,12 +2476,27 @@ export function PinBoard(
                     // layout matches the visual box and the anchor holds;
                     // leaving crop mode re-compacts, which is where v1
                     // ended up too (the crop committed at release is
-                    // immune to that move, see onResizeStop). The vertical
-                    // compactor is the skyline O(n log n) one from extras;
-                    // same semantics as the classic quadratic compactor for
-                    // non-overlapping, non-static layouts like ours.
-                    compactor={cropKey !== null ? noCompactor : fastVerticalCompactor}
+                    // immune to that move, see onResizeStop). Verb writes
+                    // don't wait for that: they compact themselves inside
+                    // onLayoutChange while crop mode is on, since their
+                    // layouts assume a compaction pass RGL isn't providing
+                    // here. The vertical compactor is the skyline
+                    // O(n log n) one from extras; same semantics as the
+                    // classic quadratic compactor for non-overlapping,
+                    // non-static layouts like ours.
+                    //
+                    // And off for the whole board whenever gravity is off
+                    // (the layout token's float switch) — that IS the
+                    // feature: items stay exactly where they were put.
+                    // noCompactor still pushes collisions apart during
+                    // drags, which is the desired no-gravity feel; the verbs
+                    // whose writes can create overlaps resolve them
+                    // themselves (see resolveGrowth in pinboardLayout).
+                    compactor={cropKey !== null || float ? noCompactor : fastVerticalCompactor}
                     onResizeStart={(_currentLayout, oldItem, newItem, _placeholder, e, node) => {
+                        // Every resize freezes the board height (see
+                        // gestureFreeze), crop-mode or not
+                        freezeScrollRange()
                         if (!oldItem || !newItem || oldItem.i !== cropKey) return
                         setCropResizing(true)
                         // In crop mode the box is the crop window: clamp its
@@ -1497,10 +2518,10 @@ export function PinBoard(
                             .exec(String((e.target as HTMLElement)?.className ?? ''))?.[1]
                         if (!handle) return
                         const { image, box } = geom
-                        const colWidth = (areaWidth - 2 * grid.padding
-                            - (grid.columns - 1) * grid.margin) / grid.columns
-                        const unitX = colWidth + grid.margin
-                        const unitY = grid.rowHeight + grid.margin
+                        const colWidth = (areaWidth - 2 * effGrid.padding
+                            - (effGrid.columns - 1) * effGrid.margin) / effGrid.columns
+                        const unitX = colWidth + effGrid.margin
+                        const unitY = effGrid.rowHeight + effGrid.margin
                         if (!(unitX > 0) || !(unitY > 0)) return
                         // Smallest span (units) whose moving edge reaches AT
                         // LEAST the image edge (span of w cells = w*unit −
@@ -1514,7 +2535,7 @@ export function PinBoard(
                         // pre-existing dead space doesn't snap the box on grab
                         // (growth is simply capped, shrinking stays free)
                         const cap = (px: number, unit: number, current: number) =>
-                            Math.max(current, Math.ceil((px + grid.margin) / unit))
+                            Math.max(current, Math.ceil((px + effGrid.margin) / unit))
                         if (handle.includes('e')) newItem.maxW = cap(image.right - box.left, unitX, newItem.w)
                         if (handle.includes('w')) newItem.maxW = cap(box.right - image.left, unitX, newItem.w)
                         if (handle.includes('s')) newItem.maxH = cap(image.bottom - box.top, unitY, newItem.h)
@@ -1524,6 +2545,7 @@ export function PinBoard(
                         gestureRef.current = true
                         if (cropKey === null) markManualGesture()
                         setCropResizing(false)
+                        releaseScrollFloor()
                         if (newItem) {
                             newItem.maxW = undefined
                             newItem.maxH = undefined
@@ -1593,10 +2615,10 @@ export function PinBoard(
                                 }),
                             }
                         }
-                        const colWidth = (areaWidth - 2 * grid.padding
-                            - (grid.columns - 1) * grid.margin) / grid.columns
-                        const unitX = colWidth + grid.margin
-                        const unitY = grid.rowHeight + grid.margin
+                        const colWidth = (areaWidth - 2 * effGrid.padding
+                            - (effGrid.columns - 1) * effGrid.margin) / effGrid.columns
+                        const unitX = colWidth + effGrid.margin
+                        const unitY = effGrid.rowHeight + effGrid.margin
                         if (!(unitX > 0) || !(unitY > 0)) return
                         const cells = (px: number, unit: number) =>
                             Math.max(0, Math.floor(px / unit))
@@ -1646,7 +2668,7 @@ export function PinBoard(
 
                     }}
                 >
-                    {pinnedFiles.map(([i, sha256, thumbnail, file]) => (
+                    {pinnedFiles.map(([i, sha256, file]) => (
                         <div
                             key={i}
                             data-pin-key={i}
@@ -1668,20 +2690,26 @@ export function PinBoard(
                                     key={i}
                                     layoutKey={i}
                                     sha256={sha256}
-                                    thumbnail={thumbnail}
                                     file={file}
                                     onLayoutChange={onLayoutChange}
                                     layout={layout}
                                     crops={crops}
                                     autoCrops={autoCrops}
                                     locks={itemLocks}
+                                    orients={orients}
                                     highWater={highWater}
+                                    float={float}
+                                    uniform={uniform}
                                     crop={crops[i] ?? null}
                                     autoCrop={autoCrops[i] ?? null}
                                     trim={trims[i] ?? null}
                                     lock={itemLocks[i] ?? null}
+                                    orientation={orients[i] ?? null}
+                                    audio={audios[i] ?? null}
+                                    onAudioChange={(audio) => onItemAudioChange(i, audio)}
                                     lockBadgesVisible={lockBadgesVisible}
                                     onLockChange={(lock) => setLockForKeys([i], lock)}
+                                    cropKey={cropKey}
                                     cropMode={cropKey === i}
                                     boxResizing={cropKey === i && cropResizing}
                                     imageExtentRef={cropImageExtentRef}
@@ -1689,15 +2717,78 @@ export function PinBoard(
                                     onCropChange={(crop) => onItemCropChange(i, crop)}
                                     onTrimChange={(trim) => onItemTrimChange(i, trim)}
                                     onDuplicate={() => onDuplicatePin(i)}
+                                    onUnpin={() => onUnpinPin(i)}
+                                    onRemove={removePins}
+                                    onRemoveAllBut={removeAllBut}
                                     scrollAreaRef={scrollAreaRef}
-                                    grid={grid}
+                                    // The pin's context menu runs its own
+                                    // layout-verb instance, so it needs the
+                                    // rendered grid like the board's does
+                                    grid={effGrid}
+                                    gridWidth={gridWidth}
                                     isV1={isV1}
                                     onUpgradeGrid={upgradeGrid}
                                     dbs={dbs}
+                                    displayLoopTrigger={displayLoopTrigger}
                                 />}
                         </div>
                     ))}
                 </GridLayout>
+                {/* Bottom-dock scroll reservation, half one
+                    (docs/maximized-pinboard-search-overlay-design.md §7).
+                    While maximized the search dock covers the bottom band of
+                    the viewport, and without extra scroll range the board's
+                    last rows sit under it forever — worse than the normal
+                    gallery, where the thumbnail strip takes real layout space
+                    so the board can always be scrolled clear of it.
+                    --pinboard-bottom-inset is published by the dock while it
+                    is SHOWN (pinned or not) and tracks its live height, so
+                    consuming the var is the whole implementation; absent, it
+                    resolves to 0px and this is a zero-height box.
+
+                    Two spacers, because the board has two possible bottoms.
+                    A board taller than the wrapper overflows it and the
+                    scroll range is the GRID's bottom — this spacer, the
+                    grid's in-flow successor, follows it. A board that FITS
+                    (the common case: fillViewport sizes it to the container)
+                    leaves the range at the wrapper's own fixed-height box,
+                    which clamps this spacer away — the twin after the wrapper
+                    covers that. The range ends up at max(grid bottom, wrapper
+                    bottom) + inset either way.
+
+                    In-flow blocks deliberately: the grid is the wrapper's
+                    in-flow child whose height already defines the range at
+                    rest (see the gesture-floor note above), whereas an
+                    absolutely positioned spacer relies on abspos overflow
+                    reaching the Radix viewport's scrollable area — the
+                    engine-dependent propagation that already bit the floor.
+
+                    THIS ONLY WORKS BECAUSE THE SCROLLAREA ROOT HAS A DEFINITE
+                    HEIGHT while maximized (see the long note on the Root
+                    above). Radix's Viewport is `h-full`; against an
+                    auto-height Root it is auto too and simply GROWS by the
+                    spacer, so the reservation nets to zero and the Root's
+                    clientHeight — which the fold, the exporters and the
+                    history panel all measure — inflates by a dock height.
+                    Both spacers and the Root's height class are one
+                    mechanism; removing any of the three breaks the other two.
+
+                    Nothing here feeds the grid's math. The grid's width comes
+                    from the WRAPPER (useContainerWidth's ResizeObserver on
+                    gridAreaRef) and a block child's height cannot move it;
+                    holeRows and gridContentHeight read that wrapper's own
+                    clientHeight, fixed by its height class; and the fill
+                    verbs' fold measures [data-pinboard-area] — the ScrollArea
+                    ROOT, outside the scrolling content entirely. Never move
+                    the reservation onto the wrapper as padding: clientHeight
+                    includes padding, which would silently change both the
+                    hole mask and the fold. */}
+                {fs && (
+                    <div
+                        aria-hidden
+                        style={{ height: "var(--pinboard-bottom-inset, 0px)" }}
+                    />
+                )}
                 {marquee && (
                     <div
                         className="absolute z-40 pointer-events-none border border-blue-400 bg-blue-400/10 rounded-xs"
@@ -1706,12 +2797,12 @@ export function PinBoard(
                 )}
                 {holeMode && gridWidth > 0 && (
                     <HoleTargetOverlay
-                        grid={grid}
+                        grid={effGrid}
                         gridWidth={gridWidth}
                         // Cover the full free mask even when the grid
                         // content ends above it (the empty bottom band)
                         contentHeight={Math.max(gridContentHeight,
-                            grid.padding + holeRows * rowStep(grid))}
+                            effGrid.padding + holeRows * rowStep(effGrid))}
                         rows={holeRows}
                         occupied={holeOccupied}
                         freeRects={holeRects}
@@ -1738,35 +2829,92 @@ export function PinBoard(
                     >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                            src={getFileURL(dbs, "thumbnail", "sha256", carrySha)}
+                            // An 80x80 box, so the smallest tier covers it to
+                            // beyond any display density — `grid-xs` (256)
+                            // still covers it at DPR 3 (§2 names this ghost
+                            // explicitly: it paints plain centre
+                            // `object-cover`, and a top-crop shown here for an
+                            // extreme-aspect item is accepted as a non-issue).
+                            //
+                            // `still=true` UNCONDITIONALLY, unlike every other
+                            // grid-tier call site: the carry state is a bare
+                            // sha256 with no row behind it, so there is nothing
+                            // here to test for animation, and a grid tier
+                            // answers an animated item above the raw floor with
+                            // `video/mp4` — which this <img> would render as a
+                            // broken picture. The endpoint documents the flag
+                            // as a no-op for static items and for animated ones
+                            // at or below the floor, so the only cost of
+                            // spelling it out for every ghost is a second cache
+                            // entry for an 80x80 thumbnail. A ghost that rides
+                            // the cursor for the length of a drag has no
+                            // business animating anyway.
+                            src={thumbnailStillURL(dbs, carrySha, "grid-xs")}
                             alt=""
                             className="w-20 h-20 object-cover rounded shadow-lg opacity-80 border border-white/40"
                         />
                     </div>
                 )}
-                {selected.length > 0 && toolbarPos && (
+                {transformOn && gridWidth > 0 && transformItems
+                    && transformItems.length >= 2 && (
+                        <PinboardTransformOverlay
+                            grid={effGrid}
+                            gridWidth={gridWidth}
+                            // Cover the selection even when it reaches below
+                            // the grid content box (items parked below the
+                            // fold), same envelope logic as the hole overlay
+                            contentHeight={Math.max(gridContentHeight,
+                                Math.max(...transformItems.map(r => r.t + r.h))
+                                + effGrid.padding)}
+                            items={transformItems}
+                            gridAreaRef={gridAreaRef}
+                            onGesture={(active) => {
+                                setTransformGesture(active)
+                                // The preview changes item heights like any
+                                // RGL gesture, so it gets the same
+                                // scroll-range freeze and edge autoscroll
+                                if (active) freezeScrollRange()
+                                else releaseScrollFloor()
+                            }}
+                            onCommit={commitTransform}
+                            onExit={() => setTransformOn(false)}
+                        />
+                    )}
+                {selected.length > 0 && toolbarPos && !transformOn && (
                     <SelectionToolbar
                         innerRef={toolbarRef}
                         style={{ left: toolbarPos.x, top: toolbarPos.y }}
                         onGripDown={onToolbarGripDown}
-                        count={selected.length}
+                        keys={selected}
                         cropOn={selectionCrop}
+                        gravity={!float}
                         selHasAnchor={selected.some(k => itemLocks[k] === "anchor")}
                         holeActive={holeVerb}
                         onVerb={(id) => {
                             switch (id) {
                                 case "arrange": runVerb("Arrange", arrangeSelection(selected)); break
+                                case "uniform": runVerb("Uniform", uniformSelection(selected)); break
                                 case "swap": runVerb("Swap", swapItems(selected[0], selected[1])); break
                                 case "hole": holeVerb ? setHoleVerb(false) : enterHoleTarget(); break
+                                case "transform": enterTransform(); break
                                 case "reflow": runVerb("Reflow", arrangeSelection(selected, true)); break
                                 case "shuffle": runVerb("Shuffle", arrangeSelection(selected, false, true)); break
                                 case "grow": runVerb("Grow to Fill", growSelection(selected)); break
                                 case "shiftLeft": shiftSelection(selected, "left"); break
                                 case "shiftCenter": shiftSelection(selected, "center"); break
                                 case "shiftRight": shiftSelection(selected, "right"); break
+                                case "compressLeft": runVerb("Compress Left", compressSelection(selected, "left")); break
+                                case "compressRight": runVerb("Compress Right", compressSelection(selected, "right")); break
+                                case "compressUp": runVerb("Compress Up", compressSelection(selected, "up")); break
                                 case "mirrorH": void mirrorSelection(selected, "horizontal"); break
                                 case "mirrorV": void mirrorSelection(selected, "vertical"); break
+                                case "flipImageH": runVerb("Flip Images", orientSelection(selected, "flipH")); break
+                                case "flipImageV": runVerb("Flip Images", orientSelection(selected, "flipV")); break
+                                case "rotateImageL": runVerb("Rotate Images", orientSelection(selected, "ccw")); break
+                                case "rotateImageR": runVerb("Rotate Images", orientSelection(selected, "cw")); break
                                 case "clearCrop": clearAutoCropSelection(selected); break
+                                case "removeSel": removePins(selected); break
+                                case "removeRest": removeAllBut(selected); break
                             }
                         }}
                         onRegion={(preset) => runVerb("Send to Region", sendSelectionToRegion(selected, preset))}
@@ -1782,6 +2930,20 @@ export function PinBoard(
                     />
                 )}
             </div>
+            {/* Bottom-dock scroll reservation, half two: the case where the
+                board FITS its wrapper, so the wrapper's own box — not the
+                grid — is the bottom of the scroll range and the spacer
+                inside it is clamped away. Sibling of the grid area, still
+                in-flow inside the Radix viewport's content, so it extends
+                the range by the dock's height without touching the wrapper
+                the grid measures itself against. See the long note beside
+                its twin, above the grid. */}
+            {fs && (
+                <div
+                    aria-hidden
+                    style={{ height: "var(--pinboard-bottom-inset, 0px)" }}
+                />
+            )}
         </ScrollArea>
     </>)
 }
@@ -1797,8 +2959,9 @@ function SelectionToolbar({
     innerRef,
     style,
     onGripDown,
-    count,
+    keys,
     cropOn,
+    gravity,
     selHasAnchor,
     holeActive = false,
     onVerb,
@@ -1810,8 +2973,13 @@ function SelectionToolbar({
     innerRef: React.Ref<HTMLDivElement>
     style: React.CSSProperties
     onGripDown: (e: React.PointerEvent) => void
-    count: number
+    // The selected layout keys. The bar shows their count and the verbs
+    // are dispatched by the parent, but the export menu needs the keys
+    // themselves — it composites exactly these items.
+    keys: string[]
     cropOn: boolean
+    // The board's gravity, for the verbs whose description depends on it
+    gravity: boolean
     // Whether the selection contains an anchored item (greys the mirrors)
     selHasAnchor: boolean
     // Whether Move-to-Hole targeting is live (lights its button up; the
@@ -1823,6 +2991,7 @@ function SelectionToolbar({
     onCropToggle: () => void
     onClear: () => void
 }) {
+    const count = keys.length
     const [pinned, setPinned] = useState<string[]>(DEFAULT_TOOLBAR_VERBS)
     // localStorage is read after mount (the initializer also runs during
     // SSR, where there is no storage); the bar only exists while a
@@ -1832,7 +3001,8 @@ function SelectionToolbar({
             const ids = JSON.parse(localStorage.getItem(TOOLBAR_VERBS_KEY) ?? "")
             if (Array.isArray(ids)) {
                 setPinned(ids.filter(id =>
-                    id === REGION_MENU_ID || SELECTION_VERBS.some(v => v.id === id)))
+                    id === REGION_MENU_ID || id === EXPORT_MENU_ID
+                    || SELECTION_VERBS.some(v => v.id === id)))
             }
         } catch { /* absent or corrupted preference: keep the default */ }
     }, [])
@@ -1850,6 +3020,49 @@ function SelectionToolbar({
     // stamps data-state on the trigger)
     const menuBtn = cn(btn,
         "data-[state=open]:bg-blue-100 data-[state=open]:text-blue-700 data-[state=open]:hover:bg-blue-200")
+    // One row renderer for both halves of the dropdown: the ordinary verbs
+    // (plus the region submenu) first, the removals last behind a separator
+    const verbRow = (v: SelectionVerb) => {
+        const disabled = verbDisabled(v)
+        return (
+            // Not Radix-disabled even when the verb is: that would make the
+            // row inert and unpinnable (e.g. Swap could never leave the bar
+            // except with exactly two items selected). The row just looks
+            // disabled and ignores selects instead.
+            <DropdownMenuItem key={v.id} title={verbTitle(v, gravity)}
+                onSelect={(e) => {
+                    // A select that originated on the pin toggle is never a
+                    // verb invocation — Radix fires select from pointerup,
+                    // so this guard backs up the toggle's own propagation
+                    // stops
+                    const t = (e as CustomEvent<{ originalEvent?: Event }>)
+                        .detail?.originalEvent?.target as HTMLElement | null
+                    if (t?.closest?.("[data-pin-toggle]")) { e.preventDefault(); return }
+                    if (disabled) { e.preventDefault(); return }
+                    onVerb(v.id)
+                }}
+            >
+                <span className={cn(
+                    "flex items-center gap-2",
+                    disabled && "opacity-40",
+                )}>
+                    <v.icon className="w-4 h-4" />
+                    {v.label}
+                </span>
+                {/* Shortcut label takes over the row's ml-auto, so the pin
+                    toggle keeps its place at the far right instead of the
+                    two auto margins splitting the free space between them. */}
+                {v.shortcut && (
+                    <DropdownMenuShortcut>{v.shortcut}</DropdownMenuShortcut>
+                )}
+                <PinToggle
+                    isPinned={pinned.includes(v.id)}
+                    onToggle={() => togglePin(v.id)}
+                    className={v.shortcut ? "ml-2" : undefined}
+                />
+            </DropdownMenuItem>
+        )
+    }
     return (
         <div
             ref={innerRef}
@@ -1883,40 +3096,7 @@ function SelectionToolbar({
                     </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-64">
-                    {SELECTION_VERBS.map(v => {
-                        const disabled = verbDisabled(v)
-                        const isPinned = pinned.includes(v.id)
-                        return (
-                            // Not Radix-disabled even when the verb is: that
-                            // would make the row inert and unpinnable (e.g.
-                            // Swap could never leave the bar except with
-                            // exactly two items selected). The row just
-                            // looks disabled and ignores selects instead.
-                            <DropdownMenuItem key={v.id} title={v.title}
-                                onSelect={(e) => {
-                                    // A select that originated on the pin
-                                    // toggle is never a verb invocation —
-                                    // Radix fires select from pointerup, so
-                                    // this guard backs up the toggle's own
-                                    // propagation stops
-                                    const t = (e as CustomEvent<{ originalEvent?: Event }>)
-                                        .detail?.originalEvent?.target as HTMLElement | null
-                                    if (t?.closest?.("[data-pin-toggle]")) { e.preventDefault(); return }
-                                    if (disabled) { e.preventDefault(); return }
-                                    onVerb(v.id)
-                                }}
-                            >
-                                <span className={cn(
-                                    "flex items-center gap-2",
-                                    disabled && "opacity-40",
-                                )}>
-                                    <v.icon className="w-4 h-4" />
-                                    {v.label}
-                                </span>
-                                <PinToggle isPinned={isPinned} onToggle={() => togglePin(v.id)} />
-                            </DropdownMenuItem>
-                        )
-                    })}
+                    {SELECTION_VERBS.filter(v => !v.removal).map(verbRow)}
                     {/* The region presets live in one submenu (seven
                         rarely-simultaneous targets would flood the list);
                         its pin toggle puts a menu-opening icon button on
@@ -1948,6 +3128,38 @@ function SelectionToolbar({
                             ))}
                         </DropdownMenuSubContent>
                     </DropdownMenuSub>
+                    {/* The other menu-not-verb: what the selection looks
+                        like as a FILE. One item saves the picture itself
+                        (cropped, oriented, at source resolution), several
+                        save a mosaic of exactly them. */}
+                    <DropdownMenuSub>
+                        <DropdownMenuSubTrigger
+                            title={count === 1
+                                ? "Save this item as an image file, cropped and oriented as it is on the board"
+                                : "Save the selected items as one image file"}
+                        >
+                            <span className="flex items-center gap-2">
+                                <ImageDown className="w-4 h-4" />
+                                {selectionExportLabel(count)}
+                            </span>
+                            <span className="ml-auto pl-2">
+                                <PinToggle
+                                    isPinned={pinned.includes(EXPORT_MENU_ID)}
+                                    onToggle={() => togglePin(EXPORT_MENU_ID)}
+                                />
+                            </span>
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="w-56">
+                            <SelectionExportMenuItems
+                                kit={dropdownMenuKit}
+                                keys={keys}
+                            />
+                        </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                    {/* The removals close the list, fenced off from the
+                        verbs that only rearrange what's there */}
+                    <DropdownMenuSeparator />
+                    {SELECTION_VERBS.filter(v => v.removal).map(verbRow)}
                 </DropdownMenuContent>
             </DropdownMenu>
             {BAR_ORDER.filter(id => pinned.includes(id)).map(id => {
@@ -1973,14 +3185,37 @@ function SelectionToolbar({
                         </DropdownMenuContent>
                     </DropdownMenu>
                 )
+                // Same shape for the pinned export menu: a size list can't
+                // live on an icon button either
+                if (id === EXPORT_MENU_ID) return (
+                    <DropdownMenu modal={false} key={id}>
+                        <DropdownMenuTrigger asChild>
+                            <button className={menuBtn}
+                                title={count === 1
+                                    ? "Save this item as an image file"
+                                    : "Save the selected items as one image file"}>
+                                <ImageDown className="w-4 h-4" />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-56">
+                            <SelectionExportMenuItems
+                                kit={dropdownMenuKit}
+                                keys={keys}
+                            />
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                )
                 const v = SELECTION_VERBS.find(v => v.id === id)
                 if (!v) return null
                 return (
                     <button key={id}
+                        // A pinned removal is an ordinary bar button: it is
+                        // undoable, and a filled red pill on the bar shouts
+                        // louder than the verb deserves
                         className={cn(btn, v.id === "hole" && holeActive
                             && "bg-blue-100 text-blue-700 hover:bg-blue-200")}
                         disabled={verbDisabled(v)}
-                        onClick={() => onVerb(v.id)} title={v.title}>
+                        onClick={() => onVerb(v.id)} title={verbTitle(v, gravity)}>
                         <v.icon className="w-4 h-4" />
                     </button>
                 )
@@ -2020,14 +3255,16 @@ function SelectionToolbar({
 function PinToggle({
     isPinned,
     onToggle,
+    className,
 }: {
     isPinned: boolean
     onToggle: () => void
+    className?: string
 }) {
     return (
         <button
             data-pin-toggle
-            className="ml-auto rounded p-0.5 hover:bg-gray-200"
+            className={cn("ml-auto rounded p-0.5 hover:bg-gray-200", className)}
             title={isPinned
                 ? "Shown on the toolbar — click to remove"
                 : "Show directly on the toolbar"}
@@ -2056,20 +3293,26 @@ function PinToggle({
 function PinBoardPin({
     layoutKey,
     sha256,
-    thumbnail,
     file,
     onLayoutChange,
     layout,
     crops,
     autoCrops,
     locks,
+    orients,
     highWater,
+    float,
+    uniform,
     crop,
     autoCrop,
     trim,
     lock,
+    orientation,
+    audio,
+    onAudioChange,
     lockBadgesVisible,
     onLockChange,
+    cropKey,
     cropMode,
     boxResizing,
     imageExtentRef,
@@ -2077,36 +3320,60 @@ function PinBoardPin({
     onCropChange,
     onTrimChange,
     onDuplicate,
+    onUnpin,
+    onRemove,
+    onRemoveAllBut,
     scrollAreaRef,
     grid,
+    gridWidth,
     isV1,
     onUpgradeGrid,
     dbs,
+    displayLoopTrigger,
 }: {
     layoutKey: string
     sha256: string
-    thumbnail: string
     file: string
     onLayoutChange: (
         currentLayout: LayoutItem[],
         autoCropOverrides?: Record<string, CropRect | null>,
         newHighWater?: number,
+        orientationOverrides?: Record<string, PinOrientation | null>,
+        manualCropOverrides?: Record<string, CropRect | null>,
     ) => void
     layout: LayoutItem[]
     crops: Record<string, CropRect | null>
     autoCrops: Record<string, CropRect | null>
     locks: Record<string, PinLock>
+    orients: Record<string, PinOrientation | null>
     highWater: number
+    // Gravity off (the layout token's float switch); the size and rotation
+    // verbs resolve their own overlaps then
+    float: boolean
+    // Uniform auto-layout (the token's uniform switch); the context menu's
+    // fill verbs route by it
+    uniform: boolean
     // Manual crop (the editable base) and the derived fit-to-cell auto crop
     crop: CropRect | null
     autoCrop: CropRect | null
     trim: TrimRange | null
     // This pin's layout lock and its single-item setter
     lock: PinLock
+    // This pin's D4 orientation; null is identity
+    orientation: PinOrientation | null
+    // This pin's stored playback snapshot (null = never stamped) and its
+    // record writer. The writer is a replace-history URL write; it fires on
+    // every user playback transition (see onUserTransition below).
+    audio: PinAudioState | null
+    onAudioChange: (audio: PinAudioState) => void
     // While true (the board was recently hovered), ACTIVE lock toggles are
     // shown on every locked pin so locks are visible at a glance
     lockBadgesVisible: boolean
     onLockChange: (lock: PinLock) => void
+    // The board's open crop item, whichever pin it is; cropMode is just
+    // whether that is this one. The context menu's layout verbs need the
+    // board-wide key to hold the crop window still (see resolveGrowth).
+    cropKey: string | null
     cropMode: boolean
     boxResizing: boolean
     imageExtentRef?: React.MutableRefObject<(() => CropGeometry | null) | null>
@@ -2114,14 +3381,31 @@ function PinBoardPin({
     onCropChange: (crop: CropRect | null) => void
     onTrimChange: (trim: TrimRange | null) => void
     onDuplicate: () => void
+    // Removal writers, all record splices owned by the board (this
+    // component only holds geometry): this pin's own Unpin, and the two
+    // selection-scoped removals the context menu mirrors from the toolbar
+    onUnpin: () => void
+    onRemove: (keys: string[]) => void
+    onRemoveAllBut: (keys: string[]) => void
     scrollAreaRef: React.RefObject<HTMLDivElement | null>
+    // The EFFECTIVE grid (see effGrid in the board) and the measured board
+    // width — the context menu publishes both onward for the board-global
+    // section's "Scale With Window" toggle
     grid: GridParams
+    gridWidth: number
     isV1: boolean
     onUpgradeGrid: () => void
     dbs: {
         index_db: string | null
         user_data_db: string | null
     }
+    /**
+     * The server's display-loop bounds (`/api/client-config`), read ONCE by
+     * the board and handed down — never a hook in here. Null means "no display
+     * loop exists", which is what an older Server reports and what holds while
+     * the config is in flight; every pin then paints exactly today's picture.
+     */
+    displayLoopTrigger: DisplayLoopTrigger | null
 }) {
     const { data } = $api.useQuery("get", "/api/items/item", {
         params: {
@@ -2132,9 +3416,96 @@ function PinBoardPin({
             },
         }
     })
-    const isPlayable = data?.item?.type === "video/mp4" || data?.item?.type === "video/webm"
+    // THE PIN'S PICTURE URL, built HERE and nowhere else.
+    //
+    // The board used to build one from the sha alone and hand it down, which it
+    // cannot do correctly: with no item metadata it cannot know that an
+    // animated item past the server's display-loop bounds answers that URL with
+    // `video/mp4` (docs/thumbnail-format-implementation.md R3). All three
+    // elements below that paint it are pictures (the crop ghost, the
+    // contain-fit <img>, the <Image>), so such a pin showed a broken picture
+    // AND never fired `noteMediaDims`, which is what the crop geometry is
+    // measured from. This query's row carries the fields the rule reads.
+    //
+    // UNTIL IT RESOLVES, THE BARE URL STANDS — the media builder, deliberately,
+    // even though the element is an `<img>`. Sending `still=true` speculatively
+    // would freeze an ABOVE-FLOOR animated pin into the stored <=1024 poster
+    // for the life of the pin's first paint, which is the downgrade this whole
+    // rule exists to avoid, and it would cost every under-bound pin — the
+    // common case — a second cache entry for nothing. THE COST OF THE OTHER
+    // DIRECTION is one bare round trip for an over-trigger pin on a cold board:
+    // the `<img>` starts a multi-megabyte loop fetch the browser may well
+    // cancel when the row lands and the src changes. The race is the one this
+    // file already documents for `naturalSize`. For an item under the bounds
+    // the settled value is this same URL, character for character, so the
+    // common case never re-requests anything.
+    const pinThumbnail = data?.item
+        ? thumbnailPictureURL(dbs, data.item, displayLoopTrigger)
+        : thumbnailMediaURL(dbs, sha256)
+    // The playability tri-state (lib/videoPlayability.ts), the same ladder the
+    // gallery runs: `unsupported` is the only verdict with no play affordance
+    // (and no `data-playable` band), `needs-transcode` plays the server's
+    // rendition. The item query already carries both codec columns and the
+    // stream counts.
+    const transcodeEnabled = useVideoTranscodeEnabled()
+    const playability = useVideoPlayability(data?.item, transcodeEnabled)
+    const isPlayable = playability !== "unsupported"
     const videoRef = React.useRef<HTMLVideoElement>(null)
-    const videoState = useVideoPlayerState({ videoRef })
+    // The element as STATE alongside the ref: a needs-transcode pin mounts its
+    // <video> when the job finishes, long after showVideo flipped, and the
+    // hook's volume/speed effects have no other way to notice. Memoised so the
+    // callback ref keeps one identity — an inline arrow would detach and
+    // reattach the element on every render.
+    const [videoEl, setVideoEl] = React.useState<HTMLVideoElement | null>(null)
+    const attachVideo = React.useCallback((el: HTMLVideoElement | null) => {
+        videoRef.current = el
+        setVideoEl(el)
+    }, [])
+    // The stored snapshot as READ-ONCE state, captured at mount: the parsed
+    // prop's identity churns with every board write (the extras maps
+    // rebuild wholesale), and a restore keyed on the live prop would re-fire
+    // into playback the user has since changed. A remount (the pin keys
+    // embed record offsets, so unpinning a neighbour remounts this pin, and
+    // its <video> with it) re-seeds from the then-current record — which is
+    // exactly the restore that keeps the pin playing across the remount.
+    const [audioAtMount] = React.useState(audio)
+    // Set when the autoplay policy refused the restore's unmuted play():
+    // the pin plays muted until the first user gesture applies the stored
+    // unmuted state (see the listener effect below). Cleared by any user
+    // transition on the pin — once the user has spoken, the fallback must
+    // not stomp their choice.
+    const blockedUnmuteRef = React.useRef(false)
+    const videoState = useVideoPlayerState({
+        videoRef,
+        element: videoEl,
+        persistVolume: true,
+        // Every user playback transition snapshots the pin's FULL effective
+        // state into its record — pressing play stamps the muted/volume it
+        // just inherited, so the pin restores identically even after the
+        // global preference drifts. Heuristic starts and restores go
+        // through the raw setters/applyAudioState and never stamp.
+        onUserTransition: (snap) => {
+            blockedUnmuteRef.current = false
+            onAudioChange(snap)
+        },
+    })
+    // The pin's content layer: the only element containing BOTH the <video>
+    // (which lives inside the .drag-handle layer) and the player surface
+    // (which must not). It is the player's pointer container and its
+    // fullscreen target, and its width drives the player's size ladder —
+    // the surface's tier is a prop, not a container query, and --spacing
+    // (which the pin does scope by container query) says nothing about it.
+    const contentRef = React.useRef<HTMLDivElement>(null)
+    const [contentWidth, setContentWidth] = React.useState(0)
+    React.useEffect(() => {
+        const el = contentRef.current
+        if (!el) return
+        const measure = () => setContentWidth(el.clientWidth)
+        measure()
+        const ro = new ResizeObserver(measure)
+        ro.observe(el)
+        return () => ro.disconnect()
+    }, [])
 
     // Double-click makes this pin the app-level current item — the same
     // thing the corner select button does. Independent of the board's own
@@ -2153,6 +3524,18 @@ function PinBoardPin({
             type: data.item.type,
             width: data.item.width,
             height: data.item.height,
+            // The gallery headers read this off the selection when the item
+            // is not in the current result page, exactly as they read the
+            // fields below — without it, the size line vanishes for
+            // pin-selected items and reads as a bug rather than as a
+            // missing value.
+            size: data.item.size,
+            // The gallery's own player needs these for outro skip, and this
+            // snapshot is what it renders when the item is not in the
+            // current result page (see currentItem in ImageGallery).
+            // `duration` is what end-anchors the cut point.
+            duration: data.item.duration,
+            content_end_ms: data.item.content_end_ms,
         })
     }
 
@@ -2162,6 +3545,8 @@ function PinBoardPin({
     // has no dimensions and can't place a stored crop. The crop math only
     // uses the aspect ratio, which the thumbnail preserves, so the element's
     // own dimensions are an exact stand-in the moment it can paint.
+    // Both sources report SOURCE dimensions (an element knows nothing of the
+    // pin's orientation); CropView swaps them for odd quarter turns.
     const [mediaDims, setMediaDims] = useState<{ w: number; h: number } | null>(null)
     const noteMediaDims = (w: number, h: number) => {
         if (!w || !h) return
@@ -2171,16 +3556,35 @@ function PinBoardPin({
         ? { w: data.item.width, h: data.item.height }
         : mediaDims
 
+    // Precedence: record > heuristic > global preference. Any stored
+    // snapshot — a stopped one included — stands the heuristic down: a
+    // short video the user explicitly closed must not loop back to life on
+    // reload, and one they unmuted restores through the restore effect
+    // below, not through this. The MOUNT snapshot plus a one-shot latch,
+    // never the live prop: records influence playback at mount only, the
+    // same invariant the restore effects hold. A live gate would re-fire on
+    // Back/Forward — audio stamps are replace writes, so Back can revert
+    // the segment to absent under a still-mounted pin, and a re-armed
+    // heuristic would mute the video the user is watching. The latch also
+    // keeps `data` identity churn (query refetches) from re-running the
+    // start against a pin the user has since paused.
+    const heuristicFiredRef = React.useRef(false)
     useEffect(() => {
-        if (data?.item?.type === "video/mp4" || data?.item?.type === "video/webm") {
+        if (audioAtMount || heuristicFiredRef.current) return
+        // `playable` ONLY, never the tri-state: a board that laid out a
+        // dozen unplayable pins would otherwise queue a dozen encodes by
+        // merely existing. A transcode is started by a deliberate press and
+        // by nothing else.
+        if (playability === "playable") {
             // Autoplay short videos
-            if (data?.item.duration && data?.item.duration <= 10) {
+            if (data?.item?.duration && data?.item.duration <= 10) {
+                heuristicFiredRef.current = true
                 videoState.setShowVideo(true)
                 videoState.setVideoIsPlaying(true)
                 videoState.setVideoIsMuted(true)
             }
         }
-    }, [data])
+    }, [data, playability, audioAtMount])
 
     useEffect(() => {
         if (!cropMode) return
@@ -2191,144 +3595,394 @@ function PinBoardPin({
         return () => window.removeEventListener("keydown", onKeyDown)
     }, [cropMode, onCropModeToggle])
 
-    const showVideo = isPlayable && videoState.showVideo
-    useVideoTrim({ videoRef, trim, active: showVideo })
+    // The bytes this pin mounts: the original file when the browser can
+    // decode it, the artifact once a needs-transcode item's job finishes,
+    // null until then. The download row and the drag-out keep `file`.
+    const playback = useVideoPlayback({
+        // The board's own records carry a 10-char PREFIX; the job store is
+        // keyed by the full hash so a pin and the gallery share one job (and
+        // so the POST never asks the server to disambiguate a prefix). Null
+        // until the item query resolves — which is also when `playability`
+        // stops saying `unsupported`, so nothing is playable before then
+        // anyway.
+        sha256: data?.item?.sha256 ?? null,
+        playability,
+        fileURL: file,
+        dbs,
+    })
+    const playbackURL = playback.url
+
+    // Restoring the stored snapshot, in three read-only steps (none of them
+    // stamps — a load must leave the record byte-identical):
+    //
+    // 1. The audio fields apply at mount, playing or stopped: a dormant
+    //    record still seeds the muted/volume the next play uses, overriding
+    //    the global-preference seed the hook's own mount effect applied
+    //    (this one runs after it — hook effects run in call order).
+    useEffect(() => {
+        if (audioAtMount) {
+            videoState.applyAudioState(audioAtMount.muted, audioAtMount.volume)
+        }
+        // Mount-only: audioAtMount is the mount capture by construction
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+    // 2. A playing record starts playback once the item's verdict arrives
+    //    (`unsupported` doubles as "no item data yet", so waiting out that
+    //    verdict IS waiting for the query; a genuinely unsupported item
+    //    simply never restores). One-shot: the latch, not the effect deps,
+    //    decides — later verdict flips (the in-session downgrade) must not
+    //    re-run a restore the user has since overridden.
+    const restoredRef = React.useRef(false)
+    const pendingUnmutedPlayRef = React.useRef(false)
+    useEffect(() => {
+        if (restoredRef.current || !audioAtMount?.playing) return
+        if (playability === "unsupported") return
+        restoredRef.current = true
+        // A playing needs-transcode pin auto-starts its job on load — the
+        // one deliberate exception to "a transcode starts only from a
+        // press": the stored playing state IS the press, made last session,
+        // and the disk cache usually still holds the artifact.
+        if (playability === "needs-transcode") playback.start()
+        // Unmuted restores need an explicit play() probe: the autoplay
+        // policy may refuse them, and the autoPlay attribute fails
+        // silently. Armed here, run by the element effect below.
+        if (!audioAtMount.muted) pendingUnmutedPlayRef.current = true
+        videoState.setShowVideo(true)
+        videoState.setVideoIsPlaying(true)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [playability])
+    // 3. The unmuted-play probe, once the element exists. A NotAllowedError
+    //    is the policy asking for a gesture: fall back to muted playback
+    //    (always allowed) and leave the finish to the gesture listener
+    //    below. Any other rejection (AbortError on a src swap,
+    //    NotSupportedError racing onError) resolves through its own
+    //    channel, exactly as in setPlaying.
+    useEffect(() => {
+        if (!videoEl || !pendingUnmutedPlayRef.current) return
+        pendingUnmutedPlayRef.current = false
+        videoEl.muted = false
+        videoEl.play().catch((err: unknown) => {
+            if ((err as DOMException)?.name !== "NotAllowedError") return
+            videoEl.muted = true
+            videoState.setVideoIsMuted(true)
+            blockedUnmuteRef.current = true
+            videoEl.play().catch(() => {})
+        })
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [videoEl])
+    // The finishing gesture for blocked restores: the first user gesture
+    // anywhere (the same gesture that unlocks audio for the page) applies
+    // the stored unmuted state — zero added gestures, the user was about to
+    // interact anyway. Applying stored state is not a user transition, so
+    // it goes through the raw setter and never stamps. The raw setter's
+    // identity is stable, so the mount-time closure stays valid for the
+    // pin's life.
+    useEffect(() => {
+        const onGesture = () => {
+            if (!blockedUnmuteRef.current) return
+            blockedUnmuteRef.current = false
+            const el = videoRef.current
+            if (el) el.muted = false
+            videoState.setVideoIsMuted(false)
+        }
+        window.addEventListener("pointerdown", onGesture, true)
+        window.addEventListener("keydown", onGesture, true)
+        return () => {
+            window.removeEventListener("pointerdown", onGesture, true)
+            window.removeEventListener("keydown", onGesture, true)
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+    const showVideo = isPlayable && videoState.showVideo && playbackURL != null
+    // A detected TikTok end card is a playback-time DEFAULT for the end
+    // bound, never a stored one: the pin's h field keeps carrying the user's
+    // trim alone (docs/video-outro-skip-design.md §1). The item query already
+    // returns content_end_ms, and the API nulls it when the index DB has
+    // detection off, so no config plumbing reaches the player.
+    // The element's own duration: the cut point is anchored to the END of
+    // the browser's timeline (the card is appended there, and edit lists /
+    // audio priming shift the origin away from ffprobe's), and the rail
+    // draws its geometry from the same one number.
+    // sha as reset key: a pin swaps `src` in place under an unchanged ref
+    // and unchanged showVideo when the board reflows, and the departed
+    // item's duration must not anchor the new item's cut
+    const browserDuration = useVideoDuration(videoRef, showVideo, sha256)
+    const outroSkip = useOutroSkipEnabled()
+    // The measured end of the video track in the browser's timeline, which
+    // replaces the split-the-difference estimate above with arithmetic
+    // (lib/videoEndProbe.ts). It runs on its OWN offscreen element — the
+    // pin's <video> is never seeked by it — and is deduplicated per sha with
+    // a concurrency cap, which is what makes it safe on a board that mounts
+    // dozens of eligible pins in one pass. The EFFECTIVE playback URL, not
+    // `file`: the probe measures the bytes the element mounts, and a
+    // transcoded rendition has its own timeline — hence also the null gate,
+    // since an item still waiting on its encode has nothing to measure. The
+    // cache stays keyed by the pin's sha either way.
+    const probedVideoEnd = useVideoEndProbe(
+        playbackURL,
+        sha256,
+        playbackURL != null
+        && outroSkip && outroProbeEligible(data?.item?.content_end_ms, data?.item?.duration),
+    )
+    const outroCut = outroCutPoint(
+        data?.item?.content_end_ms,
+        data?.item?.duration,
+        browserDuration,
+        probedVideoEnd,
+    )
+    const effectiveTrim = effectiveVideoTrim(trim, outroCut, outroSkip)
+    // Whether the outro default is what ends playback here. The context menu's
+    // clip rows turn this into `cut: "outro"` rather than sending the client's
+    // own cut point (see lib/videoClip's clipRequestFor).
+    const outroGoverns = outroSkipGoverns(trim, outroCut, outroSkip)
+    useVideoTrim({ videoRef, trim: effectiveTrim, active: showVideo })
+    // The FULL hash and the item's type, for the menu's clip rows: the board's
+    // records carry only a 10-char prefix, and only a video has a clip.
+    // The duration rides along for the animated-image rows, which are offered
+    // only inside the server's length cap and have nothing else to measure an
+    // untrimmed export against.
+    const clipItem = data?.item
+        ? {
+            sha256: data.item.sha256,
+            mime: data.item.type,
+            duration: data.item.duration,
+        }
+        : null
+    // Native controls stand the whole player world down (only the escape
+    // kebab remains), so the controller is inactive there too. Crop mode
+    // stands it down as well: the surface would sit on the crop area's
+    // bottom band, over the pan/resize layer that IS the tool while that
+    // mode runs. showOnEnable stays off: a board of autoplaying pins would
+    // flash every surface at once on load — the S0 play button reveals its
+    // own surface instead.
+    const playerActive = showVideo && !videoState.showControls && !cropMode
+    const player = useVideoPlayerSurface({
+        videoRef,
+        active: playerActive,
+        fullscreenTargetRef: contentRef,
+    })
 
     // Rendering shows the composition of both crop slots; the crop editor
     // edits the manual slot only (the auto crop is derived from it and gets
     // cleared when a new manual crop is committed)
     const effectiveCrop = composeCrops(crop, autoCrop)
 
-    // Set one trim bound to the video's current time (centisecond-rounded, the
-    // URL resolution); shift-click clears the bound instead. Placing a bound
-    // on the wrong side of the other one clears the other — the user is
-    // redefining the range. Equal bounds are allowed (freeze frame).
-    const setTrimPoint = (which: "start" | "end", e: React.MouseEvent) => {
-        let start = trim?.start ?? null
-        let end = trim?.end ?? null
-        if (e.shiftKey) {
-            if (which === "start") start = null
-            else end = null
-        } else {
-            const video = videoRef.current
-            if (!video) return
-            const t = Math.round(video.currentTime * 100) / 100
-            if (which === "start") {
-                start = t
-                if (end != null && end < t) end = null
-            } else {
-                end = t
-                if (start != null && start > t) start = null
-            }
-        }
-        onTrimChange(start == null && end == null ? null : { start, end })
-        // Setting the end mid-playback leaves the playhead exactly at the end
-        // point, from which crossing detection would never fire — restart the
-        // loop, which doubles as "here's your loop" feedback
-        if (which === "end" && !e.shiftKey && end != null) {
-            const video = videoRef.current
-            if (video && !video.paused) video.currentTime = start ?? 0
-        }
-    }
     return (
         <>
-            <ContextMenu>
-                <ContextMenuTrigger>
-                    <div
-                        className={cn(
-                            "absolute top-0 left-0 w-full h-full",
-                            !cropMode && "drag-handle cursor-move",
-                        )}
-                        onDoubleClick={cropMode ? undefined : selectAsCurrentItem}
-                    >
-                        {/* Playing videos always render through CropView (even
-                            uncropped: rest mode with a null crop is a plain
-                            contain fit) so toggling crop mode only restyles the
-                            <video> instead of remounting it, which would reset
-                            the playback position */}
-                        {(cropMode || effectiveCrop || showVideo) ?
-                            <CropView
-                                crop={cropMode ? crop : effectiveCrop}
-                                cropMode={cropMode}
-                                boxResizing={boxResizing}
-                                imageExtentRef={imageExtentRef}
-                                naturalWidth={naturalSize?.w}
-                                naturalHeight={naturalSize?.h}
-                                onCropChange={onCropChange}
-                                ghostSrc={showVideo ? undefined : thumbnail}
-                                renderMedia={(style) => showVideo ?
-                                    <video
-                                        ref={videoRef}
-                                        autoPlay
-                                        // With a trim set, looping is handled by
-                                        // useVideoTrim so it restarts from the
-                                        // trim start rather than 0
-                                        loop={isEmptyTrim(trim)}
-                                        muted={videoState.videoIsMuted}
-                                        controls={videoState.showControls}
-                                        className="rounded"
-                                        style={style}
-                                        src={file}
-                                        onLoadedMetadata={(e) => noteMediaDims(
-                                            e.currentTarget.videoWidth,
-                                            e.currentTarget.videoHeight,
-                                        )}
-                                    />
-                                    :
-                                    <img
-                                        src={thumbnail}
-                                        alt={`Sha256 Hash ${sha256}`}
-                                        draggable={false}
-                                        className="rounded select-none"
-                                        style={style}
-                                        // The ref covers cache hits that complete
-                                        // before React attaches the load handler
-                                        ref={(el) => {
-                                            if (el?.complete) noteMediaDims(el.naturalWidth, el.naturalHeight)
-                                        }}
-                                        onLoad={(e) => noteMediaDims(
-                                            e.currentTarget.naturalWidth,
-                                            e.currentTarget.naturalHeight,
-                                        )}
-                                    />
-                                }
-                            />
-                            :
-                            <Image
-                                src={thumbnail}
-                                alt={`Sha256 Hash ${sha256}`}
-                                fill
-                                className="rounded object-contain"
-                                unoptimized={true}
-                            />}
-                    </div>
-                </ContextMenuTrigger>
-                <PinBoardCtx
-                    layoutKey={layoutKey}
-                    sha256={sha256}
-                    file_url={file}
-                    onLayoutChange={onLayoutChange}
-                    layout={layout}
-                    crops={crops}
-                    autoCrops={autoCrops}
-                    locks={locks}
-                    highWater={highWater}
-                    cropMode={cropMode}
-                    hasCrop={!!(crop || autoCrop)}
-                    onToggleCrop={onCropModeToggle}
-                    onClearCrop={() => onCropChange(null)}
-                    trim={trim}
-                    onTrimChange={onTrimChange}
-                    onDuplicate={onDuplicate}
-                    lock={lock}
-                    onLockChange={onLockChange}
-                    pinboardRef={scrollAreaRef}
-                    grid={grid}
-                    isV1={isV1}
-                    onUpgradeGrid={onUpgradeGrid}
-                    dbs={dbs}
-                />
-            </ContextMenu>
+            {/* Content layer. The overlay buttons below stay OUTSIDE it: they
+                are item verbs, they must remain direct children of
+                .pinboard-pin for the `> button` z-index rule in globals.css,
+                and keeping them out means fullscreen shows the picture and
+                the player alone. data-playable reserves the bottom band in
+                the pin's --spacing clamp before any <video> exists (see
+                globals.css). */}
+            <div
+                ref={contentRef}
+                data-playable={isPlayable ? "" : undefined}
+                // Crop mode is the board's THIRD modal gesture, and the only
+                // one with no overlay element of its own — it restyles this
+                // pin instead. It exits on Esc through the window listener
+                // above, so it has to be discoverable to the surfaces that
+                // would otherwise swallow the key (PreviewSurface's guard,
+                // which explains the attribute): without this, Esc with the
+                // viewer open closed the VIEWER, tearing down a playing
+                // video, and left the pin still cropping.
+                data-esc-owner={cropMode ? "" : undefined}
+                className={cn(
+                    "pinboard-pin-content absolute inset-0",
+                    player.cursorHidden && "cursor-none",
+                )}
+                // Only while the player world is on: these fire on every
+                // pointer move, and neither an image pin nor a pin handed
+                // over to the native controls has a surface to reveal
+                {...(playerActive ? player.containerProps : null)}
+            >
+                <ContextMenu>
+                    <ContextMenuTrigger>
+                        <div
+                            className={cn(
+                                "absolute top-0 left-0 w-full h-full",
+                                !cropMode && "drag-handle cursor-move",
+                            )}
+                            onDoubleClick={cropMode ? undefined : selectAsCurrentItem}
+                        >
+                            {/* Playing videos always render through CropView (even
+                                uncropped: rest mode with a null crop is a plain
+                                contain fit) so toggling crop mode only restyles the
+                                <video> instead of remounting it, which would reset
+                                the playback position. Oriented items route here for
+                                the same reason the crop does — CropView owns the
+                                source-to-display transform, and duplicating it on
+                                the plain contain-fit branch below would be a second
+                                copy of the same eight cases. */}
+                            {(cropMode || effectiveCrop || showVideo || !isIdentityOrientation(orientation)) ?
+                                <CropView
+                                    crop={cropMode ? crop : effectiveCrop}
+                                    cropMode={cropMode}
+                                    boxResizing={boxResizing}
+                                    imageExtentRef={imageExtentRef}
+                                    naturalWidth={naturalSize?.w}
+                                    naturalHeight={naturalSize?.h}
+                                    orientation={orientation}
+                                    onCropChange={onCropChange}
+                                    ghostSrc={showVideo ? undefined : pinThumbnail}
+                                    renderMedia={(style) => showVideo ?
+                                        <video
+                                            ref={attachVideo}
+                                            autoPlay
+                                            // With a trim set, looping is handled by
+                                            // useVideoTrim so it restarts from the
+                                            // trim start rather than 0. The
+                                            // EFFECTIVE trim: an outro-skipping pin
+                                            // has a loop point with no user trim.
+                                            loop={isEmptyTrim(effectiveTrim)}
+                                            muted={videoState.videoIsMuted}
+                                            controls={videoState.showControls}
+                                            className="rounded"
+                                            style={style}
+                                            src={playbackURL ?? undefined}
+                                            onLoadedMetadata={(e) => noteMediaDims(
+                                                e.currentTarget.videoWidth,
+                                                e.currentTarget.videoHeight,
+                                            )}
+                                            // A failing ARTIFACT is the job's
+                                            // problem, not evidence about the
+                                            // source: the disk cache can
+                                            // evict it between `done` and
+                                            // this fetch, and one automatic
+                                            // re-POST recovers it. A failing
+                                            // SOURCE is the representative-
+                                            // profile recovery (docs/video-
+                                            // transcoding-design.md §6) —
+                                            // but only on a DECODE error,
+                                            // never on a network one, or a
+                                            // blip would cost this sha its
+                                            // native playback for the
+                                            // session.
+                                            onError={(e) => {
+                                                if (playback.isArtifact) {
+                                                    playback.noteArtifactError()
+                                                    return
+                                                }
+                                                if (playability === "playable"
+                                                    && shouldDowngradeOnError(
+                                                        e.currentTarget.error)) {
+                                                    noteVideoPlaybackError(
+                                                        data?.item?.sha256 ?? sha256)
+                                                }
+                                            }}
+                                            // The artifact played: re-arm the
+                                            // one automatic recovery
+                                            onPlaying={playback.notePlaying}
+                                        />
+                                        :
+                                        <img
+                                            src={pinThumbnail}
+                                            alt={`Sha256 Hash ${sha256}`}
+                                            draggable={false}
+                                            className="rounded select-none"
+                                            style={style}
+                                            // The ref covers cache hits that complete
+                                            // before React attaches the load handler
+                                            ref={(el) => {
+                                                if (el?.complete) noteMediaDims(el.naturalWidth, el.naturalHeight)
+                                            }}
+                                            onLoad={(e) => noteMediaDims(
+                                                e.currentTarget.naturalWidth,
+                                                e.currentTarget.naturalHeight,
+                                            )}
+                                        />
+                                    }
+                                />
+                                :
+                                <Image
+                                    src={pinThumbnail}
+                                    alt={`Sha256 Hash ${sha256}`}
+                                    fill
+                                    className="rounded object-contain"
+                                    unoptimized={true}
+                                />}
+                        </div>
+                    </ContextMenuTrigger>
+                    <PinBoardCtx
+                        layoutKey={layoutKey}
+                        sha256={sha256}
+                        file_url={file}
+                        onLayoutChange={onLayoutChange}
+                        layout={layout}
+                        crops={crops}
+                        autoCrops={autoCrops}
+                        locks={locks}
+                        orients={orients}
+                        highWater={highWater}
+                        float={float}
+                        uniform={uniform}
+                        cropKey={cropKey}
+                        cropMode={cropMode}
+                        hasCrop={!!(crop || autoCrop)}
+                        onToggleCrop={onCropModeToggle}
+                        onClearCrop={() => onCropChange(null)}
+                        trim={trim}
+                        onTrimChange={onTrimChange}
+                        effectiveTrim={effectiveTrim}
+                        outroGoverns={outroGoverns}
+                        clipItem={clipItem}
+                        // The set-at-playhead loop verbs read the element
+                        // directly, and only exist while there is a playhead
+                        // to read (they are the trim UI for pins too narrow
+                        // for the player's own row)
+                        videoRef={videoRef}
+                        videoLoaded={showVideo}
+                        onDuplicate={onDuplicate}
+                        onUnpin={onUnpin}
+                        onRemove={onRemove}
+                        onRemoveAllBut={onRemoveAllBut}
+                        lock={lock}
+                        onLockChange={onLockChange}
+                        pinboardRef={scrollAreaRef}
+                        grid={grid}
+                        gridWidth={gridWidth}
+                        isV1={isV1}
+                        onUpgradeGrid={onUpgradeGrid}
+                        dbs={dbs}
+                    />
+                </ContextMenu>
+                {/* S1. A sibling of the .drag-handle layer, never a child of
+                    it, so react-grid-layout (DRAG_CONFIG handle
+                    ".drag-handle") can never start a grid drag from the
+                    player; the surface root additionally stops pointer,
+                    mouse and click events, which covers the board's own
+                    bubble-phase handlers. The board's capture-phase
+                    selection handlers still see the press, exactly as they
+                    did through the old timeline, and skip it for every
+                    control that is a <button>. */}
+                {showVideo && !cropMode && (videoState.showControls
+                    // The video's top-right belongs to Select and Navigate on
+                    // a pin; the escape kebab takes the next seat down the
+                    // same edge
+                    ? <NativeControlsEscape videoState={videoState} className="top-26" />
+                    : <VideoPlayerSurface
+                        videoRef={videoRef}
+                        videoState={videoState}
+                        controller={player}
+                        trim={trim}
+                        onTrimChange={onTrimChange}
+                        outroCutPoint={outroCut}
+                        duration={browserDuration}
+                        // Same URL the element plays. The name needs the
+                        // item query (the board's records carry a sha256
+                        // prefix and nothing else), so the row appears with
+                        // the data rather than waiting on it.
+                        download={data ? {
+                            url: file,
+                            filename: downloadFileName(
+                                data.files?.[0]?.path,
+                                data.item?.sha256 ?? sha256,
+                                data.item?.type),
+                        } : undefined}
+                        size={playerSizeForWidth(contentWidth)}
+                    />)}
+            </div>
             <PinButton sha256={sha256} layoutKey={layoutKey} hidePins={true} />
             <button
                 title={cropMode ? "Finish cropping" : "Crop this image"}
@@ -2382,60 +4036,54 @@ function PinBoardPin({
             >
                 <Ruler className="w-6 h-6 text-gray-800" />
             </button>
+            {/* `?? null` is load-bearing: null means PENDING, undefined
+                means "this call site has no files". Passing `data?.files`
+                raw collapsed the two, and inside the loading window the
+                button fell back to the sha CONTENT test — which opens the
+                Data View on the wrong row for a duplicate or hardlink of
+                the selected file (see SelectButton's isReClick). */}
             <SelectButton
                 sha256={sha256}
                 item={data?.item}
-                files={data?.files}
+                files={data?.files ?? null}
             />
-            {isPlayable && <MediaControls
-                isShown={videoState.showVideo}
-                isPlaying={videoState.showVideo && videoState.videoIsPlaying}
-                setPlaying={videoState.setPlaying}
-                stopVideo={videoState.stopVideo}
-                isMuted={videoState.videoIsMuted}
-                setMuted={videoState.setMuted}
-                showControls={videoState.showControls}
-                setShowControls={videoState.setControls}
-                volume={videoState.volume}
-                setVolume={videoState.setVolume}
+            {/* S0 only: the play button is the last overlay verb ("become a
+                player"), and it sits bottom-LEFT so the cursor is already on
+                the player row's play/pause the moment S1 comes up. Once the
+                video is loaded the surface owns mute, close and the native
+                toggle, so MediaControls stands down entirely. show() gives the
+                deliberate press its surface without showOnEnable, which
+                would flash every autoplaying pin on the board. */}
+            {isPlayable && !showVideo && <MediaControls
+                isPlaying={false}
+                setPlaying={(playing) => {
+                    // The only thing that ever starts a playback transcode:
+                    // a deliberate press (a no-op on a playable pin, and
+                    // deduplicated per sha:preset, so pressing again while
+                    // the job runs joins it).
+                    playback.start()
+                    videoState.setPlaying(playing)
+                    player.show()
+                }}
+                progress={playback.badge}
+                playButtonClassName="left-2 bottom-2"
             />}
-            {showVideo && !videoState.showControls &&
-                <VideoTimeline
-                    videoRef={videoRef}
-                    trim={trim}
-                    onTrimChange={onTrimChange}
-                    className="absolute left-14 right-14 bottom-2 h-10 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                />}
-            {showVideo && <>
-                <button
-                    title={trim?.start != null
-                        ? `Loop start: ${trim.start.toFixed(2)}s — click to move here, shift-click to clear`
-                        : "Set loop start to current time"}
-                    className={cn(
-                        "hover:scale-105 absolute bottom-14 left-2 rounded-full p-2 transition-opacity duration-300 opacity-0 group-hover:opacity-100",
-                        trim?.start != null ? "bg-blue-200" : "bg-white",
-                    )}
-                    onClick={(e) => setTrimPoint("start", e)}
-                >
-                    <ArrowRightFromLine className="w-6 h-6 text-gray-800" />
-                </button>
-                <button
-                    title={trim?.end != null
-                        ? `Loop end: ${trim.end.toFixed(2)}s — click to move here, shift-click to clear`
-                        : "Set loop end to current time"}
-                    className={cn(
-                        "hover:scale-105 absolute bottom-26 left-2 rounded-full p-2 transition-opacity duration-300 opacity-0 group-hover:opacity-100",
-                        trim?.end != null ? "bg-blue-200" : "bg-white",
-                    )}
-                    onClick={(e) => setTrimPoint("end", e)}
-                >
-                    <ArrowRightToLine className="w-6 h-6 text-gray-800" />
-                </button>
-            </>}
+            {/* Navigate has one permanent home on pins: the right edge under
+                Select, for image and video pins alike, in every state. It is
+                an item verb, so it never moves out of the player's way and
+                never joins the kebab; bottom-left is the play button's and
+                bottom-right is reserved for the player's own group.
+                z-20 explicitly: once the hover prefetch resolves a link this
+                button renders inside an <a>, which the `.pinboard-pin >
+                button` rule in globals.css no longer matches — without it the
+                button silently drops behind the resize handles the moment it
+                is prefetched. The <a> is static, so both the offsets and the
+                z-index still resolve against the pin. */}
             <FindButton
                 id={data?.files[0]?.id || sha256}
                 id_type={data?.files[0] ? "file_id" : "sha256"}
                 path={data?.files[0]?.path || ""}
+                buttonClassName="bottom-auto left-auto top-14 right-2 z-20"
             />
         </>
     )
@@ -2444,19 +4092,27 @@ function PinBoardPin({
 export function usePinItem() {
     const prefixLength = 10 // The length of the prefix of the sha256 hash
     const { updateRecords } = usePinBoard()
+    // Trim rides along with the act of pinning: a new record takes the
+    // gallery's trim when the `vt` slot belongs to this item (see
+    // newPinHField), and a bare height otherwise
+    const galleryTrim = useGalleryTrim()
     const pinItem = (sha256: string, pos?: { x: number, y: number, w: number, h: number }) => {
         updateRecords((records, grid) => {
             // An explicit position (e.g. from a drop) is already in the
-            // board's grid units; the fallback size is 2x2 in v1 units
+            // board's grid units; the fallback size is 2x2 in v1 units,
+            // placed in the first free slot found scanning starting at the
+            // bottom row (see pinboardPlace.ts)
             const { sx, sy } = v1ScaleFactors(grid)
-            const p = pos ?? { x: 0, y: 0, w: Math.round(2 * sx), h: Math.round(2 * sy) }
+            const w = Math.round(2 * sx)
+            const h = Math.round(2 * sy)
+            const p = pos ?? { ...placeNewPin(records, grid, w, h), w, h }
             return [
                 ...records,
                 sha256.slice(0, prefixLength),
                 p.x.toString(),
                 p.y.toString(),
                 p.w.toString(),
-                p.h.toString(),
+                newPinHField(p.h, sha256, galleryTrim),
             ]
         })
     }

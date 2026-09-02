@@ -26,12 +26,12 @@ import { markPinboardNavigation } from "@/lib/pinboardNavigation"
 import { useToast } from "@/components/ui/use-toast"
 import { useQueryClient } from "@tanstack/react-query"
 import { pinboardOpenHref } from "@/lib/pinboardLinks"
+import { usePinboardCleanLinks } from "@/lib/state/pinboardLibraryPrefs"
 import { getLocale, cn, compactDate, dateTitle } from "@/lib/utils"
 import { components } from "@/lib/panoptikon"
 import {
     horizontalPopoverBox,
     PreviewPopover,
-    PREVIEW_POPOVER_WIDTH,
     useDelayedHover,
 } from "./PinboardPreviewPopover"
 
@@ -79,12 +79,30 @@ function panelStyle(corner: Corner, area: DOMRect | null): React.CSSProperties {
     const vw = window.innerWidth
     const vh = window.innerHeight
     const rect = area ?? new DOMRect(16, 96, vw - 32, vh - 112)
+    // Bottom docking yields to the maximized board's search overlay, which
+    // publishes its height as --pinboard-bottom-inset while mounted
+    // (docs/maximized-pinboard-search-overlay-design.md §7): the inset is
+    // added to the bottom offset (and taken out of the height budget) via
+    // calc, so with no overlay the 0px fallback reproduces the plain math.
+    const bottomDocked = corner[0] === "b"
+    // Left docking likewise yields to the maximized board's left-edge
+    // sidebar overlay, which publishes its width as --pinboard-left-inset
+    // while shown (design §9): same calc pattern, same 0px fallback
+    // reproducing the plain math when no sidebar is shown. Width needs no
+    // budget adjustment (unlike bottom's maxHeight): the panel is a fixed
+    // w-80 and merely slides right, off the covered band.
     return {
         top: corner[0] === "t" ? rect.top + PANEL_INSET : undefined,
-        bottom: corner[0] === "b" ? vh - rect.bottom + PANEL_INSET : undefined,
-        left: corner[1] === "l" ? rect.left + PANEL_INSET : undefined,
+        bottom: bottomDocked
+            ? `calc(${vh - rect.bottom + PANEL_INSET}px + var(--pinboard-bottom-inset, 0px))`
+            : undefined,
+        left: corner[1] === "l"
+            ? `calc(${rect.left + PANEL_INSET}px + var(--pinboard-left-inset, 0px))`
+            : undefined,
         right: corner[1] === "r" ? vw - rect.right + PANEL_INSET : undefined,
-        maxHeight: Math.max(160, rect.height - 2 * PANEL_INSET),
+        maxHeight: bottomDocked
+            ? `max(160px, calc(${rect.height - 2 * PANEL_INSET}px - var(--pinboard-bottom-inset, 0px)))`
+            : Math.max(160, rect.height - 2 * PANEL_INSET),
     }
 }
 
@@ -110,6 +128,9 @@ export function PinboardHistoryPanel({
     const [pbid, setPbid] = useGalleryPinBoardId()
     const pathname = usePathname()
     const searchParams = useSearchParams()
+    // Version links follow the library's new-tab setting: one board-link
+    // behavior, wherever the link lives.
+    const [cleanLinks] = usePinboardCleanLinks()
     const { toast } = useToast()
     const queryClient = useQueryClient()
     // Bumped after stash writes so the pinned entry re-reads
@@ -176,6 +197,12 @@ export function PinboardHistoryPanel({
         queryClient.invalidateQueries({ queryKey: ["get", "/api/pinboards"] })
         queryClient.invalidateQueries({
             queryKey: ["get", "/api/pinboards/{pinboard_id}/versions"],
+        })
+        // Deleting the head version changes what the board contains — and
+        // deleting the last one removes the board outright — so the grid's
+        // Library tab (boards matching the current search) is stale too.
+        queryClient.invalidateQueries({
+            queryKey: ["post", "/api/pinboards/search"],
         })
         if (outcome?.deleted_board) {
             clearStash(pbid)
@@ -249,7 +276,13 @@ export function PinboardHistoryPanel({
                             label={version.name_at_save || "Untitled"}
                             sublabel={`${compactDate(new Date(version.time_added))} · ${version.item_count} ${version.item_count === 1 ? "item" : "items"}`}
                             sublabelTitle={dateTitle(new Date(version.time_added))}
-                            href={pinboardOpenHref(pathname, searchParams, pbid, version.id)}
+                            href={pinboardOpenHref(
+                                pathname,
+                                searchParams,
+                                pbid,
+                                version.id,
+                                cleanLinks ? "clean" : "carry"
+                            )}
                             previewSrc={pinboardPreviewURL(dbs, pbid, version.id, 160)}
                             selected={layoutsEqual(version.layout, savedLayout)}
                             onSelect={() => swapTo(version.layout)}
@@ -268,12 +301,7 @@ export function PinboardHistoryPanel({
             </ScrollArea>
             {hoveredRow && panelRef.current && (
                 <PreviewPopover
-                    src={pinboardPreviewURL(
-                        dbs,
-                        pbid,
-                        hoveredRow.version.id,
-                        PREVIEW_POPOVER_WIDTH
-                    )}
+                    src={pinboardPreviewURL(dbs, pbid, hoveredRow.version.id)}
                     box={horizontalPopoverBox(
                         panelRef.current.getBoundingClientRect(),
                         hoveredRow.anchor,

@@ -114,7 +114,11 @@ export function DataExtractionHistory() {
                     "video_files": false,
                     "other_files": false,
                     "data_segments": false,
-                    "errors": false,
+                    // `errors` is shown by default: it now carries the
+                    // "(N input)" split, which is what distinguishes a job
+                    // that hit bad media from one that hit a broken worker.
+                    // Hiding it by default hid the split from everyone who
+                    // never opened the column menu.
                     "total_remaining": false,
                     "completed": false,
                     "failed": false,

@@ -6,7 +6,6 @@ import { FilterContainer } from "../sidebar/base/FilterContainer"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
 import { Loader2 } from "lucide-react"
 import { useSystemConfig } from "@/lib/useSystemConfig"
 import { components } from "@/lib/panoptikon"
@@ -21,7 +20,7 @@ type ProfileStatus = components["schemas"]["VectorQuantProfileStatus"]
 // Absent [vector_quants] section means exactly this (day-1 behavior).
 const builtinDefault: QuantsConfig = {
     default: "default",
-    profiles: [{ name: "default", quantizer: "binary", centered: true }],
+    profiles: [{ name: "default", quantizer: "int8" }],
 }
 
 function effectiveQuantsConfig(config: { vector_quants?: QuantsConfig | null } | undefined): QuantsConfig {
@@ -76,7 +75,6 @@ export function VectorQuantization() {
     const { toast } = useToast()
     const { config, changeConfig } = useSystemConfig()
     const [newName, setNewName] = useState("")
-    const [newCentered, setNewCentered] = useState(true)
 
     // The card shows progress and size on disk, so it opts into the
     // per-setter counts (full scans) the selector skips.
@@ -144,7 +142,7 @@ export function VectorQuantization() {
         }
         const profiles = [
             ...(quants.profiles || []),
-            { name, quantizer: "binary", centered: newCentered },
+            { name, quantizer: "int8" },
         ]
         saveQuants({ default: quants.default ?? name, profiles })
         setNewName("")
@@ -162,7 +160,7 @@ export function VectorQuantization() {
     return (
         <FilterContainer
             label="Vector Quantization"
-            description="Binary quant profiles that accelerate vector search (exact rescoring keeps result quality)"
+            description="int8 quant profiles that accelerate vector search (about a quarter of the storage of full precision)"
             storageKey="vectorQuantization"
         >
             {reconcileScheduled ? (
@@ -204,7 +202,6 @@ export function VectorQuantization() {
                             </Label>
                             <div className="text-gray-400 text-sm">
                                 {profile.quantizer}
-                                {profile.centered ? " · centered" : ""}
                                 {" · "}
                                 {profileChip(profile)}
                                 {profile.size_bytes > 0 && ` · ${formatBytes(profile.size_bytes)}`}
@@ -293,10 +290,6 @@ export function VectorQuantization() {
                         onChange={(e) => setNewName(e.target.value)}
                         className="max-w-48"
                     />
-                    <div className="flex flex-row items-center space-x-2">
-                        <Switch checked={newCentered} onCheckedChange={setNewCentered} />
-                        <span className="text-sm">Mean-centered</span>
-                    </div>
                     <Button
                         variant="outline"
                         size="sm"

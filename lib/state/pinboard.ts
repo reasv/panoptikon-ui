@@ -1,16 +1,21 @@
 import { useMemo } from "react"
 import {
+  useGalleryFullscreen,
   useGalleryHidePinBoard,
   useGalleryPinAutoCrop,
   useGalleryPinAutoLayout,
   useGalleryPinBoardLayout,
   useGalleryPinGrid,
+  useGalleryPinProportional,
+  useGalleryPinResizeHandles,
   useGalleryPinSelectionCrop,
   useGridPinboardTab,
 } from "./gallery"
 import {
   GridParams,
   V2_GRID,
+  bakeGrid,
+  gridScale,
   migrateRecords,
   parseBoard,
   serializeBoard,
@@ -25,7 +30,7 @@ import {
 
 type FlagWriteOpts = { history?: "push" | "replace" }
 
-/** The four board-scoped flags' current resolved values, keyed like the
+/** The board-scoped flags' current resolved values, keyed like the
  * defaults registry — the shape a save sends to the gateway. */
 export function usePinboardFlagValues(): Record<
   PinboardDefaultableKey,
@@ -36,6 +41,8 @@ export function usePinboardFlagValues(): Record<
     pbc: useGalleryPinAutoCrop()[0],
     psc: useGalleryPinSelectionCrop()[0],
     pg: useGalleryPinGrid()[0],
+    pbp: useGalleryPinProportional()[0],
+    prh: useGalleryPinResizeHandles()[0],
   }
 }
 
@@ -49,6 +56,8 @@ export function usePinboardFlagSetters(): Record<
     pbc: useGalleryPinAutoCrop()[1],
     psc: useGalleryPinSelectionCrop()[1],
     pg: useGalleryPinGrid()[1],
+    pbp: useGalleryPinProportional()[1],
+    prh: useGalleryPinResizeHandles()[1],
   }
 }
 
@@ -86,6 +95,7 @@ export function usePinBoard() {
   const [savedLayout, setSavedLayout] = useGalleryPinBoardLayout()
   const setHidePinBoard = useGalleryHidePinBoard()[1]
   const setGridPinboardTab = useGridPinboardTab()[1]
+  const setFullscreen = useGalleryFullscreen()[1]
   // Creation stamps the board-scoped flags, destruction clears them (see
   // updateRecords)
   const flagSetters = usePinboardFlagSetters()
@@ -126,6 +136,16 @@ export function usePinBoard() {
     if (board.records.length > 0 && mutated.length === 0) {
       void setGridPinboardTab(null)
       void setHidePinBoard(null)
+      // `gf` too, and this one is not tidiness — leaving it set STRANDS THE
+      // USER. Fullscreen is "maximize the pinboard": every control that sets
+      // it lives on the board (the tab chip's button, the board menus, the
+      // fullscreen toolbar), and the toolbar itself is rendered BY the board.
+      // So removing the last pin while maximized unmounts the board and its
+      // toolbar, while `gf` goes on hiding the gallery header and the grid's
+      // tab band — a fullscreen large image with no chrome at all, and no
+      // visible way back. (Ctrl+Shift+M still worked, which is not a way out
+      // a user can be expected to find.)
+      void setFullscreen(null)
       for (const key of PINBOARD_DEFAULTABLE_KEYS) {
         void flagSetters[key](null)
       }
@@ -149,7 +169,8 @@ export function usePinBoard() {
       }
     }
     setSavedLayout((prev) => {
-      const { grid, records, isV1, highWater } = parseBoard(prev)
+      const { grid, records, isV1, highWater, float, uniform, refWidth } =
+        parseBoard(prev)
       const next = mutate(records, grid)
       const nextHighWater = opts?.highWater ?? highWater
       if (
@@ -159,10 +180,150 @@ export function usePinBoard() {
       ) {
         return prev
       }
+      // The ext switches (gravity, uniform auto-layout, reference width)
+      // are board state that no record mutation may drop: read off the
+      // token, written straight back. A v1 board has none by definition,
+      // and migration mints none — except at the creation edge, where the
+      // FIRST pin's token carries the user's gravity and uniform defaults
+      // (the token-backed members of the creation-defaults set; the
+      // parameter-backed ones are stamped above). Same tick, same write, so
+      // the new board enters history complete.
+      const creation = records.length === 0 && next.length > 0
+        ? effectiveCreationDefaults()
+        : null
+      const ext = creation
+        ? { float: !creation.gravity, uniform: creation.uniform, refWidth: 0 }
+        : { float, uniform, refWidth }
       return isV1
-        ? serializeBoard(V2_GRID, migrateRecords(next, V2_GRID), nextHighWater)
-        : serializeBoard(grid, next, nextHighWater)
+        ? serializeBoard(
+            V2_GRID, migrateRecords(next, V2_GRID), nextHighWater, ext)
+        : serializeBoard(grid, next, nextHighWater, ext)
     }, opts?.history ? { history: opts.history } : undefined)
+  }
+  // Gravity (RGL's upward compaction) on/off, stored as the token's float
+  // switch — a plain push write like every other layout write, so the back
+  // button undoes the whole-board settle that turning it back on produces.
+  // No-op on an empty board: there is no token to carry the switch, and a
+  // board that doesn't exist yet takes its gravity from the creation
+  // defaults above. A v1 board migrates, like any other real mutation.
+  const setFloat = (next: boolean) => {
+    setSavedLayout((prev) => {
+      const { grid, records, isV1, highWater, float, uniform, refWidth } =
+        parseBoard(prev)
+      if (records.length === 0 || float === next) return prev
+      const ext = { float: next, uniform, refWidth }
+      return isV1
+        ? serializeBoard(
+            V2_GRID, migrateRecords(records, V2_GRID), highWater, ext)
+        : serializeBoard(grid, records, highWater, ext)
+    })
+  }
+  // Uniform auto-layout on/off, the token's other creation-defaultable
+  // switch: the fill verbs and auto-layout tile identical cells instead of
+  // composing a mosaic. Pure algorithm selection — flipping it moves
+  // nothing until the next fill — but it lives in the token like gravity,
+  // so the same rules apply: no-op on an empty board (no token to carry
+  // it), and a v1 board migrates like on any other real mutation.
+  const setUniform = (next: boolean) => {
+    setSavedLayout((prev) => {
+      const { grid, records, isV1, highWater, float, uniform, refWidth } =
+        parseBoard(prev)
+      if (records.length === 0 || uniform === next) return prev
+      const ext = { float, uniform: next, refWidth }
+      return isV1
+        ? serializeBoard(
+            V2_GRID, migrateRecords(records, V2_GRID), highWater, ext)
+        : serializeBoard(grid, records, highWater, ext)
+    })
+  }
+  // "Scale With Window" on/off. The switch itself is a board flag (pbp),
+  // but both edges also write the layout token, and BOTH are inert by
+  // construction — which is the whole point: the toggle freezes what is on
+  // screen, it never re-shapes the board.
+  //
+  //   ON  — stamp the reference width := the board's current pixel width.
+  //         At that instant the scale is exactly 1, so nothing moves; from
+  //         then on the grid scales with the window.
+  //   OFF — bake the effective (scaled) grid values back into the token as
+  //         integers and DROP the reference width: it is dead state while
+  //         the flag is off (only gridScale reads it, and it is always
+  //         gated on the flag), and the ON edge always stamps a fresh one,
+  //         so re-enabling is inert again regardless. Dropping it is also
+  //         what makes an ON -> straight-OFF at the same width restore the
+  //         token byte for byte, instead of leaving a `~w<int>` nothing
+  //         consumes — enough of a difference for the next Save to mint a
+  //         new version rather than the settings-only no_op.
+  //         The bake is inert only up to rounding, and that rounding is
+  //         NOT small: it lands on the row STEP, which item positions
+  //         accumulate down the board, so the relative error is
+  //         1/(step*scale) — negligible near scale 1, up to a third of the
+  //         board's height at the small scales a wide reference width
+  //         produces in a narrow window (see bakeGrid in pinboardGrid.ts).
+  //
+  // The flag write rides the same tick as the layout write, so nuqs folds
+  // them into ONE history entry (the first-pin edge does the same) and Back
+  // undoes the toggle whole. No-op on an empty board: there is no token to
+  // carry the reference width, exactly like gravity.
+  const setProportional = (next: boolean, boardWidth: number) => {
+    if (board.records.length === 0) return
+    const width = Math.round(boardWidth)
+    setSavedLayout((prev) => {
+      const { grid, records, isV1, highWater, float, uniform, refWidth } =
+        parseBoard(prev)
+      if (records.length === 0) return prev
+      // Absent/unmeasurable width: the flag still flips, but there is no
+      // honest reference to stamp, so the token keeps what it had (the
+      // board renders unscaled until a real measurement stamps one — see
+      // the stamping effect in GalleryPinBoard).
+      if (width <= 0) return prev
+      const scale = next ? 1 : gridScale(true, refWidth, width)
+      // Turning OFF with nothing to bake and no reference to drop changes
+      // NOTHING — so it must not touch the token at all, migration
+      // included: a v1 board (no ext by definition, hence always this
+      // case) would otherwise convert to the v2 lattice on a toggle that
+      // cannot move a single pixel.
+      if (!next && scale === 1 && refWidth === 0) return prev
+      const ext = { float, uniform, refWidth: next ? width : 0 }
+      const nextGrid = bakeGrid(grid, scale)
+      const out = isV1
+        ? serializeBoard(
+            V2_GRID, migrateRecords(records, V2_GRID), highWater, ext)
+        : serializeBoard(nextGrid, records, highWater, ext)
+      // Backstop for every other inert edge (re-stamping the width a board
+      // already carries): an unchanged token is handed back by identity, so
+      // no history entry and no new version can come of it.
+      return out.length === prev.length && out.every((v, i) => v === prev[i])
+        ? prev
+        : out
+    })
+    void flagSetters.pbp(next === PINBOARD_DEFAULTABLE_FLAGS.pbp.codecDefault
+      ? null : next)
+  }
+  // Stamps a reference width onto a board that has the flag on but no
+  // reference yet — a board created with the flag as its creation default,
+  // or one whose token predates the feature. Never a user action, so it
+  // REPLACES rather than pushing (the same rule RGL's normalization writes
+  // follow), and it is inert: until it lands the scale is 1 anyway.
+  //
+  // A v1 board is never stamped. Serializing one migrates it to the v2
+  // lattice, and this write is render-triggered and un-undoable (replace,
+  // no Back entry), so stamping would convert a v1-era board to v2 merely
+  // because someone LOOKED at a version whose flags carry pbp — exactly
+  // the accident the lazy-migration rule at the top of this file forbids.
+  // v1 boards therefore render unscaled (no refWidth => scale 1, which is
+  // what they have always looked like) until a real mutation, or an
+  // explicit toggle, migrates them. The caller skips v1 boards too; this
+  // guard is the invariant's home.
+  const stampRefWidth = (boardWidth: number) => {
+    const width = Math.round(boardWidth)
+    if (width <= 0) return
+    setSavedLayout((prev) => {
+      const { grid, records, isV1, highWater, float, uniform, refWidth } =
+        parseBoard(prev)
+      if (isV1 || records.length === 0 || refWidth > 0) return prev
+      return serializeBoard(grid, records, highWater,
+        { float, uniform, refWidth: width })
+    }, { history: "replace" })
   }
   // Convert a v1 board to the v2 grid in place, without touching the
   // arrangement — the explicit opt-in alternative to mutating the board
@@ -173,5 +334,8 @@ export function usePinBoard() {
       return serializeBoard(V2_GRID, migrateRecords(records, V2_GRID))
     })
   }
-  return { ...board, updateRecords, upgradeGrid }
+  return {
+    ...board, updateRecords, upgradeGrid, setFloat, setUniform,
+    setProportional, stampRefWidth,
+  }
 }

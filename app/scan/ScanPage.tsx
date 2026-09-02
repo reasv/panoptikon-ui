@@ -5,7 +5,7 @@ import { SidebarClose } from "lucide-react"
 import Link from "next/link"
 import { selectedDBsSerializer, useSelectedDBs } from "@/lib/state/database"
 import { useMemo } from "react"
-import { ScanInternal } from "@/components/scan/ScanDrawer"
+import { ScanInternal } from "@/components/scan/ScanInternal"
 import { useClientConfig } from "@/lib/useClientConfig"
 
 export function ScanPage() {

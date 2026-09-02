@@ -59,3 +59,53 @@ export function isPinboardMaximizedFromParams(params: {
     pbl: parseAsString.parseServerSide(params.pbl),
   })
 }
+
+// "Search is suppressed" — the maximize rationale above, scoped to "no
+// consumer is on screen": the maximized board's bottom search overlay
+// puts a search bar and result count OVER the board, so a shown overlay is
+// a consumer and the queries must run for it. `gso` is the overlay's
+// PINNED flag; the ephemeral OPEN state — what clicking one of the dock's
+// edge handles produces — is client-only state
+// (lib/state/searchOverlayReveal.ts) that the client hook
+// useSearchSuppressed (lib/state/gallery.ts) layers on top of this pure
+// predicate — suppressed = maximized && !pinned && !open. This module
+// stays `gso`-only on purpose: the SSR prefetch has no open flag to
+// consult, so a cold load is either pinned-open or closed. The search gates
+// (useSearch, the chunk store, the SSR prefetch) all switched from
+// isPinboardMaximized to this — isPinboardMaximized itself keeps its other
+// consumers (sidebar hiding, host latching) unchanged. `gsv`, the pinned
+// item viewer (§8.3), joins `gso` here: see below. The SIDEBAR overlay
+// (`gsb`) deliberately does not — it edits the query, it does not consume
+// results (§9). See docs/maximized-pinboard-search-overlay-design.md §2/§4.
+export interface SearchSuppressionState extends PinboardViewState {
+  /** gso — the maximized board's search overlay PINNED flag */
+  searchOverlay: boolean
+  /** gsv — the maximized board's pinned item viewer */
+  viewer: boolean
+}
+
+// The viewer counts as a consumer for the same reason the dock does, and it
+// has to: it PAINTS a result row and browses the set with the arrow keys, so
+// with the queries withheld a cold load of `gsv=true` would open onto a
+// permanent loading frame — and the flag's whole contract is that it is
+// refresh-safe (§8.3). It is reachable without `gso`: opening the viewer
+// auto-pins the dock, but Ctrl+Shift+F (or Back) can unpin it again while
+// the viewer stays up, and that URL must reload into a working viewer.
+export function isSearchSuppressed(state: SearchSuppressionState): boolean {
+  return isPinboardMaximized(state) && !state.searchOverlay && !state.viewer
+}
+
+/**
+ * The suppression predicate over raw search params, for the server render.
+ * The gso/gsv parsers mirror state/gallery.ts exactly, like every parser in
+ * this file — their defaults are wire format (see the note there).
+ */
+export function isSearchSuppressedFromParams(params: {
+  [key: string]: string | string[] | undefined
+}): boolean {
+  return (
+    isPinboardMaximizedFromParams(params) &&
+    !parseAsBoolean.withDefault(false).parseServerSide(params.gso) &&
+    !parseAsBoolean.withDefault(false).parseServerSide(params.gsv)
+  )
+}

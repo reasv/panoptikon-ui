@@ -1,4 +1,4 @@
-import { parseAsInteger, useQueryState } from "nuqs"
+import { createSerializer, parseAsInteger, useQueryState } from "nuqs"
 
 // Scroll anchor for the virtualized result grid: the index of the first item
 // in the topmost visible row. An item index (rather than a pixel offset)
@@ -13,10 +13,18 @@ import { parseAsInteger, useQueryState } from "nuqs"
 // never become history entries of their own.
 export const GRID_SCROLL_ANCHOR_KEY = "top"
 
+const gridScrollAnchorParser = parseAsInteger.withOptions({
+  history: "replace",
+})
+
 export const useGridScrollAnchor = () =>
-  useQueryState(
-    GRID_SCROLL_ANCHOR_KEY,
-    parseAsInteger.withOptions({
-      history: "replace",
-    })
-  )
+  useQueryState(GRID_SCROLL_ANCHOR_KEY, gridScrollAnchorParser)
+
+// The same param as a URL serializer, for links BUILT rather than navigated
+// to — find-in-folder's prefetched href (components/gallery/FindButton.tsx),
+// which has to carry the scroll-mode landing position the same way the
+// in-place navigation writes it. Shares the parser above so the two can
+// never disagree about the wire format.
+export const gridScrollAnchorSerializer = createSerializer({
+  top: gridScrollAnchorParser,
+})

@@ -197,6 +197,93 @@
   }
 }
 
+/* THE OVERLAY CHROME'S TWO REPEATED SHAPES, as utilities.
+
+   Both were literal class lists copied across seven component files — the
+   white pill ten times, the fanout's diagonal offsets ten more — which is one
+   copy per place a `--cell-chrome-*` rename would have to be found by grep. A
+   utility is the same declarations under one name, so the ramp above has
+   exactly two consumers to keep in step.
+
+   `@apply` rather than hand-written declarations, deliberately: `shadow-[...]`
+   composes through Tailwind's `--tw-shadow` slot, and a plain `box-shadow`
+   here would overwrite whatever a `focus-visible:ring-*` on the same button
+   had put in the other slots. Going through the same utilities the call sites
+   used means the emitted declarations are the ones they already had, so the
+   computed geometry is identical by construction rather than by inspection. */
+@utility cell-chrome-pill {
+  @apply rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-(--cell-chrome-pad) hover:scale-105;
+}
+
+/* The file-action fanout's SECOND rank: one `--cell-chrome-step` further out
+   from the anchored corner, so the three slots form a square that shrinks with
+   the ramp (components/imageButtons.tsx CLUSTER_SLOTS). Three names because a
+   slot needs one or both of them, and the horizontal one depends on which
+   corner the cluster is anchored to. */
+@utility fan-up {
+  bottom: calc(var(--cell-chrome-inset) + var(--cell-chrome-step));
+}
+@utility fan-in-l {
+  left: calc(var(--cell-chrome-inset) + var(--cell-chrome-step));
+}
+@utility fan-in-r {
+  right: calc(var(--cell-chrome-inset) + var(--cell-chrome-step));
+}
+
+/* GRID CELL CHROME SCALING (docs/grid-hover-animate-implementation.md D11).
+
+   The corner buttons, the file-action fanout and their insets are sized for a
+   card several hundred pixels wide. At the size slider's minimum the same 40px
+   circles at 8px insets are most of the picture, and the fanout opens straight
+   across the other three corners. So they ride ONE ramp over the cell width
+   the grid publishes as `--cell-px` (app/search/ResultGrid.tsx, written on the
+   row container so it inherits into every card).
+
+   THE TWO NUMBERS IN THE RAMP ARE NAMED ELSEWHERE, and CSS cannot import
+   them: `140` is `MIN_CELL_WIDTH` (lib/searchLimits.ts), the slider's minimum
+   and the narrowest cell that can exist; the `400` fallback is
+   `DEFAULT_CELL_WIDTH` (components/GridCellSizeControl.tsx), which is where an
+   unmeasured surface sits and is deliberately past the ramp's top so a card
+   with no `--cell-px` gets today's chrome unscaled. Changing either means
+   changing both.
+
+   ONE RAMP, TWO CONSUMED VALUES. `--cell-chrome-t` is the normalized
+   position between the slider's minimum and a cell wide enough to want no
+   scaling at all (140 -> 240px); the scale and the inset are linear in it,
+   with their own endpoints because they are not proportional to each other —
+   the inset has to fall further and faster than the button, or the buttons
+   crowd the frame's edge instead of the picture's middle. Everything else
+   about the chrome (the hover fades, the focus-visible rings, the slot ORDER)
+   is untouched.
+
+   The 0.72 floor is where the 40px button lands at 28.8px, comfortably over
+   the 18px minimum hit target the acceptance criteria set.
+
+   DECLARED TWICE, and both are load-bearing. A custom property's `var()`
+   references resolve against the element the DECLARATION applies to, not the
+   one that uses the result — so a single `:root` declaration would resolve
+   `--cell-px` to its fallback everywhere, whatever the row container carries.
+   The `:root` copy is what gives every OTHER surface that mounts these buttons
+   (the filmstrip, the pinboard's pins, the gallery) exactly today's numbers,
+   and the per-card copy is what actually ramps. */
+:root,
+[data-cell-hover-root] {
+  --cell-chrome-t: clamp(0, calc((var(--cell-px, 400) - 140) / 100), 1);
+  --cell-chrome-scale: calc(0.72 + 0.28 * var(--cell-chrome-t));
+  --cell-chrome-inset: calc(2px + 6px * var(--cell-chrome-t));
+  /* The white pill's own three dimensions. At t = 1 they are exactly the
+     `p-2`, `w-6 h-6` and `h-10 w-10` the buttons were written with, which is
+     why every surface that does not publish a `--cell-px` keeps today's
+     chrome to the pixel. */
+  --cell-chrome-pad: calc(0.5rem * var(--cell-chrome-scale));
+  --cell-chrome-glyph: calc(1.5rem * var(--cell-chrome-scale));
+  --cell-chrome-box: calc(2.5rem * var(--cell-chrome-scale));
+  /* The fanout's step between slots: one button plus the 0.25rem gap the
+     cluster's slot table is built on, so the square stays a square as it
+     shrinks (components/imageButtons.tsx CLUSTER_SLOTS). */
+  --cell-chrome-step: calc(2.75rem * var(--cell-chrome-scale));
+}
+
 /* react-grid-layout hydration settling: at hydration, items switch from
    their SSR percentage top/left positions to px transforms, and RGL's
    stylesheet transitions animate that switch as a 200ms fly-in from the
@@ -209,40 +296,241 @@
   transition: none !important;
 }
 
-/* Pinboard pin overlay fit: the overlay controls (pin/crop/select/find
-   buttons, media controls, trim buttons, timeline) are laid out in fixed
-   Tailwind spacing units and would intersect once a pin shrinks below that
-   fixed footprint. Tailwind v4 resolves every spacing utility through
-   var(--spacing) at the element that uses it, so scoping a shrunken
-   --spacing to the pin scales the whole overlay — sizes, offsets and gaps
-   together — while pins above the threshold stay pixel-identical.
+/* Scale & Move live preview: while a transform-session gesture is in
+   flight, the overlay drives the selected items' transform/width/height
+   imperatively per pointer frame, and RGL's 200ms transitions would smear
+   every frame of that into the next (same class of problem as the
+   hydration fly-in above). The grid-area wrapper wears this class only
+   for the duration of a gesture, so the release snap and the compactor
+   settle that follow the commit keep their animation. */
+.pinboard-transforming .react-grid-item {
+  transition: none !important;
+}
+
+/* RGL item SIZE changes never ease. RGL's stylesheet transitions
+   transform, width and height; width/height are layout properties, so
+   easing them re-lays-out the pin (and re-rasters its media) every frame
+   for 200ms — and a container-width change (sidebar toggle, maximize)
+   does that for every item on the board at once, which reads as the whole
+   board stuttering. Position keeps RGL's easing: transform composites
+   without layout, and movement is what makes a settle look animated —
+   sizes just snap to their new cell. Parent-qualified to outrank the
+   stock `.react-grid-item.cssTransforms` rule whatever the import order. */
+.react-grid-layout > .react-grid-item.cssTransforms {
+  transition-property: transform;
+}
+
+/* Pinboard gesture floor: while a drag/resize gesture is active the
+   board's grid container may not shrink below its gesture-start height
+   (a shrinking container shrinks the scroll range, the browser clamps
+   scrollTop, the container's on-screen rect shifts, and RGL reads the
+   shift as extra pointer movement — the runaway-resize loop), and must
+   track growth instantly rather than through RGL's 200ms height easing
+   so the dragged edge stays under the pointer. The grid-area wrapper
+   stamps --pinboard-freeze and the phase class (see gestureFreeze in
+   GalleryPinBoard); the floor lives HERE, on the grid element — the
+   wrapper's own height already comes from this element's in-flow box,
+   and an inline min-height on the wrapper instead (a block inside the
+   Radix viewport's display:table div) resets the viewport's scrollTop
+   to 0, which is the mousedown-snap bug. On release the floor
+   transitions to 0 so the freed scroll range collapses as a followable
+   glide; the wrapper listens for the bubbled transitionend to end the
+   phase. */
+.pinboard-freeze .react-grid-layout {
+  min-height: var(--pinboard-freeze);
+  transition: none;
+}
+.pinboard-freeze-releasing .react-grid-layout {
+  min-height: 0;
+  transition: min-height 300ms ease;
+}
+
+/* Pinboard pin overlay fit: the overlay controls (pin/crop/select/navigate
+   buttons, the lock toggles, the S0 play button and the video player
+   surface) are laid out in fixed Tailwind spacing units and would intersect
+   once a pin shrinks below that fixed footprint. Tailwind v4 resolves
+   every spacing utility through var(--spacing) at the element that uses
+   it, so scoping a shrunken --spacing to the pin scales the whole overlay
+   — sizes, offsets and gaps together — while pins above the threshold stay
+   pixel-identical. This is true of the circle buttons, whose every
+   dimension is a spacing utility. It is only PARTLY true of the video
+   player surface: its box (pt-8, p-1, the rail's h-7, mx-2) tracks
+   --spacing, but its glyphs and labels are arbitrary values (size-[20px],
+   text-[11px]) and stay fixed. The surface therefore shrinks less than
+   proportionally, and the unit figures below — computed at the 4px ceiling
+   — under-reserve for it as the pin gets smaller.
    container-type: size makes cqw/cqh track the pin's own box (RGL sizes
    items explicitly, so size containment can't collapse them; RGL's
    transform also already makes each item a stacking context, so the
    containment adds no new stacking behavior). --spacing is unregistered,
    so descendants inherit the token stream and the cq units resolve against
    this container at each element that uses a spacing utility.
-   Thresholds are the fixed layout's footprint in spacing units: 62 wide
-   (pin + crop + the two lock toggles at left-26/left-38, then the select
-   button across the top row) and 26 tall (top row over the find/play
-   row). The lock toggles are usually hidden, but they appear exactly on
-   hover — when overlap would show — so they always count. The clamp
-   floor keeps buttons at >= 16px on degenerate tiny pins, where fitting
-   is hopeless anyway and hit-target size wins over overlap. */
+   Thresholds are the fixed layout's footprint in spacing units. Width: 62
+   (pin + crop + the two lock toggles at left-26/left-38 across the top
+   row, then the select button at the right edge). Height: 24, the right
+   edge's two-deep column — select at top-2 over navigate at top-14, each
+   10 units tall (p-2 around a 6-unit glyph). The lock toggles and navigate
+   are usually hidden, but they appear exactly on hover — when overlap
+   would show — so they always count. The clamp floor keeps buttons at
+   >= 16px on degenerate tiny pins, where fitting is hopeless anyway and
+   hit-target size wins over overlap; the player surface's fixed-px glyphs
+   land in the same bucket — on a pin short enough to sit at the floor its
+   button row can reach navigate's band, and that is accepted for the same
+   reason. */
 .pinboard-pin {
   container-type: size;
-  --spacing: clamp(0.1rem, min(100cqw / 62, 100cqh / 26), 0.25rem);
+  --spacing: clamp(0.1rem, min(100cqw / 62, 100cqh / 24), 0.25rem);
 }
-/* An open video adds the right-hand control column — mute (bottom-14),
-   close (bottom-26), native-controls toggle (bottom-38) and the play
-   button's bottom-50 position while native controls show: taller footprint */
-.pinboard-pin:has(video) {
-  --spacing: clamp(0.1rem, min(100cqw / 62, 100cqh / 74), 0.25rem);
+/* A video item owns the pin's bottom band in every state
+   (docs/video-player-ui-design.md), so it needs a taller footprint than
+   the right-edge column alone. Measured at the 4px ceiling: the S0 play
+   button at bottom-2 is 12 units (48px), and the loaded player surface is
+   88px — its root's pt-8 scrim band (32px, transparent but painted over
+   the picture) above a button row of 20px + p-1 on each side (28px) above
+   the rail's h-7 (28px) — that is 22 units, so the surface is what
+   sizes this rule. 24 (the column) + 2 (gap) + 22: 48.
+   Keyed on data-playable (set by the pin's content wrapper), not
+   :has(video), so S0 reserves the band the play button already occupies
+   while no <video> element exists yet — and so plain image pins, which now
+   have an empty bottom edge, keep the shorter clamp. The old right-edge
+   button column needed 74. */
+.pinboard-pin:has([data-playable]) {
+  --spacing: clamp(0.1rem, min(100cqw / 62, 100cqh / 48), 0.25rem);
+}
+/* Fullscreen (the player's own verb) targets the pin's content wrapper,
+   which holds the video and the surface. The top layer escapes the pin's
+   box but NOT its query container, so cqw/cqh — and with them the clamp
+   above — would still resolve against the small pin and paint a
+   postage-stamp player across a whole screen. */
+.pinboard-pin-content:fullscreen {
+  --spacing: 0.25rem;
+  background: #000;
 }
 
-/* Pinboard crop mode: make all 8 resize handles on the active item stand out */
+/* The pin's overlay controls (pin/unpin, crop, the lock toggles, select,
+   navigate, the S0 play button) sit at its corners and edges — exactly where
+   react-resizable puts its 20x20 handle boxes, and worse on small pins,
+   where the --spacing clamp above shrinks the buttons but not the handles.
+   react-resizable appends the handles AFTER the pin's own children, so with
+   no z-index on either side the handle wins both the hit test (the click
+   starts a resize instead of pressing the button) and the paint (its glyph
+   sits over the button's white pill). The handles carry no z-index, so any
+   positive one hands both back to the buttons. 20 stays deliberately below
+   the crop-mode boost below, where the handles ARE the tool. .pinboard-pin
+   is a stacking context already (container-type: size implies layout
+   containment), so this stays scoped to the pin.
+   The video player surface is deliberately NOT one of these buttons: it
+   lives inside the pin's content wrapper, together with the <video>,
+   because that pairing is what the fullscreen target and the player's
+   pointer bookkeeping need. It carries its own z-20 and the wrapper is
+   z-auto, so that 20 lands in this same stacking context: it ties with the
+   buttons below and DOM order decides — the wrapper renders first, so the
+   buttons keep their corners — and it outranks the resize handles, which
+   is the point. Its ROOT takes no pointer events at all (only the button
+   row and the rail do, and only while the surface is up), so the picture
+   under the scrim stays draggable and the handles under the band stay
+   grabbable except where a control actually sits.
+   One deliberate exception to the tie: while a popover is open the surface
+   raises itself to z-30, above these buttons. The trim and kebab popovers
+   open upward and can reach navigate's seat at top-14 on a short pin; they
+   are transient and user-invoked, so they win for as long as they are open
+   and the button is back the moment they close. z-30 still sits under crop
+   mode's handle boost below, and crop mode unmounts the surface anyway. */
+.pinboard-pin > button {
+  z-index: 20;
+}
+
+/* Resize-handle knobs. Two stock stylesheets paint these, and both paint
+   the same thing: react-resizable ships a translucent-black corner sprite
+   (a background-image), and react-grid-layout stacks a second L on top of
+   it (the 5x5 ::after with two rgba(0,0,0,0.4) borders). Single-tone dark
+   line-art on transparency disappears over dark or busy pictures — which is
+   what a pinboard is made of — so replace both with the image-editor
+   convention: a solid light knob carrying a dark ring and a drop shadow, so
+   one of the two tones always contrasts with whatever is underneath.
+   Neutralize the sprite rather than layering over it: it is a background
+   image, so a knob drawn in ::after would sit next to it, not replace it.
+
+   Deliberately theme-independent, unlike the rest of this file: the backdrop
+   here is the user's images, not an app surface, so a knob that followed
+   light/dark would still vanish on half the boards. Both tones ship on every
+   knob in both themes instead.
+
+   Specificity, not source order: RGL's ::after rule is two classes plus a
+   pseudo-element, and its stylesheet is imported by the board component
+   while this file is imported by the root layout — the order Next emits
+   them in is not ours to rely on (the crop rule below has carried an
+   !important for that reason). RGL puts .react-grid-item on our own pin
+   div, so the two classes always co-occur and naming both outranks every
+   stock rule outright.
+
+   The knob is anchored to the box's bottom-right corner, the one anchor
+   that serves all eight positions: react-resizable rotates the entire 20x20
+   box per handle (90/180/270 for the corners, 45/135/225/315 for the
+   edges), which carries that corner onto the item's outer corner for a
+   corner handle and onto the middle of the edge for an edge handle. A
+   rotation preserves distance from the box centre, so the 2px inset that
+   keeps the knob inside the box for the corners keeps it inside for the
+   diagonals too (its centre lands ~4.2px straight out from the centre of a
+   20px box, radius 5). The hit area therefore stays exactly the stock
+   20x20 — nothing here grows it — so the pin's own corner buttons keep the
+   seats the z-index note above gave them.
+
+   Round, not square: the knob inherits its handle's rotation, and a square
+   would read as a diamond on the four edge handles and a square on the four
+   corners. A circle is rotation-invariant, so all eight look alike. */
+.pinboard-pin.react-grid-item > .react-resizable-handle {
+  background-image: none;
+  padding: 0;
+}
+.pinboard-pin.react-grid-item > .react-resizable-handle::after {
+  content: "";
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(15, 23, 42, 0.92);
+  border-radius: 50%;
+  background: #fff;
+  /* DIRECTION-FREE, for the same reason the knob is a circle rather than a
+     square: this pseudo-element inherits react-resizable's per-position
+     rotation, so a DIRECTIONAL offset (`0 1px 2px`) pointed down-right on
+     `se`, up on `n`, left on `w` and so on — eight handles lit from eight
+     different directions, the exact rotation artifact the "round, not
+     square" note above exists to avoid. A zero-offset spread is rotation-
+     invariant. */
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.6);
+}
+
+/* Pinboard crop mode: make all 8 resize handles on the active item stand
+   out — there the handles ARE the tool, so they get a bigger knob and a
+   blue ring/glow on top of the base treatment. The z-index stays 40 (above
+   the pin's own buttons at 20, per the note above; outside crop mode the
+   handles keep no z-index at all so the buttons stay clickable), and the
+   opacity override stays !important because RGL's hover rule reveals
+   handles only while the item is hovered.
+   The glow replaced a brightness(1.6) that existed to lift the old dark
+   sprite: applied to a white knob it only washes the dark ring back out. */
 .pinboard-crop-item > .react-resizable-handle {
   opacity: 1 !important;
-  filter: drop-shadow(0 0 3px rgb(59 130 246)) brightness(1.6);
+  filter: drop-shadow(0 0 3px rgb(59 130 246));
   z-index: 40;
+}
+.pinboard-pin.pinboard-crop-item > .react-resizable-handle::after {
+  width: 14px;
+  height: 14px;
+  /* right/bottom go to 0 WITH the size change, and the pair is one edit:
+     the anchor note above places the knob by its CENTRE, which for a 10px
+     knob at a 2px inset is (+3,+3) from the 20x20 box's own centre. Growing
+     to 14px while holding the 2px inset moved that centre to (+1,+1) — so
+     crop knobs sat ~2.8px further inside the item than base knobs and
+     straddled the edges asymmetrically. At 0 the 14px knob's centre is back
+     at (+3,+3), matching the base knob exactly, and it still lies inside the
+     20x20 box so the hit area is unchanged. */
+  right: 0;
+  bottom: 0;
+  border-color: rgb(29 78 216);
+  /* Direction-free, as above: this handle rotates too. */
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.7);
 }

@@ -9,13 +9,25 @@ You must have a running instance of the Panoptikon server to use this UI.
 
 ### Environment variables
 
-- `PANOPTIKON_API_URL` — the base URL of the Panoptikon backend (default
-  `http://127.0.0.1:6342`). It is used in exactly two places: as the target
-  of the **dev-only** `/api`, `/docs` and `/openapi.json` rewrites (so
-  `next dev` works without a gateway in front), and as the base URL for
-  server-side rendering's own API fetches. Production builds emit **no**
-  rewrites: the panoptikon gateway serves those routes itself and only
-  forwards the remaining traffic to the UI server.
+- `PANOPTIKON_API_URL` — the base URL of the Panoptikon backend. It is
+  used in exactly two places: as the target of the **dev-only** `/api`,
+  `/docs` and `/openapi.json` rewrites (so `next dev` works without a
+  gateway in front), and as the base URL for server-side rendering's own
+  API fetches. Production builds emit **no** rewrites: the panoptikon
+  gateway serves those routes itself and only forwards the remaining
+  traffic to the UI server. The gateway sets this variable on every UI
+  server it launches. When it is **unset**, SSR fetches route by the
+  loopback origin the gateway signs into the `x-panoptikon-policy` token on
+  each proxied request (`lib/policyTokenOrigin.ts`) — the gateway listener
+  actually serving the page — and only a request carrying no usable token
+  falls back to `http://127.0.0.1:6342`. That fallback is right only when
+  the one gateway on the machine is the primary listener on 6342; a
+  hand-run `next start` behind any other gateway should set the variable
+  or rely on the token. Two caveats for the hand-run case: this server
+  cannot verify the token, so bind it to loopback (`next start -H
+  127.0.0.1`) or anyone reaching it directly can point its SSR fetches at
+  any loopback port; and a gateway bound to a specific non-loopback address
+  mints a non-loopback origin the UI refuses, so set the variable there.
 - `BUILD_STANDALONE=true` — opts `next build` into `output: "standalone"`
   for the panoptikon repo's `bundled-ui` feature (see `next.config.mjs`).
 
@@ -75,7 +87,10 @@ registry models with per-model batch/threshold sliders shown after selection,
 and the database's routine schedule. Models are never preselected. Daily,
 every-N-hours, and weekly controls generate five-field cron strings; advanced
 users can edit a custom expression, which is previewed by the Desktop API with
-its next local run time. A review step summarizes every staged choice before
+its next local run time. Generated schedules do not wait for that asynchronous
+preview before the wizard can continue, and disabling automatic runs removes
+cron validation from the step's navigation gate. An invalid disabled custom
+draft is not persisted. A review step summarizes every staged choice before
 Start Scan commits anything. The final, non-reversible Scan step tracks the
 returned scan/model queue IDs and opens database-scoped Search or Scan pages in
 the system browser. Links to the Scan page elsewhere in the Desktop wizard use

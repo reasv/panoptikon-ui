@@ -1,20 +1,34 @@
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { components, paths } from "./panoptikon"
+// Type-only: `./panoptikon` is a .d.ts, so a VALUE import of it is a runtime
+// module the node test scripts cannot resolve (the same rule
+// lib/videoTranscode.ts documents).
+import type { components } from "./panoptikon"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
-export function getFileURL(
-  dbs: { index_db: string | null; user_data_db: string | null },
-  file_type: "file" | "thumbnail",
-  // Path-derived (not operations[...]): path strings are stable across
-  // spec generators, operationIds are not.
-  id_type: paths["/api/items/item"]["get"]["parameters"]["query"]["id_type"],
-  id: string | number
-) {
-  const index_db_param = dbs.index_db ? `&index_db=${dbs.index_db}` : ""
-  return `/api/items/item/${file_type}?id=${id}&id_type=${id_type}${index_db_param}`
+// Basename of an indexed path. Either separator: the index stores paths as
+// the OS produced them.
+export function fileNameFromPath(path: string): string {
+  const lastSep = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"))
+  return path.slice(lastSep + 1)
+}
+
+// Name for a "save the original file" link. The indexed basename is the
+// truth; an item with no path on record still gets a findable name from its
+// hash plus the mime subtype, since a download with no extension is one the
+// OS can't open.
+export function downloadFileName(
+  path: string | null | undefined,
+  sha256: string,
+  mime?: string | null,
+): string {
+  const name = fileNameFromPath(path ?? "")
+  if (name) return name
+  const stem = sha256.slice(0, 10)
+  const subtype = mime?.split(";")[0].split("/")[1]
+  return subtype ? `${stem}.${subtype}` : stem
 }
 
 export function prettyPrintBytes(bytes: number): string {
@@ -27,6 +41,35 @@ export function prettyPrintBytes(bytes: number): string {
   }
 
   return `${bytes.toFixed(2)} ${units[unitIndex]}`
+}
+
+// The same number for a place that is GLANCED at rather than read: the
+// gallery headers, where the size shares a line with the timestamp and every
+// character it spends is one the path does not get.
+//
+// Its own function rather than a parameter on the one above, because the
+// callers there want the opposite thing. A download link and an export toast
+// are quoting a file size as a fact, and "42.13 MB" is the honest form; a
+// header is answering "roughly how big is this?", where two decimals on a
+// half-kilobyte thumbnail ("988.00 B") is noise in the one place there is no
+// room for it.
+//
+// Precision by magnitude: whole units below MB (a byte count with a decimal
+// point is spurious, and nobody needs 412.4 KB), one decimal above, trailing
+// ".0" dropped so a round number stays short.
+export function prettyPrintBytesCompact(bytes: number): string {
+  const units = ["B", "KB", "MB", "GB", "TB", "PB"]
+  let value = bytes
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex++
+  }
+  const text =
+    unitIndex < 2
+      ? String(Math.round(value))
+      : value.toFixed(1).replace(/\.0$/, "")
+  return `${text} ${units[unitIndex]}`
 }
 
 export function prettyPrintVideoDuration(seconds: number): string {
@@ -99,4 +142,82 @@ export function dateTitle(date: Date, now: Date = new Date()): string {
   // trunc, not round: "2h55m ago" must read "2 hours ago" to agree with
   // the floored short form compactDate shows next to it
   return `${getLocale(date)} (${rtf.format(Math.trunc(diff / ms), unit)})`
+}
+
+// The DOM markers of a genuinely OPEN popup layer: a dialog, or any Radix
+// popper-positioned surface (dropdown and context menus, selects, popovers,
+// hover cards — all of which render inside that wrapper). Every `window`
+// keyboard scope in the app stands down while one is up, because the layer
+// owns the keyboard over whatever it covers and its own Esc / arrow keys must
+// not double as the surface underneath's.
+//
+// TRAP — `[role="listbox"]` was on this list and must never come back. cmdk
+// renders that role on Command.List UNCONDITIONALLY, and the tag autocomplete
+// (components/tagInput.tsx) keeps its list mounted and merely `hidden`-classed
+// whether or not the dropdown is open, as does every inline multiCombobox
+// (`omitWrapper`). On any tag-indexed database with completion enabled — the
+// default, and the normal case — the selector therefore matched ALWAYS, and
+// every guard built on it degenerated into an unconditional `return`: the
+// gallery's arrow keys, its Ctrl+C share and the viewer's Esc were all dead.
+// Nothing is lost by dropping it: the listbox that IS an open layer is Radix
+// Select's, which lives inside [data-radix-popper-content-wrapper] and is
+// still matched, and a cmdk list that is genuinely open has focus in its own
+// <input>, which each of these guards already excludes by event target.
+const OPEN_LAYER_SELECTOR =
+  '[role="dialog"], [role="menu"], [data-radix-popper-content-wrapper]'
+
+/**
+ * Is a popup layer open right now? Matched against the document rather than
+ * against a subtree because Radix portals its content to <body>. `extra`
+ * appends surface-specific markers (the board's modal gestures, say) to the
+ * shared list.
+ */
+export function hasOpenLayer(extra?: string): boolean {
+  return document.querySelector(
+    extra ? `${OPEN_LAYER_SELECTOR}, ${extra}` : OPEN_LAYER_SELECTOR
+  ) !== null
+}
+
+// Widgets whose OWN keyboard contract includes the arrow keys, so a focused
+// one must not also step the surface underneath.
+//
+// This is a DIFFERENT question from hasOpenLayer's, and the two must not be
+// merged. "Is a layer open" is about the DOCUMENT (a portalled Radix popper
+// is nowhere near the event target) and it suspends a whole key scope for as
+// long as the layer is up. "Does this control consume arrows" is about the
+// EVENT TARGET (matched with closest, never a document query) and it suspends
+// only the keys that control actually claims. Widening the open-layer
+// selector to cover these would be the wrong lever twice over: a tab strip is
+// not a popup, and matching one anywhere in the document would kill every
+// window key everywhere — the exact shape of the `[role="listbox"]` trap
+// documented above.
+//
+// The list is what this repo actually renders, verified rather than guessed:
+//
+//   - [role="tablist"] — Radix Tabs (components/ui/tabs.tsx), whose List is a
+//     RovingFocusGroup and whose Root defaults to activationMode="automatic",
+//     so `←`/`→` on a focused trigger SWITCH TABS. Rendered right beside the
+//     gallery's picture (PinboardTabs in the gallery header) and in the
+//     results header (SearchPage). Matched on the LIST, not on [role="tab"]:
+//     the keydown target is the trigger, and the trigger is inside it.
+//   - [role="slider"] — the Radix Slider thumb (components/ui/slider.tsx),
+//     whose arrows step the value: the page-size and confidence controls,
+//     which sit in the sidebar beside the gallery and inside the maximized
+//     workspace's sidebar overlay.
+//
+// Deliberately NOT here: role="toolbar" and role="radiogroup" (nothing in
+// this repo renders either — Radix's menu radio groups are role="group"
+// inside a role="menu" that hasOpenLayer already matches), and the video
+// surface's volume control, which is an <input type=range> and is already
+// excluded by every scope's INPUT test.
+const ARROW_CONSUMER_SELECTOR = '[role="tablist"], [role="slider"]'
+
+/**
+ * Does the event target belong to a control that owns the arrow keys? Callers
+ * bail out of their own arrow/stepping branches on it and keep the rest of
+ * their scope live — a tab trigger consumes `←`/`→`, it does not consume `m`.
+ */
+export function consumesArrowKeys(target: EventTarget | null): boolean {
+  const el = target as Element | null
+  return !!el?.closest?.(ARROW_CONSUMER_SELECTOR)
 }

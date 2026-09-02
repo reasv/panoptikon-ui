@@ -69,6 +69,33 @@ export function queryFromState(
     }
     available_filter_orders.push("bookmark_time")
   }
+  // Pinboards
+  // Not an order source: pinboard membership has no per-item rank, so unlike
+  // the bookmarks block above this registers nothing in
+  // `available_filter_orders` and never touches `actual_order_by`.
+  if (state.InPinboards.filter) {
+    // "boards" with nothing selected is left inactive rather than widened to
+    // "any board": the latter would silently change the result set the moment
+    // the mode is picked, before the user has said which boards they mean.
+    const selectedBoards =
+      state.InPinboards.mode === "boards" ? state.InPinboards.pinboard_ids : []
+    if (state.InPinboards.mode !== "boards" || selectedBoards.length > 0) {
+      const inPinboard: components["schemas"]["InPinboard"] = {
+        in_pinboard: {
+          filter: true,
+          // Empty = membership in *any* of the user's boards.
+          pinboard_ids: selectedBoards,
+          user: state.InPinboards.user,
+        },
+      }
+      // Always its own element in `and_`: the backend enum is untagged and
+      // resolves by the first matching key, so merging `in_pinboard` into a
+      // sibling filter's object would decode as the sibling.
+      queryFilters.and_.push(
+        state.InPinboards.mode === "unpinned" ? { not_: inPinboard } : inPinboard
+      )
+    }
+  }
   // Match Path text
   const sort_path = state.OrderArgs.order_by === "match_path"
   const path_match_asc: boolean = state.OrderArgs.order !== "desc"
@@ -416,6 +443,30 @@ export function queryFromState(
       "width",
       "height",
       "blurhash",
+      // The player's outro-skip default (docs/video-outro-skip-design.md);
+      // the API serves content_end_ms as null when the index DB has
+      // detection off. `duration` is the second half of the cut point: the
+      // two give the outro card's length, which end-anchors the cut against
+      // the browser's own timeline. BOTH select lists must stay identical,
+      // element for element — the two request bodies have to hash the same
+      // for the sidebar-to-main swap to hit the result cache.
+      "duration",
+      "content_end_ms",
+      // The playability tri-state (lib/videoPlayability.ts): the stored
+      // ffprobe codec names are what turn today's container-only mime guess
+      // into an RFC 6381 canPlayType probe, so an HEVC-in-mp4 stops mounting
+      // a <video> that decodes to a black frame. NULL (not yet probed) falls
+      // back to the legacy mime check, so requesting them is free during the
+      // backfill window.
+      "video_codec",
+      "audio_codec",
+      // The gallery header's size line. A `files` column, so it costs the
+      // query one more int64 per row and no join. Requested on the RESULT
+      // ROW rather than fetched per item: the header already has the row in
+      // hand, and the /api/items/item round trip the Data View makes for the
+      // same number would put a spinner (or a reflowing line) in a header
+      // that changes on every arrow press.
+      "size",
     ],
     entity: "file",
 
@@ -554,6 +605,30 @@ export function sbSimilarityQueryFromState(
       "width",
       "height",
       "blurhash",
+      // The player's outro-skip default (docs/video-outro-skip-design.md);
+      // the API serves content_end_ms as null when the index DB has
+      // detection off. `duration` is the second half of the cut point: the
+      // two give the outro card's length, which end-anchors the cut against
+      // the browser's own timeline. BOTH select lists must stay identical,
+      // element for element — the two request bodies have to hash the same
+      // for the sidebar-to-main swap to hit the result cache.
+      "duration",
+      "content_end_ms",
+      // The playability tri-state (lib/videoPlayability.ts): the stored
+      // ffprobe codec names are what turn today's container-only mime guess
+      // into an RFC 6381 canPlayType probe, so an HEVC-in-mp4 stops mounting
+      // a <video> that decodes to a black frame. NULL (not yet probed) falls
+      // back to the legacy mime check, so requesting them is free during the
+      // backfill window.
+      "video_codec",
+      "audio_codec",
+      // The gallery header's size line. A `files` column, so it costs the
+      // query one more int64 per row and no join. Requested on the RESULT
+      // ROW rather than fetched per item: the header already has the row in
+      // hand, and the /api/items/item round trip the Data View makes for the
+      // same number would put a spinner (or a reflowing line) in a header
+      // that changes on every arrow press.
+      "size",
     ],
     entity: "file",
     // Never random-ordered, so never seeded — but the key must be *present*

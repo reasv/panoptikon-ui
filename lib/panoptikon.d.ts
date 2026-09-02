@@ -528,7 +528,7 @@ export interface paths {
         put?: never;
         /**
          * Run a batch prediction on a model
-         * @description Runs a batch of inputs through a model, auto-loading it into the given cache slot first if needed. The response encoding depends on the outputs: exactly one binary output is returned raw as `application/octet-stream`; all-binary outputs use `multipart/mixed`; anything else is the JSON `{"outputs": [...]}` envelope.
+         * @description Runs a batch of inputs through a model, auto-loading it into the given cache slot first if needed. The response encoding depends on the outputs: exactly one binary output is returned raw as `application/octet-stream`; all-binary outputs use `multipart/mixed`; anything else is the JSON `{"outputs": [...]}` envelope. An input the model rejected on its own occupies its output slot as `{"__error__": {"class": "input"|"transient", "message": ...}}`, which always selects the JSON envelope.
          */
         post: operations["predict"];
         delete?: never;
@@ -640,12 +640,24 @@ export interface paths {
         /**
          * Get thumbnail for an item
          * @description Returns a thumbnail for a given item.
-         *     The thumbnail may be a thumbnail,
+         *     The thumbnail may be a stored rendition,
          *     the unmodified original image (only for images),
          *     or a placeholder image generated on the fly.
-         *     GIFs are always returned as the original file.
+         *     On the default (`display`) path an animated item is returned as the original file unless it is over the display loop trigger reported by `/api/client-config`, in which case it is answered with an H.264 loop as `video/mp4`.
          *     For video thumbnails, the `big` parameter can be used to
          *     select between the 2x2 frame grid (big=True) or the first frame from the grid (big=False).
+         *     The `size` parameter selects a rendition tier: `display` (default),
+         *     `grid-m` (short side 1024), `grid-s` (short side 512) or `grid-xs` (short side 256).
+         *     A tier with no stored rendition falls through to the next larger one.
+         *     Still renditions are `image/jpeg` or `image/webp`; the response's Content-Type and filename extension come from the stored row.
+         *     At a grid tier an **animated** item above the raw floor answers with its H.264 loop as
+         *     `video/mp4` (one rendition serves every grid tier), and `still=true` answers with the
+         *     static poster for that tier instead. Animated items at or below the floor - at most
+         *     1 MiB with both sides at most 512 px, reported by `/api/client-config` - are answered
+         *     with their original file at every tier.
+         *     Supports HTTP Range requests (single byte ranges), which matter for the H.264 loops:
+         *     a `<video>` that cannot ask for a range downloads the whole stream before playing.
+         *     Conditional GET is supported on every answer; a validated `If-None-Match` returns 304.
          */
         get: operations["item_thumbnail"];
         put?: never;
@@ -784,6 +796,26 @@ export interface paths {
         post: operations["enqueue_data_extraction"];
         /** Delete extracted data */
         delete: operations["enqueue_delete_extracted_data"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/data/failures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List recorded data extraction failures
+         * @description The extraction failure ledger: media a setter has already rejected, which the work query therefore skips. Read-only by design — a row is cleared when the file's content changes, when a missing dependency appears, or by a shipped retry directive, never by an API call. Newest first, paginated with limit/offset against `total`.
+         */
+        get: operations["get_extraction_failures"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -942,7 +974,7 @@ export interface paths {
         put?: never;
         /**
          * Rebuild a quant profile's artifact for an embedding space
-         * @description Marks the embedding space containing the given setter for rebuild under the given profile (artifact recomputed at a bumped revision) and enqueues a reconcile job. The affected setters search exact until the rebuild completes. Explicit user action by design — artifact recomputation reshuffles coarse order and is never background-silent.
+         * @description Marks the embedding space containing the given setter for rebuild under the given profile (the int8 scale is recomputed and every code rewritten at a bumped revision) and enqueues a reconcile job. The affected setters search exact until the rebuild completes. Explicit user action by design — a recomputed scale invalidates every code already stored for the space, so search results move; that is never background-silent.
          */
         post: operations["rebuild_vector_quant_pair"];
         delete?: never;
@@ -984,6 +1016,72 @@ export interface paths {
         post?: never;
         /** Cancel queued jobs */
         delete: operations["cancel_queued"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/scan/failures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List recorded file scan failures
+         * @description The filescan failure ledger: paths the scan could not get as far as an item for. A confirmed row (`active`) is skipped only while the file still has the mtime and size the failure was recorded against, so a repaired or modified file is re-attempted on the next scan regardless. Read-only by design — a row is cleared when the file's mtime or size changes, when the path stops being walked, when a missing dependency appears, or by a shipped retry directive. Newest first, paginated with limit/offset against `total`.
+         */
+        get: operations["get_scan_failures"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/open/clipboard/artifact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Copy a cached transcode artifact to the host system's clipboard
+         * @description Place an OS-native reference to a finished rendition (a clip, a converted video, a mosaic) on the clipboard of the machine running the server, so that pasting it into a file manager, a chat client or an upload form attaches that file.
+         *     The artifact is stored under its content-addressed `<key>.<ext>` name, which is useless to paste, so the path handed to the clipboard is a hardlinked view of the same bytes under a human file name; it is created on demand and removed with the artifact.
+         *     The write targets the *server's* clipboard, so this is only useful when the server and the browser share a machine (or when a custom open.clipboard_command forwards it elsewhere).
+         *     This is a potentially dangerous operation, as a custom command can execute arbitrary code.
+         */
+        post: operations["copy_artifact_to_clipboard_on_host"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/open/clipboard/{sha256}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Copy a file to the host system's clipboard
+         * @description Place an OS-native reference to the file on the clipboard of the machine running the server, so that pasting it into a file manager, a chat client or an upload form attaches the original file.
+         *     Only the path travels; the file's contents are never read.
+         *     The write targets the *server's* clipboard, so this is only useful when the server and the browser share a machine (or when a custom open.clipboard_command forwards it elsewhere).
+         *     This is a potentially dangerous operation, as a custom command can execute arbitrary code.
+         */
+        post: operations["copy_file_to_clipboard_on_host"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1044,8 +1142,9 @@ export interface paths {
         };
         /**
          * List saved pinboards
-         * @description Lists the user's saved pinboards, most recently updated first, with head-version metadata (preview dimensions, item and version counts) but without layouts or preview blobs.
-         *     The `q` parameter matches pinboard names via FTS prefix search.
+         * @description Lists the user's saved pinboards with head-version metadata (preview dimensions, item and version counts) but without layouts or preview blobs.
+         *     Ordered by `order`: `activity` (default) ranks by a recency strip followed by a decaying visit score — opening a board counts as activity, not just saving it — while `updated` is plain last-saved-first. The order applies identically under the `q` name search (FTS prefix match).
+         *     Each board carries its association with the selected index database: `associated` (stamped for this database, or fully present in it), the stamped `databases`, and `present_count` — which is reported whether or not `associated_only` filters the list.
          */
         get: operations["list_pinboards"];
         put?: never;
@@ -1054,6 +1153,28 @@ export interface paths {
          * @description Creates a new pinboard with its first version. `layout` is the UI's pinboard URL param stored verbatim; `items` are the full sha256 hashes of the board's distinct items, used as a search index over the head version.
          */
         post: operations["create_pinboard"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pinboards/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Find the pinboards whose images match a search
+         * @description Runs the same PQL query `/api/search/pql` would run, intersects its full result set with every pinboard's pinned items, and returns the boards that intersect — not files. Membership is the board's head version only, by sha256, so a pin whose item is no longer indexed never matches.
+         *
+         *     The result is unpaginated: the response carries every matching board, ordered by the position of its best-ranked matching image (the direction-adjusted extreme of the search's first order key), then by match fraction, then by match count, then by the library's activity score. Multi-key orders are approximated by their primary key. `page`, `page_size`, `partition_by`, `count`, `results` and `check_path` in the body are ignored: there is one result shape.
+         */
+        post: operations["search_pql_pinboards"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1081,6 +1202,28 @@ export interface paths {
          *     With `relabel_head`, the head version's name-at-save snapshot is rewritten too; the client passes true when the current layout equals the head's, so the rename labels the version being looked at.
          */
         patch: operations["update_pinboard"];
+        trace?: never;
+    };
+    "/api/pinboards/{pinboard_id}/databases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace the databases a pinboard is associated with
+         * @description Sets the board's database associations to exactly the names given, replacing whatever was there (an empty list clears them). This is the manual fix path every automatic verdict has: associations are hints, so renames, accidental stamps and instance-identity resets all need somewhere to go.
+         *     A name the board is already stamped for is kept exactly as stored — including one whose database no longer exists locally, which the server has no way to mint again. Every other name must resolve to a local index database; one that resolves to nothing is a 400 and nothing is written. Removing a name is expressed by omitting it.
+         *     The board's `time_updated` is deliberately not bumped: an association is not a content change and must not reorder the library.
+         */
+        put: operations["set_pinboard_databases"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/pinboards/{pinboard_id}/versions": {
@@ -1138,11 +1281,17 @@ export interface paths {
         };
         /**
          * Get the stored preview image for a pinboard version
-         * @description Serves the client-composited preview for one version. Versions are immutable, so responses carry immutable cache headers.
-         *     With `maxw`, the image is downscaled on the fly (JPEG) to at most that width; without it, the stored image is served as uploaded.
+         * @description Serves the client-composited preview for one version. Responses carry immutable cache headers.
+         *     With `maxw`, the image is downscaled on the fly (JPEG) to at most that width — unless the stored image is already no wider than `maxw`, in which case it is served as uploaded, exactly as it is without `maxw`. Asking for the full master therefore costs no second lossy pass.
          */
         get: operations["pinboard_version_preview"];
-        put?: never;
+        /**
+         * Replace the stored preview image of a pinboard version
+         * @description Overwrites one version's preview image and its recorded dimensions, leaving the layout, items and name-at-save untouched. The compositor is client-side, so this is how a board saved at an older preview resolution gets a better picture without minting a version: recomposite the head version's layout and PUT the result.
+         *     The board's `time_updated` is deliberately not bumped — re-rendering the picture of a version is not a content change, so it must not reorder the library.
+         *     Caveat: version previews are served with immutable cache headers (versions were immutable until this endpoint existed), so after a refresh, already-cached sizes persist in browsers and proxies until a hard refresh. Accepted as-is: this is a one-time local operation, not a cache-busting mechanism.
+         */
+        put: operations["update_pinboard_version_preview"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1328,6 +1477,155 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/video/artifact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Serve a cached transcode artifact
+         * @description Serves a finished rendition by `key` (primary form) or by the `(id, id_type, preset, start_cs, end_cs)` that produced it. Supports Range requests. **Never starts a job**: a miss is a 404 whose body names the live job when one exists. The `key=` form is `immutable` — that URL is content-addressed on both the source hash and the resolved settings — while the resolvable form is `no-cache`, so its ETag revalidates: the same parameters name different bytes after a profile edit.
+         */
+        get: operations["video_artifact"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/video/cache": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get transcode artifact cache stats */
+        get: operations["get_transcode_cache"];
+        /**
+         * Resize the transcode artifact cache
+         * @description Sets the live byte budget and evicts down to it. Sizes above the `[transcode] cache_size_max_mb` ceiling are rejected. Not persisted — the TOML value applies again at the next startup.
+         */
+        put: operations["resize_transcode_cache"];
+        post?: never;
+        /**
+         * Clear the transcode artifact cache
+         * @description Removes every unpinned artifact (pinned rows are the share-link guarantee and survive). `include_failures` also forgets the recorded encode verdicts.
+         */
+        delete: operations["clear_transcode_cache"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/video/compose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create or join a composition job
+         * @description Renders a composition document — a canvas, a frame rate, an output length policy and a list of placed items — into one animated artifact. A sibling of `/api/video/transcode` rather than a variant of it: a composition is addressed by the hash of its document, not by an item, and is strictly heavier work, so a policy can allow one and deny the other. The response envelope, the jobs/SSE routes and the artifact route are identical to the single-file path; a single-item save is simply a composition with one item.
+         */
+        post: operations["video_compose"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/video/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a transcode job snapshot
+         * @description The same envelope the SSE stream carries. Exists for late joiners and as the fallback when `text/event-stream` cannot get through.
+         */
+        get: operations["video_job"];
+        put?: never;
+        post?: never;
+        /**
+         * Cancel a transcode job
+         * @description A queued job settles immediately; a running one is flagged and its ffmpeg child killed. Cancellation is never recorded as a verdict on the file.
+         */
+        delete: operations["video_job_cancel"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/video/jobs/{job_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Follow a transcode job (SSE)
+         * @description A `text/event-stream` of job snapshots. The first event is always the current snapshot, keep-alive comments are sent every 10 seconds, and the stream ends after the terminal event — clients must close their EventSource then, or it will reconnect forever.
+         */
+        get: operations["video_job_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/video/presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the available transcode presets
+         * @description The resolved preset table (built-ins merged with `[transcode.profiles]`), filtered by the matched policy's `[policies.client] transcode_presets` when it is set. The envelope also carries the composition limits, so clients clamp against live config.
+         */
+        get: operations["video_presets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/video/transcode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create or join a transcode job
+         * @description Resolves the item, validates the preset and trim bounds, and either answers from the artifact cache (200, `outcome: "hit"`) or creates/joins a job (202). `cut: "outro"` ends the clip at the item's detected outro boundary: it excludes `end_cs`, composes with `start_cs`, and is resolved to explicit centiseconds here, so it shares its cache entry with the identical explicit trim. An item with no detected outro — including one whose index database has `detect_outros` off — is a 404.
+         */
+        post: operations["video_transcode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1361,6 +1659,116 @@ export interface components {
              *     evicted samples between reads.
              */
             seq: number;
+        };
+        /**
+         * @description The animated raw floor, verbatim from
+         *     [`crate::visual_tiers`] (docs/grid-scroll-performance-implementation.md
+         *     §2, step B2).
+         *
+         *     A grid cell decides `<img>` vs `<video>` from four fields of its search
+         *     result — `type` and `duration` say whether the picture moves, `size` and
+         *     `width`/`height` say whether it clears the floor — against these two
+         *     numbers, which is the same rule and the same arithmetic the scan used to
+         *     decide what to store. Surfaced rather than duplicated in the UI so the two
+         *     sides cannot drift.
+         *
+         *     Clearing the floor is necessary but not sufficient: an item above it is
+         *     served a loop *once the backfill has written one*, and an item whose H.264
+         *     encode came out no smaller than its source keeps serving the source
+         *     permanently (the settled keep-the-original edge). A cell that mounts a
+         *     `<video>` must therefore fall back to its poster when playback errors —
+         *     the F6 contract in the plan document.
+         *
+         *     Server-derived constants, not policy-scoped configuration: every policy
+         *     sees the same floor, because it is a property of what the scan wrote.
+         */
+        AnimatedThumbnailFloor: {
+            /**
+             * Format: int64
+             * @description An animated item at or below **both** of these is served as its
+             *     original file at every grid tier: no loop is stored for it, so a cell
+             *     renders it as an image.
+             */
+            max_file_size: number;
+            /**
+             * Format: int32
+             * @description The longer side, in pixels. Both sides must be within it.
+             */
+            max_side: number;
+        };
+        ArtifactMissResponse: {
+            detail: string;
+            job?: null | components["schemas"]["TranscodeJobSnapshot"];
+        };
+        /** @description A finished artifact, as every client-facing shape refers to it. */
+        ArtifactRef: {
+            /**
+             * @description The name a download should be saved under, computed server-side from
+             *     the request that produced the artifact (implementation plan §3 S3).
+             *
+             *     It rides here because [`Self::url`] is the `key=` form, and that form
+             *     cannot name a download: a key knows the source hash and the settings,
+             *     never the file's path or whether the request was trimmed. The client
+             *     hangs this on its `<a download>` (the §0.4 precedent — naming inputs
+             *     belong to the server, so clients keep no lookup tables).
+             *
+             *     A *joined* job answers with the first submitter's name. The bytes are
+             *     identical by construction (the key covers the source hash), so the most
+             *     this can cost is the stem of one of several files with the same
+             *     content.
+             */
+            filename: string;
+            /** @description Cache key; also the artifact's ETag and its `?key=` query value. */
+            key: string;
+            mime_type: string;
+            /**
+             * @description The absolute path of this artifact's *share view* on the machine
+             *     running this server — `share/<key>/<human name>`, the same path
+             *     `POST /api/open/clipboard/artifact` resolves to for this
+             *     [`Self::filename`].
+             *
+             *     The relay's mapping hint: when server and relay share a filesystem it
+             *     can take the file directly instead of streaming it back over HTTP.
+             *
+             *     **It names the share view, not the raw artifact, and it may not exist
+             *     yet.** The raw file is `<key>.<ext>`, a hash — a relay whose mapping
+             *     resolved *that* would paste a content-addressed name while the toast
+             *     and the server-copy route both promise the human one. Naming the share
+             *     view instead makes both outcomes agree: a path the relay cannot resolve
+             *     (or that has not been materialized) simply degrades to its
+             *     bytes-required branch and the upload carries the same name, while a
+             *     resolvable one lands on the human-named hardlink. The prediction is
+             *     exact — `TranscodeCache::share_target` is deterministic for a given
+             *     (artifact row, name), so a later `materialize_share` with this same
+             *     name creates precisely this path.
+             *
+             *     A deliberate, gated exposure of a server-side path. `ArtifactRef` only
+             *     rides the `POST /api/video/transcode` and `POST /api/video/compose`
+             *     responses and the job snapshot/SSE shapes those two produce, all of
+             *     which sit behind the `video_transcode`/`video_compose` capabilities —
+             *     a policy that grants either is already trusted with starting ffmpeg on
+             *     this host. The one artifact shape a *read-only* profile can reach is
+             *     `GET /api/video/artifact`'s 404 body, whose `job` can never be `Done`:
+             *     the pool frees a key's `by_key` entry in the same actor message that
+             *     publishes the terminal event, so a snapshot found by key is always
+             *     still queued or running.
+             */
+            path: string;
+            /**
+             * @description Lowercase hex sha256 of the artifact's **own** bytes (not the source
+             *     hash the key carries), as computed at publish time.
+             *
+             *     A receiver that was handed the bytes out-of-band — the Desktop relay,
+             *     which uploads an artifact on the browser's behalf — verifies them
+             *     against this. `None` for a row committed before the column existed;
+             *     every consumer must read that as "no integrity claim", never as a
+             *     mismatch.
+             */
+            sha256?: string | null;
+            /** Format: int64 */
+            size_bytes: number;
+            /** @description Ready-to-use URL for `GET /api/video/artifact`. */
+            url: string;
         };
         /**
          * Format: binary
@@ -1405,6 +1813,27 @@ export interface components {
         CancelResponse: {
             detail: string;
         };
+        Canvas: {
+            /**
+             * @description `#RRGGBB`, `#RRGGBBAA` or the `0x` spelling of either. Normalized
+             *     before it reaches a filtergraph, which is not decoration: the value is
+             *     interpolated into a filter argument, where an unvalidated string could
+             *     spell further filters.
+             */
+            background?: string;
+            /** Format: int64 */
+            h: number;
+            /** Format: int64 */
+            w: number;
+        };
+        /**
+         * @description Which encoder family a preset draws from: `Quality` is software x264 at a
+         *     decent CRF, `Fast` is the validated hardware encoder when there is one
+         *     (design §5 — hardware encoders are meaningfully worse per bit, so export
+         *     quality never rides on them).
+         * @enum {string}
+         */
+        Channel: "quality" | "fast";
         /**
          * @description Coarse feature switches derived from the matched policy's ruleset. Each
          *     capability is one representative probe from the real route list in
@@ -1423,14 +1852,45 @@ export interface components {
             items: boolean;
             /** @description POST /api/open/file/{sha256} */
             open_files: boolean;
+            /**
+             * @description POST /api/pinboards/search
+             *
+             *     Separate from `pinboards` because that probe is a *write*: a policy
+             *     granting read-only board access would report `pinboards: false` while
+             *     the library search still works.
+             */
+            pinboard_search: boolean;
             /** @description POST /api/pinboards */
             pinboards: boolean;
             /** @description POST /api/jobs/folders/rescan */
             scan_jobs: boolean;
             /** @description POST /api/search/pql */
             search: boolean;
+            /**
+             * @description POST /api/video/compose
+             *
+             *     Separate from `video_transcode` because the two are separately
+             *     rule-able and mean different work: a composition is strictly heavier
+             *     (N decoders and their loop buffers at once, holding the pool), so a
+             *     policy may allow single-file clips while denying mosaics. The client's
+             *     animated-mosaic controls gate on this one.
+             */
+            video_compose: boolean;
+            /**
+             * @description POST /api/video/transcode
+             *
+             *     The write probe of the video surface: a policy may serve already
+             *     encoded artifacts (`GET /api/video/artifact`) while denying new
+             *     conversions, so this is deliberately not probed off the GET.
+             */
+            video_transcode: boolean;
         };
         ClientConfigResponse: {
+            /**
+             * @description The animated raw floor the thumbnail endpoint serves by (see
+             *     [`AnimatedThumbnailFloor`]).
+             */
+            animated_floor: components["schemas"]["AnimatedThumbnailFloor"];
             /** @description Ruleset-derived feature switches (see ClientCapabilities). */
             capabilities: components["schemas"]["ClientCapabilities"];
             /**
@@ -1450,15 +1910,64 @@ export interface components {
              *     while the private parent-shell bridge is configured.
              */
             desktop_shell_available: boolean;
+            display_loop_trigger?: null | components["schemas"]["DisplayLoopTrigger"];
             /** @description Name of the policy that matched this request. */
             policy: string;
         };
         /** @enum {string} */
-        Column: "file_id" | "sha256" | "path" | "filename" | "last_modified" | "item_id" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks" | "blurhash" | "data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id";
+        Column: "file_id" | "sha256" | "path" | "filename" | "last_modified" | "item_id" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks" | "blurhash" | "outro_kind" | "content_end_ms" | "video_codec" | "audio_codec" | "data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id";
         CompiledQuery: {
             params: unknown[];
             sql: string;
         };
+        ComposeItem: {
+            /**
+             * @description Whether this item's audio is mixed in. The client sets it to
+             *     `playing && !muted`; it is forced off for a still, an image, or a
+             *     container that carries no audio at all.
+             */
+            audio?: boolean;
+            dest: components["schemas"]["Rect"];
+            /** @description Item content hash; resolved against the request's index database. */
+            sha256: string;
+            /** @description Where this item's pixels come from; defaults to the item's file. */
+            source?: components["schemas"]["ItemSource"];
+            src: components["schemas"]["Rect"];
+            time: components["schemas"]["ItemTime"];
+            transform?: components["schemas"]["Transform"];
+        };
+        /** @description How long the output runs. */
+        ComposeLength: {
+            /** @enum {string} */
+            mode: "longest_loop_once";
+        } | {
+            /** @enum {string} */
+            mode: "cap";
+            /** Format: double */
+            seconds: number;
+        };
+        ComposeOutput: {
+            length: components["schemas"]["ComposeLength"];
+            /** @description Preset id from `GET /api/video/presets`. */
+            preset: string;
+        };
+        /** @description The composition document as it arrives. */
+        ComposeRequest: {
+            canvas: components["schemas"]["Canvas"];
+            /**
+             * Format: int32
+             * @description Output frame rate, 1-60, then capped by the preset.
+             */
+            fps: number;
+            items: components["schemas"]["ComposeItem"][];
+            output: components["schemas"]["ComposeOutput"];
+        };
+        /**
+         * @description Output container. Fixes the file extension, the MIME type the artifact is
+         *     served with, and whether an audio stream is possible at all.
+         * @enum {string}
+         */
+        Container: "mp4" | "webm" | "webp" | "avif";
         ContinuousFilescanConfig: {
             enabled?: boolean;
             included_folders?: string[];
@@ -1617,6 +2126,7 @@ export interface components {
             continuous_filescan_poll_interval_secs?: number | null;
             cron_jobs?: components["schemas"]["CronJob"][];
             cron_schedule?: string;
+            detect_outros?: boolean;
             enable_cron_job?: boolean;
             excluded_folders?: string[];
             included_folders: string[];
@@ -1647,6 +2157,38 @@ export interface components {
         };
         DesktopUpdateSnoozeRequest: {
             version: string;
+        };
+        /**
+         * @description The display-tier loop trigger, verbatim from [`crate::visual_tiers`]
+         *     (docs/thumbnail-format-implementation.md §2, R3).
+         *
+         *     The gallery's large view decides `<video>` vs `<img>` from four fields of
+         *     the item it is showing — `type` and `duration` say whether the picture
+         *     moves, `size` and `width`/`height` say whether it clears the trigger —
+         *     against these three numbers, which is the same arithmetic the scan used to
+         *     decide whether to store a loop at all. Surfaced rather than duplicated in
+         *     the UI so the two sides cannot drift, and so the client needs no request to
+         *     find out (a wasted round trip per animated item, and an error latch on the
+         *     ones that answer with an image).
+         *
+         *     Any **one** of the three firing is enough; they are not a conjunction.
+         */
+        DisplayLoopTrigger: {
+            /**
+             * Format: int64
+             * @description Bytes. An animated original larger than this is answered with a loop.
+             */
+            max_bytes: number;
+            /**
+             * Format: int64
+             * @description Total pixels.
+             */
+            max_pixels: number;
+            /**
+             * Format: int32
+             * @description The shorter side, in pixels.
+             */
+            max_short_side: number;
         };
         /** @enum {string} */
         DistanceAggregation: "MIN" | "MAX" | "AVG";
@@ -1720,6 +2262,77 @@ export interface components {
             lowest_confidence?: number | null;
             /** Format: double */
             lowest_language_confidence?: number | null;
+        };
+        /** @description One recorded extraction failure, as served to the audit surface. */
+        ExtractionFailure: {
+            /**
+             * @description `attempts >= skip_after`: the verdict is confirmed and the work query
+             *     is skipping this item. False means the verdict is recorded but
+             *     unconfirmed and will be retried.
+             */
+            active: boolean;
+            /** Format: int64 */
+            attempts: number;
+            /**
+             * @description The missing dependency for a `blocked` row (`pdfium`, `html-renderer`
+             *     or `ffmpeg`), null otherwise.
+             */
+            blocker?: string | null;
+            /** @description Human-readable message, clamped when it was recorded. */
+            error: string;
+            /** @description `input`, `blocked` or `resource`. */
+            error_class: string;
+            first_seen: string;
+            /**
+             * Format: int64
+             * @description Ledger row id. Stable for as long as the row lives, which is what the
+             *     UI keys rows on.
+             */
+            id: number;
+            /**
+             * Format: int64
+             * @description The last job that saw this failure. Null only when it was recorded
+             *     outside a job. This is *not* a foreign key and nothing nulls it when
+             *     job rows are cleaned up, so the id may name a job that no longer
+             *     exists — the ledger has to outlive the job history it refers to.
+             */
+            last_job_id?: number | null;
+            last_seen: string;
+            /** @description The item's mime type as recorded when the failure happened. */
+            mime_type: string;
+            /**
+             * @description One of the paths this item is stored under, chosen deterministically
+             *     (an available file first, then the lexicographically smallest path).
+             *     An item can have several files and the ledger keys on the item, so
+             *     this is a representative, not the whole story. Null when every file of
+             *     the item has gone away.
+             */
+            path?: string | null;
+            setter_name: string;
+            sha256: string;
+            /**
+             * Format: int64
+             * @description Attempts needed before the verdict suppresses the item.
+             */
+            skip_after: number;
+            /** @description `prepare` or `inference`. */
+            stage: string;
+        };
+        ExtractionFailuresResponse: {
+            failures: components["schemas"]["ExtractionFailure"][];
+            /**
+             * Format: int64
+             * @description How many failures match the filters, ignoring the page window — the
+             *     denominator for `limit`/`offset` paging.
+             */
+            total: number;
+        };
+        FailedFor: {
+            /**
+             * @description This Item has an active extraction-failure record for this setter name
+             *     (the pipeline rejected its media, or a dependency it needs is missing)
+             */
+            failed_for: string;
         };
         FileRecordResponse: {
             filename: string;
@@ -1979,6 +2592,41 @@ export interface components {
             user?: string;
         };
         /**
+         * @description Restrict search to items pinned on a pinboard.
+         *
+         *     Not sortable: pinboard membership has no natural per-item rank, so this
+         *     follows the `ProcessedBy`/`FailedFor` shape (no `SortableOptions`, no
+         *     `order_rank` column, never an order source) rather than the `InBookmarks`
+         *     one.
+         */
+        InPinboard: {
+            /**
+             * @description Restrict search to items pinned on a pinboard
+             *
+             *     Only include items that are members of the head version of a pinboard.
+             */
+            in_pinboard: components["schemas"]["InPinboardArgs"];
+        };
+        InPinboardArgs: {
+            /**
+             * @description Enable the filter
+             *
+             *     Must be set to True, this option only exists to make sure the filter is not empty,
+             *     given that that all fields are optional.
+             */
+            filter?: boolean;
+            /**
+             * @description Pinboard IDs
+             *
+             *     List of pinboard IDs to filter by. An item matches if it is pinned in the
+             *     head (current) version of at least one of them.
+             *     If empty, membership in *any* of the user's pinboards matches.
+             */
+            pinboard_ids?: number[];
+            /** @description The user whose pinboards are searched. */
+            user?: string;
+        };
+        /**
          * @description Index mode for vector filters (docs/vector-index-design.md).
          *
          *     `auto` resolves to the default quant profile where its coverage is ready
@@ -2011,9 +2659,27 @@ export interface components {
             item: components["schemas"]["ItemRecordResponse"];
         };
         ItemRecordResponse: {
+            /**
+             * @description The *first* audio stream's codec name (`aac`, `opus`, `ac3`, ...), or
+             *     `unknown` when a stream exists that ffprobe named no codec for. `null`
+             *     conflates "no audio stream" with "not probed yet" — deliberately, since
+             *     neither is a reason to veto playback. Never gated, as above.
+             */
+            audio_codec: string | null;
             /** Format: int64 */
             audio_tracks: number | null;
             blurhash: string | null;
+            /**
+             * Format: int64
+             * @description Where the item's real content ends, when an outro was found.
+             *
+             *     Served as `null` for every item when the index database has
+             *     `detect_outros` off, on the same terms (and with the same PQL
+             *     asymmetry) as `outro_kind` — an `order_by` on this column still
+             *     orders the rows by the stored boundaries even though every served
+             *     value is null.
+             */
+            content_end_ms: number | null;
             /** Format: double */
             duration: number | null;
             /** Format: int64 */
@@ -2021,6 +2687,25 @@ export interface components {
             /** Format: int64 */
             id: number;
             md5: string;
+            /**
+             * @description The raw stored outro verdict, detector version included
+             *     (`tiktok_card/1`, `none/1`); `null` when the item was never examined.
+             *     Kind-specific checks must prefix-match (`tiktok_card/`) rather than
+             *     compare the whole value — see
+             *     `docs/video-outro-detection-design.md` §6.2. "Has an outro" is
+             *     `content_end_ms` being non-null.
+             *
+             *     Served as `null` for every item when the index database has
+             *     `detect_outros` off, including items whose outro was detected while it
+             *     was on: the toggle turns the whole feature off for its database.
+             *     Note the deliberate asymmetry — PQL predicates (`match` filters,
+             *     `order_by`) on this column keep working with the toggle off, because
+             *     querying your own data is a query capability, not playback
+             *     (`docs/video-outro-skip-design.md` §6). The visible edge of that
+             *     asymmetry: an `order_by` on `content_end_ms` still orders the rows by
+             *     the stored boundaries even though every served value is null.
+             */
+            outro_kind: string | null;
             sha256: string;
             /** Format: int64 */
             size: number | null;
@@ -2028,10 +2713,58 @@ export interface components {
             subtitle_tracks: number | null;
             time_added: string;
             type: string;
+            /**
+             * @description The video stream's codec name as ffprobe reports it (`h264`, `hevc`,
+             *     `av1`, ...), with two in-band sentinels: `none` means the container was
+             *     probed and has no video stream, `unknown` means a video stream exists
+             *     but ffprobe named no codec. `null` means the item has not been probed
+             *     yet — an existing library fills in over its next few scans, so a client
+             *     must keep whatever it did before these columns existed as the `null`
+             *     behaviour.
+             *
+             *     Unlike the outro fields this is never gated: a codec name is an
+             *     objective property of the file, like `duration` or `width`.
+             */
+            video_codec: string | null;
             /** Format: int64 */
             video_tracks: number | null;
             /** Format: int64 */
             width: number | null;
+        };
+        /**
+         * @description Which of an item's stored pictures the composition reads
+         *     (docs/compose-still-video-parity-design.md §2).
+         *
+         *     `File` is the item's own file on disk — everything before this field
+         *     existed. `Thumbnail` is the stored thumbnail blob the board renders for a
+         *     video no `<video>` element is mounted for: it has no file path and no
+         *     recorded source timestamp, so it can be neither referenced as a file nor
+         *     recreated by a seek — the API layer materializes the blob to a per-job
+         *     temp file instead. A thumbnail is a still image in every way, so admission
+         *     requires `time.kind = image` for it.
+         * @enum {string}
+         */
+        ItemSource: "file" | "thumbnail";
+        /**
+         * @description What an item is showing. Replaces the design's separate "playing" and
+         *     "muted" flags (§0.5): a span *is* playing, a still and an image are
+         *     stopped, so no combination of fields can contradict another.
+         */
+        ItemTime: {
+            /** Format: int64 */
+            end_cs: number;
+            /** @enum {string} */
+            kind: "span";
+            /** Format: int64 */
+            start_cs: number;
+        } | {
+            /** Format: int64 */
+            at_cs: number;
+            /** @enum {string} */
+            kind: "still";
+        } | {
+            /** @enum {string} */
+            kind: "image";
         };
         Items: {
             sha256: string[];
@@ -2168,6 +2901,14 @@ export interface components {
             image_files: number;
             /** Format: double */
             inference_time: number;
+            /**
+             * Format: int64
+             * @description How many of `errors` were verdicts about the media itself (the
+             *     `input`/`blocked`/`resource` ledger classes) rather than systemic
+             *     failures. The remainder is what decides whether a job where everything
+             *     failed completes with a warning or hard-fails.
+             */
+            input_errors: number;
             /** Format: int64 */
             items_in_db: number;
             /** Format: int64 */
@@ -2365,11 +3106,15 @@ export interface components {
             setters?: string[];
         };
         MatchValue: {
+            /** @description See [`MatchValues::audio_codec`]. */
+            audio_codec?: string | null;
             /** Format: int64 */
             audio_tracks?: number | null;
             blurhash?: string | null;
             /** Format: double */
             confidence?: number | null;
+            /** Format: int64 */
+            content_end_ms?: number | null;
             /** Format: int64 */
             data_id?: number | null;
             /** Format: int64 */
@@ -2390,6 +3135,8 @@ export interface components {
             language_confidence?: number | null;
             last_modified?: string | null;
             md5?: string | null;
+            /** @description See [`MatchValues::outro_kind`]. */
+            outro_kind?: string | null;
             path?: string | null;
             /** Format: int64 */
             setter_id?: number | null;
@@ -2406,15 +3153,19 @@ export interface components {
             text_length?: number | null;
             time_added?: string | null;
             type?: string | null;
+            /** @description See [`MatchValues::video_codec`]. */
+            video_codec?: string | null;
             /** Format: int64 */
             video_tracks?: number | null;
             /** Format: int64 */
             width?: number | null;
         };
         MatchValues: {
+            audio_codec?: null | components["schemas"]["OneOrMany_String"];
             audio_tracks?: null | components["schemas"]["OneOrMany_i64"];
             blurhash?: null | components["schemas"]["OneOrMany_String"];
             confidence?: null | components["schemas"]["OneOrMany_f64"];
+            content_end_ms?: null | components["schemas"]["OneOrMany_i64"];
             data_id?: null | components["schemas"]["OneOrMany_i64"];
             data_index?: null | components["schemas"]["OneOrMany_i64"];
             duration?: null | components["schemas"]["OneOrMany_f64"];
@@ -2427,6 +3178,7 @@ export interface components {
             language_confidence?: null | components["schemas"]["OneOrMany_f64"];
             last_modified?: null | components["schemas"]["OneOrMany_String"];
             md5?: null | components["schemas"]["OneOrMany_String"];
+            outro_kind?: null | components["schemas"]["OneOrMany_String"];
             path?: null | components["schemas"]["OneOrMany_String"];
             setter_id?: null | components["schemas"]["OneOrMany_i64"];
             setter_name?: null | components["schemas"]["OneOrMany_String"];
@@ -2438,6 +3190,7 @@ export interface components {
             text_length?: null | components["schemas"]["OneOrMany_i64"];
             time_added?: null | components["schemas"]["OneOrMany_String"];
             type?: null | components["schemas"]["OneOrMany_String"];
+            video_codec?: null | components["schemas"]["OneOrMany_String"];
             video_tracks?: null | components["schemas"]["OneOrMany_i64"];
             width?: null | components["schemas"]["OneOrMany_i64"];
         };
@@ -2531,9 +3284,42 @@ export interface components {
             priority?: number;
         };
         /** @enum {string} */
-        OrderByField: "file_id" | "sha256" | "path" | "filename" | "last_modified" | "item_id" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks" | "blurhash" | "data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id" | "random";
+        OrderByField: "file_id" | "sha256" | "path" | "filename" | "last_modified" | "item_id" | "md5" | "type" | "size" | "width" | "height" | "duration" | "time_added" | "audio_tracks" | "video_tracks" | "subtitle_tracks" | "blurhash" | "outro_kind" | "content_end_ms" | "video_codec" | "audio_codec" | "data_id" | "language" | "language_confidence" | "text" | "confidence" | "text_length" | "job_id" | "setter_id" | "setter_name" | "data_index" | "source_id" | "random";
         /** @enum {string} */
         OrderDirection: "asc" | "desc";
+        /**
+         * @description One stamped database of a board. Databases are named, never identified by
+         *     UUID, on the wire: the UUIDs are server-side matching keys.
+         */
+        PinboardDatabaseResponse: {
+            /** @description Whether this row is the database currently selected. */
+            associated: boolean;
+            /**
+             * Format: int64
+             * @description Unix seconds of the last stamp for this database.
+             */
+            last_stamped: number;
+            /**
+             * @description The index database's name as of the stamp. It may no longer resolve
+             *     to a local database, in which case it is a residual label only.
+             */
+            name: string;
+        };
+        /**
+         * @description A board's associations after the manual editor changed them — the same
+         *     two fields the list and detail responses carry, so the client can update
+         *     the card in place without re-listing.
+         */
+        PinboardDatabasesResponse: {
+            /**
+             * @description Whether the board now belongs to the selected index database, by the
+             *     full rule (so it can still be true through 100% item overlap with no
+             *     stamp at all).
+             */
+            associated: boolean;
+            /** @description The databases the board is stamped for, newest stamp first. */
+            databases: components["schemas"]["PinboardDatabaseResponse"][];
+        };
         PinboardDeleteResponse: {
             /**
              * @description True when the operation removed the board itself (deleting its last
@@ -2548,6 +3334,10 @@ export interface components {
             new_head_version_id?: number | null;
         };
         PinboardDetailResponse: {
+            /** @description Whether the board belongs to the selected index database. */
+            associated: boolean;
+            /** @description The databases this board is stamped for, newest stamp first. */
+            databases: components["schemas"]["PinboardDatabaseResponse"][];
             /**
              * @description The board's stored editing-behavior flags, verbatim as last saved.
              *     Null for boards saved before flags existed; the UI treats that as
@@ -2558,6 +3348,12 @@ export interface components {
             /** Format: int64 */
             id: number;
             name?: string | null;
+            /**
+             * Format: int64
+             * @description The head version's items that exist in the selected index database
+             *     (`head.item_count` is the total). Same field as on the list summary.
+             */
+            present_count: number;
             time_added: string;
             time_updated: string;
             /** Format: int64 */
@@ -2566,14 +3362,98 @@ export interface components {
         PinboardListResponse: {
             pinboards: components["schemas"]["PinboardSummaryResponse"][];
         };
-        PinboardSummaryResponse: {
+        /**
+         * @description Library list ordering. `Activity` is the recency+frequency hybrid;
+         *     `Updated` is the historical `time_updated DESC` order.
+         * @enum {string}
+         */
+        PinboardOrder: "activity" | "updated";
+        /**
+         * @description One matching board: the `PinboardSummaryResponse` fields the library card
+         *     renders, plus how much of the board the search matched.
+         */
+        PinboardSearchMatch: {
+            /**
+             * @description Whether the board belongs to the selected index database, by the same
+             *     rule the library list applies.
+             */
+            associated: boolean;
+            /** @description The databases this board is stamped for, newest stamp first. */
+            databases: components["schemas"]["PinboardDatabaseResponse"][];
             /** Format: int64 */
             head_version_id?: number | null;
             /** Format: int64 */
             id: number;
             /** Format: int64 */
             item_count: number;
+            /**
+             * Format: int64
+             * @description Unix seconds of the board's last activity — opening it counts, not
+             *     just saving. Null only for rows predating the activity columns.
+             */
+            last_seen?: number | null;
+            /**
+             * Format: int64
+             * @description Distinct items on the board's head version that the search matched.
+             */
+            match_count: number;
             name?: string | null;
+            /**
+             * Format: int64
+             * @description How many of the board's items exist in the selected index database
+             *     (`match_count` is how many the *search* matched). Same field as on the
+             *     library list summary.
+             */
+            present_count: number;
+            /** Format: int64 */
+            preview_h?: number | null;
+            /** Format: int64 */
+            preview_w?: number | null;
+            /** Format: int64 */
+            screenful_h?: number | null;
+            time_added: string;
+            time_updated: string;
+            /** Format: int64 */
+            version_count: number;
+        };
+        PinboardSearchResponse: {
+            metrics: components["schemas"]["SearchMetrics"];
+            /**
+             * @description Every board with at least one matching image, unpaginated, in the
+             *     server's default order (see the endpoint description).
+             */
+            pinboards: components["schemas"]["PinboardSearchMatch"][];
+        };
+        PinboardSummaryResponse: {
+            /**
+             * @description Whether the board belongs to the selected index database, by the full
+             *     rule: a stamp for this database (by identity, or by name for a
+             *     database this instance rebuilt), or 100% of its items present here.
+             */
+            associated: boolean;
+            /** @description The databases this board is stamped for, newest stamp first. */
+            databases: components["schemas"]["PinboardDatabaseResponse"][];
+            /** Format: int64 */
+            head_version_id?: number | null;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            item_count: number;
+            /**
+             * Format: int64
+             * @description Unix seconds of the board's last activity — opening it counts, not
+             *     just saving. Null only for rows predating the activity columns.
+             */
+            last_seen?: number | null;
+            name?: string | null;
+            /**
+             * Format: int64
+             * @description How many of the board's items exist in the selected index database.
+             *     Below `item_count` this is rot ("38/40 here"), and is reported
+             *     whatever `associated_only` says — it is what tells rot apart from a
+             *     board that belongs somewhere else.
+             */
+            present_count: number;
             /** Format: int64 */
             preview_h?: number | null;
             /** Format: int64 */
@@ -2775,7 +3655,9 @@ export interface components {
         PredictJsonResponse: {
             /**
              * @description One output per input; binary outputs are wrapped as
-             *     `{"__type__": "base64", "content": "<base64>"}`.
+             *     `{"__type__": "base64", "content": "<base64>"}`, and an input the
+             *     model rejected on its own is
+             *     `{"__error__": {"class": "input" | "transient", "message": "..."}}`.
              */
             outputs: components["schemas"]["Value"][];
         };
@@ -2799,7 +3681,7 @@ export interface components {
             /** @description This Item or Item Data must have been processed by this setter name and have data derived from it */
             processed_by: string;
         };
-        QueryElement: components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"] | components["schemas"]["Match"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["SimilarTo"] | components["schemas"]["MatchTags"] | components["schemas"]["InBookmarks"] | components["schemas"]["ProcessedBy"] | components["schemas"]["HasUnprocessedData"];
+        QueryElement: components["schemas"]["AndOperator"] | components["schemas"]["OrOperator"] | components["schemas"]["NotOperator"] | components["schemas"]["Match"] | components["schemas"]["MatchPath"] | components["schemas"]["MatchText"] | components["schemas"]["SemanticTextSearch"] | components["schemas"]["SemanticImageSearch"] | components["schemas"]["SimilarTo"] | components["schemas"]["MatchTags"] | components["schemas"]["InBookmarks"] | components["schemas"]["ProcessedBy"] | components["schemas"]["HasUnprocessedData"] | components["schemas"]["FailedFor"] | components["schemas"]["InPinboard"];
         QueueCancelResponse: {
             cancelled_jobs: number[];
         };
@@ -2807,6 +3689,21 @@ export interface components {
             /** @description Bounded, process-local outcomes for jobs that recently left the queue. */
             outcomes: components["schemas"]["JobOutcomeModel"][];
             queue: components["schemas"]["JobModel"][];
+        };
+        /**
+         * @description A rectangle. Source rectangles are in the source's own pixels *before* its
+         *     display orientation is applied; destination rectangles are in output pixels
+         *     on the canvas.
+         */
+        Rect: {
+            /** Format: int64 */
+            h: number;
+            /** Format: int64 */
+            w: number;
+            /** Format: int64 */
+            x: number;
+            /** Format: int64 */
+            y: number;
         };
         RenamePinboardRequest: {
             name?: string | null;
@@ -2958,6 +3855,58 @@ export interface components {
             screenful_h?: number | null;
         };
         ScalarValue: number | string;
+        /** @description One recorded filescan failure, as served to the audit surface. */
+        ScanFailure: {
+            /**
+             * @description `attempts >= skip_after`: the verdict is confirmed. Not the same as
+             *     "this path will be skipped": the walker also requires the file to still
+             *     have the `last_modified`/`file_size` the failure was recorded against,
+             *     so a file that has been repaired or otherwise modified since is
+             *     re-attempted on the next scan even though this reads true.
+             *
+             *     A `decode`-stage row never suppresses anything at any `attempts`: its
+             *     file *is* indexed (only the visuals failed), so the row is audit-only
+             *     and retry scheduling is the visuals cache's, not this ledger's.
+             */
+            active: boolean;
+            /** Format: int64 */
+            attempts: number;
+            blocker?: string | null;
+            error: string;
+            /** @description `input`, `blocked` or `resource`. */
+            error_class: string;
+            first_seen: string;
+            /** Format: int64 */
+            id: number;
+            /**
+             * Format: int64
+             * @description The last scan that saw this failure. Null only when it was recorded
+             *     outside a scan. This is *not* a foreign key and nothing nulls it when
+             *     `file_scans` rows are cleaned up, so the id may name a scan that no
+             *     longer exists.
+             */
+            last_scan_id?: number | null;
+            last_seen: string;
+            /** @description The extension-based guess, or null when the guess is what failed. */
+            mime_type?: string | null;
+            /**
+             * @description The path is the key of this ledger: these failures happen before an
+             *     item — or even a hash — exists.
+             */
+            path: string;
+            /** Format: int64 */
+            skip_after: number;
+            /** @description `mime`, `metadata`, `header` or `decode`. */
+            stage: string;
+        };
+        ScanFailuresResponse: {
+            failures: components["schemas"]["ScanFailure"][];
+            /**
+             * Format: int64
+             * @description How many failures match the filters, ignoring the page window.
+             */
+            total: number;
+        };
         SearchCacheDbGroup: {
             bytes: number;
             /** @description Cached spans, not client pages: one 320-row prefetch is 2 spans. */
@@ -3069,6 +4018,15 @@ export interface components {
             preprocess?: number;
         };
         SearchResult: {
+            /**
+             * @description Audio Codec
+             *
+             *     The *first* audio stream's codec name (`aac`, `opus`, `ac3`, ...), or
+             *     `unknown` when a stream exists that ffprobe named no codec for. Absent
+             *     for a file with no audio stream as well as for one not yet probed —
+             *     the column does not distinguish them. Never withheld, as above.
+             */
+            audio_codec?: string | null;
             /** Format: int64 */
             audio_tracks?: number | null;
             blurhash?: string | null;
@@ -3082,6 +4040,19 @@ export interface components {
             bookmarked?: boolean | null;
             /** Format: double */
             confidence?: number | null;
+            /**
+             * Format: int64
+             * @description Content End (ms)
+             *
+             *     Where the item's real content ends, when an outro was found. Absent
+             *     when no outro is recorded or the column was not selected.
+             *
+             *     Also absent on every row when the index database has `detect_outros`
+             *     off, on the same terms (and with the same PQL asymmetry) as
+             *     `outro_kind` — an `order_by` on this column still orders the rows by
+             *     the stored boundaries even though every served value is absent.
+             */
+            content_end_ms?: number | null;
             /** Format: int64 */
             data_id?: number | null;
             /** Format: int64 */
@@ -3110,6 +4081,27 @@ export interface components {
             language_confidence?: number | null;
             last_modified?: string | null;
             md5?: string | null;
+            /**
+             * @description Outro Kind
+             *
+             *     The raw stored outro verdict, detector version included (`tiktok_card/1`,
+             *     `none/1`); absent when the item was never examined or the column was
+             *     not selected. Kind-specific
+             *     queries must prefix-match, not compare the whole value — see
+             *     `docs/video-outro-detection-design.md` §6.2. "Has an outro" is
+             *     `content_end_ms` being present.
+             *
+             *     Absent on every row when the index database has `detect_outros` off,
+             *     even for items whose outro was detected while it was on: the toggle
+             *     turns the whole feature off for its database. Note the deliberate
+             *     asymmetry — PQL predicates (`match` filters, `order_by`) on this
+             *     column keep working with the toggle off, because querying your own
+             *     data is a query capability, not playback
+             *     (`docs/video-outro-skip-design.md` §6). The visible edge of that
+             *     asymmetry: an `order_by` on `content_end_ms` still orders the rows by
+             *     the stored boundaries even though every served value is absent.
+             */
+            outro_kind?: string | null;
             path?: string | null;
             /** Format: int64 */
             setter_id?: number | null;
@@ -3126,6 +4118,19 @@ export interface components {
             text_length?: number | null;
             time_added?: string | null;
             type?: string | null;
+            /**
+             * @description Video Codec
+             *
+             *     The video stream's codec name as ffprobe reports it (`h264`, `hevc`,
+             *     `av1`, ...), with two in-band sentinels: `none` means the container was
+             *     probed and has no video stream, `unknown` means a video stream exists
+             *     but ffprobe named no codec. Absent when the item has not been probed
+             *     yet or the column was not selected.
+             *
+             *     Unlike the outro fields this is never withheld: a codec name is an
+             *     objective property of the file, like `duration` or `width`.
+             */
+            video_codec?: string | null;
             /** Format: int64 */
             video_tracks?: number | null;
             /** Format: int64 */
@@ -3161,16 +4166,14 @@ export interface components {
              *     brute-forces full-precision vectors; `quant` demands a quant profile
              *     and errors when it isn't ready. `ann` is reserved.
              *
-             *     Under a quant profile the displayed head order is always re-scored
-             *     against full-precision vectors (see `k`), and `order_rank` is a rank,
-             *     not a raw distance.
+             *     A quant profile scores int8 codes in a single pass; `order_rank` has
+             *     exactly the same semantics as under `exact`.
              */
             index?: components["schemas"]["IndexMode"];
             /**
              * Format: int64
-             * @description The exactness horizon: the coarse-top-k candidates re-scored with
-             *     full-precision distances. Ignored by `exact`. Keep it fixed across a
-             *     pagination session.
+             * @description Deprecated: ignored. Reserved for a future ANN index mode (top-k
+             *     retrieval depth).
              */
             k?: number;
             /**
@@ -3214,16 +4217,14 @@ export interface components {
              *     brute-forces full-precision vectors; `quant` demands a quant profile
              *     and errors when it isn't ready. `ann` is reserved.
              *
-             *     Under a quant profile the displayed head order is always re-scored
-             *     against full-precision vectors (see `k`), and `order_rank` is a rank,
-             *     not a raw distance.
+             *     A quant profile scores int8 codes in a single pass; `order_rank` has
+             *     exactly the same semantics as under `exact`.
              */
             index?: components["schemas"]["IndexMode"];
             /**
              * Format: int64
-             * @description The exactness horizon: the coarse-top-k candidates re-scored with
-             *     full-precision distances. Ignored by `exact`. Keep it fixed across a
-             *     pagination session.
+             * @description Deprecated: ignored. Reserved for a future ANN index mode (top-k
+             *     retrieval depth).
              */
             k?: number;
             /**
@@ -3254,6 +4255,20 @@ export interface components {
              *     Search for text using semantic search on text embeddings.
              */
             text_embeddings: components["schemas"]["SemanticTextArgs"];
+        };
+        /**
+         * @description The manual editor's payload: exactly the databases the board should be
+         *     associated with afterwards. An empty list clears every association.
+         */
+        SetPinboardDatabasesRequest: {
+            /**
+             * @description Index database names. Each keeps every stamp already stored under it
+             *     (including one whose database no longer exists, which the server could
+             *     not mint again) *and* associates the board with the live database that
+             *     name refers to here. A name that is neither stamped nor local is a
+             *     400. Omitting a name removes it.
+             */
+            databases: string[];
         };
         SetterDataStats: {
             total_counts: [
@@ -3312,16 +4327,15 @@ export interface components {
              *     brute-forces full-precision vectors; `quant` demands a quant profile
              *     and errors when it isn't ready. `ann` is reserved.
              *
-             *     Under a quant profile both sides of the similarity self-join use
-             *     binary quants for the coarse pass, and `order_rank` is a rank, not a
-             *     raw distance.
+             *     Under a quant profile both sides of the similarity self-join read
+             *     int8 codes; `order_rank` has exactly the same semantics as under
+             *     `exact`.
              */
             index?: components["schemas"]["IndexMode"];
             /**
              * Format: int64
-             * @description The exactness horizon: the coarse-top-k candidates re-scored with
-             *     full-precision distances. Ignored by `exact`. Keep it fixed across a
-             *     pagination session.
+             * @description Deprecated: ignored. Reserved for a future ANN index mode (top-k
+             *     retrieval depth).
              */
             k?: number;
             /** @description The name of the embedding model used for similarity search */
@@ -3494,10 +4508,24 @@ export interface components {
         StatusResponse: {
             status: string;
         };
+        /**
+         * @description Where the UI may offer a preset. Presets carry their own surfaces so a
+         *     user-declared profile appears in the right dropdowns with no client change.
+         * @enum {string}
+         */
+        Surface: "playback" | "clip" | "mosaic";
         SystemConfig: {
             continuous_filescan?: components["schemas"]["ContinuousFilescanConfig"];
             cron_jobs?: components["schemas"]["CronJob"][];
             cron_schedule?: string;
+            /**
+             * @description Probe videos for an appended platform outro (TikTok end cards) at scan
+             *     time, so thumbnails and frames stop sampling the card
+             *     (docs/video-outro-detection-design.md §8). Subordinate to `scan_video`:
+             *     off when video scanning is off, regardless of this. Turning it off does
+             *     not revert visuals already regenerated against a trimmed range (§8.1).
+             */
+            detect_outros?: boolean;
             enable_cron_job?: boolean;
             excluded_folders?: string[];
             filescan_filter?: null | components["schemas"]["Match"];
@@ -3522,6 +4550,29 @@ export interface components {
             scan_images?: boolean;
             scan_pdf?: boolean;
             scan_video?: boolean;
+            /**
+             * @description Accepted names: `jpeg`, `webp`; unknown names are ignored
+             *     (docs/thumbnail-format-implementation.md §2, R5).
+             *
+             *     Which container formats stored thumbnails may use.
+             *
+             *     It *constrains* the format rules rather than deciding anything: with
+             *     `webp` absent every WebP verdict becomes JPEG (alpha flattened), with
+             *     `jpeg` absent every JPEG verdict becomes WebP — the
+             *     storage-constrained deployment, which knowingly pays WebP's measured
+             *     2.2-2.7x decode cost in the grid. A list naming neither is treated as
+             *     the default with a warning and never rejected at commit: the settings
+             *     UI round-trips the whole config, so a reject would break every
+             *     unrelated save.
+             *
+             *     Changing it regenerates the affected renditions on the next scan; the
+             *     database file only shrinks after the maintenance VACUUM.
+             * @example [
+             *       "jpeg",
+             *       "webp"
+             *     ]
+             */
+            thumbnail_formats?: string[];
             vector_quants?: null | components["schemas"]["VectorQuantsConfig"];
         } & {
             [key: string]: components["schemas"]["Value"];
@@ -3589,19 +4640,212 @@ export interface components {
         TextResponse: {
             text: components["schemas"]["ExtractedTextRecord"][];
         };
+        /**
+         * @description One rendition of an item's picture.
+         *
+         *     The wire values are the frozen `size=` parameter of
+         *     `GET /api/items/item/thumbnail`; do not rename them.
+         * @enum {string}
+         */
+        ThumbnailTier: "display" | "grid-m" | "grid-s" | "grid-xs";
+        TranscodeCacheResize: {
+            /**
+             * Format: int64
+             * @description New byte budget in megabytes. `0` empties the cache; values above the
+             *     `[transcode] cache_size_max_mb` ceiling are rejected. Not persisted.
+             */
+            size_mb: number;
+        };
+        TranscodeCacheStats: {
+            /** Format: int64 */
+            capacity_bytes: number;
+            /** Format: int64 */
+            entries: number;
+            /**
+             * Format: int64
+             * @description The `[transcode] cache_size_max_mb` ceiling, in bytes.
+             */
+            limit_bytes: number;
+            /** Format: int64 */
+            pinned_entries: number;
+            /** Format: int64 */
+            used_bytes: number;
+        };
+        /**
+         * @description Job state, as both the SSE payload and the snapshot body. Deliberately
+         *     generic (no transcode-specific fields): `jobs/queue.rs`'s polled status is
+         *     expected to migrate onto the same envelope.
+         */
+        TranscodeJobEvent: {
+            position: number;
+            /** @enum {string} */
+            state: "queued";
+        } | {
+            /** Format: float */
+            progress?: number | null;
+            /** @enum {string} */
+            state: "running";
+        } | {
+            artifact: components["schemas"]["ArtifactRef"];
+            /** @enum {string} */
+            state: "done";
+        } | {
+            cancelled: boolean;
+            error: string;
+            /** @enum {string} */
+            state: "failed";
+        };
+        TranscodeJobSnapshot: components["schemas"]["TranscodeJobEvent"] & {
+            id: string;
+        };
+        /**
+         * @description Composition limits, carried alongside the presets so a client builder
+         *     clamps against what this server enforces instead of mirrored constants.
+         *
+         *     Deliberately *not* only the config values: the canvas and frame-rate bounds
+         *     are code constants (`compose.rs`), and a client that has to guess them is in
+         *     exactly the position this envelope exists to prevent. Where a limit comes
+         *     from is the server's business; that the client has the number is the point.
+         */
+        TranscodeLimits: {
+            /** Format: int64 */
+            max_animated_image_seconds: number;
+            /** Format: int64 */
+            max_canvas_area: number;
+            /** Format: int64 */
+            max_canvas_side: number;
+            /** Format: int32 */
+            max_compose_fps: number;
+            max_mosaic_inputs: number;
+            /** Format: int64 */
+            max_mosaic_loop_mb: number;
+            /** Format: int64 */
+            max_output_seconds: number;
+            /** Format: int64 */
+            min_canvas_side: number;
+            /**
+             * @description The image mimes this server can play *animation* from in a
+             *     composition, so a client may classify such an item as a compose span
+             *     instead of a frozen frame (docs/animated-image-spans-design.md §5).
+             *     Always `image/gif`, and always `image/webp` — which no ffmpeg
+             *     decodes, so the server bridges it through its own decoder
+             *     (docs/animated-webp-bridge-design.md); `image/avif` rides the decode
+             *     probe.
+             *
+             *     A capability, not a validation: the server does not reject a span on
+             *     an unlisted container at admission (admission is probe-free and knows
+             *     no mimes) — this list exists so a correct client never builds one.
+             */
+            span_capable_image_mimes: string[];
+        };
+        TranscodePresetInfo: {
+            channel: components["schemas"]["Channel"];
+            container: components["schemas"]["Container"];
+            /** @description File extension for the container, so clients keep no lookup table. */
+            ext: string;
+            id: string;
+            label: string;
+            /**
+             * Format: int64
+             * @description Cap on output height in pixels; `null` keeps the source height.
+             *
+             *     Carried because it is a *rejection*: a composition whose canvas is
+             *     taller than this is refused outright (`canvas_over_preset_height`)
+             *     rather than rescaled, so a client that cannot see the number can only
+             *     discover it by having a document turned away. Its `fps_max` twin is
+             *     deliberately **not** here, for the same reason inverted: an over-cap
+             *     frame rate is silently capped, never refused, so there is nothing a
+             *     client could do with it but mirror a value that changes nothing.
+             */
+            max_height?: number | null;
+            surfaces: components["schemas"]["Surface"][];
+        };
+        TranscodePresetsResponse: {
+            limits: components["schemas"]["TranscodeLimits"];
+            presets: components["schemas"]["TranscodePresetInfo"][];
+        };
+        TranscodeRequest: {
+            /**
+             * @description `"outro"` to end the clip at this item's detected outro boundary,
+             *     resolved server-side. Excludes `end_cs` (the two are the same bound
+             *     asked for two ways), composes with `start_cs`, and is a 404 when the
+             *     item has no detected outro or the index database has detection off.
+             *     Any other value is rejected rather than ignored: a client that sent one
+             *     and got a full-length file would have no way to notice.
+             */
+            cut?: string | null;
+            /**
+             * Format: int64
+             * @description Trim end, in centiseconds from the start of the file.
+             */
+            end_cs?: number | null;
+            /** @description An item identifier (sha256 hash, file ID, path, item ID, ...). */
+            id: string;
+            id_type: components["schemas"]["ItemIdentifierType"];
+            /** @description Preset id from `GET /api/video/presets`. */
+            preset: string;
+            /**
+             * Format: int64
+             * @description Trim start, in centiseconds from the start of the file.
+             */
+            start_cs?: number | null;
+        };
+        TranscodeSubmitResponse: {
+            artifact?: null | components["schemas"]["ArtifactRef"];
+            job?: null | components["schemas"]["TranscodeJobSnapshot"];
+            /** @description `hit` | `created` | `joined` | `known_failure`. */
+            outcome: string;
+        };
+        /**
+         * @description The display transform of the dihedral group of order 8: `flip_h` applied
+         *     after `quarter_turns` clockwise rotations. The same decomposition the
+         *     pinboard stores per pin, passed through verbatim.
+         */
+        Transform: {
+            flip_h?: boolean;
+            /**
+             * Format: int32
+             * @description 0-3 clockwise quarter turns.
+             */
+            quarter_turns?: number;
+        };
+        /**
+         * @description A replacement preview image for an existing version. Same field semantics
+         *     as the preview half of [`SaveVersionRequest`]; nothing else about the
+         *     version can be changed.
+         */
+        UpdatePreviewRequest: {
+            /** @description Base64-encoded preview image (WebP or PNG), composited client-side. */
+            preview_b64: string;
+            /** Format: int64 */
+            preview_h?: number | null;
+            /** Format: int64 */
+            preview_w?: number | null;
+            /**
+             * Format: int64
+             * @description Height in preview-image pixels of one save-time viewport screenful.
+             */
+            screenful_h?: number | null;
+        };
         Value: unknown;
         VectorQuantActionResponse: {
             detail: string;
         };
         VectorQuantProfileConfig: {
-            /** @description Mean-center vectors before binarization (per embedding space). */
+            /**
+             * @description Deprecated: ignored since the int8 remap. Kept deserializable so
+             *     existing `[vector_quants]` sections still parse.
+             */
             centered?: boolean;
             name: string;
-            /** @description 'binary' in v1; 'int8' is a reserved future recipe slot. */
+            /**
+             * @description `int8` (global-symmetric absmax, docs/vector-int8-quant.md). `binary`
+             *     is retired: the load path maps it to `int8` (which triggers a
+             *     recipe-change rebuild), the config-commit path rejects it.
+             */
             quantizer: string;
         };
         VectorQuantProfileStatus: {
-            centered: boolean;
             is_default: boolean;
             name: string;
             quantizer: string;
@@ -4008,6 +5252,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DbCreateResponse"];
+                };
+            };
+            /** @description Server is in read-only mode */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
         };
@@ -4778,6 +6031,21 @@ export interface operations {
                 /** @description The type of the item identifier */
                 id_type: components["schemas"]["ItemIdentifierType"];
                 big?: boolean;
+                /**
+                 * @description Which rendition to serve. `display` (the default, and what omitting
+                 *     the parameter has always meant) is gallery quality; `grid-m` and
+                 *     `grid-s` cap the **short** side at 1024 and 512 for grid-sized boxes.
+                 *     A tier an item has no stored rendition for falls through to the next
+                 *     larger one, so a request is always answerable.
+                 */
+                size?: components["schemas"]["ThumbnailTier"];
+                /**
+                 * @description Animated items: serve the static tier image (the loop's poster)
+                 *     instead of the loop. A no-op for static items, whose renditions are
+                 *     always images, and for animated items at or below the raw floor,
+                 *     which are served as their original file either way.
+                 */
+                still?: boolean;
             };
             header?: never;
             path?: never;
@@ -4787,6 +6055,27 @@ export interface operations {
         responses: {
             /** @description Item thumbnail image */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Partial thumbnail contents (Range request) */
+            206: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not modified (validated If-None-Match) */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Requested range not satisfiable */
+            416: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5040,6 +6329,62 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobModel"][];
+                };
+            };
+        };
+    };
+    get_extraction_failures: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+                /**
+                 * @description Only failures recorded for this setter. Deliberately *not* validated
+                 *     against the known setters: the vocabulary is free-form and depends on
+                 *     which models the user has ever run, so there is no closed list to check
+                 *     against. A typo therefore answers "no failures", which is acceptable
+                 *     here — unlike `error_class`, whose vocabulary is closed and enforced,
+                 *     because a mistyped class silently reading as "nothing is wrong" is
+                 *     exactly what an audit surface must not do.
+                 */
+                setter?: string | null;
+                /** @description `input`, `blocked` or `resource`. Anything else is a 400. */
+                error_class?: string | null;
+                /**
+                 * @description `prepare` (the gateway could not produce the model's input) or
+                 *     `inference` (the worker rejected it).
+                 */
+                stage?: string | null;
+                /** @description Prefix of the recorded mime type, e.g. `image/`. */
+                mime_prefix?: string | null;
+                /**
+                 * @description Page size. Defaults to 100; values outside 1..=1000 are clamped into
+                 *     that range rather than rejected. Deliberately unconstrained in the
+                 *     schema: a generated validating client must not refuse a request the
+                 *     server accepts.
+                 */
+                limit?: number | null;
+                /**
+                 * @description Rows to skip. Values below 0 are clamped to 0 (start at the beginning),
+                 *     not rejected — same reason as `limit`.
+                 */
+                offset?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recorded extraction failures */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtractionFailuresResponse"];
                 };
             };
         };
@@ -5395,6 +6740,121 @@ export interface operations {
             };
         };
     };
+    get_scan_failures: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+                /** @description `input`, `blocked` or `resource`. Anything else is a 400. */
+                error_class?: string | null;
+                /** @description `mime`, `metadata`, `header` or `decode`. */
+                stage?: string | null;
+                /**
+                 * @description Prefix of the recorded mime type, e.g. `image/`. Rows whose mime guess
+                 *     is what failed have no mime type and match no prefix.
+                 */
+                mime_prefix?: string | null;
+                /**
+                 * @description Page size. Defaults to 100; values outside 1..=1000 are clamped into
+                 *     that range rather than rejected. Deliberately unconstrained in the
+                 *     schema: a generated validating client must not refuse a request the
+                 *     server accepts.
+                 */
+                limit?: number | null;
+                /**
+                 * @description Rows to skip. Values below 0 are clamped to 0 (start at the beginning),
+                 *     not rejected — same reason as `limit`.
+                 */
+                offset?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recorded scan failures */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanFailuresResponse"];
+                };
+            };
+        };
+    };
+    copy_artifact_to_clipboard_on_host: {
+        parameters: {
+            query: {
+                /** @description The artifact cache key, exactly as `ArtifactRef.key` carries it. */
+                key: string;
+                /**
+                 * @description The download name the client was handed on `ArtifactRef.filename`.
+                 *
+                 *     Optional: without it the artifact's stored name is used. It is
+                 *     re-sanitized inside `materialize_share` (single path component,
+                 *     length-capped), so a hostile value degrades to a safe name rather
+                 *     than escaping the share directory.
+                 */
+                name?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Artifact copied to the host clipboard */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenResponse"];
+                };
+            };
+            /** @description No cached artifact for this key */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    copy_file_to_clipboard_on_host: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+                path?: string;
+            };
+            header?: never;
+            path: {
+                sha256: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description File copied to the host clipboard */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenResponse"];
+                };
+            };
+        };
+    };
     open_file_on_host: {
         parameters: {
             query?: {
@@ -5462,6 +6922,17 @@ export interface operations {
                 user?: string;
                 /** @description Optional name search (FTS prefix match on pinboard names). */
                 q?: string;
+                /**
+                 * @description List ordering: `activity` (recency + decaying visit frequency, the
+                 *     default) or `updated` (last saved first).
+                 */
+                order?: components["schemas"]["PinboardOrder"];
+                /**
+                 * @description Return only the boards associated with the selected index database.
+                 *     The verdict is server-computed (see `associated`); the client sends
+                 *     its stored preference.
+                 */
+                associated_only?: boolean;
             };
             header?: never;
             path?: never;
@@ -5507,6 +6978,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SavePinboardResponse"];
+                };
+            };
+        };
+    };
+    search_pql_pinboards: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+                /** @description The user whose pinboards to search. */
+                user?: string;
+                /**
+                 * @description Return only the boards associated with the selected index database —
+                 *     the same server-computed rule and the same client preference as the
+                 *     library list.
+                 */
+                associated_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The PQL Search query whose results the boards are intersected with */
+        requestBody?: {
+            content: {
+                "application/json": null | components["schemas"]["PqlQuery"];
+            };
+        };
+        responses: {
+            /** @description Matching pinboards */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PinboardSearchResponse"];
                 };
             };
         };
@@ -5616,6 +7125,54 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["PinboardDeleteResponse"];
                 };
+            };
+            /** @description Pinboard not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_pinboard_databases: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+                /** @description The user the pinboard belongs to. */
+                user?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The pinboard id */
+                pinboard_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPinboardDatabasesRequest"];
+            };
+        };
+        responses: {
+            /** @description The board's associations after the change */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PinboardDatabasesResponse"];
+                };
+            };
+            /** @description A name that is neither already stamped nor a local index database */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Pinboard not found */
             404: {
@@ -5777,6 +7334,49 @@ export interface operations {
                 content?: never;
             };
             /** @description No preview stored for this version */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_pinboard_version_preview: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+                /** @description The user the pinboard belongs to. */
+                user?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The pinboard id */
+                pinboard_id: number;
+                /** @description The version id */
+                version_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdatePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Preview replaced */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PinboardDeleteResponse"];
+                };
+            };
+            /** @description Version not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -6093,6 +7693,366 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TagFrequency"];
                 };
+            };
+        };
+    };
+    video_artifact: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+                /** @description The cache key, as carried by every `ArtifactRef`. Primary form. */
+                key?: string;
+                /**
+                 * @description Resolvable form: the same `(id, id_type, preset, start_cs, end_cs)`
+                 *     that produced the artifact.
+                 */
+                id?: string;
+                id_type?: components["schemas"]["ItemIdentifierType"];
+                preset?: string;
+                start_cs?: number;
+                end_cs?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Artifact contents */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Partial artifact contents (Range request) */
+            206: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not cached */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactMissResponse"];
+                };
+            };
+            /** @description Requested range not satisfiable */
+            416: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown preset, or trim bounds that name a freeze frame rather than a clip (the resolvable form validates exactly as the POST does) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_transcode_cache: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Artifact cache stats */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscodeCacheStats"];
+                };
+            };
+        };
+    };
+    resize_transcode_cache: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TranscodeCacheResize"];
+            };
+        };
+        responses: {
+            /** @description Artifact cache stats after resizing */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscodeCacheStats"];
+                };
+            };
+            /** @description Above the configured ceiling */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The eviction pass behind the resize failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    clear_transcode_cache: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Also forget the recorded encode verdicts, so files that failed twice
+                 *     are attempted again.
+                 */
+                include_failures?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Artifact cache stats after clearing */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscodeCacheStats"];
+                };
+            };
+        };
+    };
+    video_compose: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComposeRequest"];
+            };
+        };
+        responses: {
+            /** @description The composition was already cached */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscodeSubmitResponse"];
+                };
+            };
+            /** @description A job was created or joined */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscodeSubmitResponse"];
+                };
+            };
+            /** @description An item is not in this database, or has no readable file */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown preset, or a document the composition limits refuse: too many items, a canvas that is odd/too large/taller than the preset renders, a destination rectangle outside the canvas or at an odd position, a span whose end is not after its start, a still frozen at or past its item's recorded length, a thumbnail-source item whose time is not `image` or whose item has no stored thumbnail, an unusable frame rate or length cap, or loop buffers over `max_mosaic_loop_mb` (the message carries the estimate) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    video_job: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Job id */
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Job snapshot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscodeJobSnapshot"];
+                };
+            };
+            /** @description No such job */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    video_job_cancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Job id */
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Job snapshot after the cancel */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscodeJobSnapshot"];
+                };
+            };
+            /** @description No such job */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    video_job_events: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Job id */
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Stream of TranscodeJobSnapshot events (text/event-stream) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such job */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    video_presets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Presets and limits */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscodePresetsResponse"];
+                };
+            };
+        };
+    };
+    video_transcode: {
+        parameters: {
+            query?: {
+                /** @description The name of the `index` database to open and use for this API call. Find available databases with `/api/db` */
+                index_db?: string | null;
+                /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
+                user_data_db?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TranscodeRequest"];
+            };
+        };
+        responses: {
+            /** @description The rendition was already cached */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscodeSubmitResponse"];
+                };
+            };
+            /** @description A job was created or joined */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscodeSubmitResponse"];
+                };
+            };
+            /** @description No such item, no readable file for it, or no detected outro */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown preset, an unusable trim window (bounds that name a freeze frame rather than a clip, a start bound past the end of the item, or a start bound at or past the resolved outro cut), an unknown/conflicting `cut`, or an animated-image preset asked for more than `max_animated_image_seconds` of output (including an unbounded one on an item with no recorded duration) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

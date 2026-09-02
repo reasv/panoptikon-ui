@@ -4,7 +4,7 @@ import { fetchDB, fetchNs, fetchSearch, fetchStats } from "./queryFns"
 import { getSearchQueryCache } from "@/lib/state/searchQuery/serverParsers"
 import { partitionByParamsCache } from "@/lib/state/partitionByServer"
 import { getServerClientConfig } from "@/lib/serverApi"
-import { isPinboardMaximizedFromParams } from "@/lib/state/pinboardView"
+import { isSearchSuppressedFromParams } from "@/lib/state/pinboardView"
 import { buildCountRequest, buildResultsRequest } from "@/lib/searchRequest"
 
 export const prefetchSearchPage = async (
@@ -34,14 +34,18 @@ export const prefetchSearchPage = async (
   const searchRequest = buildResultsRequest(parts)
   const countRequest = buildCountRequest(parts)
 
-  // A URL that opens straight into a maximized board renders nothing that
-  // comes from the search, so running it here would only delay first paint
-  // — and an embedding query would load a model for results the page never
-  // shows. useSearch keeps the queries disabled on the client for as long
-  // as the board stays maximized, and fetches on its own once it isn't.
-  // searchRequest is still returned: it is the SSR shape useSearch falls
-  // back to, not a promise that the data was fetched.
-  if (!isPinboardMaximizedFromParams(searchParams)) {
+  // A URL that opens straight into a maximized board WITH the search overlay
+  // closed renders nothing that comes from the search, so running it here
+  // would only delay first paint — and an embedding query would load a model
+  // for results the page never shows. A maximized deep link with the overlay
+  // open (?gso=true) does prefetch: the overlay is a search consumer and
+  // must paint with rows on first load
+  // (docs/maximized-pinboard-search-overlay-design.md §4). useSearch keeps
+  // the queries disabled on the client under the same predicate, and fetches
+  // on its own once it clears. searchRequest is still returned: it is the
+  // SSR shape useSearch falls back to, not a promise that the data was
+  // fetched.
+  if (!isSearchSuppressedFromParams(searchParams)) {
     await queryClient.prefetchQuery({
       queryKey: ["post", "/api/search/pql", searchRequest],
       queryFn: () => fetchSearch(searchRequest),
