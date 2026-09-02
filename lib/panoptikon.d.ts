@@ -1869,8 +1869,10 @@ export interface components {
             /**
              * @description The policy's `[policies.client]` table, verbatim (empty object when
              *     unset). Free-form; recognized-by-convention keys include
-             *     `search_throttle_ms`, `disable_backend_open`, and `relay_enabled`
-             *     (Relay is enabled when the key is absent).
+             *     `search_throttle_ms`, `disable_backend_open`, `relay_enabled`
+             *     (Relay is enabled when the key is absent), `transcode_presets`, and
+             *     `hover_preview` (see the resolved `hover_preview` field below, which
+             *     is what a client should read).
              */
             client: unknown;
             /**
@@ -1884,6 +1886,7 @@ export interface components {
              */
             desktop_shell_available: boolean;
             display_loop_trigger?: null | components["schemas"]["DisplayLoopTrigger"];
+            hover_preview?: null | components["schemas"]["HoverPreview"];
             /** @description Name of the policy that matched this request. */
             policy: string;
         };
@@ -2395,6 +2398,32 @@ export interface components {
             shutting_down: boolean;
             /** @description `"ok"` normally, `"shutting_down"` once shutdown has begun. */
             status: string;
+        };
+        /**
+         * @description The server's resolved answer to "may this client preview a video on
+         *     hover?", for the two rungs the UI has
+         *     (docs/video-hover-preview-implementation.md, V8).
+         *
+         *     Resolved here rather than derived client-side: the transcode rung is a
+         *     conjunction of four independent facts (the policy's own switch, the
+         *     `[transcode] hover_preview` server default, whether this policy may POST a
+         *     transcode at all, and whether the `preview` preset survives its
+         *     `transcode_presets` limit), three of which the client cannot see.
+         */
+        HoverPreview: {
+            /**
+             * @description Rung 0: mount a muted `<video>` on the item's own file when the
+             *     browser can already decode it. Costs the server nothing but Range
+             *     reads, so only the policy switch can withhold it.
+             */
+            direct: boolean;
+            /**
+             * @description Rung 1: request the `preview` rendition for an item the browser
+             *     cannot play. Implies `direct`: a policy that denies previews denies
+             *     both, and there is no arrangement in which the expensive rung is
+             *     allowed while the free one is not.
+             */
+            transcode: boolean;
         };
         InBookmarks: components["schemas"]["SortableOptions"] & {
             /**
@@ -4205,7 +4234,7 @@ export interface components {
          *     user-declared profile appears in the right dropdowns with no client change.
          * @enum {string}
          */
-        Surface: "playback" | "clip" | "mosaic";
+        Surface: "playback" | "clip" | "mosaic" | "preview";
         SystemConfig: {
             continuous_filescan?: components["schemas"]["ContinuousFilescanConfig"];
             cron_jobs?: components["schemas"]["CronJob"][];

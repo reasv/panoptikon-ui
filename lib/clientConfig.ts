@@ -14,14 +14,6 @@ import type { HoverPreviewCapability } from "@/lib/state/hoverPreviewPref"
 export type ClientConfigResponse = components["schemas"]["ClientConfigResponse"] & {
   desktop_managed?: boolean
   desktop_shell_available?: boolean
-  /**
-   * Typed as `unknown` rather than as the pair it is, and deliberately: a
-   * Server older than the hover-preview package sends nothing here, the
-   * normalizer below is what turns whatever did arrive into an answer, and
-   * declaring the real shape would invite a cast past it. Intersecting with
-   * the generated field once `openapi.json` carries it narrows to that field.
-   */
-  hover_preview?: unknown
 }
 
 // The derived shape the UI actually consumes. Computed by deriveClientConfig
@@ -202,6 +194,12 @@ function wireBooleans(obj: unknown, keys: readonly string[]): boolean[] | null {
 
 /**
  * `hover_preview` as the two rungs, or null.
+ *
+ * STILL NORMALIZED NOW THAT THE GENERATED TYPE CARRIES THE FIELD, on the rule
+ * `wireNumbers` states for the two bounds objects: the value crosses the wire
+ * from a Server whose version this client does not pin, and one older than the
+ * hover-preview package sends nothing at all. The generated type says what the
+ * CURRENT server promises, not what arrived.
  *
  * A plain object rather than one of lib/state/hoverPreviewPref.ts's interned
  * constants, and that is what keeps this module free of RUNTIME imports (see
