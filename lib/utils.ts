@@ -13,14 +13,19 @@ export function cn(...inputs: ClassValue[]) {
  * `size` selects a stored rendition tier (`lib/thumbnailTier.ts`) and applies
  * to `file_type: "thumbnail"` only — the original file has no tiers.
  *
- * OMITTING it is the legacy bare URL, which the endpoint answers with the
- * display rendition. Passing `"display"` explicitly is therefore the same
- * BYTES and a DIFFERENT URL, and both halves of that are deliberate wherever
- * a call site spells it out (§2, F4): it keeps the aspect rule visible at the
- * call site, and a new URL cannot be answered from a cache entry stamped
- * before the display tier's rule changed — which is what busts the stale
- * long-side-crushed thumbnail for exactly the extreme-aspect items the fix
- * was about.
+ * OMITTING it is the bare URL, which the endpoint answers with the display
+ * rendition. Passing `"display"` explicitly is therefore the same BYTES and a
+ * DIFFERENT URL, which one caller needs and no other should want: a GRID card
+ * whose own rendition is a grid tier has to name the display tier to swap to
+ * it. A surface whose default is already the display rendition must NOT spell
+ * it out — the two spellings would then be two cache entries for one picture,
+ * split across surfaces that are meant to share (see PreviewSurface's note).
+ *
+ * That is a change of policy, and `r` below is what allowed it. The
+ * extreme-aspect contain surfaces used to spell `display` out to bust a cache
+ * entry stamped before the display tier's rule changed; the revision
+ * parameter busts it for EVERY display request, so the spelling bought nothing
+ * but three surfaces agreeing by hand.
  *
  * `still` forces the STATIC rendition of an animated item — at a grid tier an
  * animated item above the raw floor otherwise answers `video/mp4`, which an

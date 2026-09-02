@@ -2,7 +2,7 @@
 import { useState } from "react"
 import { cn, getFileURL } from "@/lib/utils"
 import { useSelectedDBs } from "@/lib/state/database"
-import { exceedsDisplayLoopTrigger, isExtremeAspect } from "@/lib/thumbnailTier"
+import { exceedsDisplayLoopTrigger } from "@/lib/thumbnailTier"
 import { useDisplayLoopTrigger } from "@/lib/useClientConfig"
 
 // The maximized workspace's HOVER PEEK, as a LAYER inside the preview
@@ -78,10 +78,11 @@ export function PeekLayer({
     // preview subjects share. A grid tier is therefore doubly wrong here for
     // an item past aspect 2: it is a crop, so it would show a strip's top
     // screenful, and its aspect is the CROP's, which would size the shared box
-    // around a picture the viewer never paints. The default path is what this
-    // asks for, with `?size=display` spelled out for the extreme-aspect items
-    // whose display rendition the tier work changed (§2, F4) — same bytes, new
-    // URL, so a stale cache entry cannot answer it.
+    // around a picture the viewer never paints. The bare URL — the display
+    // rendition — is what this asks for, for every item and whatever its
+    // aspect. (The extreme-aspect ones used to spell `?size=display` out to
+    // bust a pre-tier cache entry; `r=2` does that for every display request
+    // now, so the spelling only forced surfaces to agree by hand.)
     //
     // `still=true` for exactly one class of item and no other: an animated one
     // past the server's display-loop bounds, whose display request answers
@@ -94,7 +95,7 @@ export function PeekLayer({
     // the property PreviewSurface's note depends on.
     const displayLoopTrigger = useDisplayLoopTrigger()
     const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256,
-        isExtremeAspect(item.width, item.height) ? "display" : undefined,
+        undefined,
         exceedsDisplayLoopTrigger(item, displayLoopTrigger))
     // The dwell upgrade (§8): the stored thumbnail shows immediately; for
     // STILL images the original file loads behind it and fades in on load,

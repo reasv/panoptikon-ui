@@ -306,8 +306,13 @@ console.log("\n== the URL the tier produces ==")
   check("grid-xs is a plain tier like the others",
     getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-xs")
       === "/api/items/item/thumbnail?id=abc&id_type=sha256&index_db=stdtest&size=grid-xs")
-  // The point of spelling `display` out (F4): it is a DIFFERENT URL from the
-  // bare one, so a cache entry stamped before the tier work cannot answer it.
+  // Spelling `display` out is still a DIFFERENT URL from the bare one, and one
+  // caller needs that: a grid card whose own rendition is a grid tier has to
+  // name the display tier to swap to it. No CONTAIN surface spells it any more
+  // — the peek layer, the gallery large view and the similarity header all send
+  // the bare URL for every item whatever its aspect, so the three share one
+  // cache entry per picture. (They used to name it for extreme-aspect items to
+  // dislodge a pre-tier cache entry; `r=2` does that for every display request.)
   check("an explicit display is a different URL from the bare one",
     getFileURL(dbs, "thumbnail", "sha256", "abc", "display")
       !== getFileURL(dbs, "thumbnail", "sha256", "abc"))

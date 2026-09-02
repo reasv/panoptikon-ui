@@ -23,7 +23,7 @@ import Link from 'next/link'
 import { usePageSize, useSearchPage, useSearchPageRaw } from '@/lib/state/searchQuery/clientHooks'
 import { useGridScrollAnchor } from '@/lib/state/gridScroll'
 import { useFetchPageRows, usePrefetchPageState, type ResultsSource } from '@/lib/searchHooks'
-import { exceedsDisplayLoopTrigger, isExtremeAspect } from '@/lib/thumbnailTier'
+import { exceedsDisplayLoopTrigger } from '@/lib/thumbnailTier'
 import { SCROLL_CHUNK_SIZE } from '@/lib/searchRequest'
 import { chunkStartOf, scanLoadedForward } from '@/lib/scrollMode'
 import { serializers } from '@/lib/state/searchQuery/serializers'
@@ -1543,16 +1543,17 @@ export function GalleryImageLarge(
     }
 ) {
     const [dbs, ___] = useSelectedDBs()
-    // The large view stays on the DEFAULT path — no `size=`, the display
-    // rendition, exactly what it has always loaded — with ONE exception (§2,
-    // F4). It is a CONTAIN surface, so an item past aspect 2 must be asked for
-    // by name: `?size=display` is the same bytes and a NEW URL, which is what
-    // stops a browser cache stamped before the tier work from answering with
-    // the old long-side-crushed thumbnail (an 800x20000 webtoon used to be
-    // stored 163x4096 and painted here at 163px wide). Normal-aspect items
-    // keep the bare URL, so nothing else in the gallery re-downloads.
-    const displaySize = isExtremeAspect(item.width, item.height) ? "display" : undefined
-    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256, displaySize)
+    // The large view is on the DEFAULT path for every item — no `size=`, the
+    // display rendition, exactly what it has always loaded. It is a CONTAIN
+    // surface, so it never takes a grid tier (past aspect 2 that is a crop),
+    // and the bare URL already is the display rendition.
+    //
+    // Extreme-aspect items used to spell `?size=display` out here to dislodge a
+    // browser cache entry stamped before the tier work (an 800x20000 webtoon
+    // was stored 163x4096 and painted at 163px wide). `r=2` dislodges it for
+    // every display request now, so the spelling bought nothing but this
+    // surface, the peek layer and the similarity header agreeing by hand.
+    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256)
     const fileURL = getFileURL(dbs, "file", "sha256", item.sha256)
 
     // AN ANIMATED ITEM BIG ENOUGH THAT THE DISPLAY SIZE IS A LOOP, NOT A
@@ -1574,7 +1575,7 @@ export function GalleryImageLarge(
     // or the original for a sentinel or under-bound item — never video and
     // never a 404 (§5). Both the `<video>`'s `poster` and one of the two
     // fallbacks below.
-    const stillURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256, displaySize, true)
+    const stillURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256, undefined, true)
     // WHAT THIS SURFACE FALLS BACK TO WHEN THE `<video>` SAYS THE LOOP IS NOT
     // THERE — A TWO-RUNG LADDER, walked on ANY error with no reading of the
     // error code at all.
@@ -2435,9 +2436,9 @@ export function GalleryImageLarge(
                                 src={thumbnailURL}
                                 // The still URL of the same rendition, so the
                                 // first frame paints while the loop's bytes are
-                                // still arriving. Same size argument as the loop
-                                // — an extreme-aspect item must name `display`
-                                // on both or the poster would be a crop.
+                                // still arriving. It is the peek layer's URL
+                                // character for character, so the two surfaces
+                                // fetch this picture once between them.
                                 poster={stillURL}
                                 // AUTOPLAY, unlike the grid's LoopVideo: there is
                                 // no playback director here and nothing to

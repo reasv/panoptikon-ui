@@ -11,7 +11,7 @@ import { useSelectedDBs } from "@/lib/state/database";
 import { FilePathComponent } from "./imageButtons";
 import { getFileURL } from "@/lib/utils";
 import { useItemSimilaritySearch, useQueryOptions } from "@/lib/state/searchQuery/clientHooks";
-import { exceedsDisplayLoopTrigger, isExtremeAspect } from "@/lib/thumbnailTier";
+import { exceedsDisplayLoopTrigger } from "@/lib/thumbnailTier";
 import { useDisplayLoopTrigger } from "@/lib/useClientConfig";
 
 export function ImageSimilarityHeader() {
@@ -105,28 +105,16 @@ export function ImageSimilarityHeader() {
                             (§2): past aspect 2 a grid rendition is a CROP cut
                             for `object-cover`, and contained in this box it
                             would show a strip's first screenful instead of the
-                            whole picture. Gated on the aspect through the same
-                            helper the gallery and the peek layer use, off the
-                            dimensions THIS component's own `/api/items/item`
-                            query already carries — so a normal-aspect target
-                            keeps the bare URL and shares its cache entry with
-                            the gallery's picture of the same item, and only an
-                            extreme-aspect one asks for `?size=display` by name:
-                            same bytes, NEW URL, which is exactly what a browser
-                            cache holding the pre-tier long-side-crushed
-                            thumbnail cannot answer (F4).
-
-                            RESIDUAL, and it is the one every contain surface
-                            here carries: on a first hover the query may not
-                            have resolved, `data` is undefined, the aspect test
-                            answers false and the bare URL is used. The picture
-                            is still the right one — the bare path IS the
-                            display rendition — so only the cache-busting half
-                            is missed, and only until the query settles. */}
+                            whole picture. The bare URL IS the display
+                            rendition, for every item and whatever its aspect,
+                            so this shares its cache entry with the gallery's
+                            and the peek layer's picture of the same item.
+                            (Extreme-aspect targets used to name `?size=display`
+                            to dislodge a pre-tier cache entry; `r=2` dislodges
+                            it for every display request now.) */}
                         <img
                             src={getFileURL(dbs, "thumbnail", "sha256", filter.target,
-                                isExtremeAspect(data?.item?.width, data?.item?.height)
-                                    ? "display" : undefined,
+                                undefined,
                                 // `still=true` for an animated target past the
                                 // display-loop bounds, and only then: its
                                 // display request answers `video/mp4`
@@ -135,10 +123,9 @@ export function ImageSimilarityHeader() {
                                 // picture. A smaller animated target keeps the
                                 // bare URL, animates as it does today, and
                                 // keeps sharing its cache entry with the
-                                // gallery. Same RESIDUAL as the aspect test
-                                // above: before the query resolves there is no
-                                // row to test, so the flag is off for one
-                                // render.
+                                // gallery. RESIDUAL: on a first hover the query
+                                // may not have resolved, so there is no row to
+                                // test and the flag is off for one render.
                                 forceStill || (data?.item
                                     ? exceedsDisplayLoopTrigger(data.item, displayLoopTrigger)
                                     : undefined))}
