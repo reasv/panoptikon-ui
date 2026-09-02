@@ -38,7 +38,11 @@ import { useDevicePixelRatio } from "@/hooks/useDevicePixelRatio"
 import { useAnimateModeForRange } from "@/hooks/useAnimateMode"
 import { cellRange } from "@/lib/state/animatePref"
 import { trackHoverPointer } from "@/lib/state/animatedPlayback"
-import { useAnimatedFloor, useDisplayLoopTrigger } from "@/lib/useClientConfig"
+import {
+    useAnimatedFloor,
+    useDisplayLoopTrigger,
+    useHoverPreview,
+} from "@/lib/useClientConfig"
 
 // md, lg, xl, 2xl, 4xl, 5xl — the Tailwind breakpoints used by the result grid
 // rows, restated for matchMedia.
@@ -367,6 +371,12 @@ export function ResultGrid({
     // cards ask the same question of their own width for the other policy that
     // turns on it (D9, which of a video's two thumbnails).
     const animateMode = useAnimateModeForRange(cellRange(cellWidth))
+    // AND THE FOURTH, on exactly the same rule: what a hovered video cell may
+    // do here — the server's `hover_preview` with the browser preference
+    // already subtracted (V7/V8). One of four interned constants, so it is a
+    // memo-stable prop; both of its inputs are subscriptions, and reading
+    // either per card is what F1 removed.
+    const hoverPreview = useHoverPreview()
     // The pointer tracking the hover arming is written in terms of, bound for
     // as long as this grid is mounted rather than by the cells (which mount by
     // the hundred, and would each bind it a moment too late to answer the
@@ -1264,6 +1274,11 @@ export function ResultGrid({
                                                 // or the user changes the
                                                 // preference.
                                                 animateMode={animateMode}
+                                                // The last of the same kind:
+                                                // one interned constant for
+                                                // the whole grid, moving only
+                                                // when the answer does.
+                                                hoverPreview={hoverPreview}
                                             />
                                         )
                                     })}
