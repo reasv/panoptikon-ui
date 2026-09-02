@@ -651,10 +651,13 @@ export interface paths {
          *     A tier with no stored rendition falls through to the next larger one.
          *     Still renditions are `image/jpeg` or `image/webp`; the response's Content-Type and filename extension come from the stored row.
          *     At a grid tier an **animated** item above the raw floor answers with its H.264 loop as
-         *     `video/mp4` (one rendition serves both grid tiers), and `still=true` answers with the
+         *     `video/mp4` (one rendition serves every grid tier), and `still=true` answers with the
          *     static poster for that tier instead. Animated items at or below the floor - at most
          *     1 MiB with both sides at most 512 px, reported by `/api/client-config` - are answered
          *     with their original file at every tier.
+         *     Supports HTTP Range requests (single byte ranges), which matter for the H.264 loops:
+         *     a `<video>` that cannot ask for a range downloads the whole stream before playing.
+         *     Conditional GET is supported on every answer; a validated `If-None-Match` returns 304.
          */
         get: operations["item_thumbnail"];
         put?: never;
@@ -4240,8 +4243,10 @@ export interface components {
             scan_pdf?: boolean;
             scan_video?: boolean;
             /**
-             * @description Which container formats stored thumbnails may use
+             * @description Accepted names: `jpeg`, `webp`; unknown names are ignored
              *     (docs/thumbnail-format-implementation.md §2, R5).
+             *
+             *     Which container formats stored thumbnails may use.
              *
              *     It *constrains* the format rules rather than deciding anything: with
              *     `webp` absent every WebP verdict becomes JPEG (alpha flattened), with
@@ -4254,6 +4259,10 @@ export interface components {
              *
              *     Changing it regenerates the affected renditions on the next scan; the
              *     database file only shrinks after the maintenance VACUUM.
+             * @example [
+             *       "jpeg",
+             *       "webp"
+             *     ]
              */
             thumbnail_formats?: string[];
             vector_quants?: null | components["schemas"]["VectorQuantsConfig"];
@@ -5738,6 +5747,27 @@ export interface operations {
         responses: {
             /** @description Item thumbnail image */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Partial thumbnail contents (Range request) */
+            206: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not modified (validated If-None-Match) */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Requested range not satisfiable */
+            416: {
                 headers: {
                     [name: string]: unknown;
                 };
