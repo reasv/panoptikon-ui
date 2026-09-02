@@ -80,6 +80,31 @@ export type CellPicturePlan =
    */
   | { kind: "extreme"; crop: CellCrop; displaySrc: string | null }
 
+/**
+ * DOES AN EXTREME-ASPECT CARD'S CROP ARM ITS OWN HOVER PLAY? (D6/D7)
+ *
+ * Only a LOOP crop can — a still one has nothing to play — and only when the
+ * card has NO whole-image swap. A card that has one spends its single hover
+ * gesture there: the swap paints the `display` rendition, which is the
+ * ORIGINAL FILE and animates natively in its `<img>`, so arming as well would
+ * fetch a loop, mount it, and unmount it again the moment the swap landed.
+ *
+ * Past the display-loop trigger there is no swap (`displaySrc` is null above),
+ * and the gesture is free: the crop loop then arms like any other loop cell,
+ * which is the only motion such a card can show in hover mode.
+ *
+ * HERE RATHER THAN INLINE IN THE CARD because it is a question about the PLAN
+ * — the two fields together, not either alone — and because pure and
+ * element-free is what lets scripts/hoveranimate.test.mjs pin it against plans
+ * `planCellPicture` actually produces.
+ */
+export function extremeCropArmsHover(
+  crop: CellCrop,
+  displaySrc: string | null
+): boolean {
+  return crop.kind === "loop" && displaySrc === null
+}
+
 /** The row fields a plan reads. The search payload carries all of them. */
 export interface CellRow extends PictureItem {
   sha256: string

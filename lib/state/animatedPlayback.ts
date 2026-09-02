@@ -383,10 +383,12 @@ export function armHoverPlay(
   // cancel below both assume it: a second consumer under the same root would
   // silently replace the first's callback and cancel, so the first would never
   // be told to stop. The cell's picture kinds are mutually exclusive today, and
-  // the extreme-aspect card opts out of arming entirely rather than sharing its
-  // root — but nothing STRUCTURAL enforces that, so say so out loud in dev. A
-  // repeated entry from the SAME cell is not a violation: `onFire` is a
-  // `useState` setter and keeps its identity for the life of the mount.
+  // the extreme-aspect card mounts exactly one crop picture, which arms only
+  // when its display swap does not exist (lib/cellPicture.ts
+  // `extremeCropArmsHover`) — but nothing STRUCTURAL enforces one armable
+  // picture per root, so say so out loud in dev. A repeated entry from the
+  // SAME cell is not a violation: `onFire` is a `useState` setter and keeps
+  // its identity for the life of the mount.
   if (process.env.NODE_ENV !== "production") {
     const held = hoverCallbacks.get(root)
     if (held && held !== onFire) {
