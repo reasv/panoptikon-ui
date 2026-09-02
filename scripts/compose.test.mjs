@@ -24,6 +24,7 @@ const {
   composeRows,
   composeTargetCs,
   estimateLoopBytes,
+  isSpanTime,
   longestSpanSeconds,
   naturalSize,
   normalizeComposeBackground,
@@ -601,6 +602,108 @@ function solveAt(width, only) {
     const ok = shape(got) === shape(row.want)
     check(row.name, ok, ok ? "" : `${shape(got)} != ${shape(row.want)}`)
   }
+}
+
+// ---- time: the outro cut (docs/video-outro-skip-design.md) ---------------
+//
+// A pin whose playback ends at the detected outro must EXPORT there too —
+// the inconsistency this variant removes. The conditions are exactly
+// `outroSkipGoverns`'s, minus the cut point itself: the builder names the
+// outro and the server derives it from the same `content_end_ms` in the
+// file's own timeline, so nothing here computes a boundary. `end_cs` stays
+// the untrimmed end: the server's fallback for a pin whose outro it cannot
+// resolve, and what this client's own length estimates run on meanwhile.
+
+{
+  const outro = (over) => ({
+    isVideo: true,
+    trim: null,
+    state: PLAYING,
+    duration: 12,
+    contentEndMs: 8005,
+    outroSkip: true,
+    ...over,
+  })
+  const table = [
+    {
+      name: "an eligible pin with no end bound names the outro",
+      input: outro({}),
+      want: { kind: "outro_span", start_cs: 0, end_cs: 1200 },
+    },
+    {
+      name: "…and a start bound of its own keeps it",
+      input: outro({ trim: { start: 3, end: null } }),
+      want: { kind: "outro_span", start_cs: 300, end_cs: 1200 },
+    },
+    {
+      name: "the end_cs sent is the UNTRIMMED end, never a guess at the cut",
+      input: outro({ duration: 20 }),
+      want: { kind: "outro_span", start_cs: 0, end_cs: 2000 },
+    },
+    {
+      name: "a user END bound is always explicit, outro or not",
+      input: outro({ trim: { start: null, end: 5 } }),
+      want: { kind: "span", start_cs: 0, end_cs: 500 },
+    },
+    {
+      name: "the preference off composes what it always did",
+      input: outro({ outroSkip: false }),
+      want: { kind: "span", start_cs: 0, end_cs: 1200 },
+    },
+    {
+      name: "an absent preference reads as off — a caller cannot invent a cut",
+      input: outro({ outroSkip: undefined }),
+      want: { kind: "span", start_cs: 0, end_cs: 1200 },
+    },
+    {
+      name: "no detected boundary, no name to send",
+      input: outro({ contentEndMs: null }),
+      want: { kind: "span", start_cs: 0, end_cs: 1200 },
+    },
+    {
+      name: "a stopped pin is still its own frozen frame",
+      input: outro({ state: { playing: false, muted: false, duration: 12, currentTime: 4 } }),
+      want: { kind: "still", at_cs: 400 },
+    },
+    {
+      name: "an animated image never names an outro — it has no <video> and no cut",
+      input: {
+        isVideo: false,
+        trim: null,
+        state: null,
+        duration: 3,
+        mime: "image/gif",
+        spanCapableImageMimes: LIMITS.span_capable_image_mimes,
+        contentEndMs: 2000,
+        outroSkip: true,
+      },
+      want: { kind: "span", start_cs: 0, end_cs: 300 },
+    },
+  ]
+  for (const row of table) {
+    const got = resolveItemTime(row.input)
+    const ok = shape(got) === shape(row.want)
+    check(row.name, ok, ok ? "" : `${shape(got)} != ${shape(row.want)}`)
+  }
+
+  // An outro span differs from a span in who decides ONE bound. Every client
+  // rule that asks "does this play" has to answer yes for both, or the
+  // variant would quietly stop the item looping, stop mixing its audio, or
+  // stop counting it toward the output length.
+  const cell = { x: 0, y: 0, w: 100, h: 100 }
+  const named = { kind: "outro_span", start_cs: 100, end_cs: 850 }
+  const stated = { kind: "span", start_cs: 100, end_cs: 850 }
+  check("isSpanTime answers for both spellings", isSpanTime(named) && isSpanTime(stated))
+  check("…and for nothing else", !isSpanTime({ kind: "image" }) && !isSpanTime({ kind: "still", at_cs: 0 }))
+  check(
+    "an outro span counts toward the output length",
+    longestSpanSeconds([named]) === longestSpanSeconds([stated])
+  )
+  check(
+    "…and buffers exactly what the same stated span would",
+    estimateLoopBytes([{ dest: cell, time: named }], 30, 2000)
+      === estimateLoopBytes([{ dest: cell, time: stated }], 30, 2000)
+  )
 }
 
 // ---- time: the animated-image rule (design §6) ---------------------------
@@ -1407,6 +1510,34 @@ function solveAt(width, only) {
     background: "#101820",
   })
   check("a playing pin composes on its own", result.ok === true, shape(result))
+
+  // The whole point, at document level: the preference the pin PLAYS under
+  // reaches the document the encoder runs on. Without it the export runs to
+  // the file's end while the board loops at the cut — the same pin composed
+  // two different ways.
+  const outroDoc = buildItemCompositionDoc({
+    // The board's own pin carries a trim END, which always wins; drop it and
+    // the outro is what ends this pin — its start bound survives untouched.
+    placement: { ...placement, trim: { start: 1.5, end: null } },
+    meta: { ...meta, content_end_ms: 8005 },
+    state: PLAYING,
+    preset: MP4,
+    limits: LIMITS,
+    length: { mode: "longest_loop_once" },
+    targetWidth: null,
+    background: "#101820",
+    outroSkip: true,
+  })
+  const outroItem = outroDoc.ok ? outroDoc.doc.body.items[0] : null
+  check(
+    "the outro-skip preference reaches the document",
+    shape(outroItem?.time) === shape({ kind: "outro_span", start_cs: 150, end_cs: 1200 }),
+    shape(outroItem?.time)
+  )
+  check(
+    "…and an outro span still mixes its audio, exactly as a stated one does",
+    outroItem?.audio === true
+  )
   const doc = result.doc
   const native = itemOutputSize(
     placement.crop,

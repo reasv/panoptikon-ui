@@ -86,6 +86,17 @@ export interface ComposeItemMeta {
   width?: number | null
   height?: number | null
   duration?: number | null
+  /**
+   * Where the item's real content ends, in milliseconds — the detected outro
+   * boundary, or null for an item with no card, one never examined, and every
+   * item in a database with `detect_outros` off (the API nulls the field
+   * there, so no config plumbing reaches this module).
+   *
+   * Read as a *fact about the item*, never as a cut point: the number this
+   * builder needs is the one the SERVER derives from it, in the file's own
+   * timeline (see `resolveItemTime`).
+   */
+  content_end_ms?: number | null
 }
 
 /** The animated-image containers, the ones with a length cap on them. */
@@ -140,6 +151,23 @@ function toCs(seconds: number): number {
   return Math.max(0, Math.round(seconds * 100))
 }
 
+/**
+ * Whether this time PLAYS — true for both spellings of a span, the one whose
+ * end the client states and the one whose end the server derives from the
+ * item's outro.
+ *
+ * Every "is it playing" question in the client goes through here rather than
+ * comparing `kind` to a literal: `outro_span` differs from `span` in who
+ * decides one bound and in nothing else, so a site that answered "no" for it
+ * would silently stop looping, stop mixing audio, or stop counting toward the
+ * output length — none of which the variant was meant to change.
+ */
+export function isSpanTime(
+  time: ItemTime
+): time is Extract<ItemTime, { start_cs: number }> {
+  return time.kind === "span" || time.kind === "outro_span"
+}
+
 export interface ItemTimeInput {
   /** Only a video has a still or a trim-driven span; see below for images. */
   isVideo: boolean
@@ -160,6 +188,19 @@ export interface ItemTimeInput {
    * while the envelope is in flight.
    */
   spanCapableImageMimes?: readonly string[]
+  /**
+   * The item's detected outro boundary in milliseconds (`ComposeItemMeta`'s
+   * `content_end_ms`), or null/absent when it has none.
+   */
+  contentEndMs?: number | null
+  /**
+   * The viewer's outro-skip preference (`useOutroSkipEnabled`), passed in
+   * rather than read here so this module stays free of React and of the
+   * player's stores — it is asserted from plain node. Absent reads as OFF,
+   * which composes exactly what this builder composed before the outro
+   * existed: a caller that forgets it loses the cut, it does not invent one.
+   */
+  outroSkip?: boolean
   /**
    * The natural pixel size of the thumbnail `<img>` a CLOSED video pin is
    * rendering (`probePinThumbnailSize`), null or absent when there is none
@@ -189,6 +230,23 @@ export interface ItemTimeInput {
  *   pin up to loop, not where its playhead happens to be — a document keyed on
  *   a moving number would mint a new artifact for every export of an unchanged
  *   board.
+ *
+ *   …AND `outro_span` WHEN THE OUTRO IS WHAT ENDS IT. Playback ends an
+ *   outro-eligible pin with no user end bound at the detected cut
+ *   (`effectiveVideoTrim`), so an export that ran to the file's end would be
+ *   the same pin composed two different ways — the inconsistency this variant
+ *   exists to remove. The conditions are exactly playback's: the preference is
+ *   on, the item has a detected boundary, and the user set no end of their own
+ *   (someone who trimmed INTO the outro on purpose gets the clip they asked
+ *   for). The cut point itself is NOT computed here — the outro is named, and
+ *   the server derives it from the same `content_end_ms` in the file's own
+ *   timeline (lib/videoClip's `clipRequestFor` states the rule; the player's
+ *   browser-timeline corrections have no counterpart there). The `end_cs`
+ *   this sends is the untrimmed end, which is what the server falls back to
+ *   for a pin whose outro it cannot resolve, and what the client's own length
+ *   and loop-memory estimates run on until the answer comes back: an
+ *   over-estimate of both, which is the safe direction for a guard and a
+ *   second or two of slack on a row label.
  *
  *   …UNLESS THE END IS UNKNOWABLE. `end_cs` is REQUIRED for a span (the target
  *   length is arithmetic over the document, never a probe of every input), so
@@ -246,7 +304,18 @@ export function resolveItemTime(input: ItemTimeInput): ItemTime {
       const endCs = toCs(end)
       // Equal (or inverted) bounds are a freeze frame spelled as a range; the
       // server refuses that shape outright, and a still is what it means.
-      if (endCs > startCs) return { kind: "span", start_cs: startCs, end_cs: endCs }
+      if (endCs > startCs) {
+        // The same three facts `outroSkipGoverns` composes for playback, minus
+        // the cut point — which is the server's to derive. An end bound the
+        // user placed is always explicit, outro or no outro.
+        const outro =
+          !!input.outroSkip &&
+          trim?.end == null &&
+          input.contentEndMs != null &&
+          isFinite(input.contentEndMs)
+        const kind = outro ? "outro_span" : "span"
+        return { kind, start_cs: startCs, end_cs: endCs }
+      }
     }
   }
   // The parked playhead, for a MOUNTED stopped element only: a playing pin
@@ -324,7 +393,7 @@ function stillCs(seconds: number, duration: number | null): number {
 export function longestSpanSeconds(times: readonly ItemTime[]): number | null {
   let longest: number | null = null
   for (const time of times) {
-    if (time.kind !== "span") continue
+    if (!isSpanTime(time)) continue
     const span = (time.end_cs - time.start_cs) / 100
     if (longest == null || span > longest) longest = span
   }
@@ -465,7 +534,7 @@ export function estimateLoopBytes(
   let bytes = 0
   for (const item of items) {
     const frames =
-      item.time.kind === "span"
+      isSpanTime(item.time)
         ? loopSegmentFrames(item.time.end_cs - item.time.start_cs, targetCs, fps)
         : 1
     const pixels = Math.max(0, item.dest.w) * Math.max(0, item.dest.h)
@@ -697,6 +766,11 @@ export interface CompositionOptions {
   proportional: boolean
   /** Page background, as anything `normalizeComposeBackground` reads. */
   background: string
+  /**
+   * The viewer's outro-skip preference (`useOutroSkipEnabled`). Absent reads
+   * as off — see `ItemTimeInput.outroSkip`.
+   */
+  outroSkip?: boolean
   /** Item metadata, called once per UNIQUE sha (a react-query cache hit). */
   getMeta: (sha256: string) => Promise<ComposeItemMeta | null>
   /** The live state of one pin's <video>, or null when it has none. */
@@ -840,6 +914,7 @@ export async function buildCompositionDoc(
   const carriesAudio = !isAnimatedContainer(preset.container)
   const spanMimes =
     limits?.span_capable_image_mimes ?? FALLBACK_LIMITS.spanCapableImageMimes
+  const outroSkip = !!opts.outroSkip
   // Resolved ONCE per sha across every pass below: the clamp loops re-solve
   // the geometry, never the item table, and a lookup is a request.
   const metas = new Map<string, ComposeItemMeta | null>()
@@ -895,6 +970,7 @@ export async function buildCompositionDoc(
         canvasH,
         carriesAudio,
         spanMimes,
+        outroSkip,
       })
       if (item) items.push(item)
       else skipped.push(placement.sha256)
@@ -996,6 +1072,11 @@ export interface ItemCompositionOptions {
   /** Output width in px, or null for the crop region's own resolution. */
   targetWidth: number | null
   background: string
+  /**
+   * The viewer's outro-skip preference (`useOutroSkipEnabled`). Absent reads
+   * as off — see `ItemTimeInput.outroSkip`.
+   */
+  outroSkip?: boolean
 }
 
 /**
@@ -1065,6 +1146,7 @@ export function buildItemCompositionDoc(
     carriesAudio: !isAnimatedContainer(preset.container),
     spanMimes:
       limits?.span_capable_image_mimes ?? FALLBACK_LIMITS.spanCapableImageMimes,
+    outroSkip: !!opts.outroSkip,
   })
   if (!item) {
     return refuse(
@@ -1174,6 +1256,8 @@ function composeItem(input: {
   carriesAudio: boolean
   /** The limits envelope's span-capable image mimes; empty pre-envelope. */
   spanMimes: readonly string[]
+  /** The viewer's outro-skip preference (see `ItemTimeInput.outroSkip`). */
+  outroSkip: boolean
 }): ComposeItem | null {
   const { placement, meta, state } = input
   // The FULL hash, never the board's 10-char prefix: the document is cache-keyed
@@ -1189,6 +1273,8 @@ function composeItem(input: {
     duration: meta?.duration ?? null,
     mime: meta?.type ?? null,
     spanCapableImageMimes: input.spanMimes,
+    contentEndMs: meta?.content_end_ms ?? null,
+    outroSkip: input.outroSkip,
     thumbnail: input.thumb,
   })
   // A thumbnail-source item's rectangles are solved in the THUMBNAIL's own
@@ -1241,7 +1327,7 @@ function composeItem(input: {
     // a still has no sound to mix, and a container with no audio stream at all
     // would only have it stripped server-side.
     audio:
-      time.kind === "span" && !!state?.playing && !state.muted && input.carriesAudio,
+      isSpanTime(time) && !!state?.playing && !state.muted && input.carriesAudio,
   }
 }
 

@@ -10,6 +10,7 @@ import {
   buildItemCompositionDoc,
   composeRequestedSeconds,
   composeRows,
+  isSpanTime,
   longestSpanSeconds,
   resolveItemTime,
   type ComposeItemMeta,
@@ -34,6 +35,7 @@ import {
 } from "@/lib/state/pinboardMosaicPrefs"
 import { useVideoComposeEnabled } from "@/lib/useClientConfig"
 import { useVideoPresets } from "@/lib/useVideoPresets"
+import { useOutroSkipEnabled } from "@/lib/videoPlayerState"
 import { createMenuGuard } from "@/lib/menuGuard"
 import {
   POLL_TIMEOUT_MS,
@@ -420,6 +422,10 @@ export function useComposeScope(
   // the classification below reads.
   const { limits } = useVideoPresets("mosaic")
   const spanMimes = limits?.span_capable_image_mimes ?? []
+  // The same preference the pins themselves play under: a board classified
+  // one way and composed another would be the inconsistency this whole path
+  // exists to remove.
+  const outroSkip = useOutroSkipEnabled()
 
   const boardWidth = measuredWidth()
   const parsed = parseBoard(layout)
@@ -445,6 +451,8 @@ export function useComposeScope(
       duration: meta?.duration ?? null,
       mime: meta?.type ?? null,
       spanCapableImageMimes: spanMimes,
+      contentEndMs: meta?.content_end_ms ?? null,
+      outroSkip,
     })
   })
   // Any signal alone is enough, and none is checked first: the cache is
@@ -457,7 +465,7 @@ export function useComposeScope(
   const hasVideo =
     metas.some((meta) => (meta?.type ?? "").startsWith("video/")) ||
     anyPinPlayable(placements) ||
-    times.some((time) => time.kind === "span")
+    times.some(isSpanTime)
   return {
     placements,
     hasVideo,
@@ -514,6 +522,7 @@ export function useAnimatedMosaicExport(
   const enabled = useVideoComposeEnabled()
   const { presets, limits } = useVideoPresets("mosaic")
   const getMeta = useItemMetaLoader(dbs)
+  const outroSkip = useOutroSkipEnabled()
   // Both guards: a canvas export in this tab, or a composition already
   // rendering on the server (see composeGuard). Never `useExporting() ||
   // useComposeBusy()`: `||` short-circuits the second HOOK call the moment
@@ -546,6 +555,7 @@ export function useAnimatedMosaicExport(
           only,
           proportional,
           background: pageBackground(),
+          outroSkip,
           getMeta,
           probe: probePinVideoState,
           thumb: probePinThumbnailSize,
@@ -583,6 +593,7 @@ export function useAnimatedItemExport(key: string | null): AnimatedRowSet {
   const { presets, limits } = useVideoPresets("mosaic")
   const queryClient = useQueryClient()
   const getMeta = useItemMetaLoader(dbs)
+  const outroSkip = useOutroSkipEnabled()
   // Both guards: a canvas export in this tab, or a composition already
   // rendering on the server (see composeGuard). Never `useExporting() ||
   // useComposeBusy()`: `||` short-circuits the second HOOK call the moment
@@ -611,9 +622,11 @@ export function useAnimatedItemExport(key: string | null): AnimatedRowSet {
         duration: meta?.duration ?? null,
         mime: meta?.type ?? null,
         spanCapableImageMimes: limits?.span_capable_image_mimes ?? [],
+        contentEndMs: meta?.content_end_ms ?? null,
+        outroSkip,
       })
     : null
-  const isSpan = time?.kind === "span"
+  const isSpan = !!time && isSpanTime(time)
   const requestedSeconds = composeRequestedSeconds(
     length,
     longestSpanSeconds(time ? [time] : [])
@@ -640,6 +653,7 @@ export function useAnimatedItemExport(key: string | null): AnimatedRowSet {
           // still export; the server's own bounds shrink it if it must.
           targetWidth: null,
           background: pageBackground(),
+          outroSkip,
         }),
     })
   }

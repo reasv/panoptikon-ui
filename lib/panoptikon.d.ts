@@ -1534,6 +1534,8 @@ export interface paths {
         /**
          * Create or join a composition job
          * @description Renders a composition document — a canvas, a frame rate, an output length policy and a list of placed items — into one animated artifact. A sibling of `/api/video/transcode` rather than a variant of it: a composition is addressed by the hash of its document, not by an item, and is strictly heavier work, so a policy can allow one and deny the other. The response envelope, the jobs/SSE routes and the artifact route are identical to the single-file path; a single-item save is simply a composition with one item.
+         *
+         *     An item whose time is `outro_span` asks the server to end that span at the item's detected outro, the composition's spelling of the clip route's `cut=outro` and resolved here for the same reason: the boundary belongs to the file's own timeline, not the browser's. Its `end_cs` is the client's fallback and is used unchanged when this item has no usable outro — one pin's missing outro never fails the document.
          */
         post: operations["video_compose"];
         delete?: never;
@@ -2598,6 +2600,13 @@ export interface components {
             end_cs: number;
             /** @enum {string} */
             kind: "span";
+            /** Format: int64 */
+            start_cs: number;
+        } | {
+            /** Format: int64 */
+            end_cs: number;
+            /** @enum {string} */
+            kind: "outro_span";
             /** Format: int64 */
             start_cs: number;
         } | {
