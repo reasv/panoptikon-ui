@@ -9,7 +9,8 @@ import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
 import { useSearchParams } from 'next/navigation'
 import { BookmarkBtn, FileActionCluster } from "@/components/imageButtons"
 import { ScrollBar } from "@/components/ui/scroll-area"
-import { cn, getFileURL } from "@/lib/utils"
+import { cn } from "@/lib/utils"
+import { originalFileURL, thumbnailMediaURL, thumbnailPictureURL } from "@/lib/thumbnailURL"
 import { useGalleryIndex, getGalleryOptionsSerializer } from "@/lib/state/gallery"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useItemSelection } from "@/lib/state/itemSelection"
@@ -22,7 +23,6 @@ import { useSearchLoading } from '@/lib/state/zust'
 import { topRowHighlightItem, virtualPageOf } from '@/lib/scrollMode'
 import {
     animatedCellMode,
-    isAnimatedItem,
     showsMotionBadge,
     tierForCellWidth,
     type AnimatedFloor,
@@ -524,8 +524,11 @@ function VirtualHorizontalScrollElement({
     // documented as a NO-OP for an animated item at or below the floor: it is
     // served as its original file either way, and animates in the <img> exactly
     // as it does today.
-    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256, tier,
-        isAnimatedItem(item.type, item.duration))
+    //
+    // The display-loop trigger is `null` because this is a GRID tier, where the
+    // picture rule never consults it (lib/thumbnailURL.ts) — the strip has no
+    // display request to make.
+    const thumbnailURL = thumbnailPictureURL(dbs, item, null, tier)
     // The other half, which the HOVER play does need (D10): a stored loop
     // exists only above the raw floor, and only such a card mounts the arming
     // and the <video>. Still one comparison on row data — a static card, or an
@@ -585,7 +588,7 @@ function VirtualHorizontalScrollElement({
         if (!item) return;
         event.dataTransfer.effectAllowed = 'copy';
         event.dataTransfer.setData('text/plain', item.sha256);
-        event.dataTransfer.setData('text/uri-list', getFileURL(dbs, "file", "sha256", item.sha256));
+        event.dataTransfer.setData('text/uri-list', originalFileURL(dbs, item.sha256));
         // The hovered card is by definition the drag source, so clear the
         // overlay's hover preview: it portals at z-70 and would sit over the
         // board exactly where the drag is headed (design §8). mouseleave is
@@ -675,7 +678,7 @@ function VirtualHorizontalScrollElement({
                         {animated === "loop"
                             ? <StripLoopPicture
                                 poster={thumbnailURL}
-                                loop={getFileURL(dbs, "thumbnail", "sha256", item.sha256, tier)}
+                                loop={thumbnailMediaURL(dbs, item.sha256, tier)}
                                 alt={item.path}
                                 blurDataURL={blurDataURL}
                             />

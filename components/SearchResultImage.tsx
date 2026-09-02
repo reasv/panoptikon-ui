@@ -2,7 +2,8 @@
 import Image from 'next/image'
 import { BookmarkBtn, FileActionCluster, FilePathComponent } from "@/components/imageButtons"
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { cn, getFileURL } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { originalFileURL, thumbnailMediaURL, thumbnailPictureURL, thumbnailStillURL } from "@/lib/thumbnailURL";
 import { ItemMetaLine } from "@/components/ItemMetaLine";
 import { PlayableBadge } from "@/components/PlayableBadge";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
@@ -291,7 +292,7 @@ export const SearchResultImage = memo(function SearchResultImage({
      */
     smallCell?: boolean
 }) {
-    const fileUrl = overrideURL ? overrideURL : getFileURL(dbs, "file", "sha256", result.sha256)
+    const fileUrl = overrideURL ? overrideURL : originalFileURL(dbs, result.sha256)
     // ONE COMPARISON ON ROW DATA (§2's zero-cost-for-normal invariant). It
     // decides which of the picture components is rendered, so the hover
     // swap's state and listeners exist only inside the extreme-aspect one —
@@ -377,8 +378,16 @@ export const SearchResultImage = memo(function SearchResultImage({
     // keeping today's rendition there costs nothing.
     const smallVideo = smallCell && !extreme
         && !!result.type?.startsWith("video/")
-    const thumbnailUrl = getFileURL(dbs, "thumbnail", "sha256", result.sha256, tierRef.current,
-        animated === "still", smallVideo ? false : undefined)
+    // ONE BUILDER PER MODE (lib/thumbnailURL.ts), which is what keeps the
+    // `still` flag out of this file: a loop cell's picture is a `<video>` and
+    // asks for the rendition whatever it is; a `"still"` cell is the one that
+    // must not be handed `video/mp4`; a static cell has nothing to decide.
+    const thumbnailUrl = animated === "loop"
+        ? thumbnailMediaURL(dbs, result.sha256, tierRef.current)
+        : animated === "still"
+            ? thumbnailStillURL(dbs, result.sha256, tierRef.current)
+            : thumbnailPictureURL(dbs, result, displayLoopTrigger,
+                tierRef.current, smallVideo ? false : undefined)
     // THE ANSWER TO "what is this card's picture", computed once. Everything
     // below dispatches on `source` rather than re-asking `animated === "loop"`
     // — the extreme branch used to build this same object inline while the
@@ -389,7 +398,7 @@ export const SearchResultImage = memo(function SearchResultImage({
         ? {
             kind: "loop",
             src: thumbnailUrl,
-            poster: getFileURL(dbs, "thumbnail", "sha256", result.sha256, tierRef.current, true),
+            poster: thumbnailStillURL(dbs, result.sha256, tierRef.current),
         }
         : { kind: "image", src: thumbnailUrl }
     // Deliberately NOT a `useSearchParams` of its own. This card used to hold
@@ -533,7 +542,7 @@ export const SearchResultImage = memo(function SearchResultImage({
                             // show.)
                             displaySrc={exceedsDisplayLoopTrigger(result, displayLoopTrigger)
                                 ? null
-                                : getFileURL(dbs, "thumbnail", "sha256", result.sha256, "display")}
+                                : thumbnailPictureURL(dbs, result, displayLoopTrigger, "display")}
                             alt={`Result ${result.path}`}
                             blurDataURL={blurDataURL}
                             imageClassName={imageClassName}
@@ -560,7 +569,7 @@ export const SearchResultImage = memo(function SearchResultImage({
                     ) : smallVideo ? (
                         <VideoStillPicture
                             src={source.src}
-                            mosaicSrc={getFileURL(dbs, "thumbnail", "sha256", result.sha256, tierRef.current)}
+                            mosaicSrc={thumbnailPictureURL(dbs, result, displayLoopTrigger, tierRef.current)}
                             alt={`Result ${result.path}`}
                             blurDataURL={blurDataURL}
                             disabled={!!showLoadingSpinner}

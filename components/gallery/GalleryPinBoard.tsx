@@ -1,5 +1,6 @@
 import Image from 'next/image'
-import { cn, downloadFileName, getFileURL } from "@/lib/utils"
+import { cn, downloadFileName } from "@/lib/utils"
+import { originalFileURL, thumbnailMediaURL, thumbnailPictureURL, thumbnailStillURL } from "@/lib/thumbnailURL"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useGalleryFullscreen, useGalleryPinAutoCrop, useGalleryPinAutoLayout, useGalleryPinGrid, useGalleryPinProportional, useGalleryPinResizeHandles, useGalleryPinSelectionCrop, useGalleryTrim } from '@/lib/state/gallery'
 import { newPinHField } from '@/lib/galleryTrim'
@@ -31,7 +32,7 @@ import { useVideoEndProbe } from '@/lib/videoEndProbe'
 import { noteVideoPlaybackError, shouldDowngradeOnError, useVideoPlayability } from '@/lib/videoPlayability'
 import { useVideoPlayback } from '@/lib/videoTranscode'
 import { useDisplayLoopTrigger, useVideoTranscodeEnabled } from '@/lib/useClientConfig'
-import { exceedsDisplayLoopTrigger, type DisplayLoopTrigger } from '@/lib/thumbnailTier'
+import { type DisplayLoopTrigger } from '@/lib/thumbnailTier'
 import { CropGeometry, CropView } from './CropView'
 import { NativeControlsEscape, VideoPlayerSurface, playerSizeForWidth, useVideoPlayerSurface } from './VideoPlayerSurface'
 import { Anchor, ArrowLeftRight, ArrowLeftToLine, ArrowRightToLine, Check, ChevronDown, ChevronsLeft, ChevronsRight, ChevronsUp, Columns3, Crop, Dices, Expand, FlipHorizontal, FlipHorizontal2, FlipVertical, FlipVertical2, FoldHorizontal, GripVertical, ImageDown, LayoutDashboard, LayoutGrid, ListX, LockOpen, Maximize, RotateCcw, RotateCw, Ruler, Scaling, Scan, SquareDashed, Trash2, X, type LucideIcon } from 'lucide-react'
@@ -628,8 +629,8 @@ export function PinBoard(
             pinned.push([
                 index,
                 sha256,
-                getFileURL(dbs, "thumbnail", "sha256", sha256),
-                getFileURL(dbs, "file", "sha256", sha256),
+                thumbnailMediaURL(dbs, sha256),
+                originalFileURL(dbs, sha256),
             ])
         }
         return [newLayout, pinned, cropsMap, autoCropsMap, trimsMap, locksMap, orientsMap, audiosMap]
@@ -2851,7 +2852,7 @@ export function PinBoard(
                             // entry for an 80x80 thumbnail. A ghost that rides
                             // the cursor for the length of a drag has no
                             // business animating anyway.
-                            src={getFileURL(dbs, "thumbnail", "sha256", carrySha, "grid-xs", true)}
+                            src={thumbnailStillURL(dbs, carrySha, "grid-xs")}
                             alt=""
                             className="w-20 h-20 object-cover rounded shadow-lg opacity-80 border border-white/40"
                         />
@@ -3446,8 +3447,7 @@ function PinBoardPin({
     // bounds that value is the bare URL again, character for character, so the
     // common case never re-requests anything.
     const pinThumbnail = data?.item
-        ? getFileURL(dbs, "thumbnail", "sha256", sha256, undefined,
-            exceedsDisplayLoopTrigger(data.item, displayLoopTrigger))
+        ? thumbnailPictureURL(dbs, data.item, displayLoopTrigger)
         : thumbnail
     // The playability tri-state (lib/videoPlayability.ts), the same ladder the
     // gallery runs: `unsupported` is the only verdict with no play affordance

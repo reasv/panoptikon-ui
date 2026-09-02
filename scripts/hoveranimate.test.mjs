@@ -1,8 +1,8 @@
 // Assertions for grid hover-to-animate: the animate PREFERENCE
 // (lib/state/animatePref.ts), the hover ARMING rule
 // (lib/state/animatedPlayback.ts canArmHover), the BADGE predicate and the
-// small-cell threshold (lib/thumbnailTier.ts), and the `big` parameter those
-// two feed (lib/utils.ts getFileURL). The contract is
+// small-cell threshold (lib/thumbnailTier.ts). The URLs those choices feed are
+// scripts/thumbnailurl.test.mjs's. The contract is
 // docs/grid-hover-animate-implementation.md §1, decisions D1–D9. No test
 // runner in this repo — run it from the ui root:
 //
@@ -38,7 +38,6 @@ const {
 const { SMALL_CELL_THRESHOLD_PX, isSmallCell, showsMotionBadge } = await import(
   "../lib/thumbnailTier.ts"
 )
-const { getFileURL } = await import("../lib/utils.ts")
 
 const { HOVER_MOVE_WINDOW_MS } = ANIMATED_PLAYBACK
 
@@ -386,35 +385,6 @@ console.log("\n== the badge predicate matrix (D8) ==")
   check(
     "with no floor known, an animation carries no badge",
     showsMotionBadge(gif(true), null, "hover") === false
-  )
-}
-
-console.log("\n== the video thumbnail choice (D9) ==")
-{
-  const dbs = { index_db: null, user_data_db: null }
-  const base = getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-s")
-  const small = getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-s", false, false)
-  // Only `false` is ever spelled out, so every existing call site produces the
-  // URL it always did — byte for byte, hence the same cache entry.
-  check(
-    "omitting big, and passing true, are today's URL exactly",
-    base === getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-s", false, true)
-      && base === getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-s", false, undefined)
-      && !base.includes("big"),
-    base
-  )
-  check(
-    "a small cell asks for the single frame",
-    small === `${base}&big=false`,
-    small
-  )
-  // The two flags are independent parameters and both have to survive.
-  const both = getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-m", true, false)
-  check(
-    "still and big compose",
-    both.includes("&still=true") && both.includes("&big=false")
-      && both.includes("&size=grid-m"),
-    both
   )
 }
 

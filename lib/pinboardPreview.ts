@@ -36,7 +36,7 @@ import { isIdentityOrientation } from "@/lib/pinboardCrop"
 import { effectiveGrid, gridScale, parseBoard } from "@/lib/pinboardGrid"
 import type { PinPlacement } from "@/lib/pinboardGeometry"
 import { parsePlacements, resolvePinDraw } from "@/lib/pinboardGeometry"
-import { getFileURL } from "@/lib/utils"
+import { thumbnailStillURL } from "@/lib/thumbnailURL"
 
 // Output width of the composited preview in pixels. One constant, tunable
 // without schema or API changes: preview_w/preview_h record what each
@@ -316,7 +316,7 @@ export async function composeBoardPreview(
   // rendition needs no other change — the element decodes what it is sent.
   const images = await Promise.allSettled(
     visible.map((p) =>
-      loadImage(getFileURL(dbs, "thumbnail", "sha256", p.sha256, undefined, true))
+      loadImage(thumbnailStillURL(dbs, p.sha256))
     )
   )
 

@@ -1,8 +1,8 @@
 "use client"
 import { useState } from "react"
-import { cn, getFileURL } from "@/lib/utils"
+import { cn } from "@/lib/utils"
+import { originalFileURL, thumbnailPictureURL } from "@/lib/thumbnailURL"
 import { useSelectedDBs } from "@/lib/state/database"
-import { exceedsDisplayLoopTrigger } from "@/lib/thumbnailTier"
 import { useDisplayLoopTrigger } from "@/lib/useClientConfig"
 
 // The maximized workspace's HOVER PEEK, as a LAYER inside the preview
@@ -94,9 +94,7 @@ export function PeekLayer({
     // cache entry with GalleryImageLarge's picture of the same item, which is
     // the property PreviewSurface's note depends on.
     const displayLoopTrigger = useDisplayLoopTrigger()
-    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256,
-        undefined,
-        exceedsDisplayLoopTrigger(item, displayLoopTrigger))
+    const thumbnailURL = thumbnailPictureURL(dbs, item, displayLoopTrigger)
     // The dwell upgrade (§8): the stored thumbnail shows immediately; for
     // STILL images the original file loads behind it and fades in on load,
     // so a sweep stays cheap (the 200ms open debounce already suppresses
@@ -144,7 +142,7 @@ export function PeekLayer({
             />
             {upgrade && (
                 <img
-                    src={getFileURL(dbs, "file", "sha256", item.sha256)}
+                    src={originalFileURL(dbs, item.sha256)}
                     alt=""
                     draggable={false}
                     // naturalWidth also guards the error case: a full file

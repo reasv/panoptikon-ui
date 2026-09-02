@@ -33,7 +33,7 @@
 // hiding in a value import list.
 import type { PinSource } from "@/lib/pinboardPreview"
 import { imageSource, loadImage } from "@/lib/pinboardPreview"
-import { getFileURL } from "@/lib/utils"
+import { originalFileURL, thumbnailStillURL } from "@/lib/thumbnailURL"
 
 type Dbs = { index_db: string | null; user_data_db: string | null }
 
@@ -245,7 +245,7 @@ export async function loadPinSource(
   if (req.original) {
     try {
       return imageSource(
-        await loadImage(getFileURL(req.dbs, "file", "sha256", req.sha256))
+        await loadImage(originalFileURL(req.dbs, req.sha256))
       )
     } catch {
       /* fall through to the thumbnail */
@@ -253,9 +253,7 @@ export async function loadPinSource(
   }
   try {
     return imageSource(
-      await loadImage(
-        getFileURL(req.dbs, "thumbnail", "sha256", req.sha256, undefined, true)
-      )
+      await loadImage(thumbnailStillURL(req.dbs, req.sha256))
     )
   } catch {
     return null

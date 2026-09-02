@@ -1,7 +1,7 @@
 // Assertions for the grid's rendition-tier choice (lib/thumbnailTier.ts), the
 // cell-size slider's arithmetic (lib/gridCellSize.ts) and the pin button's
-// record algebra (lib/pinboardPlace.ts togglePinRecords), plus the URL the
-// first two feed (lib/utils.ts getFileURL). The contracts are
+// record algebra (lib/pinboardPlace.ts togglePinRecords). The URLs those
+// choices feed are scripts/thumbnailurl.test.mjs's. The contracts are
 // docs/grid-scroll-performance-implementation.md §2 (tier thresholds, the
 // extreme-aspect rule, the animated raw floor and the <img>-vs-<video>
 // decision of §3 F6) and docs/search-scroll-mode-design.md §9 (the slider).
@@ -49,7 +49,6 @@ const { MAX_CELL_WIDTH, MIN_CELL_WIDTH } = await import("../lib/searchLimits.ts"
 // five-string splice arithmetic below can be asserted at all.
 const { togglePinRecords } = await import("../lib/pinboardPlace.ts")
 const { V1_GRID, V2_GRID } = await import("../lib/pinboardGrid.ts")
-const { getFileURL } = await import("../lib/utils.ts")
 
 let all = true
 function check(name, ok, detail = "") {
@@ -286,85 +285,6 @@ console.log("\n== the extreme-aspect test (§2) ==")
       && !isExtremeAspect(0, 0)
       && !isExtremeAspect(-5, 10)
       && !isExtremeAspect(NaN, 100))
-}
-
-console.log("\n== the URL the tier produces ==")
-{
-  const dbs = { index_db: "stdtest", user_data_db: null }
-  // The bare URL now carries the DISPLAY REVISION (lib/utils.ts
-  // DISPLAY_REVISION, docs/thumbnail-format-implementation.md §5): the old
-  // display bytes were served `immutable` under an ETag with no format and no
-  // geometry in it, so every browser that ever loaded one holds it at the
-  // legacy URL for a year, and only a different URL can dislodge it.
-  check("omitting the tier is the bare URL plus the display revision",
-    getFileURL(dbs, "thumbnail", "sha256", "abc")
-      === "/api/items/item/thumbnail?id=abc&id_type=sha256&index_db=stdtest&r=2",
-    getFileURL(dbs, "thumbnail", "sha256", "abc"))
-  check("a tier appends size=",
-    getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-s")
-      === "/api/items/item/thumbnail?id=abc&id_type=sha256&index_db=stdtest&size=grid-s")
-  check("grid-xs is a plain tier like the others",
-    getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-xs")
-      === "/api/items/item/thumbnail?id=abc&id_type=sha256&index_db=stdtest&size=grid-xs")
-  // Spelling `display` out is still a DIFFERENT URL from the bare one, and one
-  // caller needs that: a grid card whose own rendition is a grid tier has to
-  // name the display tier to swap to it. No CONTAIN surface spells it any more
-  // — the peek layer, the gallery large view and the similarity header all send
-  // the bare URL for every item whatever its aspect, so the three share one
-  // cache entry per picture. (They used to name it for extreme-aspect items to
-  // dislodge a pre-tier cache entry; `r=2` does that for every display request.)
-  check("an explicit display is a different URL from the bare one",
-    getFileURL(dbs, "thumbnail", "sha256", "abc", "display")
-      !== getFileURL(dbs, "thumbnail", "sha256", "abc"))
-  check("no index_db still produces a well-formed URL",
-    getFileURL({ index_db: null, user_data_db: null }, "thumbnail", "sha256", "abc", "grid-m")
-      === "/api/items/item/thumbnail?id=abc&id_type=sha256&size=grid-m")
-  check("still=true appends after the tier",
-    getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-m", true)
-      === "/api/items/item/thumbnail?id=abc&id_type=sha256&index_db=stdtest&size=grid-m&still=true")
-  check("a false still is the same URL as omitting it",
-    getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-m", false)
-      === getFileURL(dbs, "thumbnail", "sha256", "abc", "grid-m"))
-}
-
-console.log("\n== the display revision (§5) ==")
-{
-  const dbs = { index_db: "stdtest", user_data_db: null }
-  const url = (...args) => getFileURL(dbs, ...args)
-  const carries = (u) => /[?&]r=2(&|$)/.test(u)
-  // WHERE IT GOES: the display rendition, whether asked for by name or by
-  // omission — those are the two spellings of the one request whose bytes this
-  // release changes.
-  check("the bare thumbnail URL carries it",
-    carries(url("thumbnail", "sha256", "abc")), url("thumbnail", "sha256", "abc"))
-  check("an explicit display carries it",
-    carries(url("thumbnail", "sha256", "abc", "display")),
-    url("thumbnail", "sha256", "abc", "display"))
-  check("a display poster (still=true) carries it too",
-    carries(url("thumbnail", "sha256", "abc", "display", true))
-      && carries(url("thumbnail", "sha256", "abc", undefined, true)))
-  check("a display request for a video's single frame carries it",
-    carries(url("thumbnail", "sha256", "abc", undefined, false, false)))
-  // WHERE IT MUST NOT GO, and this is the assertion the whole parameter turns
-  // on: a grid tier's bytes are versioned inside its own ETag
-  // (TIER_PROCESS_VERSION), so it needs no revision — and adding one would
-  // move every grid URL in the app, costing a cold cache in the one surface
-  // most sensitive to one. Byte-identical to the pre-revision build.
-  for (const tier of ["grid-m", "grid-s", "grid-xs"]) {
-    check(`${tier} URLs are byte-identical to before the revision existed`,
-      !carries(url("thumbnail", "sha256", "abc", tier))
-        && !carries(url("thumbnail", "sha256", "abc", tier, true))
-        && !carries(url("thumbnail", "sha256", "abc", tier, false, false)),
-      url("thumbnail", "sha256", "abc", tier, true, false))
-  }
-  // `file` serves the bytes on disk, which no release of this app changes.
-  check("the original-file URL never carries it",
-    !carries(url("file", "sha256", "abc")), url("file", "sha256", "abc"))
-  // One value, one place. A call site that could pass its own would let two
-  // surfaces disagree about the URL for the same item and stop sharing a
-  // cache entry, which is exactly what PreviewSurface's note depends on.
-  check("the revision is not a parameter any call site can vary",
-    url("thumbnail", "sha256", "abc") === url("thumbnail", "sha256", "abc", undefined))
 }
 
 console.log("\n== does the picture move (F6) ==")

@@ -1,6 +1,7 @@
 import { $api } from "@/lib/api"
 import { keepPreviousData } from "@tanstack/react-query";
-import { downloadFileName, getFileURL, getLocale, prettyPrintBytes, prettyPrintVideoDuration } from "@/lib/utils";
+import { downloadFileName, getLocale, prettyPrintBytes, prettyPrintVideoDuration } from "@/lib/utils";
+import { originalFileURL } from "@/lib/thumbnailURL";
 import { useSelectedDBs } from "@/lib/state/database";
 import { SearchResultImage } from "@/components/SearchResultImage";
 import { ResultCellSkeleton } from "@/components/ResultCellSkeleton";
@@ -120,7 +121,7 @@ export function SimilarityTarget() {
                     <p className="text-xs text-gray-500 mt-2">
                         {/* Real download, not open-in-tab (same-origin
                             `download` attribute names the file). */}
-                        <a href={getFileURL(dbs, "file", "sha256", filter.target)} download={downloadFileName(file?.path, filter.target)}>Download Original File ({sizeString})</a>
+                        <a href={originalFileURL(dbs, filter.target)} download={downloadFileName(file?.path, filter.target)}>Download Original File ({sizeString})</a>
                     </p>
                     {item && <p className="text-xs text-gray-500 mt-2">
                         Type: {item.type} {resolutionString && `(${resolutionString})`} {durationString && `(${durationString})`}

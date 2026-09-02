@@ -3,110 +3,11 @@ import { twMerge } from "tailwind-merge"
 // Type-only: `./panoptikon` is a .d.ts, so a VALUE import of it is a runtime
 // module the node test scripts cannot resolve (the same rule
 // lib/videoTranscode.ts documents).
-import type { components, paths } from "./panoptikon"
-import type { ThumbnailTier } from "./thumbnailTier"
+import type { components } from "./panoptikon"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
-/**
- * `size` selects a stored rendition tier (`lib/thumbnailTier.ts`) and applies
- * to `file_type: "thumbnail"` only — the original file has no tiers.
- *
- * OMITTING it is the bare URL, which the endpoint answers with the display
- * rendition. Passing `"display"` explicitly is therefore the same BYTES and a
- * DIFFERENT URL, which one caller needs and no other should want: a GRID card
- * whose own rendition is a grid tier has to name the display tier to swap to
- * it. A surface whose default is already the display rendition must NOT spell
- * it out — the two spellings would then be two cache entries for one picture,
- * split across surfaces that are meant to share (see PreviewSurface's note).
- *
- * That is a change of policy, and `r` below is what allowed it. The
- * extreme-aspect contain surfaces used to spell `display` out to bust a cache
- * entry stamped before the display tier's rule changed; the revision
- * parameter busts it for EVERY display request, so the spelling bought nothing
- * but three surfaces agreeing by hand.
- *
- * `still` forces the STATIC rendition of an animated item — at a grid tier an
- * animated item above the raw floor otherwise answers `video/mp4`, which an
- * `<img>` cannot show. The endpoint documents it as a no-op everywhere else
- * (static items, and animated items at or below the floor, are served the same
- * bytes either way), so a surface that cannot play video may set it from
- * `isAnimatedItem` alone — or unconditionally where it has no row to test
- * (lib/thumbnailTier.ts). It is a distinct URL, hence a distinct cache entry;
- * that is the whole cost of the no-op case.
- *
- * `big` selects between a VIDEO item's two stored thumbnails: the 2×2 frame
- * mosaic (the default, and what omitting the parameter has always meant) and
- * the single frame at index 1, which carries its own grid tiers. Only `false`
- * is ever spelled out — a small grid cell asking for the single frame (D9) —
- * so every other call site produces the URL it always did, byte for byte, and
- * no cache entry moves for the sake of a parameter that changes nothing.
- *
- * `r` is the DISPLAY REVISION, added here and never by a call site — see
- * `DISPLAY_REVISION`.
- */
-export function getFileURL(
-  dbs: { index_db: string | null; user_data_db: string | null },
-  file_type: "file" | "thumbnail",
-  // Path-derived (not operations[...]): path strings are stable across
-  // spec generators, operationIds are not.
-  id_type: paths["/api/items/item"]["get"]["parameters"]["query"]["id_type"],
-  id: string | number,
-  size?: ThumbnailTier,
-  still?: boolean,
-  big?: boolean
-) {
-  const index_db_param = dbs.index_db ? `&index_db=${dbs.index_db}` : ""
-  const size_param = size ? `&size=${size}` : ""
-  const still_param = still ? `&still=true` : ""
-  const big_param = big === false ? `&big=false` : ""
-  const revision_param = isDisplayRequest(file_type, size)
-    ? `&r=${DISPLAY_REVISION}`
-    : ""
-  return `/api/items/item/${file_type}?id=${id}&id_type=${id_type}${index_db_param}${size_param}${still_param}${big_param}${revision_param}`
-}
-
-/**
- * THE DISPLAY REVISION, bumped by hand exactly when a release changes what the
- * display rendition's BYTES are and the endpoint cannot express that in an
- * ETag the client already holds.
- *
- * Why it exists (docs/thumbnail-format-implementation.md §5): the display
- * rendition used to be served `immutable` under the ETag `sha-thumb{idx}`,
- * which carries no format and no geometry. The format work changes those bytes
- * — a PNG's display rendition becomes WebP, geometry re-caps at 2560 — and
- * every browser that ever loaded the old JPEG holds it at the bare URL for a
- * year. The new ETag fixes the FUTURE; only a different URL fixes the caches
- * already out there, and this is that URL, once, deterministically, instead of
- * "until eviction". `2` because revision 1 is every URL ever issued without
- * this parameter.
- *
- * It rides in `getFileURL` rather than at the call sites so that no surface can
- * be missed and none can disagree: the peek layer, the gallery and the
- * similarity header must produce the SAME string for the same item or they
- * stop sharing a cache entry (see PreviewSurface's note on that).
- */
-const DISPLAY_REVISION = 2
-
-/**
- * Which requests carry it: `thumbnail` at the DISPLAY size, spelled or
- * omitted, and nothing else.
- *
- * The grid tiers are excluded DELIBERATELY and must stay excluded. Their bytes
- * are versioned inside their own ETag (`TIER_PROCESS_VERSION`), so a format or
- * encoder change already invalidates them; adding a parameter here would move
- * every grid URL in the app for no gain and cost a cold cache for the surface
- * that is most sensitive to one. `file` requests serve the bytes on disk,
- * which no release changes.
- */
-function isDisplayRequest(
-  file_type: "file" | "thumbnail",
-  size: ThumbnailTier | undefined
-): boolean {
-  return file_type === "thumbnail" && (size === undefined || size === "display")
-}
-
 // Basename of an indexed path. Either separator: the index stores paths as
 // the OS produced them.
 export function fileNameFromPath(path: string): string {

@@ -11,7 +11,8 @@ import { X, ArrowBigLeft, ArrowBigRight, GalleryHorizontal, Download } from "luc
 import { Button } from "@/components/ui/button"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useShallow } from "zustand/react/shallow"
-import { cn, consumesArrowKeys, downloadFileName, fileNameFromPath, getFileURL, hasOpenLayer } from "@/lib/utils"
+import { cn, consumesArrowKeys, downloadFileName, fileNameFromPath, hasOpenLayer } from "@/lib/utils"
+import { originalFileURL, thumbnailMediaURL, thumbnailStillURL } from "@/lib/thumbnailURL"
 import { ItemMetaLine } from "@/components/ItemMetaLine"
 import { itemEquals, OpenDetailsButton } from "@/components/OpenFileDetails"
 import { useFileShare } from "@/hooks/fileShare"
@@ -1553,8 +1554,8 @@ export function GalleryImageLarge(
     // was stored 163x4096 and painted at 163px wide). `r=2` dislodges it for
     // every display request now, so the spelling bought nothing but this
     // surface, the peek layer and the similarity header agreeing by hand.
-    const thumbnailURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256)
-    const fileURL = getFileURL(dbs, "file", "sha256", item.sha256)
+    const thumbnailURL = thumbnailMediaURL(dbs, item.sha256)
+    const fileURL = originalFileURL(dbs, item.sha256)
 
     // AN ANIMATED ITEM BIG ENOUGH THAT THE DISPLAY SIZE IS A LOOP, NOT A
     // PICTURE (docs/thumbnail-format-implementation.md R3). Past any of the
@@ -1575,7 +1576,7 @@ export function GalleryImageLarge(
     // or the original for a sentinel or under-bound item — never video and
     // never a 404 (§5). Both the `<video>`'s `poster` and one of the two
     // fallbacks below.
-    const stillURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256, undefined, true)
+    const stillURL = thumbnailStillURL(dbs, item.sha256)
     // WHAT THIS SURFACE FALLS BACK TO WHEN THE `<video>` SAYS THE LOOP IS NOT
     // THERE — A TWO-RUNG LADDER, walked on ANY error with no reading of the
     // error code at all.

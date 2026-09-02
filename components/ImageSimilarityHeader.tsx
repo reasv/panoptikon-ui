@@ -9,9 +9,8 @@ import {
 import { $api } from "@/lib/api";
 import { useSelectedDBs } from "@/lib/state/database";
 import { FilePathComponent } from "./imageButtons";
-import { getFileURL } from "@/lib/utils";
+import { thumbnailPictureURL } from "@/lib/thumbnailURL";
 import { useItemSimilaritySearch, useQueryOptions } from "@/lib/state/searchQuery/clientHooks";
-import { exceedsDisplayLoopTrigger } from "@/lib/thumbnailTier";
 import { useDisplayLoopTrigger } from "@/lib/useClientConfig";
 
 export function ImageSimilarityHeader() {
@@ -112,23 +111,21 @@ export function ImageSimilarityHeader() {
                             (Extreme-aspect targets used to name `?size=display`
                             to dislodge a pre-tier cache entry; `r=2` dislodges
                             it for every display request now.) */}
+                        {/* `still=true` rides in for an animated target past
+                            the display-loop bounds, and only then
+                            (thumbnailPictureURL). RESIDUAL: on a first hover
+                            the query may not have resolved, so `type` is
+                            undefined, the rule answers "static" and the bare
+                            URL is used for one render. */}
                         <img
-                            src={getFileURL(dbs, "thumbnail", "sha256", filter.target,
-                                undefined,
-                                // `still=true` for an animated target past the
-                                // display-loop bounds, and only then: its
-                                // display request answers `video/mp4`
-                                // (docs/thumbnail-format-implementation.md R3),
-                                // which this <img> would render as a broken
-                                // picture. A smaller animated target keeps the
-                                // bare URL, animates as it does today, and
-                                // keeps sharing its cache entry with the
-                                // gallery. RESIDUAL: on a first hover the query
-                                // may not have resolved, so there is no row to
-                                // test and the flag is off for one render.
-                                forceStill || (data?.item
-                                    ? exceedsDisplayLoopTrigger(data.item, displayLoopTrigger)
-                                    : undefined))}
+                            src={thumbnailPictureURL(dbs, {
+                                sha256: filter.target,
+                                type: data?.item?.type,
+                                duration: data?.item?.duration,
+                                size: data?.item?.size,
+                                width: data?.item?.width,
+                                height: data?.item?.height,
+                            }, displayLoopTrigger)}
                             alt="Similarity search target"
                             className="max-h-[40vh] max-w-[min(24rem,80vw)] rounded object-contain"
                             // The residual the row-data test cannot settle —
