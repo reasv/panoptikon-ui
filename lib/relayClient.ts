@@ -200,7 +200,7 @@ export class RelayStaleFileError extends Error {
 
 export type RelayShareFile = {
   // Same-origin URL the browser fetches the original bytes from when the Relay
-  // needs them uploaded (getFileURL). Only read on the bytes_required path.
+  // needs them uploaded (lib/thumbnailURL.ts). Only read on the bytes_required path.
   url: string
   path: string
   sha256: string

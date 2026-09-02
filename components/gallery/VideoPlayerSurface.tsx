@@ -433,7 +433,7 @@ function MenuItem({
 }
 
 // The link-shaped menu row. Same-origin only, which the file URL is by
-// construction (getFileURL returns a root-relative path): a cross-origin
+// construction (lib/thumbnailURL.ts returns root-relative paths): a cross-origin
 // href silently loses the `download` attribute and navigates instead.
 function MenuItemLink({
     label,

@@ -147,16 +147,32 @@ function CellOverlay({
 
 // Memoized: the virtualized grid re-renders on every scroll frame (tanstack
 // virtual mutates state under "use no memo"), and without this each visible
-// card re-executes per frame. Callers must keep object/function props
-// referentially stable for the memo to hold — which is why the two layout
-// props below are a plain string and a plain number rather than the style
-// object each of them stands for.
+// card re-executes per frame.
 //
-// `animatedFloor` is the one OBJECT prop, and the memo contract depends on the
-// host holding its identity: a floor rebuilt per render (an inline literal, or
-// a fresh object out of the client-config query) defeats this memo for every
-// visible card on every scroll frame — the exact per-frame re-execution it
-// exists to stop. See its own prop doc below for where the host reads it.
+// THE PROPS / CONTEXT BOUNDARY, spelled once here because both sides of it are
+// load-bearing and neither is obvious from a call site:
+//
+//   - PROPS are the HOST'S ONE ANSWER for every card it renders: its layout in
+//     numbers (`cellWidth`, `boxHeightPx`, `dpr`, `imageHeightPx`, or a
+//     `tier`), the server's two bounds objects, and the animate mode. They are
+//     part of the memo contract, so a host that rebuilds one per render — an
+//     inline literal, a fresh object straight out of the client-config query —
+//     defeats this memo for every visible card on every scroll frame, which is
+//     the exact per-frame re-execution it exists to stop. The layout ones are
+//     plain strings and numbers rather than the style objects they stand for
+//     precisely so they cannot be rebuilt by accident; `animatedFloor` and
+//     `displayLoopTrigger` are the two OBJECT props, and react-query holding
+//     their identity across refetches that change nothing is what makes
+//     reading them at the host safe.
+//   - `CellFlagsContext` (lib/state/cellActions.ts) is for REACTIVE values, and
+//     THIS CARD NEVER SUBSCRIBES TO IT. A `useCellFlags` read in the body would
+//     re-render every visible cell whenever a pin or a bookmark setting
+//     changed. It is read only inside `CellOverlay`, behind the hover gate,
+//     where it is a few bytes of decision — see that component's doc.
+//
+// `dbs` is deliberately a PROP even though every host reads `useSelectedDBs()`
+// for itself: the card takes it as data so that it subscribes to nothing and
+// stays memo-stable. The double read is the price of that, and it is cheap.
 export const SearchResultImage = memo(function SearchResultImage({
     result,
     index,
@@ -748,46 +764,20 @@ function ExtremeAspectPicture({
  * media element live in here, so a static card renders the plain `<Image>` it
  * always did and mounts none of it.
  *
- * Styled to be INDISTINGUISHABLE from that `<img>`: the caller hands down the
- * card's own object-fit classes verbatim, and `FILL_CLASSES` reproduces what
- * next/image's `fill` writes as inline style. `object-fit`/`object-position`
- * apply to a replaced element whatever its kind, so the CSS hover-contain and
- * the rounded corners work here untouched.
+ * WHAT THIS ADDS TO `LoopVideo`, which is everything else about the element
+ * (why it never autoplays, why the poster fallback exists, what the browser's
+ * video context menu does to a right-click) — read that component's doc for
+ * all of it, and do not copy it back here:
  *
- * THE POSTER FALLBACK IS THE POINT, not defensive polish. Two states answer a
- * grid-tier request for an animated item above the floor with the item's own
- * IMAGE bytes, and the client cannot tell either apart in advance:
- *
- *   - the backfill has not written the loop yet — transitional, and answered
- *     `no-cache` so it resolves the moment the scan lands;
- *   - no H.264 encode of this source came out smaller than the source, so the
- *     settled keep-the-original edge serves the file itself — PERMANENT, and
- *     answered immutable, so this fallback is the only thing that will ever
- *     render those items.
- *
- * A cell that only ever mounted `<video>` shows an empty box in both. The swap
- * hangs off the element's own `error` event — NO PROBE REQUEST, which would
- * double the request count for the common case to save one wasted fetch in the
- * rare one — and lands on `still=true`, a stored poster for every item above
- * the floor. It is a one-way latch: `failed` never goes back, so a failure
- * cannot loop, and the poster is already in cache because the `<video>` was
- * showing it. With `preload="none"` the failing response is not even fetched
- * until the director first plays this cell, so the swap now happens on the
- * first play of a visible cell rather than at mount — the poster is what the
- * cell was showing until then either way.
- *
- * NOTHING IS FETCHED UNTIL IT IS PLAYED. `preload="none"` and no `autoplay`:
- * the loop's bytes are requested by the director's own `play()`, and the
- * director only plays cells that are at least half on screen and inside the
- * cap. An earlier build carried `autoplay` and let the element decide, which
- * fetched and fully buffered EVERY mounted loop — measured at 16/16 buffered
- * with 14 of them off screen, ~4 MB nobody saw. The poster paints immediately
- * and the blurhash sits behind it, so a cell that has not been played yet is a
- * still picture rather than an empty box.
- *
- * KNOWN, ACCEPTED UX DELTA: right-clicking an animated cell gets the browser's
- * VIDEO context menu (Loop, Show controls, Save video as…) rather than the
- * image one. Inherent to being a real media element; flagged for user QA.
+ *   - the ONE-WAY `failed` latch. LoopVideo reports that the response was not
+ *     a video; deciding to stop asking is the card's, because the card is what
+ *     survives the swap. `failed` never goes back, so a failure cannot loop,
+ *     and the poster it lands on is already in cache — the `<video>` was
+ *     showing it;
+ *   - the `occluded` translation: a cell the extreme-aspect layer covers
+ *     deregisters rather than pausing, so the director gives its cap slot away;
+ *   - the blurhash, by the same direct-data-URL mechanism next/image's
+ *     `placeholder` uses on every other picture in this card.
  */
 function AnimatedCellPicture({
     src,

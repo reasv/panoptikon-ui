@@ -40,8 +40,8 @@
 // HOVER-TO-ANIMATE (docs/grid-hover-animate-implementation.md D6/D7) is
 // grafted onto exactly the same shape, and for the same reason: "at most one
 // cell may hover-play" is a property of the PAGE, and a cell cannot enforce it.
-// The director owns the arming rule, the dwell timer and the single slot;
-// `armHoverPlay` is the entire interface, and the cell it answers decides
+// The director owns the dwell timer and the single slot, and runs the arming
+// rule; `armHoverPlay` is all a cell can reach, and the cell it answers decides
 // nothing about policy. Cells in hover mode mount no `<video>` at all until
 // their arm fires, so "the director does not auto-play a hover-mode cell" is
 // structural rather than a rule it has to keep.
@@ -55,8 +55,9 @@
 // animated cell is mounted: the last unregister tears the observer and the
 // listener back down, so a page of static results carries none of it.
 //
-// The cells stay dumb by construction — `observeAnimatedCell` is the entire
-// interface, and the component that calls it decides nothing about policy.
+// The cells stay dumb by construction: `observeAnimatedCell` is all a mounted
+// loop can reach, and the component that calls it decides nothing about
+// policy.
 //
 // THE ARMING RULE ITSELF lives in lib/state/hoverArming.ts — pure, testable,
 // and answering in commands this module carries out. What stayed here is the
@@ -368,7 +369,7 @@ export function trackHoverPointer(): () => void {
  * PASS THE ENTRY EVENT. Its `clientX`/`clientY` are the only record of the
  * movement that carried the pointer in — the `pointermove` for it arrives
  * AFTER this — and without them a pointer that rested before crossing the
- * boundary is refused and never asked again (see the machine's doc, F1a). A
+ * boundary is refused and never asked again (see lib/state/hoverArming.ts). A
  * refusal is no longer final either way: the root is remembered, and the
  * director's own `pointermove` arms it on the next real move inside it.
  */

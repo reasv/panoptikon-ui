@@ -16,11 +16,15 @@ export const CELL_HOVER_ROOT_ATTR = "data-cell-hover-root"
  * "The pointer has been RESTING on this card" — the director's arming rule and
  * dwell (docs/grid-hover-animate-implementation.md D6/D7), as one boolean.
  *
- * MOUNTED ONLY BY THE PICTURES THAT NEED IT (a loop in hover mode, a small
- * video cell), which is the same structural rule ExtremeAspectPicture follows:
- * a static card must not gain a listener or a state from this feature
- * existing. Two listeners and one `useState` per hovering-capable cell is the
- * price, and it is paid by those cells alone.
+ * MOUNTED ONLY BY THE PICTURES THAT NEED IT — the grid card's
+ * `HoverLoopPicture` and the gallery filmstrip's `StripLoopPicture`, i.e. a
+ * loop in hover mode on either surface — which is the same structural rule
+ * ExtremeAspectPicture follows: a static card must not gain a listener or a
+ * state from this feature existing. Two listeners and one `useState` per
+ * hovering-capable cell is the price, and it is paid by those cells alone.
+ * (The small-video swap and the extreme-aspect swap do NOT use this: they
+ * track plain `:hover` with their own mouseenter/mouseleave pair, because what
+ * they change is a picture rather than a playback decision.)
  *
  * `pointerenter`/`pointerleave` rather than `mouseenter`/`mouseleave`: the
  * director's whole arming rule is written in terms of `pointermove`, so the

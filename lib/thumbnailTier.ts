@@ -1,5 +1,8 @@
-// Which stored rendition a picture surface asks the thumbnail endpoint for,
-// and the one aspect test the crop rule turns on.
+// WHAT KIND OF PICTURE AN ITEM HAS: which stored rendition covers a box of a
+// given size, whether that rendition is a crop, whether the item moves, and
+// whether the size the endpoint answers is video or an image. The URLs those
+// answers turn into are lib/thumbnailURL.ts's; the element a grid card mounts
+// is lib/cellPicture.ts's.
 //
 // IMPORT-FREE on purpose, like lib/scrollMode.ts and lib/searchDefaults.ts and
 // for the same reason: every function here is pure, which is what lets
@@ -95,7 +98,13 @@ export const EXTREME_ASPECT = 2
  * the zero-cost-for-normal invariant (§2): the URL scheme is
  * aspect-independent, so this test decides only whether a cell mounts the
  * hover-swap machinery, and a normal-aspect cell keeps today's CSS-only hover
- * with no listeners and no state.
+ * for that gesture — no listeners and no state FOR THE SWAP.
+ *
+ * It is not the whole of what a card mounts, and never was: a normal-aspect
+ * card whose item MOVES mounts a `<video>` (and, in hover mode, the arming
+ * hook), and a normal-aspect VIDEO in a small cell mounts its own plain-hover
+ * swap. The invariant is about the STATIC normal-aspect card, which is the
+ * overwhelming majority of a screenful and which still mounts nothing.
  *
  * Missing dimensions are NORMAL, deliberately. A row with no width/height is
  * either a pre-backfill record or a non-image, and treating an unknown as
@@ -347,7 +356,13 @@ export function animatedCellMode(
  * WHEN a loop cell animates: unprompted, or only while the pointer dwells on
  * it (D2). Decided per SURFACE from the cell width and the user's preference
  * (lib/state/animatePref.ts), never per card — it is one value for a whole
- * grid — and latched at a card's mount.
+ * grid.
+ *
+ * A LIVE prop, deliberately not latched like the tier: it moves only on a
+ * deliberate act on the grid (the Always / On hover toggle, the size slider
+ * crossing the small-cell threshold) whose whole point is that the cells on
+ * screen change. A latched one read as doing nothing until a refresh (user QA,
+ * 2026-09-02).
  */
 export type AnimateMode = "always" | "hover"
 

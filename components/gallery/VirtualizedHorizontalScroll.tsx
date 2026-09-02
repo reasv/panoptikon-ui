@@ -44,8 +44,13 @@ import type { ResultsSource } from '@/lib/searchHooks'
 // ratio of 2 (480 device px, comfortably inside the 512 tier) for a box that
 // actually needs 640 — a 1.25x upscale, past the ladder's 1.125 slack. The
 // argument handed to `tierForCellWidth` is therefore always the edge that
-// binds; the result grid's cells are square, so its two edges agree and only
-// this surface has to say so out loud.
+// binds.
+//
+// The result grid asks the same question a longer way round: its auto box is
+// `cellWidth x 384/480/608`, emphatically not square, and it runs
+// `coverBindingEdge` per card so the edge depends on the picture as well as on
+// the box (lib/gridCellSize.ts). This surface has ONE card shape and no row
+// data worth consulting, so a constant is the whole of it.
 //
 // The strip was the single worst offender before tiers existed: it loaded
 // display-class renditions (4096px on the long side, or the original file)
@@ -508,8 +513,8 @@ function VirtualHorizontalScrollElement({
     // extreme-aspect item needs no special case here: the crop IS what this
     // card should show, and there is no hover-contain state to swap for.
     //
-    // ALWAYS THE STILL for an animated item. Adjudicated for F6 and unchanged
-    // by D10: the strip's BASE picture is a poster, and nothing here ever
+    // ALWAYS THE STILL for an animated item, and unchanged by the hover-play
+    // package: the strip's BASE picture is a poster, and nothing here ever
     // autoplays — a row of looping cards under the gallery is noise, and the
     // strip's job is letting the eye find the next item. What D10 adds is a
     // loop the pointer has to ask for by resting on a card (StripLoopPicture),
