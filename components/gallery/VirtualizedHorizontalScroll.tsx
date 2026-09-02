@@ -697,7 +697,7 @@ function VirtualHorizontalScrollElement({
                     show posters and play only what the pointer dwells on —
                     so a card that CAN move and is not moving is exactly what
                     the badge is for. */}
-                {showsMotionBadge(item, animatedFloor, "hover") && <PlayableBadge />}
+                {showsMotionBadge(item, animated, "hover") && <PlayableBadge />}
                 {searchLoading && (
                     <div className="absolute inset-0 z-10 flex items-center rounded-md justify-center bg-white bg-opacity-50">
                         <Image

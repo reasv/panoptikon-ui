@@ -49,6 +49,7 @@ const { MAX_CELL_WIDTH, MIN_CELL_WIDTH } = await import("../lib/searchLimits.ts"
 // five-string splice arithmetic below can be asserted at all.
 const { togglePinRecords } = await import("../lib/pinboardPlace.ts")
 const { V1_GRID, V2_GRID } = await import("../lib/pinboardGrid.ts")
+const { cellTierForRow } = await import("../lib/cellPicture.ts")
 
 let all = true
 function check(name, ok, detail = "") {
@@ -241,15 +242,44 @@ console.log("\n== the binding edge of ONE PICTURE in that box (§6) ==")
   // height, with the >= — the conservative side of a tie.
   check("an image of the box's own aspect binds on the height",
     coverBindingEdge(300, 600, 500, 1000) === 600)
-  // An EXTREME-ASPECT item is asked about as its CROP (2:1 in the item's
-  // orientation, the shape the cell actually paints), never as itself — see
-  // SearchResultImage. A 800x20000 webtoon in an auto cell is a TALL crop, so
-  // it binds on the width; the raw dimensions agree here, and would not in a
-  // box more than twice as tall as it is wide.
-  check("a strip's CROP binds like the crop, not like the strip",
-    coverBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX, 1, EXTREME_ASPECT) === 266
-      && coverBindingEdge(200, 500, 1, EXTREME_ASPECT) === 500
+}
+
+console.log("\n== the card's tier, crop shape included ==")
+{
+  // THE SUBSTITUTION IS THE FUNCTION'S, not a call site's (lib/cellPicture.ts):
+  // past aspect 2 the stored grid rendition is a CROP, 2:1 in the item's
+  // orientation, and it is the crop the cell paints. Asserted through
+  // `cellTierForRow` rather than by hand-passing `(1, EXTREME_ASPECT)`, which
+  // is what let the card and this file drift.
+  const strip = { width: 800, height: 20000 }
+  const wideStrip = { width: 20000, height: 800 }
+  const portrait = { width: 1200, height: 1600 }
+  check("a TALL strip is asked about as a 1:2 crop",
+    cellTierForRow(strip, 266, AUTO_IMAGE_BOX_HEIGHT_PX, 1)
+      === tierForCellWidth(
+        coverBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX, 1, EXTREME_ASPECT), 1))
+  check("a WIDE strip is asked about as a 2:1 crop",
+    cellTierForRow(wideStrip, 266, AUTO_IMAGE_BOX_HEIGHT_PX, 1)
+      === tierForCellWidth(
+        coverBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX, EXTREME_ASPECT, 1), 1))
+  // A tall strip's crop binds on the WIDTH in the auto box, where the raw
+  // 800x20000 happens to agree — and would not in a box more than twice as
+  // tall as it is wide, which is why the substitution exists.
+  check("the crop and the strip disagree in a tall box",
+    coverBindingEdge(200, 500, 1, EXTREME_ASPECT) === 500
       && coverBindingEdge(200, 500, 800, 20000) === 200)
+  check("a normal-aspect row is asked about as itself",
+    cellTierForRow(portrait, 266, AUTO_IMAGE_BOX_HEIGHT_PX, 1)
+      === tierForCellWidth(
+        coverBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX, 1200, 1600), 1))
+  // A host that measures nothing keeps its own answer, whatever the row is.
+  check("no measured width keeps the host's tier",
+    cellTierForRow(strip, undefined, undefined, 2, "grid-s") === "grid-s"
+      && cellTierForRow(strip, undefined, undefined, 2, undefined) === undefined)
+  // The DPR default, so a host that hands a box and no ratio is not silently
+  // given a tier for a ratio it never claimed.
+  check("an absent dpr is 1",
+    cellTierForRow(portrait, 500, 500) === cellTierForRow(portrait, 500, 500, 1))
 }
 {
   // "Not measured yet" must answer display, never the smallest tier: the

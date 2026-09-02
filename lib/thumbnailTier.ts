@@ -406,15 +406,17 @@ export function showsMotionBadge(
   item: {
     type: string | null | undefined
     duration?: number | null
-    size?: number | null
-    width?: number | null
-    height?: number | null
   },
-  floor: AnimatedFloor | null | undefined,
+  /**
+   * THE CELL'S ALREADY-COMPUTED MODE. Handed in rather than derived from the
+   * floor a second time: every caller has just asked `animatedCellMode` to
+   * decide which element it renders, and a badge that re-derived the answer
+   * could disagree with the picture it sits on.
+   */
+  mode: AnimatedCellMode,
   animate: AnimateMode
 ): boolean {
   if (item.type?.startsWith("video/")) return true
-  const mode = animatedCellMode(item, floor)
   if (mode === "loop") return animate === "hover"
   if (mode === "still") return false
   return !!item.duration && item.duration > 0

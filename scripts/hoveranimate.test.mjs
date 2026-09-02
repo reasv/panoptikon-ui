@@ -35,7 +35,7 @@ const {
   hoverScroll,
   newHoverArming,
 } = await import("../lib/state/animatedPlayback.ts")
-const { SMALL_CELL_THRESHOLD_PX, isSmallCell, showsMotionBadge } = await import(
+const { SMALL_CELL_THRESHOLD_PX, animatedCellMode, isSmallCell, showsMotionBadge } = await import(
   "../lib/thumbnailTier.ts"
 )
 
@@ -355,36 +355,41 @@ console.log("\n== the badge predicate matrix (D8) ==")
   const video = { type: "video/mp4", duration: 30 }
   const still = { type: "image/jpeg", duration: null }
   const audio = { type: "audio/mpeg", duration: 90 }
+  // The badge is handed the mode the CARD already computed, so the matrix goes
+  // through the same `animatedCellMode` the picture element is chosen by —
+  // which is the point of passing it rather than the floor.
+  const badge = (item, f, animate) =>
+    showsMotionBadge(item, animatedCellMode(item, f), animate)
 
   check(
     "a video still always carries the badge",
-    showsMotionBadge(video, floor, "always") === true
-      && showsMotionBadge(video, floor, "hover") === true
+    badge(video, floor, "always") === true
+      && badge(video, floor, "hover") === true
   )
   check(
     "a loop carries it in hover mode and not in always mode",
-    showsMotionBadge(gif(true), floor, "hover") === true
-      && showsMotionBadge(gif(true), floor, "always") === false
+    badge(gif(true), floor, "hover") === true
+      && badge(gif(true), floor, "always") === false
   )
   // Below the floor the endpoint serves the item's own file, which animates in
   // the <img>: the picture is already moving, so there is nothing to announce.
   check(
     "a below-floor animation carries none, in either mode",
-    showsMotionBadge(gif(false), floor, "hover") === false
-      && showsMotionBadge(gif(false), floor, "always") === false
+    badge(gif(false), floor, "hover") === false
+      && badge(gif(false), floor, "always") === false
   )
-  check("a still picture carries none", showsMotionBadge(still, floor, "hover") === false)
+  check("a still picture carries none", badge(still, floor, "hover") === false)
   // The measured-span fallback, which is what keeps audio's badge working.
   check(
     "a non-picture with a measured span still carries one",
-    showsMotionBadge(audio, floor, "always") === true
+    badge(audio, floor, "always") === true
   )
   // With no floor on record nothing is above it, so every animation is on the
   // "serves its own file" path and none of them are announced. Same answer an
   // older Server and an in-flight client-config produce.
   check(
     "with no floor known, an animation carries no badge",
-    showsMotionBadge(gif(true), null, "hover") === false
+    badge(gif(true), null, "hover") === false
   )
 }
 

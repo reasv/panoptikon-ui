@@ -24,6 +24,7 @@ const {
   thumbnailPictureURL,
   thumbnailStillURL,
 } = await import("../lib/thumbnailURL.ts")
+const { planCellPicture } = await import("../lib/cellPicture.ts")
 
 let all = true
 function check(name, ok, detail = "") {
@@ -186,6 +187,88 @@ console.log("\n== the display revision (§5) ==")
   // cache entry, which is exactly what PreviewSurface's note depends on.
   check("the revision is not a parameter any call site can vary",
     thumbnailMediaURL(dbs, "abc") === thumbnailMediaURL(dbs, "abc", undefined))
+}
+
+console.log("\n== the card's picture plan (lib/cellPicture.ts) ==")
+{
+  // The raw floor, as /api/client-config publishes it. Every animated fixture
+  // below is ABOVE it (4 MB, past the 1 MiB bound) unless it says otherwise.
+  const FLOOR = { maxFileSize: 1024 * 1024, maxSide: 512 }
+  const env = (smallCell = false) => ({
+    animatedFloor: FLOOR,
+    displayLoopTrigger: TRIGGER,
+    smallCell,
+  })
+  const plan = (r, tier, smallCell) => planCellPicture(r, dbs, tier, env(smallCell))
+  const gif = (over) => ({
+    sha256: "abc", type: "image/gif", duration: 2,
+    size: over ? TRIGGER.maxBytes + 1 : 4 * 1024 * 1024,
+    width: 800, height: 600,
+  })
+  const strip = (over) => ({ ...gif(over), width: 800, height: 20000 })
+  const staticStrip = {
+    sha256: "abc", type: "image/png", duration: null,
+    size: 900_000, width: 800, height: 20000,
+  }
+  const smallGif = {
+    sha256: "abc", type: "image/gif", duration: 2,
+    size: 900, width: 100, height: 100,
+  }
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+
+  // A STATIC card is today's `<img>` at today's URL, byte for byte.
+  check("a static card is a still at the plain tier URL",
+    same(plan(STATIC_ROW, "grid-s"),
+      { kind: "still", src: thumbnailMediaURL(dbs, "abc", "grid-s") }))
+  // An animated item BELOW the raw floor never plays: it is a `"still"` cell,
+  // and `still=true` is the no-op that keeps `video/mp4` out of the `<img>`.
+  check("a below-floor animation is a still with the flag set",
+    same(plan(smallGif, "grid-s"),
+      { kind: "still", src: thumbnailStillURL(dbs, "abc", "grid-s") }))
+  check("an above-floor animation is a loop plus its poster",
+    same(plan(gif(false), "grid-m"), {
+      kind: "loop",
+      src: thumbnailMediaURL(dbs, "abc", "grid-m"),
+      poster: thumbnailStillURL(dbs, "abc", "grid-m"),
+    }))
+  // D9: only a SMALL cell asks for the single frame, and only `false` is ever
+  // spelled out, so the mosaic side is the URL every video card always had.
+  check("a big video cell is a plain still at the mosaic URL",
+    same(plan(VIDEO_ROW, "grid-s"),
+      { kind: "still", src: thumbnailMediaURL(dbs, "abc", "grid-s") }))
+  check("a small video cell is the frame with the mosaic behind it",
+    same(plan(VIDEO_ROW, "grid-s", true), {
+      kind: "videoSmall",
+      frame: thumbnailPictureURL(dbs, VIDEO_ROW, TRIGGER, "grid-s", false),
+      mosaic: thumbnailMediaURL(dbs, "abc", "grid-s"),
+    }))
+  // A strip-shaped video's card owns a hover swap already, so it keeps the
+  // mosaic whatever the cell size — two layers competing for one gesture is
+  // one too many.
+  check("a SMALL EXTREME video keeps the mosaic",
+    plan({ ...VIDEO_ROW, width: 20000, height: 800 }, "grid-s", true).kind
+      === "extreme")
+  // The extreme card: a crop plus the whole-image layer its hover swaps to.
+  check("a static strip is a crop with a display layer",
+    same(plan(staticStrip, "grid-s"), {
+      kind: "extreme",
+      crop: { kind: "image", src: thumbnailMediaURL(dbs, "abc", "grid-s") },
+      displaySrc: thumbnailMediaURL(dbs, "abc", "display"),
+    }))
+  check("an above-floor animated strip is a CROPPED LOOP",
+    same(plan(strip(false), "grid-s").crop, {
+      kind: "loop",
+      src: thumbnailMediaURL(dbs, "abc", "grid-s"),
+      poster: thumbnailStillURL(dbs, "abc", "grid-s"),
+    }))
+  // THE RULE THIS PLAN EXISTS FOR: past the display-loop bounds `?size=display`
+  // answers `video/mp4`, so there is no picture to swap to and the layer is
+  // never mounted.
+  check("an OVER-TRIGGER animated strip has no display layer",
+    plan(strip(true), "grid-s").displaySrc === null)
+  check("an under-trigger animated strip still has one",
+    plan(strip(false), "grid-s").displaySrc
+      === thumbnailMediaURL(dbs, "abc", "display"))
 }
 
 console.log(all ? "\nALL PASS" : "\nFAILURES")
