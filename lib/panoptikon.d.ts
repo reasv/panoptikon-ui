@@ -643,12 +643,13 @@ export interface paths {
          *     The thumbnail may be a stored rendition,
          *     the unmodified original image (only for images),
          *     or a placeholder image generated on the fly.
-         *     On the default (`display`) path GIFs are always returned as the original file.
+         *     On the default (`display`) path an animated item is returned as the original file unless it is over the display loop trigger reported by `/api/client-config`, in which case it is answered with an H.264 loop as `video/mp4`.
          *     For video thumbnails, the `big` parameter can be used to
          *     select between the 2x2 frame grid (big=True) or the first frame from the grid (big=False).
-         *     The `size` parameter selects a rendition tier: `display` (default, unchanged behaviour),
-         *     `grid-m` (short side 1024) or `grid-s` (short side 512).
+         *     The `size` parameter selects a rendition tier: `display` (default),
+         *     `grid-m` (short side 1024), `grid-s` (short side 512) or `grid-xs` (short side 256).
          *     A tier with no stored rendition falls through to the next larger one.
+         *     Still renditions are `image/jpeg` or `image/webp`; the response's Content-Type and filename extension come from the stored row.
          *     At a grid tier an **animated** item above the raw floor answers with its H.264 loop as
          *     `video/mp4` (one rendition serves both grid tiers), and `still=true` answers with the
          *     static poster for that tier instead. Animated items at or below the floor - at most
@@ -1879,6 +1880,7 @@ export interface components {
              *     while the private parent-shell bridge is configured.
              */
             desktop_shell_available: boolean;
+            display_loop_trigger?: null | components["schemas"]["DisplayLoopTrigger"];
             /** @description Name of the policy that matched this request. */
             policy: string;
         };
@@ -2102,6 +2104,38 @@ export interface components {
         };
         DesktopUpdateSnoozeRequest: {
             version: string;
+        };
+        /**
+         * @description The display-tier loop trigger, verbatim from [`crate::visual_tiers`]
+         *     (docs/thumbnail-format-implementation.md §2, R3).
+         *
+         *     The gallery's large view decides `<video>` vs `<img>` from four fields of
+         *     the item it is showing — `type` and `duration` say whether the picture
+         *     moves, `size` and `width`/`height` say whether it clears the trigger —
+         *     against these three numbers, which is the same arithmetic the scan used to
+         *     decide whether to store a loop at all. Surfaced rather than duplicated in
+         *     the UI so the two sides cannot drift, and so the client needs no request to
+         *     find out (a wasted round trip per animated item, and an error latch on the
+         *     ones that answer with an image).
+         *
+         *     Any **one** of the three firing is enough; they are not a conjunction.
+         */
+        DisplayLoopTrigger: {
+            /**
+             * Format: int64
+             * @description Bytes. An animated original larger than this is answered with a loop.
+             */
+            max_bytes: number;
+            /**
+             * Format: int64
+             * @description Total pixels.
+             */
+            max_pixels: number;
+            /**
+             * Format: int32
+             * @description The shorter side, in pixels.
+             */
+            max_short_side: number;
         };
         /** @enum {string} */
         DistanceAggregation: "MIN" | "MAX" | "AVG";
@@ -4205,6 +4239,23 @@ export interface components {
             scan_images?: boolean;
             scan_pdf?: boolean;
             scan_video?: boolean;
+            /**
+             * @description Which container formats stored thumbnails may use
+             *     (docs/thumbnail-format-implementation.md §2, R5).
+             *
+             *     It *constrains* the format rules rather than deciding anything: with
+             *     `webp` absent every WebP verdict becomes JPEG (alpha flattened), with
+             *     `jpeg` absent every JPEG verdict becomes WebP — the
+             *     storage-constrained deployment, which knowingly pays WebP's measured
+             *     2.2-2.7x decode cost in the grid. A list naming neither is treated as
+             *     the default with a warning and never rejected at commit: the settings
+             *     UI round-trips the whole config, so a reject would break every
+             *     unrelated save.
+             *
+             *     Changing it regenerates the affected renditions on the next scan; the
+             *     database file only shrinks after the maintenance VACUUM.
+             */
+            thumbnail_formats?: string[];
             vector_quants?: null | components["schemas"]["VectorQuantsConfig"];
         } & {
             [key: string]: components["schemas"]["Value"];
@@ -4279,7 +4330,7 @@ export interface components {
          *     `GET /api/items/item/thumbnail`; do not rename them.
          * @enum {string}
          */
-        ThumbnailTier: "display" | "grid-m" | "grid-s";
+        ThumbnailTier: "display" | "grid-m" | "grid-s" | "grid-xs";
         TranscodeCacheResize: {
             /**
              * Format: int64
