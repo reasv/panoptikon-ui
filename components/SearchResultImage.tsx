@@ -252,17 +252,17 @@ export const SearchResultImage = memo(function SearchResultImage({
     // those cards, never a flash — which is the requirement, and the simpler
     // of the two constructions the plan allows.
     const tierRef = useRef(tier)
-    // LATCHED AT MOUNT for the same reason the tier is, and it is the same
-    // failure both times: `smallCell` moves the video cell's `src`, so a
-    // slider drag across the threshold would drop the bitmap every mounted
-    // video card is painting. `animateMode` moves nothing on its own, but a
-    // loop card whose mode changed under it would swap an animating `<video>`
-    // for a poster (or the reverse) while the user is looking at it — the
-    // preference is a decision about what the NEXT cells do, exactly as the
-    // tier is. Both apply to newly mounted cells, which under virtualization
-    // is everything the user scrolls to next.
-    const smallCellRef = useRef(smallCell)
-    const animateModeRef = useRef(animateMode)
+    // NOT LATCHED, unlike the tier — and the difference is who changes them.
+    // The tier moves under a window resize the user is not looking at the
+    // grid for; `animateMode` and `smallCell` move only on a deliberate act on
+    // the grid itself (the Always / On hover toggle, the size slider crossing
+    // the threshold), and the whole point of that act is that the cells on
+    // screen change: a toggle that reached only the cells scrolled to next
+    // read as doing nothing until a refresh (user QA, 2026-09-02). The costs a
+    // latch would have avoided are one-shot and user-triggered — a loop card
+    // swapping its `<video>` for the poster it already carries, a video card
+    // fetching the other still — not the viewport-wide blurhash flash a
+    // resize-driven tier change would be.
     // ONE COMPARISON ON ROW DATA (§2's zero-cost-for-normal invariant). It
     // decides which of the picture components is rendered, so the hover
     // swap's state and listeners exist only inside the extreme-aspect one —
@@ -285,7 +285,7 @@ export const SearchResultImage = memo(function SearchResultImage({
     // already owns a hover swap of its own — two layers competing for the same
     // gesture is one too many, and a strip-shaped video is rare enough that
     // keeping today's rendition there costs nothing.
-    const smallVideo = smallCellRef.current && !extreme
+    const smallVideo = smallCell && !extreme
         && !!result.type?.startsWith("video/")
     const thumbnailUrl = getFileURL(dbs, "thumbnail", "sha256", result.sha256, tierRef.current,
         animated === "still", smallVideo ? false : undefined)
@@ -418,7 +418,7 @@ export const SearchResultImage = memo(function SearchResultImage({
                             blurDataURL={blurDataURL}
                             imageClassName={imageClassName}
                             disabled={!!showLoadingSpinner}
-                            animateMode={animateModeRef.current}
+                            animateMode={animateMode}
                         />
                     ) : source.kind === "loop" ? (
                         <CellLoopPicture
@@ -426,7 +426,7 @@ export const SearchResultImage = memo(function SearchResultImage({
                             poster={source.poster}
                             alt={`Result ${result.path}`}
                             blurDataURL={blurDataURL}
-                            mode={animateModeRef.current}
+                            mode={animateMode}
                             // The still card's classes, verbatim, so a loop
                             // cell is indistinguishable from the picture it
                             // replaces — including the CSS-only hover contain,
@@ -470,7 +470,7 @@ export const SearchResultImage = memo(function SearchResultImage({
                         Harmless inside the link because the badge takes no
                         pointer events, so the click and the drag still belong
                         to the anchor. */}
-                    {showsMotionBadge(result, animatedFloor, animateModeRef.current)
+                    {showsMotionBadge(result, animatedFloor, animateMode)
                         && <PlayableBadge />}
                 </a>
                 {showLoadingSpinner && (
