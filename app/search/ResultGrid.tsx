@@ -34,7 +34,7 @@ import { isSmallCell, tierForCellWidth } from "@/lib/thumbnailTier"
 import { useDevicePixelRatio } from "@/hooks/useDevicePixelRatio"
 import { useAnimateMode } from "@/hooks/useAnimateMode"
 import { trackHoverPointer } from "@/lib/state/animatedPlayback"
-import { useAnimatedFloor } from "@/lib/useClientConfig"
+import { useAnimatedFloor, useDisplayLoopTrigger } from "@/lib/useClientConfig"
 
 // md, lg, xl, 2xl, 4xl, 5xl — the Tailwind breakpoints used by the result grid
 // rows, restated for matchMedia.
@@ -307,6 +307,16 @@ export function ResultGrid({
     // decides against are the server's and identical for every card, so they
     // are read here and passed down rather than subscribed to per cell.
     const animatedFloor = useAnimatedFloor()
+    // AND ONE SET OF DISPLAY-LOOP BOUNDS, read here for exactly the reason the
+    // floor above it is: the numbers are the server's and identical for every
+    // card, so a subscription per cell would buy nothing and cost what F1
+    // removed. The only card that reads them is the extreme-aspect one, whose
+    // hover swap has no `display` picture to swap to past these bounds.
+    //
+    // A READ, NOT AN EFFECT — deliberately placed among the other two client-
+    // config reads and NOT among the effects below, whose declaration ORDER is
+    // load-bearing (see the bookkeeping map).
+    const displayLoopTrigger = useDisplayLoopTrigger()
     // ONE ANSWER FOR THE WHOLE GRID again, and the last of the three the cards
     // are handed: which range this grid's cells fall in decides both the
     // animate mode the user's preference resolves to (D2) and which of a
@@ -1192,6 +1202,11 @@ export function ResultGrid({
                                                 // renders that change nothing,
                                                 // so the memo still holds.
                                                 animatedFloor={animatedFloor}
+                                                // The third of the same kind,
+                                                // out of the same query and
+                                                // therefore with the same
+                                                // stable identity.
+                                                displayLoopTrigger={displayLoopTrigger}
                                                 // Two more stable primitives
                                                 // on the same rule as the
                                                 // tier: both move only when

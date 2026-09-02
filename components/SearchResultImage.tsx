@@ -12,10 +12,12 @@ import { useCellCallbacks, useCellFlags } from '@/lib/state/cellActions';
 import { PIN_SHA_PREFIX_LENGTH } from '@/lib/pinboardCrop';
 import {
     animatedCellMode,
+    exceedsDisplayLoopTrigger,
     isExtremeAspect,
     showsMotionBadge,
     type AnimateMode,
     type AnimatedFloor,
+    type DisplayLoopTrigger,
     type ThumbnailTier,
 } from '@/lib/thumbnailTier';
 import { LoopVideo } from '@/components/LoopVideo';
@@ -178,6 +180,7 @@ export const SearchResultImage = memo(function SearchResultImage({
     tier,
     imageHeightPx,
     animatedFloor,
+    displayLoopTrigger,
     animateMode = "always",
     smallCell = false,
 }: {
@@ -216,6 +219,20 @@ export const SearchResultImage = memo(function SearchResultImage({
      * a host with no animated cells rather than a broken one.
      */
     animatedFloor?: AnimatedFloor | null
+    /**
+     * The server's display-loop bounds (`/api/client-config`,
+     * lib/thumbnailTier.ts), read ONCE by the host next to the floor above and
+     * passed down as a stable object — never a hook in here, on exactly the
+     * rule that governs the floor and the tier.
+     *
+     * Only the EXTREME-ASPECT card reads it, and only to decide whether its
+     * hover swap has a `display` rendition to swap TO: past these bounds that
+     * request answers `video/mp4`. Omitted or null means "no display loop
+     * exists", which is what an older Server reports and what holds while the
+     * config is in flight — every card then behaves exactly as it did before
+     * this prop existed.
+     */
+    displayLoopTrigger?: DisplayLoopTrigger | null
     /**
      * Whether a loop cell animates unprompted or only while the pointer dwells
      * on it (D2). Resolved ONCE by the host from the cell width and the user's
@@ -413,7 +430,29 @@ export const SearchResultImage = memo(function SearchResultImage({
                     {extreme ? (
                         <ExtremeAspectPicture
                             crop={source}
-                            displaySrc={getFileURL(dbs, "thumbnail", "sha256", result.sha256, "display")}
+                            // NO DISPLAY LAYER for an animated strip past the
+                            // server's display-loop bounds, and that is the
+                            // whole of the fix: `?size=display` answers such an
+                            // item with `video/mp4`
+                            // (docs/thumbnail-format-implementation.md R3), so
+                            // the <Image> this URL used to feed never fired
+                            // `load`, the swap was silently dead, and every
+                            // re-hover re-requested a multi-megabyte loop into
+                            // an element that could not show it.
+                            //
+                            // Null rather than the `still=true` poster: what
+                            // this card already paints IS the item moving —
+                            // the cropped H.264 loop — so the only thing a
+                            // still whole-image layer would add on hover is
+                            // stopping it. The hover then does what it does on
+                            // every normal-aspect animated card: nothing.
+                            // (`still=true` is what the pinboard and the peek
+                            // send, because those surfaces have no loop
+                            // element at all and a picture is all they can
+                            // show.)
+                            displaySrc={exceedsDisplayLoopTrigger(result, displayLoopTrigger)
+                                ? null
+                                : getFileURL(dbs, "thumbnail", "sha256", result.sha256, "display")}
                             alt={`Result ${result.path}`}
                             blurDataURL={blurDataURL}
                             imageClassName={imageClassName}
@@ -538,7 +577,14 @@ function ExtremeAspectPicture({
      * changes here is which element paints it; the swap above it is identical.
      */
     crop: CellPictureSource
-    displaySrc: string
+    /**
+     * The whole-image rendition the hover swaps to, or NULL when there is no
+     * picture at that URL to swap to — an animated item past the server's
+     * display-loop bounds, whose `display` request answers `video/mp4`. Null
+     * mounts no layer, binds no listeners and requests nothing: see the call
+     * site, which is where the reason lives.
+     */
+    displaySrc: string | null
     alt: string
     blurDataURL: PlaceholderDataURL | undefined
     imageClassName?: string
@@ -576,6 +622,11 @@ function ExtremeAspectPicture({
     const [loaded, setLoaded] = useState(false)
     useEffect(() => {
         if (disabled) return
+        // Nothing to swap to (see `displaySrc`), so there is no gesture to
+        // listen for. Bailing here is what makes "no display layer" cost the
+        // card two listeners and two state writes less than nothing, rather
+        // than arming a swap that would then render null.
+        if (!displaySrc) return
         // Bound to the card's `group` element, found from our own node, so
         // the swap's hover region is the SAME box as the CSS hover's. Binding
         // to this <img> instead would leave the swap out of step with the
@@ -607,11 +658,12 @@ function ExtremeAspectPicture({
             root.removeEventListener("mouseenter", enter)
             root.removeEventListener("mouseleave", leave)
         }
-    }, [disabled, stickyDisplay])
+    }, [disabled, stickyDisplay, displaySrc])
     const showDisplay = hovered && loaded
     // Mounted while it is wanted. For a still that is "ever" (see the sticky
-    // note); for an animation it is "while the pointer is here".
-    const displayMounted = requested && (stickyDisplay || hovered)
+    // note); for an animation it is "while the pointer is here"; never at all
+    // when there is no whole-image rendition to show.
+    const displayMounted = displaySrc !== null && requested && (stickyDisplay || hovered)
     const cropClassName = cn(
         "object-cover object-top",
         // The fade OUT is a considered transition — the crop keeps painting
