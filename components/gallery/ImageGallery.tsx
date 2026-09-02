@@ -1591,14 +1591,29 @@ export function GalleryImageLarge(
     //     that is fine, so the fallback is `still=true` — a URL that CANNOT
     //     answer video, the same construction LoopVideo's poster uses.
     //
-    // ONE SLOT KEYED BY SHA, exactly like `mediaAspect` below. Within a visit
-    // it holds, because an element that has errored must not be re-mounted on
-    // the next render into the same error; across a navigation it does not,
-    // so a transient failure retries the loop the next time the item is opened
-    // while the sentinel case simply re-derives the same answer. Nothing here
-    // is remembered per sha for the session — that is `videoPlayability`'s
-    // job, for a different question about a different URL.
+    // ONE SLOT, HOLDING ONE SHA, and CLEARED WHENEVER THE ITEM CHANGES. Within
+    // a visit it holds, because an element that has errored must not be
+    // re-mounted on the next render into the same error; across a navigation
+    // it must not, so a transient failure retries the loop the next time the
+    // item is opened while the sentinel case simply re-derives the same answer
+    // on its first frame.
+    //
+    // THE CLEAR IS EXPLICIT, and that is the fix: this component is NOT keyed
+    // by item at either host (app/search/PreviewSurface.tsx and the gallery
+    // page both render one long-lived GalleryImageLarge and change its
+    // `item`), so nothing unmounts on navigation and a slot left standing made
+    // A(fails) → B → A permanent — the fallback picture forever, on an item
+    // whose loop may have been one dropped connection away. Adjusted during
+    // render like `videoSlot` below rather than in an effect, so the pass that
+    // renders the new item never renders the old one's fallback; the sha guard
+    // makes that throwaway pass correct anyway.
+    //
+    // Nothing here is remembered per sha for the session — that is
+    // `videoPlayability`'s job, for a different question about a different URL.
     const [loopFallback, setLoopFallback] = useState<{ sha: string; src: string } | null>(null)
+    if (loopFallback && loopFallback.sha !== item.sha256) {
+        setLoopFallback(null)
+    }
     const loopFallbackSrc = loopFallback?.sha === item.sha256 ? loopFallback.src : null
     const showDisplayLoop =
         exceedsDisplayLoopTrigger(item, displayLoopTrigger)
