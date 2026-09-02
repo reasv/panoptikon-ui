@@ -15,6 +15,38 @@ import { RowSelectionState } from "@tanstack/react-table"
 import { scheduleColumns } from "../table/columns/scheduled"
 import { useSystemConfig } from "@/lib/useSystemConfig"
 import { useClientConfig } from "@/lib/useClientConfig"
+import { MultiBoxResponsive } from "../multiCombobox"
+
+// The formats the scan is ALLOWED to write renditions in
+// (docs/thumbnail-format-implementation.md R5). A CONSTRAINT on the
+// per-content-class policy, never the policy itself: with `webp` dropped every
+// WebP verdict becomes JPEG (alpha flattened, as before the format work), and
+// with `jpeg` dropped every JPEG verdict becomes WebP — the storage-constrained
+// deployment, which knowingly pays the slower decode the grid is bound by.
+const THUMBNAIL_FORMAT_OPTIONS = [
+    { value: "jpeg", label: "JPEG" },
+    { value: "webp", label: "WebP" },
+]
+
+// What the server applies for a database that has never written the key, and
+// therefore what the control must show for one. The server reads an EMPTY list
+// as this same default (with a warning) rather than rejecting the save, so the
+// only thing the UI owes it is not to OFFER an empty selection.
+const THUMBNAIL_FORMATS_DEFAULT = ["jpeg", "webp"]
+
+// Read defensively off the config object rather than through the generated
+// schema type: the per-DB config carries an index signature for keys the UI
+// does not model, so this one types as `unknown` until the OpenAPI document is
+// regenerated — and a config written by a Server that predates the key is
+// genuinely absent, not merely untyped. Anything that is not a list of the
+// known strings shows as the default, which is what the server applies for it.
+function effectiveThumbnailFormats(value: unknown): string[] {
+    if (!Array.isArray(value)) return THUMBNAIL_FORMATS_DEFAULT
+    const known = value.filter((entry): entry is string =>
+        typeof entry === "string"
+        && THUMBNAIL_FORMAT_OPTIONS.some((option) => option.value === entry))
+    return known.length > 0 ? known : THUMBNAIL_FORMATS_DEFAULT
+}
 
 function formatRunTime(time: string | null | undefined) {
     if (!time) {
@@ -122,8 +154,9 @@ export function Config() {
         "detect_outros",
         "enable_cron_job", "cron_schedule", "cron_jobs", "job_settings", "included_folders", "excluded_folders",
         "preload_embedding_models", "prewarm_embedding_models", "continuous_filescan", "job_filters", "filescan_filter",
-        "vector_quants",
+        "vector_quants", "thumbnail_formats",
     ])
+    const thumbnailFormats = effectiveThumbnailFormats(data?.thumbnail_formats)
     const tomlOnlyKeys = data
         ? Object.keys(data as Record<string, unknown>).filter((key) => !guiKnownKeys.has(key))
         : []
@@ -212,6 +245,54 @@ export function Config() {
                             detect_outros: value,
                         }))}
                     />
+                    <div className="flex flex-col items-left rounded-lg border p-4 mt-4">
+                        <div className="flex flex-row items-center justify-between">
+                            <div className="space-y-0.5">
+                                <Label className="text-base">Thumbnail Formats</Label>
+                                <div className="text-gray-400">
+                                    Which image formats the scan may store thumbnails in
+                                </div>
+                            </div>
+                            <MultiBoxResponsive
+                                options={THUMBNAIL_FORMAT_OPTIONS}
+                                currentValues={thumbnailFormats}
+                                placeholder="Formats"
+                                maxDisplayed={2}
+                                // AT LEAST ONE, ALWAYS. The server reads an empty
+                                // list as the default rather than rejecting the
+                                // save, so this is not a validation gate — it is
+                                // the control declining to offer a selection whose
+                                // meaning ("all of them, actually") contradicts
+                                // what it would be showing.
+                                onSelectionChange={(values) => {
+                                    if (values.length === 0) return
+                                    changeConfig((currentConfig) => ({
+                                        ...currentConfig,
+                                        thumbnail_formats: values,
+                                    }))
+                                }}
+                            />
+                        </div>
+                        <div className="text-gray-400 text-sm mt-2">
+                            <p>
+                                By default grid thumbnails are JPEG, which decodes
+                                more than twice as fast per megapixel and is what a
+                                screenful of cells is bound by. Full-size gallery
+                                renditions of lossless originals (PNG, BMP, TIFF)
+                                and every rendition of an image with transparent
+                                pixels are WebP, which is far smaller at the same
+                                quality and is the only one of the two with an
+                                alpha channel.
+                            </p>
+                            <p className="mt-2">
+                                Deselecting a format does not delete anything: the
+                                renditions stored in the wrong format are rewritten
+                                over the next scan, one decode per image. The
+                                database file itself only shrinks after a
+                                Database Maintenance pass reclaims the freed space.
+                            </p>
+                        </div>
+                    </div>
                     <SwitchFilter
                         label="Keep embedding models loaded"
                         description="Fastest searches, but keeps full model weights in system or GPU memory even while idle"
