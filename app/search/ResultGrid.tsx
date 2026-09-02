@@ -345,7 +345,7 @@ export function ResultGrid({
     // behind and this does not touch: the measurement, the media query and
     // the DPR hook are all here, once, and what the card does with their
     // output is arithmetic.
-    // ONE FLOOR FOR THE WHOLE GRID, on the same rule as the tier above it: a
+    // ONE FLOOR FOR THE WHOLE GRID, on the same rule as the box above it: a
     // card decides `<img>` vs `<video>` from its own row, but the numbers it
     // decides against are the server's and identical for every card, so they
     // are read here and passed down rather than subscribed to per cell.
@@ -1243,7 +1243,7 @@ export function ResultGrid({
                                                 // absent leaves the breakpoint
                                                 // classes standing.
                                                 imageHeightPx={imageHeightPx}
-                                                // Same rule as the tier: read
+                                                // Same rule as the box: read
                                                 // ONCE for the whole grid and
                                                 // handed down, never a hook
                                                 // per card. react-query keeps
@@ -1258,7 +1258,7 @@ export function ResultGrid({
                                                 displayLoopTrigger={displayLoopTrigger}
                                                 // Two more stable primitives
                                                 // on the same rule as the
-                                                // tier: both move only when
+                                                // box: both move only when
                                                 // the cell crosses the small
                                                 // threshold or the user
                                                 // changes the preference, and
