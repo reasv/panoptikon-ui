@@ -1633,33 +1633,6 @@ export interface components {
         AndOperator: {
             and_: components["schemas"]["QueryElement"][];
         };
-        /** @description One measured GPU batch in [`ReplicaTelemetryHealth`]. */
-        BatchHealth: {
-            /** Format: int64 */
-            age_ms: number;
-            /** Format: int64 */
-            allocated_before_mb?: number | null;
-            /** Format: double */
-            duration_ms?: number | null;
-            /**
-             * Format: int64
-             * @description Inputs in the batch (not cost-dimension units — see the worker
-             *     protocol's "Memory sensing").
-             */
-            items?: number | null;
-            /** Format: int64 */
-            peak_allocated_mb?: number | null;
-            /** Format: int64 */
-            peak_reserved_mb?: number | null;
-            /** Format: int64 */
-            reserved_before_mb?: number | null;
-            /**
-             * Format: int64
-             * @description Per-worker sequence number; strictly increasing, gaps mean the ring
-             *     evicted samples between reads.
-             */
-            seq: number;
-        };
         /**
          * @description The animated raw floor, verbatim from
          *     [`crate::visual_tiers`] (docs/grid-scroll-performance-implementation.md
@@ -1769,6 +1742,33 @@ export interface components {
             size_bytes: number;
             /** @description Ready-to-use URL for `GET /api/video/artifact`. */
             url: string;
+        };
+        /** @description One measured GPU batch in [`ReplicaTelemetryHealth`]. */
+        BatchHealth: {
+            /** Format: int64 */
+            age_ms: number;
+            /** Format: int64 */
+            allocated_before_mb?: number | null;
+            /** Format: double */
+            duration_ms?: number | null;
+            /**
+             * Format: int64
+             * @description Inputs in the batch (not cost-dimension units — see the worker
+             *     protocol's "Memory sensing").
+             */
+            items?: number | null;
+            /** Format: int64 */
+            peak_allocated_mb?: number | null;
+            /** Format: int64 */
+            peak_reserved_mb?: number | null;
+            /** Format: int64 */
+            reserved_before_mb?: number | null;
+            /**
+             * Format: int64
+             * @description Per-worker sequence number; strictly increasing, gaps mean the ring
+             *     evicted samples between reads.
+             */
+            seq: number;
         };
         /**
          * Format: binary
@@ -2457,8 +2457,9 @@ export interface components {
             /** Format: int64 */
             external_sample_age_ms?: number | null;
             /**
-             * @description Which driver answered the freshest free reading (`"nvml"`, `"torch"`,
-             *     or `"nvidia-smi"` for a ledger-side staleness refresh).
+             * @description Which driver answered the freshest free reading: `"nvml"` or
+             *     `"torch"` from a worker, `"nvidia-smi"` for a ledger-side staleness
+             *     refresh, and `"amdgpu-sysfs"` on ROCm hosts, where it is both.
              */
             external_source?: string | null;
             /** Format: int64 */
@@ -2484,8 +2485,15 @@ export interface components {
             total_mb: number;
             workers: components["schemas"]["LedgerWorkerHealth"][];
         };
-        /** @description One visible NVIDIA board. */
+        /** @description One visible board, from nvidia-smi (CUDA) or KFD topology (ROCm). */
         GpuInfo: {
+            /**
+             * @description PCI address `dddd:bb:dd.f`. ROCm only: it is the key into amdgpu's
+             *     per-board sysfs counters (the memory refresh, D5) and the one
+             *     vocabulary a worker can independently report about itself (D3).
+             *     `None` on CUDA, where the UUID already serves both purposes.
+             */
+            bdf?: string | null;
             /**
              * @description Compute capability as `major.minor` (`"12.0"`), the same value
              *     `HostComputeCaps` filters models with — per board here, because
@@ -2493,23 +2501,71 @@ export interface components {
              *     not report it for this board (`[N/A]` on vGPU slices and some
              *     datacenter SKUs): the board is still a usable, pinnable identity, it
              *     just cannot be ranked or used to unlock a capability-gated model.
+             *     Always `None` on ROCm — HIP has no analogue at all.
              */
             compute_cap?: string | null;
             /**
              * Format: int32
-             * @description nvidia-smi enumeration index. Useful only for resolving registry
-             *     `devices = ["3"]` pins into a UUID; never an identity.
+             * @description KFD's packed ISA target (`110000` = gfx1100). ROCm only; recorded so
+             *     a future gfx-arch allowlist has its datum without another probe
+             *     (D7). `None` on CUDA.
+             */
+            gfx_target_version?: number | null;
+            /**
+             * Format: int32
+             * @description Enumeration index: nvidia-smi's on CUDA, the position within the
+             *     openable KFD-node set on ROCm (which is the HIP device index). Useful
+             *     only for resolving registry `devices = ["3"]` pins; never an identity.
              */
             index: number;
-            /** @description Marketing name, e.g. `NVIDIA GeForce RTX 5090`; the cost-profile key. */
+            /**
+             * @description Marketing name, e.g. `NVIDIA GeForce RTX 5090`; the cost-profile key.
+             *     On ROCm, the deterministic `AMD gfx…` form `rocm.rs` derives.
+             */
             name: string;
             /** Format: int64 */
             total_mb: number;
             /**
+             * Format: int64
+             * @description Host RAM this board's memory is carved out of, in MiB — present
+             *     exactly on **unified** boards (Apple Silicon today; AMD APUs when
+             *     backend B lands), absent on a discrete board with private VRAM. Its
+             *     presence *is* the unified flag ([`GpuInfo::unified`]), because the two
+             *     facts are one: a board is unified precisely when its memory is the
+             *     host's.
+             *
+             *     Two things downstream read it. The ledger records a synthetic negative
+             *     sample when a replica dies mid-window on such a board (DP-2: on a
+             *     dGPU a mid-window death has too many non-memory causes, on a unified
+             *     board it is overwhelmingly the OS memory killer), and it is the only
+             *     sanity bound on the authoritative total a worker reports back (DP-4)
+             *     — the board's own `total_mb` is a *policy* number there, tunable by
+             *     the user, so it cannot bound anything.
+             */
+            unified_ram_mb?: number | null;
+            /**
              * @description Board UUID (`GPU-…`), the budget/ledger key and the pin form CUDA
-             *     accepts directly in `CUDA_VISIBLE_DEVICES`.
+             *     accepts directly in `CUDA_VISIBLE_DEVICES`. On ROCm it is the fused
+             *     KFD `unique_id` or a synthetic `GPU-BDF-…` (see `rocm.rs`) — an
+             *     identity, not a pin form, because HIP only accepts indices.
              */
             uuid: string;
+            /**
+             * Format: int64
+             * @description The device-local VRAM carve-out of a unified **ROCm** board (an APU's
+             *     `mem_info_vram_total`), in MiB — the part of [`Self::total_mb`] that
+             *     is not GTT. `None` on every other board, including MPS, where no such
+             *     split exists.
+             *
+             *     It is carried because the carve-out is a figure other components
+             *     legitimately mean by "this board's memory", and they must not be
+             *     refused for it. HIP's `total_memory` on an APU may report the
+             *     carve-out, the carve+GTT sum, or something else again — unverified
+             *     until a BC-250 field pass — so the registration cross-check accepts
+             *     **either**. It is also the placement rank
+             *     ([`Self::placement_total_mb`]).
+             */
+            vram_carveout_mb?: number | null;
         };
         HasUnprocessedData: {
             /** @description Item must have item_data of given types that has not been processed by the given setter name */
@@ -2853,6 +2909,17 @@ export interface components {
             grants_outstanding: number;
             inference_id: string;
             /**
+             * @description Whether that knee was fitted on this machine (as opposed to seeded
+             *     from a profile, which may cap but never travels back to the store).
+             */
+            knee_is_local: boolean;
+            /**
+             * Format: int64
+             * @description Throughput knee: the largest batch size worth admitting, whatever
+             *     memory allows. `None` until one is fitted or seeded from a profile.
+             */
+            knee_units?: number | null;
+            /**
              * Format: int32
              * @description Local clean high-water samples behind this model's fit, including any
              *     a local calibration profile restored. Below
@@ -2877,6 +2944,11 @@ export interface components {
             reserved_mb?: number | null;
             /** Format: int64 */
             seed_units: number;
+            /**
+             * @description Warm-pool throughput observations behind the knee fit. Runtime-only:
+             *     the store persists the fitted knee, not the series.
+             */
+            throughput_samples: number;
             /**
              * Format: int64
              * @description The ramp+ratchet-bounded unit budget as of this snapshot.
@@ -3721,8 +3793,10 @@ export interface components {
         };
         /**
          * @description Per-replica GPU placement plus its freshest memory report. Every field
-         *     after `gpu` is `null` until the worker reports it (no torch, CPU/MPS
-         *     host, or no predict yet).
+         *     after `gpu` is `null` until the worker reports it (no torch, a remote-API
+         *     impl, or no predict yet). A CPU or MPS host does report: its figures are
+         *     denominated in system RAM and Metal's budget respectively, not in VRAM
+         *     (docs/unified-memory-admission.md).
          */
         ReplicaTelemetryHealth: {
             /** Format: int64 */
@@ -3741,20 +3815,27 @@ export interface components {
              */
             free_mb?: number | null;
             /**
-             * @description Which driver reported `free_mb`/`total_mb` (`"nvml"` | `"torch"`); the
-             *     two disagree by gigabytes, so a reader comparing samples needs it.
+             * @description Which driver reported `free_mb`/`total_mb` (`"nvml"` |
+             *     `"amdgpu-sysfs"` | `"torch"`); they disagree by gigabytes, so a reader
+             *     comparing samples needs it.
              */
             free_source?: string | null;
             /**
-             * @description Resolved `CUDA_VISIBLE_DEVICES` pin the worker was *spawned* with — a
-             *     board UUID when the GPU inventory is known.
+             * @description Resolved device pin the worker was *spawned* with — a board UUID on a
+             *     known CUDA inventory, a HIP device index on a known ROCm one (the two
+             *     backends' visibility variables accept different vocabularies; see
+             *     `gpu::pin_env_var`).
              */
             gpu?: string | null;
             gpu_name?: string | null;
             /**
-             * @description The board the worker itself reports being on, which is what step 1b's
-             *     ledger keys by: the pin above can be an index, absent, or a UUID CUDA
-             *     reordered, and only the worker can see what it actually got.
+             * @description The board the worker itself reports being on: the pin above can be an
+             *     index, absent, or a UUID CUDA reordered, and only the worker can see
+             *     what it actually got. `null` on a ROCm replica — torch's HIP-rendered
+             *     UUID is a third vocabulary the worker deliberately suppresses, and
+             *     those replicas are admitted to the ledger by PCI address instead
+             *     (docs/rocm-batch-calibration-parity.md, D3), which this view does not
+             *     surface yet.
              */
             gpu_uuid?: string | null;
             /**
