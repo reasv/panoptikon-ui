@@ -341,7 +341,11 @@ function HoverPreviewSegment({ choice, server }: {
             role="radio"
             aria-checked={choice === value}
             disabled={!available}
-            onClick={() => setHoverPreviewChoice(value)}
+            // The SERVER's half goes with the write: a slot is only recorded
+            // for a rung this server offered, or clicking the already-lit
+            // "Originals" beside a disabled "All" would silently freeze the
+            // encode rung off forever (see `withHoverPreviewSlot`).
+            onClick={() => setHoverPreviewChoice(value, server)}
             className={cn(
                 "rounded-sm px-2 py-1 text-xs transition-colors",
                 !available && "opacity-40 cursor-not-allowed",

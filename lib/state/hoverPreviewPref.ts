@@ -147,20 +147,43 @@ export function hoverPreviewChoice(
  * whatever it happened to hold would make "Originals" mean two different
  * things depending on what was picked before it.
  *
- * `true` is written rather than the slot being deleted, which looks redundant
- * against a resolution that treats absent and `true` alike — and is not: it is
- * how "the user asked for this" survives a later visit, and the reason nothing
- * here needs a fourth state.
+ * A SLOT IS ONLY WRITTEN FOR A RUNG THE SERVER ACTUALLY OFFERED, and that is
+ * the whole reason `capability` is a parameter rather than an afterthought.
+ * On a server where the encode rung is denied, the control already SHOWS
+ * "Originals" as the effective answer, so clicking it is a visual no-op — and
+ * a write of `transcode: false` there would silently record a decision the
+ * user never made, in a slot they had no control to express it with ("All" is
+ * disabled beside it). If that server later allowed the encode — hardware
+ * installed, `hover_preview = "on"`, a policy relaxed — they would never get
+ * it, with nothing on screen to say why. So a rung the server did not offer
+ * leaves its slot ABSENT (and clears a stale one), which is the state that
+ * means "follow the server".
+ *
+ * For a rung that WAS offered the slot is written either way, `true` included:
+ * that looks redundant against a resolution treating absent and `true` alike,
+ * and is not — it is how "the user asked for this" is distinguishable from
+ * "the user has not said", and the reason nothing here needs a fourth state.
  */
 export function withHoverPreviewSlot(
   pref: HoverPreviewPref,
-  choice: HoverPreviewChoice
+  choice: HoverPreviewChoice,
+  capability: HoverPreviewCapability | null | undefined
 ): HoverPreviewPref {
-  return {
-    ...pref,
-    direct: choice !== "off",
-    transcode: choice === "all",
-  }
+  const next: HoverPreviewPref = { ...pref }
+  writeOfferedSlot(next, "direct", choice !== "off", capability?.direct)
+  writeOfferedSlot(next, "transcode", choice === "all", capability?.transcode)
+  return next
+}
+
+/** One slot of the write above: recorded when offered, cleared when not. */
+function writeOfferedSlot(
+  pref: HoverPreviewPref,
+  slot: keyof HoverPreviewPref,
+  value: boolean,
+  offered: boolean | undefined
+): void {
+  if (offered) pref[slot] = value
+  else delete pref[slot]
 }
 
 /**
@@ -257,8 +280,17 @@ export function getServerHoverPreviewPref(): HoverPreviewPref {
  * `storage` events fire in OTHER documents only, so the tab that wrote is the
  * one tab that would never hear about it.
  */
-export function setHoverPreviewChoice(choice: HoverPreviewChoice): void {
-  const pref = withHoverPreviewSlot(box.get(), choice)
+export function setHoverPreviewChoice(
+  choice: HoverPreviewChoice,
+  /**
+   * WHAT THE SERVER OFFERS, handed in by the control that read it — see
+   * `withHoverPreviewSlot`, which is where the rule lives. A caller with no
+   * capability in hand records nothing, which is correct: there is no rung to
+   * have an opinion about.
+   */
+  capability: HoverPreviewCapability | null | undefined
+): void {
+  const pref = withHoverPreviewSlot(box.get(), choice, capability)
   try {
     window.localStorage.setItem(
       HOVER_PREVIEW_PREF_STORAGE_KEY,
