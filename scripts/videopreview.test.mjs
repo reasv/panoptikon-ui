@@ -41,14 +41,15 @@ const {
   previewRung,
 } = await import("../lib/videoPreview.ts")
 const {
-  applyJobEvent,
   cancelTranscode,
   createdOwnJob,
   getTranscodeState,
   ownsTranscodeJob,
   setTranscodeState,
   shouldSubmit,
+  startTranscode,
   transcodeKey,
+  transcodeStoreSize,
 } = await import("../lib/videoTranscode.ts")
 const { noteVideoPlaybackError } = await import("../lib/videoPlayability.ts")
 const { deriveClientConfig } = await import("../lib/clientConfig.ts")
@@ -143,15 +144,46 @@ console.log("\n== the stored preference (V7) ==")
   // The control writes BOTH slots, because the three positions are points on
   // one scale: leaving the other slot standing would make "Originals" mean
   // two different things depending on what came before it.
+  const allowed = hoverPreviewCapability(true, true)
+  const noEncode = hoverPreviewCapability(true, false)
   check("Off writes both slots false",
-    shape(withHoverPreviewSlot({ direct: true, transcode: true }, "off"))
+    shape(withHoverPreviewSlot({ direct: true, transcode: true }, "off", allowed))
       === shape({ direct: false, transcode: false }))
   check("Originals writes direct on and transcode off",
-    shape(withHoverPreviewSlot({}, "originals"))
+    shape(withHoverPreviewSlot({}, "originals", allowed))
       === shape({ direct: true, transcode: false }))
   check("All writes both slots true",
-    shape(withHoverPreviewSlot({ direct: false, transcode: false }, "all"))
+    shape(withHoverPreviewSlot({}, "all", allowed))
       === shape({ direct: true, transcode: true }))
+  // A SLOT IS ONLY WRITTEN FOR A RUNG THE SERVER OFFERED (verifier finding
+  // S2). On a server that denies the encode, "Originals" is what the control
+  // already shows, so clicking it is a visual no-op — and a `transcode: false`
+  // written there would record a decision the user had no control to make
+  // ("All" is disabled beside it) and could never undo.
+  check("on a transcode-denied server, Originals stores direct ONLY",
+    shape(withHoverPreviewSlot({}, "originals", noEncode))
+      === shape({ direct: true }),
+    shape(withHoverPreviewSlot({}, "originals", noEncode)))
+  check("...and Off stores direct only, by the same rule",
+    shape(withHoverPreviewSlot({}, "off", noEncode)) === shape({ direct: false }))
+  check("a server that offers nothing records nothing",
+    shape(withHoverPreviewSlot({}, "off", null)) === shape({})
+      && shape(withHoverPreviewSlot({}, "originals", HOVER_PREVIEW_OFF)) === shape({}))
+  // ...and a slot stored while the rung WAS offered is cleared when it stops
+  // being, so a preference can never outlive the choice it was made in.
+  check("a stale transcode slot is CLEARED when the server stops offering it",
+    shape(withHoverPreviewSlot({ direct: true, transcode: false }, "originals", noEncode))
+      === shape({ direct: true }))
+  // THE DEFECT, end to end: pick Originals on a server with no encoder, then
+  // put the encoder back. The user must get the rung, not a frozen `false`.
+  check("a server that LATER allows the encode reaches the user",
+    resolveHoverPreview(allowed,
+      withHoverPreviewSlot({}, "originals", noEncode)) === HOVER_PREVIEW_ALL)
+  // ...while a deliberate Originals made on a server that DID offer the encode
+  // still means what it said.
+  check("...but a deliberate Originals on an offering server still holds",
+    resolveHoverPreview(allowed,
+      withHoverPreviewSlot({}, "originals", allowed)) === HOVER_PREVIEW_DIRECT)
   // The control lights the EFFECTIVE answer (D4's rule), so a stored "all"
   // against a policy that denies the encode reads "Originals".
   check("the lit segment follows the RESOLVED answer",
@@ -296,13 +328,6 @@ console.log("\n== cancel-only-if-created (V4) ==")
   check("cancelling returns the key to idle",
     getTranscodeState(key).state === "idle")
   check("...so a re-hover may submit again", shouldSubmit(getTranscodeState(key)))
-  // THE TRAP the `cancelled` marker exists for: the pool settles a cancelled
-  // job by reporting `failed`, and that verdict is cached for the session —
-  // so without the marker, leaving a cell would poison it against ever
-  // previewing again.
-  check("the cancelled job's own `failed` event is IGNORED",
-    applyJobEvent(key, { id: "j", state: "failed", error: "cancelled" }) === null
-      && getTranscodeState(key).state === "idle")
   // A DONE key is left alone entirely: the artifact is cached, which is the
   // whole point of having run the job.
   const done = transcodeKey("yyy", PREVIEW_PRESET)
@@ -312,6 +337,66 @@ console.log("\n== cancel-only-if-created (V4) ==")
   cancelTranscode(done)
   check("cancelling a DONE key changes nothing",
     getTranscodeState(done).state === "done")
+}
+
+console.log("\n== a cancel leaves nothing behind (S3) ==")
+{
+  const size = () => transcodeStoreSize()
+  const shape = (value) => JSON.stringify(value)
+  const before = size()
+  // The pointer resting on one cell and leaving, over and over.
+  for (let i = 0; i < 200; i += 1) {
+    const key = transcodeKey("same", PREVIEW_PRESET, PREVIEW_MAX_CS)
+    setTranscodeState(key, { state: "queued", position: 1 })
+    cancelTranscode(key)
+  }
+  check("200 cancels of ONE key leave the store exactly as it was",
+    shape(size()) === shape(before), `${shape(before)} -> ${shape(size())}`)
+  // ...and a skim across a library, which is the shape that made this a leak:
+  // one distinct key per cell the pointer rested on.
+  for (let i = 0; i < 200; i += 1) {
+    const key = transcodeKey(`sha${i}`, PREVIEW_PRESET, PREVIEW_MAX_CS)
+    setTranscodeState(key, { state: "running", progress: 0.1 })
+    cancelTranscode(key)
+  }
+  check("200 cancels of 200 DISTINCT keys leave the store exactly as it was",
+    shape(size()) === shape(before), `${shape(before)} -> ${shape(size())}`)
+  check("...and each of them reads idle and may submit again",
+    getTranscodeState(transcodeKey("sha7", PREVIEW_PRESET, PREVIEW_MAX_CS)).state === "idle"
+      && shouldSubmit(getTranscodeState(
+        transcodeKey("sha7", PREVIEW_PRESET, PREVIEW_MAX_CS))))
+}
+
+console.log("\n== a cancel DURING the POST is not a verdict (S3/V4) ==")
+{
+  // The one writer a cancel cannot stop synchronously: a request already on
+  // the wire. Here it is a fetch of a relative URL under plain node, which
+  // fails — and the point is precisely that its failure must NOT be recorded,
+  // because by then the state belongs to nobody.
+  const shape = (value) => JSON.stringify(value)
+  const before = transcodeStoreSize()
+  const key = startTranscode({
+    sha256: "inflight",
+    dbs: { index_db: "stdtest", user_data_db: null },
+    preset: PREVIEW_PRESET,
+    endCs: PREVIEW_MAX_CS,
+  })
+  check("a submit claims the key", getTranscodeState(key).state === "requesting")
+  cancelTranscode(key)
+  check("cancelling mid-POST returns it to idle at once",
+    getTranscodeState(key).state === "idle")
+  check("...and drops the bookkeeping in the same breath",
+    shape(transcodeStoreSize()) === shape(before),
+    `${shape(before)} -> ${shape(transcodeStoreSize())}`)
+  // Let the doomed request settle.
+  await new Promise((resolve) => setTimeout(resolve, 250))
+  check("the failed POST does not land as a verdict on the item",
+    getTranscodeState(key).state === "idle",
+    getTranscodeState(key).state)
+  check("...and still leaves the store as it was",
+    shape(transcodeStoreSize()) === shape(before),
+    `${shape(before)} -> ${shape(transcodeStoreSize())}`)
+  check("so the next dwell may submit again", shouldSubmit(getTranscodeState(key)))
 }
 
 // ---------------------------------------------------------------------------
