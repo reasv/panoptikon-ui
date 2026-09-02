@@ -249,8 +249,13 @@ console.log("\n== the card's picture plan (lib/cellPicture.ts) ==")
     same(plan(staticStrip, "grid-s"), {
       kind: "extreme",
       crop: { kind: "image", src: thumbnailMediaURL(dbs, "abc", "grid-s") },
-      displaySrc: thumbnailMediaURL(dbs, "abc", "display"),
+      displaySrc: thumbnailMediaURL(dbs, "abc"),
     }))
+  // One cache entry with the contain surfaces: the card's whole-image layer is
+  // the same string the peek layer paints for the same row.
+  check("the display layer shares the peek layer's URL",
+    plan(staticStrip, "grid-s").displaySrc
+      === thumbnailPictureURL(dbs, staticStrip, null))
   check("an above-floor animated strip is a CROPPED LOOP",
     same(plan(strip(false), "grid-s").crop, {
       kind: "loop",
@@ -264,7 +269,7 @@ console.log("\n== the card's picture plan (lib/cellPicture.ts) ==")
     plan(strip(true), "grid-s").displaySrc === null)
   check("an under-trigger animated strip still has one",
     plan(strip(false), "grid-s").displaySrc
-      === thumbnailMediaURL(dbs, "abc", "display"))
+      === thumbnailMediaURL(dbs, "abc"))
 }
 
 finish()

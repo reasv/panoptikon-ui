@@ -189,9 +189,14 @@ export function planCellPicture(
       // Null rather than the `still=true` poster: what such a card already
       // paints IS the item moving — the cropped H.264 loop — so the only thing
       // a still whole-image layer would add on hover is stopping it.
+      //
+      // The BARE URL, not `size=display`: bare IS the display rendition, and
+      // it is the spelling the peek layer, the gallery and the similarity
+      // header use — so a strip hovered here and then peeked is one cache
+      // entry, not two downloads of the same bytes.
       displaySrc: exceedsDisplayLoopTrigger(row, env.displayLoopTrigger)
         ? null
-        : thumbnailPictureURL(dbs, row, env.displayLoopTrigger, "display"),
+        : thumbnailPictureURL(dbs, row, env.displayLoopTrigger),
     }
   }
   if (animated === "loop") {
