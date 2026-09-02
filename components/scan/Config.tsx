@@ -299,10 +299,25 @@ export function Config() {
                                 // format this build does not model still has one
                                 // after both boxes are cleared, so refusing there
                                 // would be refusing something that is not empty.
+                                //
+                                // AND IT SAYS SO. A control that silently ignores
+                                // a click reads as broken — the user clears the
+                                // last box, the box stays checked, and nothing
+                                // explains why. The toast is this page's own idiom
+                                // for "the thing you asked for did not happen"
+                                // (see the maintenance and cron mutations), and
+                                // the help text below states the rule before the
+                                // user has to meet it.
                                 onSelectionChange={(values) => {
                                     const next = mergeThumbnailFormats(
                                         data?.thumbnail_formats, values)
-                                    if (next.length === 0) return
+                                    if (next.length === 0) {
+                                        toast({
+                                            title: "Thumbnail Formats",
+                                            description: "At least one format must stay selected — thumbnails have to be stored in something.",
+                                        })
+                                        return
+                                    }
                                     changeConfig((currentConfig) => ({
                                         ...currentConfig,
                                         thumbnail_formats: next,
@@ -327,6 +342,9 @@ export function Config() {
                                 over the next scan, one decode per image. The
                                 database file itself only shrinks after a
                                 Database Maintenance pass reclaims the freed space.
+                            </p>
+                            <p className="mt-2">
+                                At least one format must stay selected.
                             </p>
                         </div>
                     </div>
