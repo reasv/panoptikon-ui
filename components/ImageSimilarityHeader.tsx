@@ -1,5 +1,4 @@
 import { LogOut } from "lucide-react";
-import { useState } from "react";
 import { Button } from "./ui/button";
 import {
     HoverCard,
@@ -9,7 +8,7 @@ import {
 import { $api } from "@/lib/api";
 import { useSelectedDBs } from "@/lib/state/database";
 import { FilePathComponent } from "./imageButtons";
-import { thumbnailPictureURL } from "@/lib/thumbnailURL";
+import { StillFallbackImage } from "@/components/StillFallbackImage";
 import { useItemSimilaritySearch, useQueryOptions } from "@/lib/state/searchQuery/clientHooks";
 import { useDisplayLoopTrigger } from "@/lib/useClientConfig";
 
@@ -34,21 +33,6 @@ export function ImageSimilarityHeader() {
     // See the <img> below: an animated target past the server's display-loop
     // bounds answers `video/mp4` at this size, which this element cannot show.
     const displayLoopTrigger = useDisplayLoopTrigger()
-    // THE FALLBACK FOR THE ROW-DATA TEST'S DOCUMENTED RESIDUAL. The test below
-    // reads size, dimensions and duration off the item row, and one shape of
-    // row cannot be settled from it: no `size` on record, dimensions inside
-    // the bounds, and a file that is nonetheless over `max_bytes`. That answers
-    // "not a loop", the `<img>` requests video bytes, and the element fails to
-    // decode them — silently, because an `<img>` has no error state a user can
-    // read. So it says so through `onError`, and the element re-requests the
-    // one URL that can never be video: `still=true`, which the endpoint
-    // guarantees answers a picture (§5). The same construction LoopVideo's
-    // poster fallback uses, for the same unpredictable case.
-    //
-    // KEYED BY TARGET and one-way inside it. A second failure at the still URL
-    // would set the same value, which React bails out of, so this cannot loop.
-    const [stillFallbackTarget, setStillFallbackTarget] = useState<string | null>(null)
-    const forceStill = stillFallbackTarget === filter.target
     const onExitClick = () => {
         setOptions({ e_iss: false })
     }
@@ -112,25 +96,29 @@ export function ImageSimilarityHeader() {
                             to dislodge a pre-tier cache entry; `r=2` dislodges
                             it for every display request now.) */}
                         {/* `still=true` rides in for an animated target past
-                            the display-loop bounds, and only then
-                            (thumbnailPictureURL). RESIDUAL: on a first hover
-                            the query may not have resolved, so `type` is
-                            undefined, the rule answers "static" and the bare
-                            URL is used for one render. */}
-                        <img
-                            src={thumbnailPictureURL(dbs, {
+                            the display-loop bounds, and only then, with the
+                            one retry the row-data rule needs
+                            (components/StillFallbackImage.tsx).
+
+                            RESIDUAL: on a first hover the query may not have
+                            resolved, `type` is undefined, the rule answers
+                            "static" and the bare URL is used for one render.
+                            The key is the retry's reset — a new target starts
+                            from the row's own answer again. */}
+                        <StillFallbackImage
+                            key={filter.target}
+                            dbs={dbs}
+                            item={{
                                 sha256: filter.target,
                                 type: data?.item?.type,
                                 duration: data?.item?.duration,
                                 size: data?.item?.size,
                                 width: data?.item?.width,
                                 height: data?.item?.height,
-                            }, displayLoopTrigger)}
+                            }}
+                            trigger={displayLoopTrigger}
                             alt="Similarity search target"
                             className="max-h-[40vh] max-w-[min(24rem,80vw)] rounded object-contain"
-                            // The residual the row-data test cannot settle —
-                            // see `stillFallbackTarget` above.
-                            onError={() => setStillFallbackTarget(filter.target)}
                         />
                         {path && (
                             <p className="mt-2 max-w-[min(24rem,80vw)] truncate text-xs text-muted-foreground" title={path}>

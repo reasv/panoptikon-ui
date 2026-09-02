@@ -1,7 +1,8 @@
 "use client"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
-import { originalFileURL, thumbnailPictureURL } from "@/lib/thumbnailURL"
+import { originalFileURL } from "@/lib/thumbnailURL"
+import { StillFallbackImage } from "@/components/StillFallbackImage"
 import { useSelectedDBs } from "@/lib/state/database"
 import { useDisplayLoopTrigger } from "@/lib/useClientConfig"
 
@@ -84,17 +85,16 @@ export function PeekLayer({
     // bust a pre-tier cache entry; `r=2` does that for every display request
     // now, so the spelling only forced surfaces to agree by hand.)
     //
-    // `still=true` for exactly one class of item and no other: an animated one
-    // past the server's display-loop bounds, whose display request answers
-    // `video/mp4` (docs/thumbnail-format-implementation.md R3) — which this
-    // <img> would render as a broken picture, and which a peek has no business
-    // playing anyway (§8.4). Gated on the trigger rather than on "is it
-    // animated" so that a SMALL animated image keeps the bare URL: it still
-    // animates in the <img> exactly as it does today, and it keeps sharing its
-    // cache entry with GalleryImageLarge's picture of the same item, which is
-    // the property PreviewSurface's note depends on.
+    // `still=true` rides in for exactly one class of item and no other: an
+    // animated one past the server's display-loop bounds, whose display request
+    // answers `video/mp4` (docs/thumbnail-format-implementation.md R3) — which
+    // this <img> would render as a broken picture, and which a peek has no
+    // business playing anyway (§8.4). A SMALL animated image keeps the bare URL:
+    // it still animates in the <img> exactly as it does today, and it keeps
+    // sharing its cache entry with GalleryImageLarge's picture of the same
+    // item, which is the property PreviewSurface's note depends on. The rule,
+    // and the one retry it needs, are StillFallbackImage's.
     const displayLoopTrigger = useDisplayLoopTrigger()
-    const thumbnailURL = thumbnailPictureURL(dbs, item, displayLoopTrigger)
     // The dwell upgrade (§8): the stored thumbnail shows immediately; for
     // STILL images the original file loads behind it and fades in on load,
     // so a sweep stays cheap (the 200ms open debounce already suppresses
@@ -121,24 +121,19 @@ export function PeekLayer({
         // subject, so the picture underneath shows through any letterbox the
         // two shapes leave over.
         <div className="pointer-events-none absolute inset-0 z-40 bg-background">
-            <img
-                src={thumbnailURL}
+            <StillFallbackImage
+                dbs={dbs}
+                item={item}
+                trigger={displayLoopTrigger}
                 alt=""
                 draggable={false}
-                // ref for the cache hit that decodes before React attaches
-                // onLoad, onLoad for the network path — the gallery
-                // thumbnail's pattern, and the only way a re-hover on a warm
-                // image confirms anything at all.
-                ref={(el) => {
-                    if (el?.naturalWidth && el.naturalHeight) {
-                        onAspect(item.sha256, el.naturalWidth / el.naturalHeight)
-                    }
-                }}
-                onLoad={(e) => {
-                    const el = e.currentTarget
-                    onAspect(item.sha256, el.naturalWidth / el.naturalHeight)
-                }}
                 className={LAYER_CLASSES}
+                // Reported from a ref for a cache hit that decodes before React
+                // attaches onLoad, and from onLoad for the network path — which
+                // is the only way a re-hover on a warm image confirms anything
+                // at all. Idempotent, as that pair requires.
+                onPainted={(el) =>
+                    onAspect(item.sha256, el.naturalWidth / el.naturalHeight)}
             />
             {upgrade && (
                 <img
