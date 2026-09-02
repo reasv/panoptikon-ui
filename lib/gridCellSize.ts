@@ -67,11 +67,21 @@ export const AUTO_IMAGE_BOX_HEIGHT_5XL_PX = 608
  * The box paints `object-cover`, which scales the rendition until it covers
  * BOTH edges, so crispness is bound by whichever edge asks more of the image —
  * the filmstrip's `STRIP_CARD_CSS_BINDING_EDGE` spells the same reasoning out
- * for its own `w-[240px] h-80` card. The result grid's EXPLICIT mode has a
- * square box, so its two edges agree and the width is the binding edge; its
- * AUTO mode does not, and passing the width alone is a real defect there — a
- * 266px-wide auto cell is 384px tall, and asking for `grid-xs` (256) for it
- * upscales the short side by 1.5x, past the ladder's 1.125 slack.
+ * for its own `w-[240px] h-80` card. The result grid's AUTO mode's box is
+ * emphatically not square, and passing the width alone is a real defect there
+ * — a 266px-wide auto cell is 384px tall, and asking for `grid-xs` (256) for
+ * it upscales the short side by 1.5x, past the ladder's 1.125 slack.
+ *
+ * THE EXPLICIT MODE'S BOX IS SQUARE ONLY UP TO ROUNDING: it is `cellWidth ×
+ * Math.round(cellWidth)` (`imageBoxHeightForCellWidth`), and `cellWidth` is a
+ * container width divided by a column count, so it is routinely fractional.
+ * The two edges then differ by up to half a CSS pixel, which at a FRACTIONAL
+ * DPR can put them on opposite sides of a rung — a 460.5px cell at DPR 1.25
+ * asks 575.6 device px of its width and 576.25 of its height, and 576 is the
+ * `grid-s` boundary. That is the box the browser actually lays out (the
+ * height is an integer inline style, the width is not), so the answer is
+ * right rather than a rounding artefact to be smoothed away; it is pinned in
+ * scripts/gridcells.test.mjs so nobody smooths it.
  *
  * A non-positive or non-finite WIDTH is passed straight through, because that
  * is the grid's "not measured yet" value and `tierForCellWidth` answers
