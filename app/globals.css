@@ -197,6 +197,39 @@
   }
 }
 
+/* THE OVERLAY CHROME'S TWO REPEATED SHAPES, as utilities.
+
+   Both were literal class lists copied across seven component files — the
+   white pill ten times, the fanout's diagonal offsets ten more — which is one
+   copy per place a `--cell-chrome-*` rename would have to be found by grep. A
+   utility is the same declarations under one name, so the ramp above has
+   exactly two consumers to keep in step.
+
+   `@apply` rather than hand-written declarations, deliberately: `shadow-[...]`
+   composes through Tailwind's `--tw-shadow` slot, and a plain `box-shadow`
+   here would overwrite whatever a `focus-visible:ring-*` on the same button
+   had put in the other slots. Going through the same utilities the call sites
+   used means the emitted declarations are the ones they already had, so the
+   computed geometry is identical by construction rather than by inspection. */
+@utility cell-chrome-pill {
+  @apply rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-(--cell-chrome-pad) hover:scale-105;
+}
+
+/* The file-action fanout's SECOND rank: one `--cell-chrome-step` further out
+   from the anchored corner, so the three slots form a square that shrinks with
+   the ramp (components/imageButtons.tsx CLUSTER_SLOTS). Three names because a
+   slot needs one or both of them, and the horizontal one depends on which
+   corner the cluster is anchored to. */
+@utility fan-up {
+  bottom: calc(var(--cell-chrome-inset) + var(--cell-chrome-step));
+}
+@utility fan-in-l {
+  left: calc(var(--cell-chrome-inset) + var(--cell-chrome-step));
+}
+@utility fan-in-r {
+  right: calc(var(--cell-chrome-inset) + var(--cell-chrome-step));
+}
+
 /* GRID CELL CHROME SCALING (docs/grid-hover-animate-implementation.md D11).
 
    The corner buttons, the file-action fanout and their insets are sized for a

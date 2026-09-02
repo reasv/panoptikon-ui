@@ -51,7 +51,7 @@ export function PinButton({
                 : "Pin this image (Shift: carry it to a spot on the board)"
         }
         className={
-            cn("hover:scale-105 absolute top-(--cell-chrome-inset) left-(--cell-chrome-inset) bg-white rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-(--cell-chrome-pad) opacity-0 group-hover:opacity-100 transition-opacity duration-300",
+            cn("cell-chrome-pill absolute top-(--cell-chrome-inset) left-(--cell-chrome-inset) opacity-0 group-hover:opacity-100 transition-opacity duration-300",
                 (showPins || isPinned) && !hidePins ? 'opacity-100' : 'opacity-0')
         }
         onClick={handlePinClick}

@@ -28,6 +28,10 @@ import { useCellCallbacks, useCellFlags } from "@/lib/state/cellActions"
 // grid — those resolve to exactly the numbers they replaced, so the filmstrip
 // and the pinboard are untouched. Only the button GEOMETRY rides the ramp; the
 // hover fades, the focus behaviour and the slot order are unchanged.
+//
+// The pill itself — round, white, shadowed, padded on the ramp — is the
+// `cell-chrome-pill` utility (app/globals.css), so the ten copies of that class
+// list are one declaration.
 
 export function RelayTargetSelector() {
     const { relayDetected, relayPaired, relayPairing, relayPairingPending } = useCellFlags()
@@ -161,7 +165,7 @@ function BookmarksButtonElement({
                     `Remove from current bookmark group (${namespace})`
                     : `Add to current bookmark group (${namespace})`
             }
-            className={cn("hover:scale-105 absolute top-(--cell-chrome-inset) right-(--cell-chrome-inset) bg-white rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-(--cell-chrome-pad) opacity-0 group-hover:opacity-100 transition-opacity duration-300",
+            className={cn("cell-chrome-pill absolute top-(--cell-chrome-inset) right-(--cell-chrome-inset) opacity-0 group-hover:opacity-100 transition-opacity duration-300",
                 (alwaysShow && isBookmarked) ? 'opacity-100' : 'opacity-0'
             )}
             onClick={handleBookmarkClick}
@@ -235,7 +239,7 @@ export const OpenFile = (
                 <button
                     onClick={() => handleClick()}
                     title={buttonTitle}
-                    className="rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-(--cell-chrome-pad) hover:scale-105"
+                    className="cell-chrome-pill"
                 >
                     <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -274,7 +278,7 @@ export const OpenFolder = (
             onClickCapture={onUsed}
             className={cn(
             "relative inline-flex group/file-action",
-            !buttonVariant && (overlayClassName ?? "absolute bottom-(--cell-chrome-inset) left-[calc(var(--cell-chrome-inset)+var(--cell-chrome-step))] opacity-0 transition-opacity duration-300 group-hover:opacity-100"),
+            !buttonVariant && (overlayClassName ?? "absolute bottom-(--cell-chrome-inset) fan-in-l opacity-0 transition-opacity duration-300 group-hover:opacity-100"),
             !buttonVariant && menuOpen && "opacity-100 pointer-events-auto",
         )}>
             <FindButton
@@ -293,7 +297,7 @@ export const OpenFolder = (
         onClickCapture={onUsed}
         className={cn(
         "relative inline-flex group/file-action",
-        !buttonVariant && (overlayClassName ?? "absolute bottom-(--cell-chrome-inset) left-[calc(var(--cell-chrome-inset)+var(--cell-chrome-step))] opacity-0 transition-opacity duration-300 group-hover:opacity-100"),
+        !buttonVariant && (overlayClassName ?? "absolute bottom-(--cell-chrome-inset) fan-in-l opacity-0 transition-opacity duration-300 group-hover:opacity-100"),
         !buttonVariant && menuOpen && "opacity-100 pointer-events-auto",
     )}>
         {buttonVariant ?
@@ -311,7 +315,7 @@ export const OpenFolder = (
             <button
                 title="Show file in folder"
                 onClick={() => handleClick()}
-                className="rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-(--cell-chrome-pad) hover:scale-105"
+                className="cell-chrome-pill"
             >
                 <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -367,9 +371,10 @@ export const ShareButton = (
 
 // Slot geometry of the 2x2 file action corner, in order [corner, above,
 // beside, diagonal]. Buttons are 2.5rem circles and every gap is 0.25rem —
-// which is the 2.75rem `--cell-chrome-step` the offsets below are built from —
-// and every anchor is the same `--cell-chrome-inset` the other corners use, so
-// the two bottom buttons share one baseline. (They did not, once: the cluster
+// which is the 2.75rem `--cell-chrome-step` the second rank is built from,
+// spelled once as the `fan-up` / `fan-in-l` / `fan-in-r` utilities
+// (app/globals.css) — and every anchor is the same `--cell-chrome-inset` the
+// other corners use, so the two bottom buttons share one baseline. (They did not, once: the cluster
 // sat at `bottom-3 left-1` against the details button's `bottom-2 right-2`, a
 // 4px stagger that the ramp then widened to ~6px at the smallest cells.)
 //
@@ -382,15 +387,15 @@ export const ShareButton = (
 const CLUSTER_SLOTS = {
     "bottom-left": [
         "absolute bottom-(--cell-chrome-inset) left-(--cell-chrome-inset)",
-        "absolute bottom-[calc(var(--cell-chrome-inset)+var(--cell-chrome-step))] left-(--cell-chrome-inset)",
-        "absolute bottom-(--cell-chrome-inset) left-[calc(var(--cell-chrome-inset)+var(--cell-chrome-step))]",
-        "absolute bottom-[calc(var(--cell-chrome-inset)+var(--cell-chrome-step))] left-[calc(var(--cell-chrome-inset)+var(--cell-chrome-step))]",
+        "absolute fan-up left-(--cell-chrome-inset)",
+        "absolute bottom-(--cell-chrome-inset) fan-in-l",
+        "absolute fan-up fan-in-l",
     ],
     "bottom-right": [
         "absolute bottom-(--cell-chrome-inset) right-(--cell-chrome-inset)",
-        "absolute bottom-[calc(var(--cell-chrome-inset)+var(--cell-chrome-step))] right-(--cell-chrome-inset)",
-        "absolute bottom-(--cell-chrome-inset) right-[calc(var(--cell-chrome-inset)+var(--cell-chrome-step))]",
-        "absolute bottom-[calc(var(--cell-chrome-inset)+var(--cell-chrome-step))] right-[calc(var(--cell-chrome-inset)+var(--cell-chrome-step))]",
+        "absolute fan-up right-(--cell-chrome-inset)",
+        "absolute bottom-(--cell-chrome-inset) fan-in-r",
+        "absolute fan-up fan-in-r",
     ],
 } as const
 
@@ -477,7 +482,7 @@ export const FileActionCluster = ({ sha256, path, anchor = "bottom-left" }: {
             aria-busy={busy}
             disabled={busyVerb !== null}
             className={cn(
-                "rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-(--cell-chrome-pad) hover:scale-105",
+                "cell-chrome-pill",
                 position(verb),
                 busy && "opacity-100 pointer-events-auto cursor-progress",
             )}
