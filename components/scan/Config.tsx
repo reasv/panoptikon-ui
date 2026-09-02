@@ -34,18 +34,47 @@ const THUMBNAIL_FORMAT_OPTIONS = [
 // only thing the UI owes it is not to OFFER an empty selection.
 const THUMBNAIL_FORMATS_DEFAULT = ["jpeg", "webp"]
 
+// Is this stored entry one of the two formats this control knows how to draw?
+function isKnownThumbnailFormat(entry: unknown): entry is string {
+    return typeof entry === "string"
+        && THUMBNAIL_FORMAT_OPTIONS.some((option) => option.value === entry)
+}
+
 // Read defensively off the config object rather than through the generated
 // schema type: the per-DB config carries an index signature for keys the UI
 // does not model, so this one types as `unknown` until the OpenAPI document is
 // regenerated — and a config written by a Server that predates the key is
-// genuinely absent, not merely untyped. Anything that is not a list of the
-// known strings shows as the default, which is what the server applies for it.
+// genuinely absent, not merely untyped.
+//
+// WHAT THE CONTROL SHOWS AS CHECKED: the KNOWN entries of the stored list, and
+// nothing else. The default stands in for exactly the two cases where the
+// server itself applies the default — the key absent (or not a list at all)
+// and the list empty — and for no other. In particular a stored `["avif"]`
+// shows NEITHER box checked, which is the truth about what this UI can see;
+// showing the default there would be a claim about the stored value that the
+// very next toggle would then make true by overwriting it (see
+// `mergeThumbnailFormats`, which is why it no longer can).
 function effectiveThumbnailFormats(value: unknown): string[] {
-    if (!Array.isArray(value)) return THUMBNAIL_FORMATS_DEFAULT
-    const known = value.filter((entry): entry is string =>
-        typeof entry === "string"
-        && THUMBNAIL_FORMAT_OPTIONS.some((option) => option.value === entry))
-    return known.length > 0 ? known : THUMBNAIL_FORMATS_DEFAULT
+    if (!Array.isArray(value) || value.length === 0) return THUMBNAIL_FORMATS_DEFAULT
+    return value.filter(isKnownThumbnailFormat)
+}
+
+// WHAT A TOGGLE WRITES. The settings page round-trips the WHOLE config object
+// on every save, so anything this control drops from the list is deleted from
+// the user's database — and the list may legitimately hold values this build
+// of the UI does not model (a newer Server's format, a hand-edited TOML).
+//
+// So the write is a MERGE, not a replacement: every stored entry the control
+// cannot draw is carried through in its stored position untouched, every known
+// entry survives iff it is still selected, and newly selected ones are
+// appended. A UI that only knows two formats can therefore be used on a
+// database that stores three without silently discarding the third.
+function mergeThumbnailFormats(value: unknown, selected: string[]): unknown[] {
+    const stored: unknown[] = Array.isArray(value) ? value : []
+    const kept = stored.filter((entry) =>
+        !isKnownThumbnailFormat(entry) || selected.includes(entry))
+    const added = selected.filter((format) => !kept.includes(format))
+    return [...kept, ...added]
 }
 
 function formatRunTime(time: string | null | undefined) {
@@ -264,11 +293,19 @@ export function Config() {
                                 // the control declining to offer a selection whose
                                 // meaning ("all of them, actually") contradicts
                                 // what it would be showing.
+                                //
+                                // The refusal is measured against the MERGED list,
+                                // not against the checkboxes: a database storing a
+                                // format this build does not model still has one
+                                // after both boxes are cleared, so refusing there
+                                // would be refusing something that is not empty.
                                 onSelectionChange={(values) => {
-                                    if (values.length === 0) return
+                                    const next = mergeThumbnailFormats(
+                                        data?.thumbnail_formats, values)
+                                    if (next.length === 0) return
                                     changeConfig((currentConfig) => ({
                                         ...currentConfig,
-                                        thumbnail_formats: values,
+                                        thumbnail_formats: next,
                                     }))
                                 }}
                             />
