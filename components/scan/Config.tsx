@@ -64,15 +64,25 @@ function effectiveThumbnailFormats(value: unknown): string[] {
 // the user's database — and the list may legitimately hold values this build
 // of the UI does not model (a newer Server's format, a hand-edited TOML).
 //
-// So the write is a MERGE, not a replacement: every stored entry the control
+// So the write is a MERGE, not a replacement: every stored STRING the control
 // cannot draw is carried through in its stored position untouched, every known
 // entry survives iff it is still selected, and newly selected ones are
 // appended. A UI that only knows two formats can therefore be used on a
 // database that stores three without silently discarding the third.
-function mergeThumbnailFormats(value: unknown, selected: string[]): unknown[] {
+//
+// ONLY STRINGS SURVIVE, and that is what makes the length of the result mean
+// something. The setting is a `Vec<String>`, so anything else in there is junk
+// — a hand-edited TOML with a number in the list, a `null` — and carrying it
+// would (a) write junk back and (b) let it COUNT as a format: the caller's
+// "at least one must stay selected" refusal is measured against this list, and
+// a stored `[null]` would otherwise let both boxes be cleared into a list the
+// server reads as empty. Dropping it is the only reading under which the
+// refusal is honest.
+function mergeThumbnailFormats(value: unknown, selected: string[]): string[] {
     const stored: unknown[] = Array.isArray(value) ? value : []
-    const kept = stored.filter((entry) =>
-        !isKnownThumbnailFormat(entry) || selected.includes(entry))
+    const kept = stored.filter((entry): entry is string =>
+        typeof entry === "string"
+        && (!isKnownThumbnailFormat(entry) || selected.includes(entry)))
     const added = selected.filter((format) => !kept.includes(format))
     return [...kept, ...added]
 }
@@ -296,9 +306,11 @@ export function Config() {
                                 //
                                 // The refusal is measured against the MERGED list,
                                 // not against the checkboxes: a database storing a
-                                // format this build does not model still has one
-                                // after both boxes are cleared, so refusing there
-                                // would be refusing something that is not empty.
+                                // format STRING this build does not model still has
+                                // one after both boxes are cleared, so refusing
+                                // there would be refusing something that is not
+                                // empty. Non-string junk does not count — see
+                                // `mergeThumbnailFormats`, which drops it.
                                 //
                                 // AND IT SAYS SO. A control that silently ignores
                                 // a click reads as broken — the user clears the
