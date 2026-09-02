@@ -27,7 +27,6 @@ import {
     AUTO_IMAGE_BOX_HEIGHT_5XL_PX,
     AUTO_IMAGE_BOX_HEIGHT_PX,
     GRID_GAP_PX,
-    cellBoxBindingEdge,
     cellWidthForColumns,
     clampCellWidth,
     columnsForCellWidth,
@@ -35,7 +34,7 @@ import {
     rowHeightForCellWidth,
     rowHeightForImageBox,
 } from "@/lib/gridCellSize"
-import { isSmallCell, tierForCellWidth } from "@/lib/thumbnailTier"
+import { isSmallCell } from "@/lib/thumbnailTier"
 import { useDevicePixelRatio } from "@/hooks/useDevicePixelRatio"
 import { useAnimateMode } from "@/hooks/useAnimateMode"
 import { trackHoverPointer } from "@/lib/state/animatedPlayback"
@@ -73,8 +72,9 @@ const GRID_BREAKPOINTS = [
  * AUTO_IMAGE_BOX_HEIGHT_* in lib/gridCellSize.ts), and rowEstimate is that plus
  * the card chrome. Reported SEPARATELY rather than folded into the estimate,
  * because the box is what the rendition tier has to be chosen against: the auto
- * layout's box is `cellWidth × this`, NOT a square, and its taller edge is
- * usually the binding one (see cellBoxBindingEdge). Accurate estimates matter:
+ * layout's box is `cellWidth × this`, NOT a square, and which of its two edges
+ * binds depends on the picture in it (see coverBindingEdge, and the card that
+ * calls it). Accurate estimates matter:
  * scrollToIndex navigates by estimated offsets for rows that haven't been
  * measured yet.
  */
@@ -314,27 +314,37 @@ export function ResultGrid({
     // tier choice and answers `display` — the conservative direction.
     const cellWidth = cellWidthForColumns(containerWidth, columns, GRID_GAP_PX)
     // The picture box's HEIGHT in CSS px, for the card (explicit mode only —
-    // `undefined` is what leaves the breakpoint classes standing) and, just
-    // below, for the tier. Declared here rather than beside `rowEstimate`
-    // because the tier is chosen from it.
+    // `undefined` is what leaves the breakpoint classes standing). Declared
+    // here rather than beside `rowEstimate` because the box below is built
+    // from it.
     const imageHeightPx = explicitSize && cellWidth > 0
         ? imageBoxHeightForCellWidth(cellWidth)
         : undefined
+    // THE HEIGHT THE BOX ACTUALLY HAS, in either mode: the explicit size's
+    // inline style, or the breakpoint class the auto layout is wearing. The
+    // one above is a style DIRECTIVE and is absent in auto mode; this is the
+    // FACT, and every cell has one.
+    const imageBoxHeight = imageHeightPx ?? autoLayout.imageBoxHeight
     const dpr = useDevicePixelRatio()
-    // ONE TIER FOR THE WHOLE GRID, computed here from the cell box the grid
-    // already knows and passed down as a stable string prop. Deliberately not
-    // a per-cell hook: a measurement or a media query inside the card is a
-    // subscription in every card, which is precisely what F1 removed.
+    // ONE BOX FOR THE WHOLE GRID — NOT ONE TIER. The three numbers below are
+    // this grid's entire layout answer, and they go down as stable primitives;
+    // the CARD turns them into a rendition tier, because that choice depends
+    // on the ROW as well (components/SearchResultImage.tsx, `cellTier`).
     //
-    // THE BINDING EDGE, NOT THE WIDTH. In explicit mode the box is square and
-    // the two are the same number; in AUTO mode the box is `cellWidth × 384`
-    // (480/608 at the two largest breakpoints), and feeding the width alone
-    // asked for `grid-xs` for a 266px-wide auto cell that is 384px tall — a
-    // 1.5x upscale of the short side, well past the ladder's 1.125 slack. See
-    // cellBoxBindingEdge, and VirtualizedHorizontalScroll's
-    // STRIP_CARD_CSS_BINDING_EDGE, which reasons this out for the filmstrip.
-    const tier = tierForCellWidth(
-        cellBoxBindingEdge(cellWidth, imageHeightPx ?? autoLayout.imageBoxHeight), dpr)
+    // WHY IT MOVED. The tier is bound by the edge of the box that the
+    // picture's SHORT side has to cover under `object-cover`, and which edge
+    // that is depends on the picture: a portrait image in the 5xl band's
+    // 500×608 box is bound by the 500, a landscape one by the 608. A
+    // grid-level answer can only be the worst case (`max` of the two edges),
+    // which in that band escalated EVERY cell from grid-s to grid-m — four
+    // times the decoded pixels, for the majority of cells that never needed
+    // them. See `coverBindingEdge`; the worst case, `cellBoxBindingEdge`, is
+    // still what a card with no dimensions on record gets.
+    //
+    // STILL NOT A SUBSCRIPTION PER CARD, which is the invariant F1 left
+    // behind and this does not touch: the measurement, the media query and
+    // the DPR hook are all here, once, and what the card does with their
+    // output is arithmetic.
     // ONE FLOOR FOR THE WHOLE GRID, on the same rule as the tier above it: a
     // card decides `<img>` vs `<video>` from its own row, but the numbers it
     // decides against are the server's and identical for every card, so they
@@ -1216,13 +1226,22 @@ export function ResultGrid({
                                                 // against this same source.
                                                 galleryLink
                                                 showLoadingSpinner={isLoading}
-                                                // Both stable primitives, so
-                                                // React.memo still holds: the
-                                                // tier only moves when the
-                                                // cell crosses a threshold,
-                                                // and the height only in the
-                                                // explicit mode that owns it.
-                                                tier={tier}
+                                                // THE BOX, not a tier: three
+                                                // stable primitives the card
+                                                // turns into its own rendition
+                                                // choice, because that depends
+                                                // on the row (see the box
+                                                // above, and `cellTier` in the
+                                                // card). React.memo still
+                                                // holds — they move only when
+                                                // the layout does.
+                                                cellWidth={cellWidth}
+                                                boxHeightPx={imageBoxHeight}
+                                                dpr={dpr}
+                                                // The height as a STYLE, which
+                                                // only the explicit mode sets:
+                                                // absent leaves the breakpoint
+                                                // classes standing.
                                                 imageHeightPx={imageHeightPx}
                                                 // Same rule as the tier: read
                                                 // ONCE for the whole grid and

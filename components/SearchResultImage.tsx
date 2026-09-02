@@ -11,15 +11,18 @@ import { blurHashToDataURL, type PlaceholderDataURL } from '@/lib/state/blurHash
 import { useCellCallbacks, useCellFlags } from '@/lib/state/cellActions';
 import { PIN_SHA_PREFIX_LENGTH } from '@/lib/pinboardCrop';
 import {
+    EXTREME_ASPECT,
     animatedCellMode,
     exceedsDisplayLoopTrigger,
     isExtremeAspect,
     showsMotionBadge,
+    tierForCellWidth,
     type AnimateMode,
     type AnimatedFloor,
     type DisplayLoopTrigger,
     type ThumbnailTier,
 } from '@/lib/thumbnailTier';
+import { coverBindingEdge } from '@/lib/gridCellSize';
 import { LoopVideo } from '@/components/LoopVideo';
 import { CELL_HOVER_ROOT_ATTR, useArmedHover } from '@/hooks/useArmedHover';
 
@@ -178,6 +181,9 @@ export const SearchResultImage = memo(function SearchResultImage({
     overrideURL,
     showLoadingSpinner,
     tier,
+    cellWidth,
+    boxHeightPx,
+    dpr,
     imageHeightPx,
     animatedFloor,
     displayLoopTrigger,
@@ -196,12 +202,45 @@ export const SearchResultImage = memo(function SearchResultImage({
     showLoadingSpinner?: boolean
     /**
      * Which stored rendition this card's picture box needs
-     * (lib/thumbnailTier.ts). Chosen by the HOST from the cell width it
-     * measures — never per card, which would be a measurement and a
-     * subscription in every cell — and passed down as a stable string.
-     * Omitted means the legacy bare URL (the display rendition).
+     * (lib/thumbnailTier.ts), CHOSEN BY THE HOST for every one of its cards.
+     *
+     * For a host whose cards all cover the same box and whose width is a
+     * nominal constant rather than a measurement — the similarity sidebar's
+     * two — that is the whole answer, and it stays theirs. A host that knows
+     * its box in numbers hands the numbers instead (`cellWidth` below), which
+     * is strictly better because the tier then depends on the ROW as well.
+     * Omitted with no numbers either means the legacy bare URL (the display
+     * rendition).
      */
     tier?: ThumbnailTier
+    /**
+     * THE PICTURE BOX, IN NUMBERS — width and height in CSS pixels, plus the
+     * device pixel ratio — from a host that measures it (the result grid).
+     * Present, they REPLACE `tier`: the card chooses its own rendition from
+     * them and its own dimensions, because the binding edge of an
+     * `object-cover` box depends on the picture in it (see `coverBindingEdge`,
+     * and the latch below for what the card then does with the answer).
+     *
+     * STILL NOT A MEASUREMENT IN HERE, which is the rule these three exist to
+     * keep: they are the host's one layout answer, handed down as stable
+     * primitives to hundreds of memoized cards. The card does arithmetic on
+     * them, never a subscription.
+     *
+     * `cellWidth` absent (or 0, the grid's "not measured yet") is what makes
+     * this whole branch stand down; `boxHeightPx` absent falls back to the
+     * width, and `dpr` absent to 1.
+     */
+    cellWidth?: number
+    /**
+     * The picture box's HEIGHT in CSS pixels — whichever policy set it: the
+     * breakpoint classes (`AUTO_IMAGE_BOX_HEIGHT_*`) or the explicit mode's
+     * inline style. Distinct from `imageHeightPx` below, which is the STYLE
+     * DIRECTIVE and exists only in the explicit mode; this one is the FACT,
+     * and the auto mode has one too.
+     */
+    boxHeightPx?: number
+    /** The host's device pixel ratio (hooks/useDevicePixelRatio.ts). */
+    dpr?: number
     /**
      * The picture box's height in CSS pixels, for the explicit cell-size mode
      * where it derives from the slider's width rather than from a breakpoint
@@ -253,9 +292,44 @@ export const SearchResultImage = memo(function SearchResultImage({
     smallCell?: boolean
 }) {
     const fileUrl = overrideURL ? overrideURL : getFileURL(dbs, "file", "sha256", result.sha256)
+    // ONE COMPARISON ON ROW DATA (§2's zero-cost-for-normal invariant). It
+    // decides which of the picture components is rendered, so the hover
+    // swap's state and listeners exist only inside the extreme-aspect one —
+    // a normal card mounts no hook, no listener and no second <img>, exactly
+    // as before this feature existed. It is ALSO the first half of the tier
+    // choice below.
+    const extreme = isExtremeAspect(result.width, result.height)
+    // THE SHAPE THE BOX ACTUALLY COVERS, which past aspect 2 is NOT the item's:
+    // the stored grid rendition there is a CROP, short side ≤ the tier and long
+    // side exactly 2× it (§2), and it is the crop the cell paints. So the cover
+    // arithmetic is done against `EXTREME_ASPECT`:1 in the item's orientation —
+    // the same constant the crop rule itself turns on, which is what keeps the
+    // two from drifting. `extreme` is false whenever a dimension is missing, so
+    // the substitution only ever runs on a row that has both.
+    const cropWide = extreme && (result.width ?? 0) >= (result.height ?? 0)
+    const renditionWidth = extreme ? (cropWide ? EXTREME_ASPECT : 1) : result.width
+    const renditionHeight = extreme ? (cropWide ? 1 : EXTREME_ASPECT) : result.height
+    // THE TIER THIS CARD ASKS FOR — ONE MORE COMPARISON ON ROW DATA, and the
+    // reason the host hands down its box instead of an answer. The binding
+    // edge of an `object-cover` box is a property of the PICTURE in it, not of
+    // the box alone: a PORTRAIT image in the 5xl band's 500×608 box only needs
+    // its short side to cover the 500, while the worst case (`max` of the two
+    // edges, which is all a grid-level answer can be) escalated every cell in
+    // that band to `grid-m` — four times the decoded pixels, for the majority
+    // of cells that never needed them.
+    //
+    // NO HOOK AND NO MEASUREMENT: `cellWidth`/`boxHeightPx`/`dpr` are the
+    // host's one layout answer, and this is arithmetic over them and two
+    // fields the row already carries. A host that hands no numbers keeps its
+    // own `tier` prop, unchanged.
+    const cellTier = cellWidth === undefined
+        ? tier
+        : tierForCellWidth(
+            coverBindingEdge(cellWidth, boxHeightPx, renditionWidth, renditionHeight),
+            dpr ?? 1)
     // LATCHED AT MOUNT, and that is the whole of F4's no-flash rule for a tier
     // switch. Changing the size slider (or resizing across a tier threshold)
-    // changes this prop for every visible card, and a changed `src` on a
+    // changes the answer for every visible card, and a changed `src` on a
     // mounted <img> drops the bitmap it is painting: the blurhash placeholder
     // would flash back in across the entire viewport for one network round
     // trip. So the new tier applies to NEWLY MOUNTED cells only — which under
@@ -263,12 +337,17 @@ export const SearchResultImage = memo(function SearchResultImage({
     // column-count change is every cell on screen anyway (the rows are keyed
     // by index and their contents shift, so the cards remount).
     //
+    // UNCHANGED BY THE MOVE from a host-level prop to a per-cell computation:
+    // what is latched is now this card's own answer for its own row, so two
+    // cells side by side may hold different tiers — which is the point — but
+    // each still holds the one it was born with.
+    //
     // The residual: a resize that crosses a tier threshold WITHOUT changing
     // the column count leaves the cards on screen serving the old rendition
     // until they are scrolled past. Slightly soft (or slightly heavy) for
     // those cards, never a flash — which is the requirement, and the simpler
     // of the two constructions the plan allows.
-    const tierRef = useRef(tier)
+    const tierRef = useRef(cellTier)
     // NOT LATCHED, unlike the tier — and the difference is who changes them.
     // The tier moves under a window resize the user is not looking at the
     // grid for; `animateMode` and `smallCell` move only on a deliberate act on
@@ -280,12 +359,6 @@ export const SearchResultImage = memo(function SearchResultImage({
     // swapping its `<video>` for the poster it already carries, a video card
     // fetching the other still — not the viewport-wide blurhash flash a
     // resize-driven tier change would be.
-    // ONE COMPARISON ON ROW DATA (§2's zero-cost-for-normal invariant). It
-    // decides which of the picture components is rendered, so the hover
-    // swap's state and listeners exist only inside the extreme-aspect one —
-    // a normal card mounts no hook, no listener and no second <img>, exactly
-    // as before this feature existed.
-    const extreme = isExtremeAspect(result.width, result.height)
     // ONE COMPARISON ON ROW DATA, exactly like `extreme` above and under the
     // same rule (§2's zero-cost-for-normal invariant): the fields are already
     // in the search payload, the floor is a prop, and a static card leaves

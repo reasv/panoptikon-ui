@@ -35,6 +35,7 @@ const {
   GRID_GAP_PX,
   cellBoxBindingEdge,
   cellWidthForColumns,
+  coverBindingEdge,
   clampCellWidth,
   coWrittenPageSize,
   columnsForCellWidth,
@@ -147,11 +148,15 @@ console.log("\n== the BINDING EDGE of the cell's picture box (§6) ==")
   check("an explicit cell's binding edge is its own width at every size",
     [MIN_CELL_WIDTH, 200, 512, MAX_CELL_WIDTH].every((w) =>
       cellBoxBindingEdge(w, imageBoxHeightForCellWidth(w)) === w))
-  // The two larger breakpoint bands bind on their box too: a ~590px cell at
-  // the 5xl band is 608 tall, which is the grid-m rung rather than grid-s.
-  check("a 590px auto cell in the 5xl band is grid-m at DPR 1",
+  // The two larger breakpoint bands bind on their box too, and THIS case
+  // discriminates: a 500px-wide cell at the 5xl band is 608 tall, so a
+  // LANDSCAPE picture in it needs grid-m where the width alone said grid-s.
+  // (The previous 590px case did not: 590 is past the grid-s rung on its own.)
+  check("a landscape image in a 500x608 5xl cell is grid-m at DPR 1",
     tierForCellWidth(
-      cellBoxBindingEdge(590, AUTO_IMAGE_BOX_HEIGHT_5XL_PX), 1) === "grid-m")
+      coverBindingEdge(500, AUTO_IMAGE_BOX_HEIGHT_5XL_PX, 4000, 3000), 1) === "grid-m")
+  check("...where the width alone said grid-s",
+    tierForCellWidth(500, 1) === "grid-s")
   // "Not measured yet" must survive the max(): a known box height next to an
   // unmeasured width would otherwise answer a small tier for a cell nobody
   // has laid out.
@@ -168,6 +173,84 @@ console.log("\n== the BINDING EDGE of the cell's picture box (§6) ==")
     rowHeightForImageBox(AUTO_IMAGE_BOX_HEIGHT_PX) === 470
       && rowHeightForImageBox(AUTO_IMAGE_BOX_HEIGHT_4XL_PX) === 566
       && rowHeightForImageBox(AUTO_IMAGE_BOX_HEIGHT_5XL_PX) === 694)
+}
+
+console.log("\n== the binding edge of ONE PICTURE in that box (§6) ==")
+{
+  // `object-cover` scales the image until it covers BOTH edges, so the edge
+  // its SHORT side has to pay for depends on the image: a portrait picture in
+  // a portrait box is bound by the box's WIDTH, a landscape one by its
+  // HEIGHT. The worst case above is right for a grid that knows no rows; a
+  // CELL knows its own, and at the 5xl band the difference is a whole rung
+  // (4x the decoded pixels) for the majority of cells.
+  const PORTRAIT = [1200, 1800]
+  const LANDSCAPE = [4000, 3000]
+  check("a PORTRAIT image in a 266x384 auto cell is grid-xs at DPR 1",
+    tierForCellWidth(
+      coverBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX, ...PORTRAIT), 1) === "grid-xs",
+    `binding edge ${coverBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX, ...PORTRAIT)}`)
+  check("a LANDSCAPE image in the same cell is grid-s",
+    tierForCellWidth(
+      coverBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX, ...LANDSCAPE), 1) === "grid-s",
+    `binding edge ${coverBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX, ...LANDSCAPE)}`)
+  // THE CASE THIS EXISTS FOR: the 5xl band's 608px box against a ~500px cell,
+  // i.e. a 4K window at 100%. Every cell used to be grid-m.
+  check("at the 5xl band a portrait is grid-s and a landscape grid-m",
+    tierForCellWidth(
+      coverBindingEdge(500, AUTO_IMAGE_BOX_HEIGHT_5XL_PX, ...PORTRAIT), 1) === "grid-s"
+      && tierForCellWidth(
+        coverBindingEdge(500, AUTO_IMAGE_BOX_HEIGHT_5XL_PX, ...LANDSCAPE), 1) === "grid-m")
+  // A SQUARE box has one binding edge whatever the picture is, which is what
+  // makes the explicit cell size indifferent to this whole question.
+  check("a square box binds on its own edge for either orientation",
+    [140, 300, 512].every((w) =>
+      coverBindingEdge(w, w, ...PORTRAIT) === w
+        && coverBindingEdge(w, w, ...LANDSCAPE) === w
+        && coverBindingEdge(w, w, 1000, 1000) === w))
+  // EXCEPT BY ROUNDING: the explicit mode's box is `cellWidth x
+  // Math.round(cellWidth)`, so at a fractional DPR the two edges can land on
+  // opposite sides of a rung. Right, not a defect — the box really is 461 CSS
+  // px tall — and this pins it so nobody "fixes" it into a square.
+  check("an explicit 460.5px cell at DPR 1.25 splits on the rounded height",
+    tierForCellWidth(
+      coverBindingEdge(460.5, imageBoxHeightForCellWidth(460.5), ...PORTRAIT),
+      1.25) === "grid-s"
+      && tierForCellWidth(
+        coverBindingEdge(460.5, imageBoxHeightForCellWidth(460.5), ...LANDSCAPE),
+        1.25) === "grid-m",
+    `edges ${coverBindingEdge(460.5, imageBoxHeightForCellWidth(460.5), ...PORTRAIT)}`
+      + ` / ${coverBindingEdge(460.5, imageBoxHeightForCellWidth(460.5), ...LANDSCAPE)}`)
+  // UNKNOWN DIMENSIONS ARE THE WORST CASE, which is the answer the grid gave
+  // before it consulted the picture at all: a pre-backfill row has no shape to
+  // reason from, and the direction that guesses is the one that paints a
+  // blurry cell.
+  check("unknown or unusable dimensions fall back to the worst case",
+    [[null, null], [undefined, undefined], [0, 0], [NaN, 100], [100, -5]].every(
+      ([w, h]) => coverBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX, w, h)
+        === cellBoxBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX)))
+  check("an unmeasured cell width still answers display, whatever the picture",
+    tierForCellWidth(
+      coverBindingEdge(0, AUTO_IMAGE_BOX_HEIGHT_PX, ...PORTRAIT), 1) === "display"
+      && tierForCellWidth(
+        coverBindingEdge(NaN, AUTO_IMAGE_BOX_HEIGHT_PX, ...LANDSCAPE), 1) === "display")
+  check("an unusable box height falls back to the width, whatever the picture",
+    coverBindingEdge(300, undefined, ...PORTRAIT) === 300
+      && coverBindingEdge(300, 0, ...LANDSCAPE) === 300
+      && coverBindingEdge(300, NaN, ...PORTRAIT) === 300)
+  // The BOUNDARY: an image whose aspect exactly matches the box's covers both
+  // edges at once, and either answer is the same picture. Taken as the
+  // height, with the >= — the conservative side of a tie.
+  check("an image of the box's own aspect binds on the height",
+    coverBindingEdge(300, 600, 500, 1000) === 600)
+  // An EXTREME-ASPECT item is asked about as its CROP (2:1 in the item's
+  // orientation, the shape the cell actually paints), never as itself — see
+  // SearchResultImage. A 800x20000 webtoon in an auto cell is a TALL crop, so
+  // it binds on the width; the raw dimensions agree here, and would not in a
+  // box more than twice as tall as it is wide.
+  check("a strip's CROP binds like the crop, not like the strip",
+    coverBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX, 1, EXTREME_ASPECT) === 266
+      && coverBindingEdge(200, 500, 1, EXTREME_ASPECT) === 500
+      && coverBindingEdge(200, 500, 800, 20000) === 200)
 }
 {
   // "Not measured yet" must answer display, never the smallest tier: the

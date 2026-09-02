@@ -89,6 +89,62 @@ export function cellBoxBindingEdge(
   return Math.max(cellWidth, boxHeightPx)
 }
 
+/**
+ * THE EDGE THAT BINDS *THIS PICTURE*: which of the box's two edges the image's
+ * SHORT side actually has to cover, given the image's own shape.
+ *
+ * `cellBoxBindingEdge` above is the worst case over every possible image, and
+ * as a per-GRID answer it has to be — but a cell knows its own row, and the
+ * two edges are not both binding for the same picture. Under `object-cover`
+ * the image is scaled by `max(boxW/imgW, boxH/imgH)`, so its short side lands
+ * on:
+ *
+ *   - the box HEIGHT when the image is relatively WIDER than the box
+ *     (`imgW/imgH >= boxW/boxH`, cross-multiplied here to avoid the division);
+ *   - the box WIDTH otherwise.
+ *
+ * That is exact for the common case — a landscape image in a portrait box is
+ * height-bound, a portrait image in a portrait box is width-bound — and
+ * CONSERVATIVE (never too small) in the two mixed cases, where the true
+ * requirement sits between the two edges. Never below either, so no cell is
+ * ever handed a rendition too small for what it paints.
+ *
+ * WHAT IT BUYS: at the 5xl band the auto box is 608px tall, and the worst case
+ * escalated EVERY cell to `grid-m` — four times the decoded pixels — although
+ * the portrait images that fill most of a screenful only ever need their short
+ * side to cover the box's 500-odd px WIDTH. The worst case stays exactly right
+ * for the cell that does need it.
+ *
+ * UNKNOWN OR UNUSABLE DIMENSIONS FALL BACK TO THE WORST CASE, which is the
+ * answer this call site gave before the image was consulted at all: a
+ * pre-backfill row or a non-image has no shape to reason from, and guessing
+ * one would be guessing in the direction that paints a blurry cell.
+ *
+ * The BOX guards are `cellBoxBindingEdge`'s, unchanged and for its reasons: an
+ * unmeasured width passes through (so `tierForCellWidth` answers `display`),
+ * and an unusable height leaves the width standing.
+ *
+ * EXTREME-ASPECT ITEMS: the caller passes the RENDITION's shape rather than
+ * the item's. Past aspect 2 the stored grid rendition is a crop whose short
+ * side is the tier and whose long side is exactly 2x it (§2), so 2:1 in the
+ * item's orientation is what this box actually covers — see
+ * components/SearchResultImage.tsx, where that substitution is made.
+ */
+export function coverBindingEdge(
+  boxW: number,
+  boxH: number | undefined,
+  imgW: number | null | undefined,
+  imgH: number | null | undefined
+): number {
+  const worstCase = cellBoxBindingEdge(boxW, boxH)
+  if (!Number.isFinite(boxW) || boxW <= 0) return worstCase
+  if (boxH === undefined || !Number.isFinite(boxH) || boxH <= 0) return worstCase
+  if (!imgW || !imgH) return worstCase
+  if (!Number.isFinite(imgW) || !Number.isFinite(imgH)) return worstCase
+  if (imgW <= 0 || imgH <= 0) return worstCase
+  return imgW * boxH >= imgH * boxW ? boxH : boxW
+}
+
 export function clampCellWidth(value: number): number {
   if (!Number.isFinite(value)) return MIN_CELL_WIDTH
   return Math.min(MAX_CELL_WIDTH, Math.max(MIN_CELL_WIDTH, Math.round(value)))
