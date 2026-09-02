@@ -783,6 +783,20 @@ function ExtremeAspectPicture({
                     // animating one. The badge rule is untouched (D8): the
                     // crop under the swap is still a static poster, so it
                     // still says so.
+                    //
+                    // AND WHEN THERE IS NO SWAP EITHER — an animated strip
+                    // past the display-loop bounds, whose `displaySrc` is null
+                    // (see the call site) — THIS CARD HAS NO MOTION PATH IN
+                    // HOVER MODE AT ALL. Said plainly because it is a
+                    // deliberate choice and reads like an oversight: in hover
+                    // mode such a cell is a static top-crop that the pointer
+                    // does nothing to. The alternative is arming the crop loop
+                    // here, i.e. a multi-megabyte H.264 fetch on dwell over a
+                    // cell that shows a 2:1 sliver of a webtoon — the cost
+                    // hover mode exists to avoid, spent on the least
+                    // legible cell in the grid. ALWAYS mode is unaffected: the
+                    // crop loop is the picture there and plays under the
+                    // director like every other loop cell.
                     armable={false}
                 />
             ) : (
