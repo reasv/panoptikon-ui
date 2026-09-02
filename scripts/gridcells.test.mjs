@@ -28,14 +28,19 @@ const {
   tierForCellWidth,
 } = await import("../lib/thumbnailTier.ts")
 const {
+  AUTO_IMAGE_BOX_HEIGHT_4XL_PX,
+  AUTO_IMAGE_BOX_HEIGHT_5XL_PX,
+  AUTO_IMAGE_BOX_HEIGHT_PX,
   CELL_CHROME_PX,
   GRID_GAP_PX,
+  cellBoxBindingEdge,
   cellWidthForColumns,
   clampCellWidth,
   coWrittenPageSize,
   columnsForCellWidth,
   imageBoxHeightForCellWidth,
   rowHeightForCellWidth,
+  rowHeightForImageBox,
 } = await import("../lib/gridCellSize.ts")
 // The URL-domain bounds those helpers clamp into, from their single source.
 const { MAX_CELL_WIDTH, MIN_CELL_WIDTH } = await import("../lib/searchLimits.ts")
@@ -115,6 +120,54 @@ console.log("\n== tier thresholds (§2) ==")
   check("the similarity cards are not grid-xs either",
     tierForCellWidth(400, 1) === "grid-s"
       && tierForCellWidth(700, 1) === "grid-m")
+}
+
+console.log("\n== the BINDING EDGE of the cell's picture box (§6) ==")
+{
+  // The auto layout's box is `cellWidth x AUTO_IMAGE_BOX_HEIGHT_*`, NOT a
+  // square, and `object-cover` scales the rendition until it covers BOTH
+  // edges — so the taller edge is what the tier has to be chosen against.
+  // The regression this guards: a 266px-wide auto cell (a 5-column 1400px
+  // panel) is 384px tall, and the width alone put it on grid-xs (256), a 1.5x
+  // upscale of the short side and well past the ladder's 1.125 slack.
+  check("the auto box heights are 384 / 480 / 608",
+    AUTO_IMAGE_BOX_HEIGHT_PX === 384
+      && AUTO_IMAGE_BOX_HEIGHT_4XL_PX === 480
+      && AUTO_IMAGE_BOX_HEIGHT_5XL_PX === 608)
+  check("a 266px-wide AUTO cell is grid-s at DPR 1, not grid-xs",
+    tierForCellWidth(cellBoxBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX), 1) === "grid-s",
+    `binding edge ${cellBoxBindingEdge(266, AUTO_IMAGE_BOX_HEIGHT_PX)}`)
+  check("...which is exactly what the width alone got wrong",
+    tierForCellWidth(266, 1) === "grid-xs")
+  // The EXPLICIT mode's box IS square, so its binding edge is its width and
+  // the slider's minimum still lands on the rung grid-xs exists for.
+  check("an EXPLICIT 140px cell is grid-xs at DPR 1",
+    tierForCellWidth(
+      cellBoxBindingEdge(140, imageBoxHeightForCellWidth(140)), 1) === "grid-xs")
+  check("an explicit cell's binding edge is its own width at every size",
+    [MIN_CELL_WIDTH, 200, 512, MAX_CELL_WIDTH].every((w) =>
+      cellBoxBindingEdge(w, imageBoxHeightForCellWidth(w)) === w))
+  // The two larger breakpoint bands bind on their box too: a ~590px cell at
+  // the 5xl band is 608 tall, which is the grid-m rung rather than grid-s.
+  check("a 590px auto cell in the 5xl band is grid-m at DPR 1",
+    tierForCellWidth(
+      cellBoxBindingEdge(590, AUTO_IMAGE_BOX_HEIGHT_5XL_PX), 1) === "grid-m")
+  // "Not measured yet" must survive the max(): a known box height next to an
+  // unmeasured width would otherwise answer a small tier for a cell nobody
+  // has laid out.
+  check("an unmeasured width still answers display through the binding edge",
+    tierForCellWidth(cellBoxBindingEdge(0, AUTO_IMAGE_BOX_HEIGHT_PX), 1) === "display"
+      && tierForCellWidth(cellBoxBindingEdge(NaN, AUTO_IMAGE_BOX_HEIGHT_PX), 1) === "display")
+  check("an unusable box height falls back to the width",
+    cellBoxBindingEdge(300, undefined) === 300
+      && cellBoxBindingEdge(300, 0) === 300
+      && cellBoxBindingEdge(300, NaN) === 300)
+  // The row estimate and the box are one arithmetic now, not two ladders that
+  // have to be kept in step by hand.
+  check("the auto row estimates are the boxes plus the chrome",
+    rowHeightForImageBox(AUTO_IMAGE_BOX_HEIGHT_PX) === 470
+      && rowHeightForImageBox(AUTO_IMAGE_BOX_HEIGHT_4XL_PX) === 566
+      && rowHeightForImageBox(AUTO_IMAGE_BOX_HEIGHT_5XL_PX) === 694)
 }
 {
   // "Not measured yet" must answer display, never the smallest tier: the

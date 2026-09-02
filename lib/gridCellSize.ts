@@ -40,6 +40,55 @@ export const GRID_GAP_PX = 16
  */
 export const CELL_CHROME_PX = 86
 
+/**
+ * THE AUTO LAYOUT'S PICTURE-BOX HEIGHTS, in CSS pixels, one per breakpoint
+ * band. Named here because they were three magic numbers in two places that
+ * had to agree and could not check each other: a Tailwind class list on the
+ * card's anchor (`h-96 4xl:h-120 5xl:h-152`, in
+ * components/SearchResultImage.tsx) and the `rowEstimate` ladder in
+ * app/search/ResultGrid.tsx, which is these plus `CELL_CHROME_PX`.
+ *
+ * Tailwind needs the class LITERAL, so the class list cannot be generated from
+ * these — the anchor carries a pointer back here instead, and the equalities
+ * `h-96 = 96 * 4 = 384`, `h-120 = 480`, `h-152 = 608` are what tie the two
+ * together. Everything that reasons about the box in JavaScript reads these.
+ *
+ * They matter beyond the row height because the auto layout's box is NOT
+ * SQUARE: it is `cellWidth × <one of these>`. See `cellBoxBindingEdge`.
+ */
+export const AUTO_IMAGE_BOX_HEIGHT_PX = 384
+export const AUTO_IMAGE_BOX_HEIGHT_4XL_PX = 480
+export const AUTO_IMAGE_BOX_HEIGHT_5XL_PX = 608
+
+/**
+ * THE EDGE THAT BINDS a cell's rendition choice: the LARGER of the picture
+ * box's two edges.
+ *
+ * The box paints `object-cover`, which scales the rendition until it covers
+ * BOTH edges, so crispness is bound by whichever edge asks more of the image —
+ * the filmstrip's `STRIP_CARD_CSS_BINDING_EDGE` spells the same reasoning out
+ * for its own `w-[240px] h-80` card. The result grid's EXPLICIT mode has a
+ * square box, so its two edges agree and the width is the binding edge; its
+ * AUTO mode does not, and passing the width alone is a real defect there — a
+ * 266px-wide auto cell is 384px tall, and asking for `grid-xs` (256) for it
+ * upscales the short side by 1.5x, past the ladder's 1.125 slack.
+ *
+ * A non-positive or non-finite WIDTH is passed straight through, because that
+ * is the grid's "not measured yet" value and `tierForCellWidth` answers
+ * `display` for it — the conservative direction, which a `max()` against a
+ * known box height would silently destroy. An unusable HEIGHT falls back to
+ * the width, which is the answer this call site gave before it existed.
+ */
+export function cellBoxBindingEdge(
+  cellWidth: number,
+  boxHeightPx: number | undefined
+): number {
+  if (!Number.isFinite(cellWidth) || cellWidth <= 0) return cellWidth
+  if (boxHeightPx === undefined) return cellWidth
+  if (!Number.isFinite(boxHeightPx) || boxHeightPx <= 0) return cellWidth
+  return Math.max(cellWidth, boxHeightPx)
+}
+
 export function clampCellWidth(value: number): number {
   if (!Number.isFinite(value)) return MIN_CELL_WIDTH
   return Math.min(MAX_CELL_WIDTH, Math.max(MIN_CELL_WIDTH, Math.round(value)))
@@ -84,9 +133,19 @@ export function imageBoxHeightForCellWidth(cellWidth: number): number {
   return Math.round(cellWidth)
 }
 
+/**
+ * The row height a picture box of this height implies: the box plus the card
+ * chrome, which is constant across every mode and breakpoint (see
+ * `CELL_CHROME_PX`). The auto layout's `rowEstimate` ladder IS this function
+ * over `AUTO_IMAGE_BOX_HEIGHT_*`, so the two can no longer drift.
+ */
+export function rowHeightForImageBox(boxHeightPx: number): number {
+  return boxHeightPx + CELL_CHROME_PX
+}
+
 /** The fixed row height an explicit cell width implies (design §6). */
 export function rowHeightForCellWidth(cellWidth: number): number {
-  return imageBoxHeightForCellWidth(cellWidth) + CELL_CHROME_PX
+  return rowHeightForImageBox(imageBoxHeightForCellWidth(cellWidth))
 }
 
 /**

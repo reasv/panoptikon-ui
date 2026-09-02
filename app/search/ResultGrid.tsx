@@ -23,12 +23,17 @@ import type { ResultsSource } from "@/lib/searchHooks"
 import { SCROLL_CHUNK_SIZE } from "@/lib/searchRequest"
 import { overscanItemsFor, topRowHighlightItem, virtualPageOf } from "@/lib/scrollMode"
 import {
+    AUTO_IMAGE_BOX_HEIGHT_4XL_PX,
+    AUTO_IMAGE_BOX_HEIGHT_5XL_PX,
+    AUTO_IMAGE_BOX_HEIGHT_PX,
     GRID_GAP_PX,
+    cellBoxBindingEdge,
     cellWidthForColumns,
     clampCellWidth,
     columnsForCellWidth,
     imageBoxHeightForCellWidth,
     rowHeightForCellWidth,
+    rowHeightForImageBox,
 } from "@/lib/gridCellSize"
 import { isSmallCell, tierForCellWidth } from "@/lib/thumbnailTier"
 import { useDevicePixelRatio } from "@/hooks/useDevicePixelRatio"
@@ -63,15 +68,24 @@ const GRID_BREAKPOINTS = [
  * what actually lay out the columns; this value only slices results into rows.
  * Uses matchMedia (the same engine that applies the classes) rather than reading
  * window.innerWidth in a resize handler, which can observe a stale width.
- * rowEstimate tracks the card height, which is fixed per breakpoint: the image
- * container (h-96 / 4xl:h-120 / 5xl:h-[38rem]) plus text lines, paddings,
- * borders and the row's pb-4. Accurate estimates matter: scrollToIndex navigates
- * by estimated offsets for rows that haven't been measured yet.
+ * imageBoxHeight is the picture box's own height, which is fixed per breakpoint
+ * (the `h-96 / 4xl:h-120 / 5xl:h-152` on the card's anchor, named as
+ * AUTO_IMAGE_BOX_HEIGHT_* in lib/gridCellSize.ts), and rowEstimate is that plus
+ * the card chrome. Reported SEPARATELY rather than folded into the estimate,
+ * because the box is what the rendition tier has to be chosen against: the auto
+ * layout's box is `cellWidth × this`, NOT a square, and its taller edge is
+ * usually the binding one (see cellBoxBindingEdge). Accurate estimates matter:
+ * scrollToIndex navigates by estimated offsets for rows that haven't been
+ * measured yet.
  */
-function useResultGridLayout(sidebarOpen: boolean): { columns: number, rowEstimate: number } {
+function useResultGridLayout(sidebarOpen: boolean): { columns: number, rowEstimate: number, imageBoxHeight: number } {
     // columns 0 means "not evaluated yet" (SSR and the very first client render) —
     // consumers must not lay out or scroll until this becomes a real count
-    const [layout, setLayout] = useState({ columns: 0, rowEstimate: 470 })
+    const [layout, setLayout] = useState({
+        columns: 0,
+        rowEstimate: rowHeightForImageBox(AUTO_IMAGE_BOX_HEIGHT_PX),
+        imageBoxHeight: AUTO_IMAGE_BOX_HEIGHT_PX,
+    })
     useLayoutEffect(() => {
         const queries = GRID_BREAKPOINTS.map((q) => window.matchMedia(q))
         const update = () => {
@@ -79,10 +93,13 @@ function useResultGridLayout(sidebarOpen: boolean): { columns: number, rowEstima
             const columns = sidebarOpen
                 ? (xxxxl ? 5 : xxl ? 4 : xl ? 3 : lg ? 1 : md ? 2 : 1)
                 : (xxl ? 5 : xl ? 4 : lg ? 3 : md ? 2 : 1)
-            const rowEstimate = xxxxxl ? 694 : xxxxl ? 566 : 470
+            const imageBoxHeight = xxxxxl
+                ? AUTO_IMAGE_BOX_HEIGHT_5XL_PX
+                : xxxxl ? AUTO_IMAGE_BOX_HEIGHT_4XL_PX : AUTO_IMAGE_BOX_HEIGHT_PX
+            const rowEstimate = rowHeightForImageBox(imageBoxHeight)
             setLayout((prev) =>
                 prev.columns === columns && prev.rowEstimate === rowEstimate
-                    ? prev : { columns, rowEstimate })
+                    ? prev : { columns, rowEstimate, imageBoxHeight })
         }
         update()
         queries.forEach((q) => q.addEventListener('change', update))
@@ -296,12 +313,28 @@ export function ResultGrid({
     // 0 while the container is unmeasured, which reads as "unknown" to the
     // tier choice and answers `display` — the conservative direction.
     const cellWidth = cellWidthForColumns(containerWidth, columns, GRID_GAP_PX)
+    // The picture box's HEIGHT in CSS px, for the card (explicit mode only —
+    // `undefined` is what leaves the breakpoint classes standing) and, just
+    // below, for the tier. Declared here rather than beside `rowEstimate`
+    // because the tier is chosen from it.
+    const imageHeightPx = explicitSize && cellWidth > 0
+        ? imageBoxHeightForCellWidth(cellWidth)
+        : undefined
     const dpr = useDevicePixelRatio()
-    // ONE TIER FOR THE WHOLE GRID, computed here from the cell width the grid
+    // ONE TIER FOR THE WHOLE GRID, computed here from the cell box the grid
     // already knows and passed down as a stable string prop. Deliberately not
     // a per-cell hook: a measurement or a media query inside the card is a
     // subscription in every card, which is precisely what F1 removed.
-    const tier = tierForCellWidth(cellWidth, dpr)
+    //
+    // THE BINDING EDGE, NOT THE WIDTH. In explicit mode the box is square and
+    // the two are the same number; in AUTO mode the box is `cellWidth × 384`
+    // (480/608 at the two largest breakpoints), and feeding the width alone
+    // asked for `grid-xs` for a 266px-wide auto cell that is 384px tall — a
+    // 1.5x upscale of the short side, well past the ladder's 1.125 slack. See
+    // cellBoxBindingEdge, and VirtualizedHorizontalScroll's
+    // STRIP_CARD_CSS_BINDING_EDGE, which reasons this out for the filmstrip.
+    const tier = tierForCellWidth(
+        cellBoxBindingEdge(cellWidth, imageHeightPx ?? autoLayout.imageBoxHeight), dpr)
     // ONE FLOOR FOR THE WHOLE GRID, on the same rule as the tier above it: a
     // card decides `<img>` vs `<video>` from its own row, but the numbers it
     // decides against are the server's and identical for every card, so they
@@ -329,9 +362,6 @@ export function ResultGrid({
     // first `pointerenter` they get). One listener, refcounted with the
     // filmstrip's — see trackHoverPointer.
     useEffect(() => trackHoverPointer(), [])
-    const imageHeightPx = explicitSize && cellWidth > 0
-        ? imageBoxHeightForCellWidth(cellWidth)
-        : undefined
     const rowEstimate = imageHeightPx !== undefined
         ? rowHeightForCellWidth(cellWidth)
         : autoLayout.rowEstimate

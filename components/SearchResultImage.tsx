@@ -417,6 +417,14 @@ export const SearchResultImage = memo(function SearchResultImage({
                     // are alternative policies for the same box, and leaving
                     // the classes in would have twMerge resolve a conflict
                     // that the inline style wins anyway.
+                    //
+                    // THESE THREE CLASSES ARE 384 / 480 / 608 CSS PX, and the
+                    // grid reasons about those numbers: they are the auto
+                    // layout's row height and, because the box is NOT square,
+                    // usually the edge that binds its rendition tier. Named
+                    // once as AUTO_IMAGE_BOX_HEIGHT_* in lib/gridCellSize.ts —
+                    // Tailwind needs the literal here, so changing one means
+                    // changing both.
                     className={cn("block relative mb-2",
                         imageHeightPx == null && "h-96 4xl:h-120 5xl:h-152",
                         imageContainerClassName)}
