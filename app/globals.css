@@ -200,11 +200,19 @@
 /* GRID CELL CHROME SCALING (docs/grid-hover-animate-implementation.md D11).
 
    The corner buttons, the file-action fanout and their insets are sized for a
-   card several hundred pixels wide. At the size slider's minimum (140px) the
-   same 40px circles at 8px insets are most of the picture, and the fanout
-   opens straight across the other three corners. So they ride ONE ramp over
-   the cell width the grid publishes as `--cell-px` (app/search/ResultGrid.tsx,
-   written on the row container so it inherits into every card).
+   card several hundred pixels wide. At the size slider's minimum the same 40px
+   circles at 8px insets are most of the picture, and the fanout opens straight
+   across the other three corners. So they ride ONE ramp over the cell width
+   the grid publishes as `--cell-px` (app/search/ResultGrid.tsx, written on the
+   row container so it inherits into every card).
+
+   THE TWO NUMBERS IN THE RAMP ARE NAMED ELSEWHERE, and CSS cannot import
+   them: `140` is `MIN_CELL_WIDTH` (lib/searchLimits.ts), the slider's minimum
+   and the narrowest cell that can exist; the `400` fallback is
+   `DEFAULT_CELL_WIDTH` (components/GridCellSizeControl.tsx), which is where an
+   unmeasured surface sits and is deliberately past the ramp's top so a card
+   with no `--cell-px` gets today's chrome unscaled. Changing either means
+   changing both.
 
    ONE RAMP, TWO CONSUMED VALUES. `--cell-chrome-t` is the normalized
    position between the slider's minimum and a cell wide enough to want no

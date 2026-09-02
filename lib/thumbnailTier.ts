@@ -68,35 +68,6 @@ export function tierForCellWidth(cssWidth: number, dpr: number): ThumbnailTier {
 }
 
 /**
- * The width below which a grid cell counts as SMALL — one constant, in CSS
- * pixels, for the two policies that turn on it (docs/grid-hover-animate-
- * implementation.md D1):
- *
- *   - an animated image's DEFAULT playback mode (D2): hover-only below,
- *     always above (lib/state/animatePref.ts);
- *   - which video thumbnail a cell asks for (D9): the single frame below, the
- *     2×2 frame mosaic above.
- *
- * Both are the same judgement — at this size a picture is a glance rather than
- * a look — so they may not drift apart, and the number is tunable in QA
- * without hunting for a second copy of it.
- */
-export const SMALL_CELL_THRESHOLD_PX = 200
-
-/**
- * Is a cell of this width in the SMALL range?
- *
- * An unmeasured width (0, negative, non-finite) answers `false`, which is the
- * conservative direction in both consumers: it keeps today's behaviour — the
- * 2×2 video thumbnail and always-animate — rather than applying a
- * small-cell policy to a cell nobody has measured yet.
- */
-export function isSmallCell(cssWidth: number | null | undefined): boolean {
-  if (!cssWidth || !Number.isFinite(cssWidth) || cssWidth <= 0) return false
-  return cssWidth < SMALL_CELL_THRESHOLD_PX
-}
-
-/**
  * The aspect past which a grid tier is a CROP rather than the whole picture
  * (§2). Comic strips and webtoons are real content in the target datasets and
  * cluster in search results, so the stored grid renditions bound them at

@@ -35,8 +35,11 @@ const {
   hoverScroll,
   newHoverArming,
 } = await import("../lib/state/animatedPlayback.ts")
-const { SMALL_CELL_THRESHOLD_PX, animatedCellMode, isSmallCell, showsMotionBadge } = await import(
+const { animatedCellMode, showsMotionBadge } = await import(
   "../lib/thumbnailTier.ts"
+)
+const { SMALL_CELL_THRESHOLD_PX, isSmallCell } = await import(
+  "../lib/gridCellSize.ts"
 )
 
 const { HOVER_MOVE_WINDOW_MS } = ANIMATED_PLAYBACK

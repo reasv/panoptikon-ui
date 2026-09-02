@@ -24,6 +24,7 @@ import {
     planCellPicture,
     type CellCrop,
 } from '@/lib/cellPicture';
+import { isSmallCell } from '@/lib/gridCellSize';
 import { LoopVideo } from '@/components/LoopVideo';
 import { CELL_HOVER_ROOT_ATTR, useArmedHover } from '@/hooks/useArmedHover';
 
@@ -175,7 +176,6 @@ export const SearchResultImage = memo(function SearchResultImage({
     animatedFloor,
     displayLoopTrigger,
     animateMode = "always",
-    smallCell = false,
 }: {
     result: SearchResult,
     index: number,
@@ -270,13 +270,6 @@ export const SearchResultImage = memo(function SearchResultImage({
      * knows nothing about this feature keeps the cells it always had.
      */
     animateMode?: AnimateMode
-    /**
-     * Is this cell in the SMALL range (lib/thumbnailTier.ts
-     * `SMALL_CELL_THRESHOLD_PX`)? Decides which of a VIDEO's two stored
-     * thumbnails the card requests (D9) — measured by the host, like the tier,
-     * because a measurement in the card is a measurement in every card.
-     */
-    smallCell?: boolean
 }) {
     const fileUrl = overrideURL ? overrideURL : originalFileURL(dbs, result.sha256)
     // THE TIER, LATCHED AT MOUNT, and that is the whole of the no-flash rule
@@ -319,7 +312,10 @@ export const SearchResultImage = memo(function SearchResultImage({
     const plan = planCellPicture(result, dbs, tierRef.current, {
         animatedFloor,
         displayLoopTrigger,
-        smallCell,
+        // The card's own comparison, not a prop: one number against one
+        // constant (lib/gridCellSize.ts), on a value it already has. A host
+        // that measures its box has already said everything this needs.
+        smallCell: isSmallCell(cellWidth),
     })
     // The badge rule's input, and the ONLY thing outside the plan that still
     // needs the three-way mode: `"still"` and `"static"` paint the same element

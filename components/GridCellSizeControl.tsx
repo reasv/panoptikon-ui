@@ -21,12 +21,13 @@ import {
     columnsForCellWidth,
 } from "@/lib/gridCellSize"
 import { MAX_CELL_WIDTH, MIN_CELL_WIDTH } from "@/lib/searchLimits"
-import { SMALL_CELL_THRESHOLD_PX, type AnimateMode } from "@/lib/thumbnailTier"
+import { type AnimateMode } from "@/lib/thumbnailTier"
 import { cellRange, setAnimateSlot, type CellRange } from "@/lib/state/animatePref"
 import { useAnimateModeForRange } from "@/hooks/useAnimateMode"
 import { useGridCellSize } from "@/lib/state/cellSize"
 import { useCellSizePageLock } from "@/lib/state/cellSizePageLock"
 import { EMPTY_GRID_METRICS, type GridMetricsStore } from "@/lib/state/gridMetricsBox"
+import { SMALL_CELL_THRESHOLD_PX } from "@/lib/gridCellSize"
 import { useCommitPageSize } from "@/lib/searchHooks"
 import { usePageSize } from "@/lib/state/searchQuery/clientHooks"
 

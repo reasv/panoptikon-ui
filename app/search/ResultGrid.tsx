@@ -34,9 +34,9 @@ import {
     rowHeightForCellWidth,
     rowHeightForImageBox,
 } from "@/lib/gridCellSize"
-import { isSmallCell } from "@/lib/thumbnailTier"
 import { useDevicePixelRatio } from "@/hooks/useDevicePixelRatio"
-import { useAnimateMode } from "@/hooks/useAnimateMode"
+import { useAnimateModeForRange } from "@/hooks/useAnimateMode"
+import { cellRange } from "@/lib/state/animatePref"
 import { trackHoverPointer } from "@/lib/state/animatedPlayback"
 import { useAnimatedFloor, useDisplayLoopTrigger } from "@/lib/useClientConfig"
 
@@ -361,11 +361,12 @@ export function ResultGrid({
     // load-bearing (see the bookkeeping map).
     const displayLoopTrigger = useDisplayLoopTrigger()
     // ONE ANSWER FOR THE WHOLE GRID again, and the last of the three the cards
-    // are handed: which range this grid's cells fall in decides both the
-    // animate mode the user's preference resolves to (D2) and which of a
-    // video's two thumbnails a cell asks for (D9).
-    const animateMode = useAnimateMode(cellWidth)
-    const smallCell = isSmallCell(cellWidth)
+    // are handed: which range this grid's cells fall in decides which mode the
+    // user's preference resolves to (D2). The RANGE is computed here rather
+    // than inside the hook so this line says what the answer depends on; the
+    // cards ask the same question of their own width for the other policy that
+    // turns on it (D9, which of a video's two thumbnails).
+    const animateMode = useAnimateModeForRange(cellRange(cellWidth))
     // The pointer tracking the hover arming is written in terms of, bound for
     // as long as this grid is mounted rather than by the cells (which mount by
     // the hundred, and would each bind it a moment too late to answer the
@@ -1256,16 +1257,13 @@ export function ResultGrid({
                                                 // therefore with the same
                                                 // stable identity.
                                                 displayLoopTrigger={displayLoopTrigger}
-                                                // Two more stable primitives
-                                                // on the same rule as the
-                                                // box: both move only when
-                                                // the cell crosses the small
-                                                // threshold or the user
-                                                // changes the preference, and
-                                                // the cards latch them at
-                                                // mount either way.
+                                                // One more stable primitive
+                                                // on the same rule as the box:
+                                                // it moves only when the cell
+                                                // crosses the small threshold
+                                                // or the user changes the
+                                                // preference.
                                                 animateMode={animateMode}
-                                                smallCell={smallCell}
                                             />
                                         )
                                     })}
