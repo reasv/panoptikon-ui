@@ -51,6 +51,13 @@ export const ResultCellSkeleton = memo(function ResultCellSkeleton({
     return (
         <div className={cn("border rounded p-2", className)} aria-hidden="true">
             <div className="overflow-hidden relative w-full pb-full mb-2">
+                {/* THE SAME 384 / 480 / 608 CSS PX the card's anchor
+                    carries, and for the same reason it does: named once as
+                    AUTO_IMAGE_BOX_HEIGHT_* in lib/gridCellSize.ts, spelled
+                    out here because Tailwind needs the class literal. A row
+                    of skeletons is a row scroll mode may measure its one row
+                    height from, so a drift here is a drift in every
+                    subsequent scroll offset. */}
                 <div
                     className={imageHeightPx == null
                         ? "block relative mb-2 h-96 4xl:h-120 5xl:h-152"

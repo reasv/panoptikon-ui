@@ -42,19 +42,44 @@ export const CELL_CHROME_PX = 86
 
 /**
  * THE AUTO LAYOUT'S PICTURE-BOX HEIGHTS, in CSS pixels, one per breakpoint
- * band. Named here because they were three magic numbers in two places that
- * had to agree and could not check each other: a Tailwind class list on the
- * card's anchor (`h-96 4xl:h-120 5xl:h-152`, in
- * components/SearchResultImage.tsx) and the `rowEstimate` ladder in
- * app/search/ResultGrid.tsx, which is these plus `CELL_CHROME_PX`.
+ * band. Named here because they were magic numbers in several places that had
+ * to agree and could not check each other. EVERY PLACE THEY LIVE:
  *
- * Tailwind needs the class LITERAL, so the class list cannot be generated from
- * these — the anchor carries a pointer back here instead, and the equalities
- * `h-96 = 96 * 4 = 384`, `h-120 = 480`, `h-152 = 608` are what tie the two
+ *   - the Tailwind class list on the card's anchor (`h-96 4xl:h-120
+ *     5xl:h-152`, components/SearchResultImage.tsx);
+ *   - the SAME class list on the skeleton that stands in for that card
+ *     (components/ResultCellSkeleton.tsx) — it must match verbatim, because
+ *     scroll mode may measure its one row height from a skeleton row;
+ *   - the `rowEstimate` ladder in app/search/ResultGrid.tsx, which is these
+ *     plus `CELL_CHROME_PX` (`rowHeightForImageBox`);
+ *   - and the tier choice, which reads them as the box's height.
+ *
+ * Tailwind needs the class LITERAL, so the class lists cannot be generated
+ * from these — each carries a pointer back here instead, and the equalities
+ * `h-96 = 96 * 4 = 384`, `h-120 = 480`, `h-152 = 608` are what tie them
  * together. Everything that reasons about the box in JavaScript reads these.
  *
+ * NOT EVERY HOST: components/sidebar/similarity/SimilarItemsView.tsx passes
+ * SearchResultImage an `imageContainerClassName` that REPLACES the triple with
+ * its own (`h-96 xl:h-80 4xl:h-80 5xl:h-80`), so these numbers describe the
+ * result grid's cards and no others. That host chooses its tier from a nominal
+ * card width instead of from a measured box, which is why it needs none of
+ * this — see its `cardTier`.
+ *
+ * THEY ASSUME A 16px ROOT FONT SIZE, once, for the whole file. The classes are
+ * rem-valued (`h-96` is 24rem) and resolve against the DOCUMENT's root font
+ * size, while the media queries that pick among them resolve against the
+ * browser's INITIAL font size (the units note on GRID_BREAKPOINTS in
+ * app/search/ResultGrid.tsx spells that asymmetry out). A reader who has
+ * raised the default therefore gets a box taller than the constant says: the
+ * row estimate is short by the same factor — harmless, scroll mode measures a
+ * real row — and the tier is chosen one notch soft in the worst case. The
+ * alternative is measuring the box in every card, which is the subscription
+ * per card the grid work exists to have removed.
+ *
  * They matter beyond the row height because the auto layout's box is NOT
- * SQUARE: it is `cellWidth × <one of these>`. See `cellBoxBindingEdge`.
+ * SQUARE: it is `cellWidth × <one of these>`. See `cellBoxBindingEdge` and
+ * `coverBindingEdge`.
  */
 export const AUTO_IMAGE_BOX_HEIGHT_PX = 384
 export const AUTO_IMAGE_BOX_HEIGHT_4XL_PX = 480

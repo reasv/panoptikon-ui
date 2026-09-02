@@ -280,6 +280,12 @@ export function SimilarItemsView({
                             result={result as any}
                             index={index}
                             dbs={dbs}
+                            // THIS HOST'S OWN BOX HEIGHTS, replacing the grid
+                            // card's `h-96 4xl:h-120 5xl:h-152`
+                            // (AUTO_IMAGE_BOX_HEIGHT_* in lib/gridCellSize.ts,
+                            // which says so): a sidebar column is not a grid
+                            // cell, and none of the numbers named there
+                            // describe this box.
                             imageContainerClassName="h-96 xl:h-80 4xl:h-80 5xl:h-80"
                             onImageClick={() => onImageClick(index)}
                             showLoadingSpinner={isLoading || isFetching}
