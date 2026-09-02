@@ -1,8 +1,9 @@
 // Assertions for the BLUR PLACEHOLDER RUNG: which square raster a card's
 // thumbnail tier asks the blurhash to be decoded at, and the cache that has to
-// keep the rungs apart. The profiling that motivated it charged 36% of all busy
-// JS during a 140px-cell scroll to this one placeholder. No test runner in this
-// repo — run it from the ui root:
+// keep the rungs apart — plus the module-scope date formatter, the second half
+// of the same measured fix. The profiling that motivated both charged 36% of
+// all busy JS during a 140px-cell scroll to the placeholder and 4-5% to
+// `getLocale`. No test runner in this repo — run it from the ui root:
 //
 //   node --experimental-strip-types scripts/blurplaceholder.test.mjs
 //
@@ -28,6 +29,7 @@ const {
   tierForCellWidth,
 } = await import("../lib/thumbnailTier.ts")
 const { blurHashToDataURL } = await import("../lib/state/blurHashDataURL.ts")
+const { getLocale } = await import("../lib/utils.ts")
 
 const { check, finish } = createChecker()
 
@@ -249,6 +251,49 @@ console.log("\n== the LRU still evicts ==")
     "eviction is per KEY, not per hash: the 32x32 form of a hash that only " +
       "ever existed at 8x8 is computed at 32x32",
     JSON.stringify(pngDims(blurHashToDataURL(variant(0), 32))) === "[32,32]"
+  )
+}
+
+console.log("\n== getLocale is unchanged output ==")
+{
+  // The form getLocale had before the module-scope formatter, spelled out here
+  // so the assertion does not read the implementation it is checking.
+  const OPTIONS = {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }
+  const old = (date) => date.toLocaleString("en", OPTIONS)
+  const DATES = [
+    "2026-09-03T14:07:00Z",
+    "1999-12-31T23:59:00Z",
+    "2000-01-01T00:00:00Z",
+    "2024-02-29T12:30:00Z",
+    "1970-01-01T00:00:00Z",
+    "2026-07-04T09:05:00Z",
+  ]
+  let allMatch = true
+  for (const iso of DATES) {
+    const date = new Date(iso)
+    const got = getLocale(date)
+    const want = old(date)
+    if (
+      !check(
+        `${iso} formats identically to the old toLocaleString`,
+        got === want,
+        `${got} vs ${want}`
+      )
+    ) {
+      allMatch = false
+      break
+    }
+  }
+  check("every fixed date matched", allMatch)
+  check(
+    "the formatter is reused, not rebuilt — repeated calls agree",
+    getLocale(new Date(DATES[0])) === getLocale(new Date(DATES[0]))
   )
 }
 
