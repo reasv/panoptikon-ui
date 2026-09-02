@@ -9,6 +9,7 @@
 //
 //   node --experimental-strip-types scripts/thumbnailformats.test.mjs
 
+import { createChecker } from "./harness.mjs"
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
@@ -20,12 +21,7 @@ const {
   mergeThumbnailFormats,
 } = await import("../lib/thumbnailFormats.ts")
 
-let all = true
-function check(name, ok, detail = "") {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? `\n  ${detail}` : ""}`)
-  all &&= !!ok
-  return ok
-}
+const { check, finish } = createChecker()
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 
@@ -90,5 +86,4 @@ console.log("\n== what a toggle writes ==")
       && same(mergeThumbnailFormats("jpeg", ["webp"]), ["webp"]))
 }
 
-console.log(all ? "\nALL PASS" : "\nFAILURES")
-process.exit(all ? 0 : 1)
+finish()

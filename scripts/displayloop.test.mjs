@@ -16,6 +16,7 @@
 //
 // Exits non-zero on failure.
 
+import { createChecker } from "./harness.mjs"
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
@@ -24,12 +25,7 @@ const { exceedsDisplayLoopTrigger } = await import("../lib/thumbnailTier.ts")
 // imports only a .d.ts (type-only) and lib/thumbnailTier.ts, so it runs here.
 const { deriveClientConfig } = await import("../lib/clientConfig.ts")
 
-let all = true
-function check(name, ok, detail = "") {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? `\n  ${detail}` : ""}`)
-  all &&= !!ok
-  return ok
-}
+const { check, finish } = createChecker()
 
 // The plan's own numbers: 5 MiB for the animated class, the 4096 short side
 // today's code already uses as the display trigger, and 24 MP.
@@ -197,5 +193,4 @@ console.log("\n== the wire shape (/api/client-config) ==")
       === JSON.stringify({ maxFileSize: 1048576, maxSide: 512 }))
 }
 
-console.log(all ? "\nALL PASS" : "\nFAILURES")
-process.exit(all ? 0 : 1)
+finish()

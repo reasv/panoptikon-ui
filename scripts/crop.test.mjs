@@ -7,6 +7,7 @@
 // (the flag is what lets a .mjs import the .ts module; Node 22+). Exits
 // non-zero on the first failing assertion set.
 
+import { createChecker } from "./harness.mjs"
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
@@ -14,12 +15,7 @@ const { AUTO_CROP_TOP_ANCHOR_CUT, computeAutoCrop } = await import(
   "../lib/pinboardCrop.ts"
 )
 
-let all = true
-function check(name, ok, detail = "") {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? `\n  ${detail}` : ""}`)
-  all &&= !!ok
-  return ok
-}
+const { check, finish } = createChecker()
 const near = (a, b) => Math.abs(a - b) < 1e-9
 
 // A square cell large enough that no cut in these cases is letterbox-exempt
@@ -78,4 +74,4 @@ check(
   )
 }
 
-process.exit(all ? 0 : 1)
+finish()

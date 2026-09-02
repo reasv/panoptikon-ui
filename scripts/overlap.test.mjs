@@ -6,6 +6,7 @@
 // (the flag is what lets a .mjs import the .ts module; Node 22+). Exits
 // non-zero on the first failing assertion set.
 
+import { createChecker } from "./harness.mjs"
 import { resolveOverlapsDown } from "../lib/pinboardOverlap.ts"
 
 const show = (ls) =>
@@ -30,31 +31,39 @@ function noOverlaps(out, allow = []) {
   return bad
 }
 
+const { check: report, finish } = createChecker()
+
+// This file's assertions are all "the resolver placed these boxes here and
+// nothing overlaps", so its `check` takes the layout rather than a boolean and
+// works the verdict out. The printing and the accumulator are the shared
+// harness's; what is local is the DETAIL, which is the layout itself —
+// always, because a placement test whose output you cannot see is not much of
+// a test.
 function check(name, out, expect, allow = []) {
   const got = Object.fromEntries(out.map((l) => [l.i, l.y]))
   const bad = noOverlaps(out, allow)
   const ok = Object.entries(expect).every(([k, v]) => got[k] === v) && bad.length === 0
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}\n  ${show(out)}`)
-  if (!ok) {
-    console.log(`  expected ${JSON.stringify(expect)} got ${JSON.stringify(got)}`)
-    if (bad.length) console.log(`  OVERLAPS: ${bad.join(", ")}`)
-  }
-  return ok
+  const detail = ok
+    ? show(out)
+    : [
+        show(out),
+        `expected ${JSON.stringify(expect)} got ${JSON.stringify(got)}`,
+        ...(bad.length ? [`OVERLAPS: ${bad.join(", ")}`] : []),
+      ].join("\n  ")
+  return report(name, ok, detail)
 }
-
-let all = true
 
 // ---- the original six cases -----------------------------------------
 
 // 1. Rotate-style w/h swap: A was 4x2 at (0,0), rotated to 2x4; B sat at
 //    (0,2) 4x2 and is now overlapped.
-all &= check("rotate swap creates overlap", resolveOverlapsDown([
+check("rotate swap creates overlap", resolveOverlapsDown([
   { i: "A", x: 0, y: 0, w: 2, h: 4 },
   { i: "B", x: 0, y: 2, w: 4, h: 2 },
 ], ["A"]), { A: 0, B: 4 })
 
 // 2. Cascade through two items: A grows down onto B, B pushes C.
-all &= check("cascade through two items", resolveOverlapsDown([
+check("cascade through two items", resolveOverlapsDown([
   { i: "A", x: 0, y: 0, w: 2, h: 5 },
   { i: "B", x: 0, y: 2, w: 2, h: 2 },
   { i: "C", x: 1, y: 4, w: 2, h: 2 },
@@ -62,7 +71,7 @@ all &= check("cascade through two items", resolveOverlapsDown([
 
 // 3. Static in the path: the cascade is pushed PAST the anchor, and the
 //    anchor itself never moves.
-all &= check("static in the path", resolveOverlapsDown([
+check("static in the path", resolveOverlapsDown([
   { i: "A", x: 0, y: 0, w: 2, h: 4 },
   { i: "B", x: 0, y: 2, w: 2, h: 2 },
   { i: "S", x: 0, y: 5, w: 2, h: 2, static: true },
@@ -76,13 +85,12 @@ const src = [
 ]
 const out4 = resolveOverlapsDown(src, ["A"])
 const same = out4 === src
-all &= check("no-op when nothing overlaps", out4, { A: 0, B: 3, C: 0 })
-console.log(`${same ? "PASS" : "FAIL"} no-op returns the input array identity`)
-all &= same
+check("no-op when nothing overlaps", out4, { A: 0, B: 3, C: 0 })
+report("no-op returns the input array identity", same)
 
 // 5. Items beside/above the changed one are untouched; only the true
 //    collider moves, and never upward.
-all &= check("bystanders untouched, no upward settle", resolveOverlapsDown([
+check("bystanders untouched, no upward settle", resolveOverlapsDown([
   { i: "Above", x: 0, y: 0, w: 2, h: 2 },
   { i: "A", x: 0, y: 2, w: 4, h: 4 },
   { i: "Side", x: 6, y: 2, w: 2, h: 2 },
@@ -98,15 +106,14 @@ const out6 = resolveOverlapsDown([
   { i: "B", x: 1, y: 2, w: 2, h: 3 },
   { i: "A", x: 0, y: 0, w: 2, h: 4 },
 ], ["A", "B"])
-all &= check("two changed items collide: later one drops", out6, { A: 0, B: 4 })
+check("two changed items collide: later one drops", out6, { A: 0, B: 4 })
 const xKept = out6.every((l) => l.x === (l.i === "A" ? 0 : 1))
-console.log(`${xKept ? "PASS" : "FAIL"} changed items keep their x`)
-all &= xKept
+report("changed items keep their x", xKept)
 
 // The rotate-right-on-a-selection shape: two side-by-side 4x2 boxes turned
 // into 2x4, each landing on the pin below it, plus a mover the pair now
 // share. Deterministic and overlap-free whatever order the keys arrive in.
-all &= check("selection rotate: mutual + shared collider", resolveOverlapsDown([
+check("selection rotate: mutual + shared collider", resolveOverlapsDown([
   { i: "L", x: 0, y: 0, w: 2, h: 4 },
   { i: "R", x: 1, y: 3, w: 2, h: 4 },
   { i: "M", x: 0, y: 6, w: 4, h: 2 },
@@ -116,7 +123,7 @@ all &= check("selection rotate: mutual + shared collider", resolveOverlapsDown([
 
 // The static never moves; the CHANGED box drops past it, then its own new
 // collisions resolve normally.
-all &= check("changed grows onto a static", resolveOverlapsDown([
+check("changed grows onto a static", resolveOverlapsDown([
   { i: "A", x: 0, y: 0, w: 2, h: 4 },
   { i: "S", x: 0, y: 2, w: 2, h: 2, static: true },
   { i: "M", x: 0, y: 4, w: 2, h: 2 },
@@ -126,13 +133,13 @@ all &= check("changed grows onto a static", resolveOverlapsDown([
 
 // A verb on another pin may not move the crop window: it is a wall, so the
 // changed box goes past it instead.
-all &= check("changed grows onto the crop item", resolveOverlapsDown([
+check("changed grows onto the crop item", resolveOverlapsDown([
   { i: "A", x: 0, y: 0, w: 2, h: 4 },
   { i: "CROP", x: 0, y: 2, w: 2, h: 2 },
 ], ["A"], ["CROP"]), { A: 4, CROP: 2 })
 
 // ... and a cascade that reaches the crop window is pushed past it too.
-all &= check("cascade past the crop item", resolveOverlapsDown([
+check("cascade past the crop item", resolveOverlapsDown([
   { i: "A", x: 0, y: 0, w: 2, h: 4 },
   { i: "M", x: 0, y: 2, w: 2, h: 2 },
   { i: "CROP", x: 0, y: 4, w: 2, h: 2 },
@@ -140,7 +147,7 @@ all &= check("cascade past the crop item", resolveOverlapsDown([
 
 // Without the held key that same board moves the crop item — the wall is
 // what the crop session buys, not an accident of the geometry.
-all &= check("same board, crop item not held: it moves", resolveOverlapsDown([
+check("same board, crop item not held: it moves", resolveOverlapsDown([
   { i: "A", x: 0, y: 0, w: 2, h: 4 },
   { i: "M", x: 0, y: 2, w: 2, h: 2 },
   { i: "CROP", x: 0, y: 4, w: 2, h: 2 },
@@ -152,14 +159,14 @@ all &= check("same board, crop item not held: it moves", resolveOverlapsDown([
 // the pin whose crop session is open), so CROP is in changedKeys AND in
 // heldKeys. It must keep its position — held wins for x/y — while its grown
 // footprint still pushes the mover it landed on.
-all &= check("held AND changed: stays put, still pushes", resolveOverlapsDown([
+check("held AND changed: stays put, still pushes", resolveOverlapsDown([
   { i: "CROP", x: 0, y: 0, w: 2, h: 4 },
   { i: "M", x: 0, y: 2, w: 2, h: 2 },
 ], ["CROP"], ["CROP"]), { CROP: 0, M: 4 })
 
 // Control: the identical board with no crop session open. The held key is
 // what pins CROP's position, not the outcome — the mover drops either way.
-all &= check("same board with no crop session: same push", resolveOverlapsDown([
+check("same board with no crop session: same push", resolveOverlapsDown([
   { i: "CROP", x: 0, y: 0, w: 2, h: 4 },
   { i: "M", x: 0, y: 2, w: 2, h: 2 },
 ], ["CROP"]), { CROP: 0, M: 4 })
@@ -167,7 +174,7 @@ all &= check("same board with no crop session: same push", resolveOverlapsDown([
 // The static twin: a verb run on an anchored pin. Static wins for position
 // (the anchor does not move, even though the verb grew it), and the new
 // footprint is hot all the same.
-all &= check("static AND changed: stays put, still pushes", resolveOverlapsDown([
+check("static AND changed: stays put, still pushes", resolveOverlapsDown([
   { i: "A", x: 0, y: 0, w: 2, h: 4, static: true },
   { i: "M", x: 0, y: 2, w: 2, h: 2 },
 ], ["A"]), { A: 0, M: 4 })
@@ -182,20 +189,18 @@ const src10 = [
   { i: "A", x: 6, y: 0, w: 2, h: 2 },
 ]
 const out10 = resolveOverlapsDown(src10, ["A"])
-all &= check("pre-existing overlap between untouched movers survives",
+check("pre-existing overlap between untouched movers survives",
   out10, { U1: 0, U2: 2, A: 0 }, [["U1", "U2"]])
 const same10 = out10 === src10
-console.log(`${same10 ? "PASS" : "FAIL"} untouched pre-existing overlap returns the input array identity`)
-all &= same10
+report("untouched pre-existing overlap returns the input array identity", same10)
 
 // A pre-existing overlap the cascade DOES reach is separated like any
 // other collision: A pushes U1, U1 then clears U2.
-all &= check("pre-existing overlap inside the cascade is separated",
+check("pre-existing overlap inside the cascade is separated",
   resolveOverlapsDown([
     { i: "A", x: 0, y: 0, w: 2, h: 3 },
     { i: "U1", x: 0, y: 2, w: 2, h: 4 },
     { i: "U2", x: 0, y: 4, w: 2, h: 4 },
   ], ["A"]), { A: 0, U1: 3, U2: 7 })
 
-console.log(all ? "\nALL PASS" : "\nFAILURES")
-process.exit(all ? 0 : 1)
+finish()

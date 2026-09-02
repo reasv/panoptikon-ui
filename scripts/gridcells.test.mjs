@@ -14,11 +14,13 @@
 // React, next/image and nuqs, none of which resolve outside one. Exits
 // non-zero on failure.
 
+import { createChecker } from "./harness.mjs"
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
 const {
   EXTREME_ASPECT,
+  TIER_LADDER,
   TIER_SHORT_SIDE,
   TIER_SLACK,
   animatedCellMode,
@@ -51,12 +53,7 @@ const { togglePinRecords } = await import("../lib/pinboardPlace.ts")
 const { V1_GRID, V2_GRID } = await import("../lib/pinboardGrid.ts")
 const { cellTierForRow } = await import("../lib/cellPicture.ts")
 
-let all = true
-function check(name, ok, detail = "") {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? `\n  ${detail}` : ""}`)
-  all &&= !!ok
-  return ok
-}
+const { check, finish } = createChecker()
 
 console.log("\n== tier thresholds (§2) ==")
 {
@@ -71,10 +68,23 @@ console.log("\n== tier thresholds (§2) ==")
     xsMax === 288 && sMax === 576 && mMax === 1152,
     `${xsMax} / ${sMax} / ${mMax}`)
   // A POWER-OF-TWO series, which is what makes each rung halve the decoded
-  // megapixels of the one above it rather than shave a little off it.
+  // megapixels of the one above it rather than shave a little off it. Asserted
+  // over TIER_LADDER — the array `tierForCellWidth` actually walks — so a rung
+  // added to it is a rung this test covers.
   check("each rung is half the one above it",
-    TIER_SHORT_SIDE["grid-xs"] * 2 === TIER_SHORT_SIDE["grid-s"]
-      && TIER_SHORT_SIDE["grid-s"] * 2 === TIER_SHORT_SIDE["grid-m"])
+    TIER_LADDER.every((tier, i) =>
+      i === 0
+      || TIER_SHORT_SIDE[TIER_LADDER[i - 1]] * 2 === TIER_SHORT_SIDE[tier]),
+    TIER_LADDER.map((t) => TIER_SHORT_SIDE[t]).join(" / "))
+  // And the ladder IS the ladder: every grid tier the short-side table names is
+  // reachable, and nothing else is on it.
+  check("the ladder names every grid tier, smallest first",
+    TIER_LADDER.length === Object.keys(TIER_SHORT_SIDE).length
+      && TIER_LADDER.every((tier, i) =>
+        i === 0 || TIER_SHORT_SIDE[TIER_LADDER[i - 1]] < TIER_SHORT_SIDE[tier])
+      && TIER_LADDER.every((tier) =>
+        tierForCellWidth(TIER_SHORT_SIDE[tier] * TIER_SLACK, 1) === tier),
+    TIER_LADDER.join(", "))
   check("at DPR 1 a 288px cell is still grid-xs",
     tierForCellWidth(288, 1) === "grid-xs")
   check("at DPR 1 a 289px cell steps up to grid-s",
@@ -683,5 +693,4 @@ console.log("\n== the co-write snaps to whole rows (design §4's row invariant) 
     onV2.join(","))
 }
 
-console.log(all ? "\nALL PASS" : "\nFAILURES")
-process.exit(all ? 0 : 1)
+finish()

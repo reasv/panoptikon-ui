@@ -21,6 +21,7 @@
 // as an engine snapping to a frame boundary does). The park path is covered
 // under both.
 
+import { createChecker } from "./harness.mjs"
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 register("./react-hooks.mjs", import.meta.url)
@@ -28,12 +29,7 @@ register("./react-hooks.mjs", import.meta.url)
 const { render, reset } = await import("./fake-react.mjs")
 const { useVideoTrim } = await import("../lib/videoTrim.ts")
 
-let all = true
-function check(name, ok, detail = "") {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? `\n  ${detail}` : ""}`)
-  all &&= !!ok
-  return ok
-}
+const { check, finish } = createChecker()
 
 // ---- environment the hook reads off globals ---------------------------
 
@@ -624,5 +620,4 @@ function playTo(video, to, step = 0.21) {
   )
 }
 
-console.log(all ? "\nALL PASS" : "\nFAILURES")
-process.exit(all ? 0 : 1)
+finish()

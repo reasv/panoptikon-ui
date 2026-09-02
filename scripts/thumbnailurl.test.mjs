@@ -15,6 +15,7 @@
 // lib/thumbnailURL.ts imports nothing but lib/thumbnailTier.ts, which is pure,
 // which is what lets this execute the real builders rather than a copy of them.
 
+import { createChecker } from "./harness.mjs"
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
@@ -26,12 +27,7 @@ const {
 } = await import("../lib/thumbnailURL.ts")
 const { planCellPicture } = await import("../lib/cellPicture.ts")
 
-let all = true
-function check(name, ok, detail = "") {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? `\n  ${detail}` : ""}`)
-  all &&= !!ok
-  return ok
-}
+const { check, finish } = createChecker()
 
 const dbs = { index_db: "stdtest", user_data_db: null }
 const noDbs = { index_db: null, user_data_db: null }
@@ -271,5 +267,4 @@ console.log("\n== the card's picture plan (lib/cellPicture.ts) ==")
       === thumbnailMediaURL(dbs, "abc", "display"))
 }
 
-console.log(all ? "\nALL PASS" : "\nFAILURES")
-process.exit(all ? 0 : 1)
+finish()

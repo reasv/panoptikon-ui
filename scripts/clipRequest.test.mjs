@@ -10,6 +10,7 @@
 // The module imports fetchClient and the toast store (values, at module
 // scope) — that is why the resolver hook below also maps the "@/" alias.
 
+import { createChecker } from "./harness.mjs"
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
@@ -28,12 +29,7 @@ const {
 const { FREEZE_EPS } = await import("../lib/videoTrim.ts")
 const { PLAYBACK_PRESET, transcodeKey } = await import("../lib/videoTranscode.ts")
 
-let all = true
-function check(name, ok, detail = "") {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? `\n  ${detail}` : ""}`)
-  all &&= !!ok
-  return ok
-}
+const { check, finish } = createChecker()
 const shape = (value) => JSON.stringify(value)
 
 // ---- clipRequestFor: the six-case table --------------------------------
@@ -500,4 +496,4 @@ check(
   shape(cleared)
 )
 
-process.exit(all ? 0 : 1)
+finish()

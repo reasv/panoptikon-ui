@@ -152,10 +152,18 @@ export function cellBoxBindingEdge(
   cellWidth: number,
   boxHeightPx: number | undefined
 ): number {
-  if (!Number.isFinite(cellWidth) || cellWidth <= 0) return cellWidth
-  if (boxHeightPx === undefined) return cellWidth
-  if (!Number.isFinite(boxHeightPx) || boxHeightPx <= 0) return cellWidth
+  if (!usableLength(cellWidth)) return cellWidth
+  if (!usableLength(boxHeightPx)) return cellWidth
   return Math.max(cellWidth, boxHeightPx)
+}
+
+/**
+ * A length this arithmetic can use: a positive finite number. Absent, zero,
+ * negative and NaN all mean "nothing measured" — which is the ONE guard both
+ * binding-edge functions are written against, so it is spelled once.
+ */
+function usableLength(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
 }
 
 /**
@@ -205,13 +213,19 @@ export function coverBindingEdge(
   imgW: number | null | undefined,
   imgH: number | null | undefined
 ): number {
-  const worstCase = cellBoxBindingEdge(boxW, boxH)
-  if (!Number.isFinite(boxW) || boxW <= 0) return worstCase
-  if (boxH === undefined || !Number.isFinite(boxH) || boxH <= 0) return worstCase
-  if (!imgW || !imgH) return worstCase
-  if (!Number.isFinite(imgW) || !Number.isFinite(imgH)) return worstCase
-  if (imgW <= 0 || imgH <= 0) return worstCase
-  return imgW * boxH >= imgH * boxW ? boxH : boxW
+  // A USABLE BOX AND A USABLE PICTURE: pick the edge this picture's short side
+  // actually has to cover. Anything less than that — an unmeasured box, a
+  // pre-backfill row with no dimensions, a non-image — is the WORST CASE, which
+  // is the answer this call site gave before the picture was consulted at all.
+  if (
+    usableLength(boxW) &&
+    usableLength(boxH) &&
+    usableLength(imgW) &&
+    usableLength(imgH)
+  ) {
+    return imgW * boxH >= imgH * boxW ? boxH : boxW
+  }
+  return cellBoxBindingEdge(boxW, boxH)
 }
 
 export function clampCellWidth(value: number): number {

@@ -7,6 +7,7 @@
 // (the flag is what lets a .mjs import the .ts module; Node 22+). Exits
 // non-zero on the first failing assertion set.
 
+import { createChecker } from "./harness.mjs"
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
@@ -18,12 +19,7 @@ const {
 } = await import("../lib/pinboardPack.ts")
 const { V2_GRID, rowStep } = await import("../lib/pinboardGrid.ts")
 
-let all = true
-function check(name, ok, detail = "") {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? `\n  ${detail}` : ""}`)
-  all &&= !!ok
-  return ok
-}
+const { check, finish } = createChecker()
 
 const G = V2_GRID // 108 cols, rowHeight 5, margin 5, padding 5
 const COL_W = 12 // one column's pixel width on a ~1850px board
@@ -334,5 +330,4 @@ const cellAspectOf = (cols, rows, total = TOTAL) =>
   )
 }
 
-console.log(all ? "\nALL PASS" : "\nFAILURES")
-process.exit(all ? 0 : 1)
+finish()

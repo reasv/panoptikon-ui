@@ -38,6 +38,19 @@ export const TIER_SHORT_SIDE = {
 } as const
 
 /**
+ * THE GRID TIERS IN ORDER, smallest first — the sequence `tierForCellWidth`
+ * walks, and the thing the halving property is a property OF.
+ *
+ * An array rather than a chain of `if`s because the ladder's shape is the
+ * claim: each rung is exactly half the one above it, so each halves the decoded
+ * megapixels of the one above it, and a rung added out of order (or not a power
+ * of two) would break that silently. Written once here, asserted over in
+ * scripts/gridcells.test.mjs, and walked below — so there is no second place to
+ * forget.
+ */
+export const TIER_LADDER = ["grid-xs", "grid-s", "grid-m"] as const
+
+/**
  * How much smaller than the box a tier may be before the next one up is
  * requested. 1.125 buys one tier's worth of headroom against the exact
  * threshold — a 580px cell at DPR 1 is served the 512 rendition and upscaled
@@ -61,9 +74,9 @@ export function tierForCellWidth(cssWidth: number, dpr: number): ThumbnailTier {
   if (!Number.isFinite(cssWidth) || cssWidth <= 0) return "display"
   const scale = Number.isFinite(dpr) && dpr > 0 ? dpr : 1
   const needed = cssWidth * scale
-  if (needed <= TIER_SHORT_SIDE["grid-xs"] * TIER_SLACK) return "grid-xs"
-  if (needed <= TIER_SHORT_SIDE["grid-s"] * TIER_SLACK) return "grid-s"
-  if (needed <= TIER_SHORT_SIDE["grid-m"] * TIER_SLACK) return "grid-m"
+  for (const tier of TIER_LADDER) {
+    if (needed <= TIER_SHORT_SIDE[tier] * TIER_SLACK) return tier
+  }
   return "display"
 }
 

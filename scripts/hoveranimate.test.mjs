@@ -14,6 +14,7 @@
 // only from inside the director's, so importing either starts nothing. Exits
 // non-zero on failure.
 
+import { createChecker } from "./harness.mjs"
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
@@ -43,11 +44,7 @@ const { SMALL_CELL_THRESHOLD_PX, isSmallCell } = await import(
 )
 
 
-let all = true
-function check(name, ok, detail = "") {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? `\n  ${detail}` : ""}`)
-  all &&= !!ok
-}
+const { check, finish } = createChecker()
 
 const settings = (pref = {}, reduceMotion = false) => ({ pref, reduceMotion })
 
@@ -376,7 +373,7 @@ console.log("\n== the arming machine: leaving clears everything ==")
 
 console.log("\n== the badge predicate matrix (D8) ==")
 {
-  const floor = { maxFileSize: 1_000_000, maxSide: 512 }
+  const floor = { maxFileSize: 1048576, maxSide: 512 }
   const gif = (over) => ({
     type: "image/gif",
     duration: 2,
@@ -425,5 +422,4 @@ console.log("\n== the badge predicate matrix (D8) ==")
   )
 }
 
-console.log(all ? "\nALL PASS" : "\nFAILURES")
-process.exit(all ? 0 : 1)
+finish()

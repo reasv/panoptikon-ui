@@ -10,6 +10,7 @@
 // videoTrim imports its sibling extensionless, which node's resolver
 // rejects; ts-hooks fills that in. register() has to run before the modules
 // load, hence the dynamic imports.
+import { createChecker } from "./harness.mjs"
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
@@ -22,12 +23,7 @@ const {
 } = await import("../lib/videoTrim.ts")
 const { isEmptyTrim } = await import("../lib/pinboardCrop.ts")
 
-let all = true
-function check(name, ok, detail = "") {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? `\n  ${detail}` : ""}`)
-  all &&= !!ok
-  return ok
-}
+const { check, finish } = createChecker()
 const shape = (trim) => JSON.stringify(trim && { start: trim.start, end: trim.end })
 
 // ---- cut point: fallback path (no durations known) --------------------
@@ -491,5 +487,4 @@ check(
     outroSkipGoverns(null, CUT, true)
 )
 
-console.log(all ? "\nALL PASS" : "\nFAILURES")
-process.exit(all ? 0 : 1)
+finish()

@@ -12,6 +12,7 @@
 // capture-phase listeners, `apply`) touches the document only from inside
 // functions, so importing it here starts nothing. Exits non-zero on failure.
 
+import { createChecker } from "./harness.mjs"
 import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
@@ -20,11 +21,7 @@ const { ANIMATED_PLAYBACK, planPlayback } = await import(
 )
 const { VISIBLE_RATIO, MAX_PLAYING } = ANIMATED_PLAYBACK
 
-let all = true
-function check(name, ok, detail = "") {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? `\n  ${detail}` : ""}`)
-  all &&= !!ok
-}
+const { check, finish } = createChecker()
 
 // A cell, with the defaults a freshly registered one carries.
 const cell = ({ ratio = 1, playing = false, userPaused = false } = {}) =>
@@ -242,5 +239,4 @@ const playingCount = (states, fastScroll = false) =>
     planPlayback([cell(), cell({ ratio: 0 })], false).length === 2)
 }
 
-console.log(all ? "\nALL PASS" : "\nFAILURES")
-process.exit(all ? 0 : 1)
+finish()
