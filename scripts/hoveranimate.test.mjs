@@ -26,7 +26,7 @@ const {
   withAnimateSlot,
 } = await import("../lib/state/animatePref.ts")
 const {
-  ANIMATED_PLAYBACK,
+  HOVER_MOVE_WINDOW_MS,
   canArmHover,
   hoverEnter,
   hoverFired,
@@ -34,7 +34,7 @@ const {
   hoverMove,
   hoverScroll,
   newHoverArming,
-} = await import("../lib/state/animatedPlayback.ts")
+} = await import("../lib/state/hoverArming.ts")
 const { animatedCellMode, showsMotionBadge } = await import(
   "../lib/thumbnailTier.ts"
 )
@@ -42,7 +42,6 @@ const { SMALL_CELL_THRESHOLD_PX, isSmallCell } = await import(
   "../lib/gridCellSize.ts"
 )
 
-const { HOVER_MOVE_WINDOW_MS } = ANIMATED_PLAYBACK
 
 let all = true
 function check(name, ok, detail = "") {
@@ -207,29 +206,35 @@ console.log("\n== the hover arming rule (D6) ==")
 // The rule above answers one question at one instant; these drive whole
 // gestures through the machine that asks it. The roots are strings because the
 // machine only ever compares them by identity — the app's are Elements.
-console.log("\n== the arming machine: the entering movement (F1a) ==")
+console.log("\n== the arming machine: the entering movement ==")
 {
+  // Every step ANSWERS IN COMMANDS — `null` for "nothing to do", which is what
+  // the overwhelming majority of pointer moves are. The assertions below read
+  // the returned value; the state object is inspected only for the two slots
+  // (`armed`, `pending`) that outlive a step.
+  const NOTHING = (cmd) => cmd === null
+
   // The very first sample has nothing to compare against, so it seeds the
   // position and nothing more. Reading it as a move would arm on the first
   // event a page delivers, which under a resting cursor is one nobody caused.
   const s = newHoverArming()
-  hoverMove(s, 10, 10, 1000, false, false)
   check("the first pointer sample seeds a position, it is not a move",
-    s.movedAt === 0)
-  hoverEnter(s, "A", 10, 10, 1001, false)
+    NOTHING(hoverMove(s, 10, 10, 1000, false, false)) && s.movedAt === 0)
+  const entry = hoverEnter(s, "A", 10, 10, 1001, false)
   check("so an entry at that same position cannot arm on it",
-    s.armed === null && s.starting === null && s.pending === "A")
+    NOTHING(entry) && s.armed === null && s.pending === "A")
 }
 {
-  // THE DEFECT: the pointer rested well past the window, then crossed in. The
-  // entry's own coordinates are new, so the entry IS the move.
+  // THE ENTERING-MOVE FIX: the pointer rested well past the window, then
+  // crossed in. The entry's own coordinates are new, so the entry IS the move.
   const s = newHoverArming()
   hoverMove(s, 10, 10, 1000, false, false)
   hoverMove(s, 12, 12, 1010, false, false)
-  hoverEnter(s, "A", 40, 40, 2000, false)
+  const cmd = hoverEnter(s, "A", 40, 40, 2000, false)
   check("an entry whose coordinates are new arms, however stale the last move",
-    s.starting === "A" && s.armed === "A" && s.pending === null,
-    `starting=${s.starting} armed=${s.armed}`)
+    cmd?.start === "A" && cmd.stop === null
+      && s.armed === "A" && s.pending === null,
+    JSON.stringify(cmd))
 }
 {
   // D6 UNCHANGED: Chromium re-dispatches an enter when content scrolls under a
@@ -238,14 +243,13 @@ console.log("\n== the arming machine: the entering movement (F1a) ==")
   const s = newHoverArming()
   hoverMove(s, 10, 10, 1000, false, false)
   hoverMove(s, 12, 12, 1010, false, false)
-  hoverEnter(s, "A", 12, 12, 1010 + HOVER_MOVE_WINDOW_MS + 1, false)
+  const cmd = hoverEnter(s, "A", 12, 12, 1010 + HOVER_MOVE_WINDOW_MS + 1, false)
   check("an entry at the last move's own coordinates does not arm",
-    s.starting === null && s.armed === null,
-    `starting=${s.starting}`)
+    cmd === null && s.armed === null, JSON.stringify(cmd))
   check("but it IS remembered as the candidate", s.pending === "A")
 }
 
-console.log("\n== the arming machine: the retry inside the cell (F1b) ==")
+console.log("\n== the arming machine: the pending-candidate retry ==")
 {
   const s = newHoverArming()
   hoverMove(s, 10, 10, 1000, false, false)
@@ -254,12 +258,22 @@ console.log("\n== the arming machine: the retry inside the cell (F1b) ==")
   check("a refused entry leaves a candidate", s.pending === "A" && s.armed === null)
   // Moving inside a cell fires no second `pointerenter`, which is why the
   // director's own move handler has to be the thing that retries.
-  hoverMove(s, 20, 20, 1500, false, false)
   check("a real move OUTSIDE the candidate arms nothing",
-    s.starting === null && s.armed === null && s.pending === "A")
-  hoverMove(s, 22, 22, 1520, false, true)
+    hoverMove(s, 20, 20, 1500, false, false) === null
+      && s.armed === null && s.pending === "A")
+  const cmd = hoverMove(s, 22, 22, 1520, false, true)
   check("a real move INSIDE the candidate arms it",
-    s.starting === "A" && s.armed === "A" && s.pending === null)
+    cmd?.start === "A" && s.armed === "A" && s.pending === null)
+}
+{
+  // A move that changes nothing is the common case and must allocate nothing.
+  const s = newHoverArming()
+  hoverMove(s, 10, 10, 1000, false, false)
+  hoverMove(s, 12, 12, 1010, false, false)
+  hoverEnter(s, "A", 12, 12, 1400, false)
+  check("a repeated position answers null without touching the candidate",
+    hoverMove(s, 12, 12, 1600, false, true) === null
+      && s.pending === "A" && s.movedAt === 1010)
 }
 {
   // The second half of D6 is untouched by the retry: a move during a fast
@@ -268,12 +282,11 @@ console.log("\n== the arming machine: the retry inside the cell (F1b) ==")
   hoverMove(s, 10, 10, 1000, false, false)
   hoverMove(s, 12, 12, 1010, false, false)
   hoverEnter(s, "A", 12, 12, 1400, false)
-  hoverMove(s, 22, 22, 1500, true, true)
   check("a move inside the candidate during a fast scroll does not arm",
-    s.starting === null && s.armed === null && s.pending === "A")
-  hoverMove(s, 24, 24, 1520, false, true)
+    hoverMove(s, 22, 22, 1500, true, true) === null
+      && s.armed === null && s.pending === "A")
   check("and the candidate arms on the next move once the scroll has settled",
-    s.starting === "A" && s.armed === "A")
+    hoverMove(s, 24, 24, 1520, false, true)?.start === "A" && s.armed === "A")
 }
 {
   // The second route: a fast scroll releases a PLAYING cell the pointer never
@@ -284,13 +297,19 @@ console.log("\n== the arming machine: the retry inside the cell (F1b) ==")
   hoverEnter(s, "A", 40, 40, 1020, false)
   hoverFired(s, "A")
   check("the dwell's fire is recorded", s.armed === "A" && s.fired === true)
-  hoverScroll(s, true)
+  const cmd = hoverScroll(s, true)
   check("a suspend stops the playing cell and remembers it",
-    s.dropped === "A" && s.droppedFired === true
-      && s.armed === null && s.pending === "A")
-  hoverMove(s, 41, 41, 1500, false, true)
+    cmd?.stop === "A" && cmd.start === null && cmd.cancelDwell === true
+      && s.armed === null && s.pending === "A",
+    JSON.stringify(cmd))
   check("a real move inside the released cell arms it again",
-    s.starting === "A" && s.armed === "A")
+    hoverMove(s, 41, 41, 1500, false, true)?.start === "A" && s.armed === "A")
+}
+{
+  // A scroll with nothing armed is not an event at all.
+  const s = newHoverArming()
+  check("a scroll with an empty slot answers nothing",
+    hoverScroll(s, true) === null && hoverScroll(s, false) === null)
 }
 {
   // NOTHING RE-ARMS ON A SCROLL SETTLING. The machine has no settle input at
@@ -302,32 +321,41 @@ console.log("\n== the arming machine: the retry inside the cell (F1b) ==")
   hoverEnter(s, "A", 40, 40, 1020, false)
   hoverFired(s, "A")
   hoverScroll(s, true)
-  hoverMove(s, 40, 40, 2000, false, true)
   check("a released cell with no real move stays released",
-    s.starting === null && s.armed === null && s.pending === "A")
+    hoverMove(s, 40, 40, 2000, false, true) === null
+      && s.armed === null && s.pending === "A")
 }
 
-console.log("\n== the arming machine: leaving clears everything (F1b) ==")
+console.log("\n== the arming machine: leaving clears everything ==")
 {
   const s = newHoverArming()
   hoverMove(s, 10, 10, 1000, false, false)
   hoverMove(s, 12, 12, 1010, false, false)
   hoverEnter(s, "A", 40, 40, 1020, false)
-  hoverLeave(s, "A")
+  const cmd = hoverLeave(s, "A")
   check("leaving an armed cell drops it, un-fired so nothing to stop",
-    s.armed === null && s.pending === null
-      && s.dropped === "A" && s.droppedFired === false)
+    cmd?.cancelDwell === true && cmd.stop === null && cmd.start === null
+      && s.armed === null && s.pending === null,
+    JSON.stringify(cmd))
 }
 {
   const s = newHoverArming()
   hoverMove(s, 10, 10, 1000, false, false)
   hoverMove(s, 12, 12, 1010, false, false)
   hoverEnter(s, "A", 12, 12, 1400, false)
-  hoverLeave(s, "A")
-  check("leaving clears a candidate that never armed", s.pending === null)
-  hoverMove(s, 30, 30, 1500, false, true)
+  check("leaving clears a candidate that never armed, and says nothing to do",
+    hoverLeave(s, "A") === null && s.pending === null)
   check("so no later move can arm it",
-    s.starting === null && s.armed === null)
+    hoverMove(s, 30, 30, 1500, false, true) === null && s.armed === null)
+}
+{
+  // Leaving a cell that holds neither slot is somebody else's event.
+  const s = newHoverArming()
+  hoverMove(s, 10, 10, 1000, false, false)
+  hoverMove(s, 12, 12, 1010, false, false)
+  hoverEnter(s, "A", 40, 40, 1020, false)
+  check("leaving an unrelated root leaves the armed cell alone",
+    hoverLeave(s, "B") === null && s.armed === "A")
 }
 {
   // The single slot (D7), and the one no-op the browser makes necessary.
@@ -336,13 +364,14 @@ console.log("\n== the arming machine: leaving clears everything (F1b) ==")
   hoverMove(s, 12, 12, 1010, false, false)
   hoverEnter(s, "A", 40, 40, 1020, false)
   hoverFired(s, "A")
-  hoverEnter(s, "A", 41, 41, 1030, false)
   check("re-entering the armed cell keeps its arm rather than restarting it",
-    s.armed === "A" && s.fired === true && s.starting === null && s.dropped === null)
-  hoverEnter(s, "B", 90, 90, 1040, false)
+    hoverEnter(s, "A", 41, 41, 1030, false) === null
+      && s.armed === "A" && s.fired === true)
+  const cmd = hoverEnter(s, "B", 90, 90, 1040, false)
   check("entering another cell takes the slot and stops the first",
-    s.dropped === "A" && s.droppedFired === true
-      && s.armed === "B" && s.starting === "B")
+    cmd?.stop === "A" && cmd.start === "B" && cmd.cancelDwell === true
+      && s.armed === "B",
+    JSON.stringify(cmd))
 }
 
 console.log("\n== the badge predicate matrix (D8) ==")
