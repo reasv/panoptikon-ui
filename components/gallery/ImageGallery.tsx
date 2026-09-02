@@ -44,7 +44,7 @@ import { GALLERY_SURFACE_FLOOR, NativeControlsEscape, playerSizeForWidth, useVid
 import { effectiveVideoTrim, outroCutPoint, outroProbeEligible, outroSkipGoverns, trimWithBound, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
 import { clipRequestFor } from '@/lib/videoClip'
 import { useVideoEndProbe } from '@/lib/videoEndProbe'
-import { noteVideoPlaybackError, shouldDowngradeOnError, useVideoPlayability, videoPlayability } from '@/lib/videoPlayability'
+import { isUnsupportedSourceError, noteVideoPlaybackError, shouldDowngradeOnError, useVideoPlayability, videoPlayability } from '@/lib/videoPlayability'
 import { useVideoPlayback } from '@/lib/videoTranscode'
 import { useDisplayLoopTrigger, useVideoTranscodeEnabled } from '@/lib/useClientConfig'
 import { isEmptyTrim, TrimRange } from '@/lib/pinboardCrop'
@@ -1397,18 +1397,26 @@ const NAV_MIN = 96
 // play/pause strip of at least 40% of the video always survives.
 const NAV_ENCROACH_MAX = 0.3
 
-// Ref for the display loop's <video>: it does nothing on attach and PAUSES on
-// detach (a React 19 ref cleanup), so a navigation that removes the element
-// stops its playback and its fetch at exactly that moment rather than whenever
-// a detached media element happens to be collected.
+// Ref for the display loop's <video>: it does nothing on attach and TEARS THE
+// ELEMENT DOWN on detach (a React 19 ref cleanup), so a navigation that removes
+// it stops both its playback and its fetch at exactly that moment rather than
+// whenever a detached media element happens to be collected.
 //
-// AT MODULE SCOPE ON PURPOSE. An inline ref callback is a new function every
-// render, and React detaches and re-attaches on each one — which here means
-// pausing the loop on every unrelated re-render of the gallery. (That trap is
-// already written up at `attachVideo` below for the player's element, which
-// solves it with a useCallback because it closes over per-item state; this one
-// closes over nothing, so the fix is simply not to create it per render.)
-const pauseVideoOnDetach = (el: HTMLVideoElement | null) => () => el?.pause()
+// `pause()` ALONE IS NOT ENOUGH, and the earlier version of this comment
+// claimed otherwise. Pausing stops playback and nothing else: the resource
+// selection algorithm goes on buffering the rest of the loop into a detached
+// element, which in an arrow-keyed gallery is a trail of multi-megabyte
+// downloads for pictures nobody is looking at any more. Clearing `src` and
+// calling `load()` is what the spec defines as aborting: it runs the media
+// load algorithm on an empty source, which fires `emptied`, drops the current
+// resource and cancels the fetch. Both, in that order, because `load()` on its
+// own resets a still-set `src` and starts fetching again.
+const pauseVideoOnDetach = (el: HTMLVideoElement | null) => () => {
+    if (!el) return
+    el.pause()
+    el.removeAttribute("src")
+    el.load()
+}
 
 // The picture a contain fit paints inside `box`, as CSS offsets against that
 // box. Null while the aspect or the box is still unknown — callers then fall
@@ -1561,17 +1569,40 @@ export function GalleryImageLarge(
     // `still=true` is not involved: this surface WANTS the motion, and the
     // still URL is only ever the poster below.
     const displayLoopTrigger = useDisplayLoopTrigger()
-    // The one-way fallback for the case no client-side test can predict: the
-    // keep-the-original SENTINEL. An item over the bounds whose H.264 encode
-    // came out no smaller than its source is served its own image bytes
-    // FOREVER (§R2), and a client cannot tell that apart from a loop in
-    // advance. Keyed by sha, like `mediaAspect` below, so it resets on
-    // navigation rather than latching the fallback across items — the same
-    // reason that state is keyed.
-    const [loopFailed, setLoopFailed] = useState<string | null>(null)
+    // The still poster of the same rendition: the display size with
+    // `still=true`, which the endpoint guarantees answers an IMAGE — a poster,
+    // or the original for a sentinel or under-bound item — never video and
+    // never a 404 (§5). Both the `<video>`'s `poster` and one of the two
+    // fallbacks below.
+    const stillURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256, displaySize, true)
+    // THE FALLBACK WHEN THE ELEMENT SAYS THE LOOP IS NOT THERE, and WHICH
+    // picture stands in depends on WHY — which is the whole of this state.
+    //
+    //   - MEDIA_ERR_SRC_NOT_SUPPORTED: nothing video-shaped was delivered,
+    //     which at this URL means the keep-the-original SENTINEL — an item
+    //     over the bounds whose H.264 encode came out no smaller than its
+    //     source is served its own image bytes forever (§R2), immutable, and
+    //     no client-side test can predict it. The response IS a picture, so
+    //     the fallback is the SAME URL in an `<img>`: no second request, and
+    //     the bytes the browser already holds.
+    //   - anything else (aborted, network, decode): the URL may well be a
+    //     perfectly good loop this particular load did not get. Re-rendering
+    //     it as an `<img>` would then paint a broken picture over an item
+    //     that is fine, so the fallback is `still=true` — a URL that CANNOT
+    //     answer video, the same construction LoopVideo's poster uses.
+    //
+    // ONE SLOT KEYED BY SHA, exactly like `mediaAspect` below. Within a visit
+    // it holds, because an element that has errored must not be re-mounted on
+    // the next render into the same error; across a navigation it does not,
+    // so a transient failure retries the loop the next time the item is opened
+    // while the sentinel case simply re-derives the same answer. Nothing here
+    // is remembered per sha for the session — that is `videoPlayability`'s
+    // job, for a different question about a different URL.
+    const [loopFallback, setLoopFallback] = useState<{ sha: string; src: string } | null>(null)
+    const loopFallbackSrc = loopFallback?.sha === item.sha256 ? loopFallback.src : null
     const showDisplayLoop =
         exceedsDisplayLoopTrigger(item, displayLoopTrigger)
-        && loopFailed !== item.sha256
+        && loopFallbackSrc === null
 
     const searchLoading = useSearchLoading(state => state.loading)
 
@@ -2378,8 +2409,7 @@ export function GalleryImageLarge(
                                 // still arriving. Same size argument as the loop
                                 // — an extreme-aspect item must name `display`
                                 // on both or the poster would be a crop.
-                                poster={getFileURL(dbs, "thumbnail", "sha256",
-                                    item.sha256, displaySize, true)}
+                                poster={stillURL}
                                 // AUTOPLAY, unlike the grid's LoopVideo: there is
                                 // no playback director here and nothing to
                                 // schedule. The gallery shows ONE item, the user
@@ -2402,18 +2432,27 @@ export function GalleryImageLarge(
                                 onDragStart={handleDragStart}
                                 // Belt to the key's braces. React removes the
                                 // element on navigation, but a detached media
-                                // element is not guaranteed to stop fetching or
-                                // decoding before it is collected, and the gallery
-                                // is arrow-keyed — a fast sweep would leave a
-                                // trail of them. A ref CLEANUP (React 19) runs at
-                                // exactly the moment the element leaves. Module
-                                // scope, and read why before inlining it.
+                                // element goes on fetching until it is collected,
+                                // and the gallery is arrow-keyed — a fast sweep
+                                // would leave a trail of them downloading. A ref
+                                // CLEANUP (React 19) runs at exactly the moment
+                                // the element leaves, and it ABORTS rather than
+                                // merely pausing. Module scope, and read why
+                                // before inlining it.
                                 ref={pauseVideoOnDetach}
-                                // The keep-the-original sentinel, and the only
-                                // way to detect it: the response was image bytes,
-                                // so fall back to the <img> for this item. Latched
-                                // one-way per sha, so it cannot loop.
-                                onError={() => setLoopFailed(item.sha256)}
+                                // The element is the only thing that can tell us
+                                // this URL is not a loop after all, and WHICH
+                                // picture stands in depends on the error code —
+                                // see `loopFallback`, where both cases are spelled
+                                // out. Assigning a src makes this idempotent: the
+                                // fallback renders an <img> instead of this
+                                // element, so the handler cannot fire twice.
+                                onError={(e) => setLoopFallback({
+                                    sha: item.sha256,
+                                    src: isUnsupportedSourceError(e.currentTarget.error)
+                                        ? thumbnailURL
+                                        : stillURL,
+                                })}
                                 // What next/image's `fill` writes as inline
                                 // style, plus the `<img>`'s own object-fit: the
                                 // two elements must occupy the same box.
@@ -2431,7 +2470,12 @@ export function GalleryImageLarge(
                             />
                             :
                             <Image
-                                src={thumbnailURL}
+                                // The thumbnail URL for every item that was
+                                // never a loop, and the loop's own fallback
+                                // when one turned out not to be — the same URL
+                                // for the sentinel, `still=true` for a load
+                                // that merely failed (see `loopFallback`).
+                                src={loopFallbackSrc ?? thumbnailURL}
                                 alt={`${item.path}`}
                                 draggable={true}
                                 onDragStart={handleDragStart}
