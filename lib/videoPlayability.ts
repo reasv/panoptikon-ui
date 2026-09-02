@@ -289,34 +289,6 @@ export function shouldDowngradeOnError(
   }
 }
 
-/**
- * Did the element decide there is NO USABLE SOURCE here at all — as opposed to
- * a source it started on and then lost?
- *
- * A DIFFERENT QUESTION FROM `shouldDowngradeOnError` ABOVE, and the two are
- * near-complements rather than variants: that one asks "is this evidence about
- * the CODEC" and answers yes only for a decode failure; this one asks "was
- * anything video-shaped delivered", which is the question a surface asks when
- * it has a PICTURE to fall back to.
- *
- * `MEDIA_ERR_SRC_NOT_SUPPORTED` is the resource-selection algorithm giving up:
- * the response was not media this element can play, which for a thumbnail URL
- * is overwhelmingly "the server answered image bytes" — the keep-the-original
- * sentinel (docs/thumbnail-format-implementation.md R2), a permanent state
- * served immutable. A caller may therefore render the SAME URL in an `<img>`
- * and expect a picture. `shouldDowngradeOnError`'s own doc explains why that
- * code is useless for the codec question — it also covers "could not be
- * fetched at all" — and that ambiguity is harmless here: a URL that 404s
- * shows a broken picture either way, while every other error (ABORTED,
- * NETWORK, DECODE) means bytes may well have been video, so the caller must
- * fall back to a URL that CANNOT be one instead.
- */
-export function isUnsupportedSourceError(
-  error: { code: number } | null | undefined
-): boolean {
-  return error?.code === MEDIA_ERR_SRC_NOT_SUPPORTED
-}
-
 /** Wire this to the mounted element's `error` event on a `playable` verdict. */
 export function noteVideoPlaybackError(sha256: string | null | undefined) {
   if (!sha256 || downgradedShas.has(sha256)) return

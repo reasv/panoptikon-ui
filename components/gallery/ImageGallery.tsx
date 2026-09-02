@@ -44,7 +44,7 @@ import { GALLERY_SURFACE_FLOOR, NativeControlsEscape, playerSizeForWidth, useVid
 import { effectiveVideoTrim, outroCutPoint, outroProbeEligible, outroSkipGoverns, trimWithBound, useVideoDuration, useVideoTrim } from '@/lib/videoTrim'
 import { clipRequestFor } from '@/lib/videoClip'
 import { useVideoEndProbe } from '@/lib/videoEndProbe'
-import { isUnsupportedSourceError, noteVideoPlaybackError, shouldDowngradeOnError, useVideoPlayability, videoPlayability } from '@/lib/videoPlayability'
+import { noteVideoPlaybackError, shouldDowngradeOnError, useVideoPlayability, videoPlayability } from '@/lib/videoPlayability'
 import { useVideoPlayback } from '@/lib/videoTranscode'
 import { useDisplayLoopTrigger, useVideoTranscodeEnabled } from '@/lib/useClientConfig'
 import { isEmptyTrim, TrimRange } from '@/lib/pinboardCrop'
@@ -1575,21 +1575,26 @@ export function GalleryImageLarge(
     // never a 404 (§5). Both the `<video>`'s `poster` and one of the two
     // fallbacks below.
     const stillURL = getFileURL(dbs, "thumbnail", "sha256", item.sha256, displaySize, true)
-    // THE FALLBACK WHEN THE ELEMENT SAYS THE LOOP IS NOT THERE, and WHICH
-    // picture stands in depends on WHY — which is the whole of this state.
+    // THE FALLBACK WHEN THE ELEMENT SAYS THE LOOP IS NOT THERE: the STILL URL,
+    // on ANY error, with no reading of the error code at all.
     //
-    //   - MEDIA_ERR_SRC_NOT_SUPPORTED: nothing video-shaped was delivered,
-    //     which at this URL means the keep-the-original SENTINEL — an item
-    //     over the bounds whose H.264 encode came out no smaller than its
-    //     source is served its own image bytes forever (§R2), immutable, and
-    //     no client-side test can predict it. The response IS a picture, so
-    //     the fallback is the SAME URL in an `<img>`: no second request, and
-    //     the bytes the browser already holds.
-    //   - anything else (aborted, network, decode): the URL may well be a
-    //     perfectly good loop this particular load did not get. Re-rendering
-    //     it as an `<img>` would then paint a broken picture over an item
-    //     that is fine, so the fallback is `still=true` — a URL that CANNOT
-    //     answer video, the same construction LoopVideo's poster uses.
+    // `still=true` at the display size is the one request the endpoint
+    // guarantees answers a picture (§5): the poster for a stored loop, and for
+    // the keep-the-original SENTINEL — an item over the bounds whose H.264
+    // encode came out no smaller than its source — the ORIGINAL FILE, which is
+    // an animated GIF or WebP and moves natively in an `<img>`. So the
+    // sentinel, the case that made the code split look worthwhile, is served
+    // exactly the picture it should be by this branch too. This is
+    // components/LoopVideo.tsx's idiom, unchanged: a loop that is not there
+    // falls back to the still of itself.
+    //
+    // THE SPLIT IT REPLACES read MEDIA_ERR_SRC_NOT_SUPPORTED as "the sentinel,
+    // so re-render the SAME URL as an <img>" — which bought one saved request
+    // in that case and BROKE on a Chromium build with no H.264 decoder, where
+    // code 4 also covers "this is not media I can play" and "the fetch failed"
+    // (see `shouldDowngradeOnError`, which refuses that code for the same
+    // ambiguity). Those users got the mp4's bytes handed to an `<img>`: a
+    // broken picture where the poster was one request away.
     //
     // ONE SLOT, HOLDING ONE SHA, and CLEARED WHENEVER THE ITEM CHANGES. Within
     // a visit it holds, because an element that has errored must not be
@@ -2456,17 +2461,16 @@ export function GalleryImageLarge(
                                 // before inlining it.
                                 ref={pauseVideoOnDetach}
                                 // The element is the only thing that can tell us
-                                // this URL is not a loop after all, and WHICH
-                                // picture stands in depends on the error code —
-                                // see `loopFallback`, where both cases are spelled
-                                // out. Assigning a src makes this idempotent: the
-                                // fallback renders an <img> instead of this
-                                // element, so the handler cannot fire twice.
-                                onError={(e) => setLoopFallback({
+                                // this URL is not a loop after all, and the
+                                // answer to every way it can say so is the same
+                                // still picture — see `loopFallback`. No error
+                                // code is read, deliberately. Recording the sha
+                                // makes this idempotent: the fallback renders an
+                                // <img> instead of this element, so the handler
+                                // cannot fire twice.
+                                onError={() => setLoopFallback({
                                     sha: item.sha256,
-                                    src: isUnsupportedSourceError(e.currentTarget.error)
-                                        ? thumbnailURL
-                                        : stillURL,
+                                    src: stillURL,
                                 })}
                                 // What next/image's `fill` writes as inline
                                 // style, plus the `<img>`'s own object-fit: the
@@ -2486,10 +2490,9 @@ export function GalleryImageLarge(
                             :
                             <Image
                                 // The thumbnail URL for every item that was
-                                // never a loop, and the loop's own fallback
-                                // when one turned out not to be — the same URL
-                                // for the sentinel, `still=true` for a load
-                                // that merely failed (see `loopFallback`).
+                                // never a loop, and the `still=true` URL of the
+                                // same rendition when one turned out not to be
+                                // (see `loopFallback`).
                                 src={loopFallbackSrc ?? thumbnailURL}
                                 alt={`${item.path}`}
                                 draggable={true}
