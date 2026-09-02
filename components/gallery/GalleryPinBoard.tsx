@@ -547,7 +547,7 @@ export function PinBoard(
     // is keyed by the same layout key.
     const [layout, pinnedFiles, crops, autoCrops, trims, itemLocks, orients, audios]: [
         LayoutItem[],
-        [string, string, string, string][],
+        [string, string, string][],
         Record<string, CropRect | null>,
         Record<string, CropRect | null>,
         Record<string, TrimRange | null>,
@@ -556,7 +556,7 @@ export function PinBoard(
         Record<string, PinAudioState | null>,
     ] = useMemo(() => {
         const newLayout: LayoutItem[] = []
-        const pinned: [string, string, string, string][] = []
+        const pinned: [string, string, string][] = []
         const cropsMap: Record<string, CropRect | null> = {}
         const autoCropsMap: Record<string, CropRect | null> = {}
         const trimsMap: Record<string, TrimRange | null> = {}
@@ -622,14 +622,12 @@ export function PinBoard(
                     index,
                     sha256,
                     "/logo.svg", // Placeholder for the preview box
-                    "/logo.svg", // Placeholder for the preview box
                 ])
                 continue
             }
             pinned.push([
                 index,
                 sha256,
-                thumbnailMediaURL(dbs, sha256),
                 originalFileURL(dbs, sha256),
             ])
         }
@@ -2670,7 +2668,7 @@ export function PinBoard(
 
                     }}
                 >
-                    {pinnedFiles.map(([i, sha256, thumbnail, file]) => (
+                    {pinnedFiles.map(([i, sha256, file]) => (
                         <div
                             key={i}
                             data-pin-key={i}
@@ -2692,7 +2690,6 @@ export function PinBoard(
                                     key={i}
                                     layoutKey={i}
                                     sha256={sha256}
-                                    thumbnail={thumbnail}
                                     file={file}
                                     onLayoutChange={onLayoutChange}
                                     layout={layout}
@@ -3296,7 +3293,6 @@ function PinToggle({
 function PinBoardPin({
     layoutKey,
     sha256,
-    thumbnail,
     file,
     onLayoutChange,
     layout,
@@ -3337,12 +3333,6 @@ function PinBoardPin({
 }: {
     layoutKey: string
     sha256: string
-    /**
-     * The board's bare `display` thumbnail URL for this sha, built from the
-     * sha ALONE (the board has no item metadata). Used as-is only until this
-     * pin's own item query resolves — see `pinThumbnail`.
-     */
-    thumbnail: string
     file: string
     onLayoutChange: (
         currentLayout: LayoutItem[],
@@ -3426,29 +3416,32 @@ function PinBoardPin({
             },
         }
     })
-    // THE PIN'S PICTURE URL, rebuilt here rather than taken from the board.
+    // THE PIN'S PICTURE URL, built HERE and nowhere else.
     //
-    // The board builds `thumbnail` from the sha alone — it holds no item
-    // metadata — so it cannot know that an animated item past the server's
-    // display-loop bounds answers that URL with `video/mp4`
-    // (docs/thumbnail-format-implementation.md R3). All three elements below
-    // that paint it are pictures (the crop ghost, the contain-fit <img>, the
-    // <Image>), so such a pin would show a broken picture AND never fire
-    // `noteMediaDims`, which is what the crop geometry is measured from. This
-    // query's row carries the four fields the test reads, so the pin can ask
-    // the question the board could not.
+    // The board used to build one from the sha alone and hand it down, which it
+    // cannot do correctly: with no item metadata it cannot know that an
+    // animated item past the server's display-loop bounds answers that URL with
+    // `video/mp4` (docs/thumbnail-format-implementation.md R3). All three
+    // elements below that paint it are pictures (the crop ghost, the
+    // contain-fit <img>, the <Image>), so such a pin showed a broken picture
+    // AND never fired `noteMediaDims`, which is what the crop geometry is
+    // measured from. This query's row carries the fields the rule reads.
     //
-    // UNTIL IT RESOLVES, THE BARE URL STANDS. `still=true` speculatively would
-    // freeze every small animated pin — the ones under the bounds, which are
-    // the common case — into a still poster for the length of a round trip and
-    // cost a second cache entry for nothing. The race is the one this file
-    // already documents for `naturalSize`: the picture arrives, the row
-    // arrives, and the URL settles on its final value. For an item under the
-    // bounds that value is the bare URL again, character for character, so the
+    // UNTIL IT RESOLVES, THE BARE URL STANDS — the media builder, deliberately,
+    // even though the element is an `<img>`. Sending `still=true` speculatively
+    // would freeze an ABOVE-FLOOR animated pin into the stored <=1024 poster
+    // for the life of the pin's first paint, which is the downgrade this whole
+    // rule exists to avoid, and it would cost every under-bound pin — the
+    // common case — a second cache entry for nothing. THE COST OF THE OTHER
+    // DIRECTION is one bare round trip for an over-trigger pin on a cold board:
+    // the `<img>` starts a multi-megabyte loop fetch the browser may well
+    // cancel when the row lands and the src changes. The race is the one this
+    // file already documents for `naturalSize`. For an item under the bounds
+    // the settled value is this same URL, character for character, so the
     // common case never re-requests anything.
     const pinThumbnail = data?.item
         ? thumbnailPictureURL(dbs, data.item, displayLoopTrigger)
-        : thumbnail
+        : thumbnailMediaURL(dbs, sha256)
     // The playability tri-state (lib/videoPlayability.ts), the same ladder the
     // gallery runs: `unsupported` is the only verdict with no play affordance
     // (and no `data-playable` band), `needs-transcode` plays the server's
