@@ -888,15 +888,23 @@ function CellLoopPicture({ mode, ...props }: LoopPictureProps & { mode: AnimateM
 
 /**
  * The picture of a VIDEO card in a SMALL cell (D9): the single frame, with the
- * 2×2 frame mosaic layered over it once the pointer dwells.
+ * 2×2 frame mosaic layered over it while the card is hovered.
  *
  * WHY THE SWAP AT ALL. The mosaic is four frames in one box, and it is what
  * tells a video apart from a still at a glance — at 150px that reading is four
  * thumbnails of about 70px each, which is no reading at all, so the small cell
  * shows one frame it can actually resolve. The mosaic is still the more
- * INFORMATIVE picture, though, so a deliberate look brings it back: the hover
- * is armed by the same rule as a loop's (D6), so sweeping the grid swaps
- * nothing.
+ * INFORMATIVE picture, though, so hovering brings it back.
+ *
+ * ON PLAIN HOVER, NOT THE ARMED ONE. The card already changes on `:hover` —
+ * the picture goes from cover to contain — and the mosaic has to be part of
+ * that same moment. Behind the loop's arming rule and dwell it arrived as a
+ * second event after the zoom-out, which read as the card changing its mind
+ * (user QA, 2026-09-02). So this follows `:hover` exactly, bound the way the
+ * extreme-aspect swap is: mouseenter/mouseleave on the card's group root. A
+ * stationary pointer under a scrolling grid does swap these, and that is
+ * fine — a still image swapping for another still image is one request and
+ * one decode, nothing like a loop starting.
  *
  * LATCH-UNTIL-LOADED and STICKY, both copied from ExtremeAspectPicture and for
  * its reasons: the single frame keeps painting until the mosaic has fired its
@@ -924,17 +932,37 @@ function VideoStillPicture({
     /** The loading-spinner state, where the card shows no hover at all. */
     disabled: boolean
 }) {
-    const hover = useArmedHover(!disabled)
+    const frameRef = useRef<HTMLElement | null>(null)
+    const attachFrame = useCallback((element: HTMLElement | null) => {
+        frameRef.current = element
+    }, [])
+    const [hovered, setHovered] = useState(false)
     const [requested, setRequested] = useState(false)
     const [loaded, setLoaded] = useState(false)
     useEffect(() => {
-        if (hover.active) setRequested(true)
-    }, [hover.active])
-    const showMosaic = hover.active && loaded
+        if (disabled) return
+        // The group root, not this <img>: the corner buttons sit over the
+        // picture, and the swap must track the stylesheet's hover region (see
+        // ExtremeAspectPicture for the full reasoning, and why mouseenter).
+        const root = frameRef.current?.closest(`[${HOVER_ROOT_ATTR}]`)
+        if (!root) return
+        const enter = () => {
+            setHovered(true)
+            setRequested(true)
+        }
+        const leave = () => setHovered(false)
+        root.addEventListener("mouseenter", enter)
+        root.addEventListener("mouseleave", leave)
+        return () => {
+            root.removeEventListener("mouseenter", enter)
+            root.removeEventListener("mouseleave", leave)
+        }
+    }, [disabled])
+    const showMosaic = hovered && loaded
     return (
         <>
             <CellStillImage
-                elementRef={hover.attach}
+                elementRef={attachFrame}
                 src={src}
                 alt={alt}
                 blurDataURL={blurDataURL}
