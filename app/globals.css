@@ -206,7 +206,7 @@
    the cell width the grid publishes as `--cell-px` (app/search/ResultGrid.tsx,
    written on the row container so it inherits into every card).
 
-   ONE RAMP, THREE CONSUMED VALUES. `--cell-chrome-t` is the normalized
+   ONE RAMP, TWO CONSUMED VALUES. `--cell-chrome-t` is the normalized
    position between the slider's minimum and a cell wide enough to want no
    scaling at all (140 -> 240px); the scale and the inset are linear in it,
    with their own endpoints because they are not proportional to each other —
@@ -241,11 +241,6 @@
      cluster's slot table is built on, so the square stays a square as it
      shrinks (components/imageButtons.tsx CLUSTER_SLOTS). */
   --cell-chrome-step: calc(2.75rem * var(--cell-chrome-scale));
-  /* The fanout's corner anchor. Tighter than the other three corners' inset
-     and asymmetric between its axes, exactly as the `bottom-3 left-1` it
-     replaces was — it is scaled here, not re-designed. */
-  --cell-chrome-fan: calc(0.75rem * var(--cell-chrome-scale));
-  --cell-chrome-fan-x: calc(0.25rem * var(--cell-chrome-scale));
 }
 
 /* react-grid-layout hydration settling: at hydration, items switch from

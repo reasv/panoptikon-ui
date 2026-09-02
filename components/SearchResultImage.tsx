@@ -485,7 +485,7 @@ export const SearchResultImage = memo(function SearchResultImage({
                 )}
                 <CellOverlay active={overlayActive} sha256={result.sha256} bookmarked={result.bookmarked}>
                     <BookmarkBtn sha256={result.sha256} bookmarked={result.bookmarked} />
-                    <FileActionCluster sha256={result.sha256} path={result.path} />
+                    <FileActionCluster sha256={result.sha256} path={result.path} anchor="bottom-right" />
                     <OpenDetailsButton item={result} variantButton />
                     <PinButton sha256={result.sha256} />
                 </CellOverlay>

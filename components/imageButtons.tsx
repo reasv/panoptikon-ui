@@ -215,7 +215,7 @@ export const OpenFile = (
         onClickCapture={onUsed}
         className={cn(
             "relative inline-flex group/file-action",
-            !buttonVariant && (overlayClassName ?? "absolute bottom-(--cell-chrome-fan) left-(--cell-chrome-fan-x) opacity-0 transition-opacity duration-300 group-hover:opacity-100"),
+            !buttonVariant && (overlayClassName ?? "absolute bottom-(--cell-chrome-inset) left-(--cell-chrome-inset) opacity-0 transition-opacity duration-300 group-hover:opacity-100"),
             // pointer-events-auto so an open target menu keeps its (possibly
             // collapsed-away) trigger interactive until it closes.
             !buttonVariant && menuOpen && "opacity-100 pointer-events-auto",
@@ -274,7 +274,7 @@ export const OpenFolder = (
             onClickCapture={onUsed}
             className={cn(
             "relative inline-flex group/file-action",
-            !buttonVariant && (overlayClassName ?? "absolute bottom-(--cell-chrome-fan) left-[calc(var(--cell-chrome-fan-x)+var(--cell-chrome-step))] opacity-0 transition-opacity duration-300 group-hover:opacity-100"),
+            !buttonVariant && (overlayClassName ?? "absolute bottom-(--cell-chrome-inset) left-[calc(var(--cell-chrome-inset)+var(--cell-chrome-step))] opacity-0 transition-opacity duration-300 group-hover:opacity-100"),
             !buttonVariant && menuOpen && "opacity-100 pointer-events-auto",
         )}>
             <FindButton
@@ -293,7 +293,7 @@ export const OpenFolder = (
         onClickCapture={onUsed}
         className={cn(
         "relative inline-flex group/file-action",
-        !buttonVariant && (overlayClassName ?? "absolute bottom-(--cell-chrome-fan) left-[calc(var(--cell-chrome-fan-x)+var(--cell-chrome-step))] opacity-0 transition-opacity duration-300 group-hover:opacity-100"),
+        !buttonVariant && (overlayClassName ?? "absolute bottom-(--cell-chrome-inset) left-[calc(var(--cell-chrome-inset)+var(--cell-chrome-step))] opacity-0 transition-opacity duration-300 group-hover:opacity-100"),
         !buttonVariant && menuOpen && "opacity-100 pointer-events-auto",
     )}>
         {buttonVariant ?
@@ -368,8 +368,10 @@ export const ShareButton = (
 // Slot geometry of the 2x2 file action corner, in order [corner, above,
 // beside, diagonal]. Buttons are 2.5rem circles and every gap is 0.25rem —
 // which is the 2.75rem `--cell-chrome-step` the offsets below are built from —
-// and each anchor matches the button inset convention of the surface it serves
-// (the search grid's bottom-left, the gallery filmstrip's bottom-right).
+// and every anchor is the same `--cell-chrome-inset` the other corners use, so
+// the two bottom buttons share one baseline. (They did not, once: the cluster
+// sat at `bottom-3 left-1` against the details button's `bottom-2 right-2`, a
+// 4px stagger that the ramp then widened to ~6px at the smallest cells.)
 //
 // EVERY OFFSET RIDES THE RAMP (D11), because the fanout is the piece of chrome
 // that fails LOUDLY at small cells: it opens two buttons up and two across, so
@@ -379,10 +381,10 @@ export const ShareButton = (
 // the step rather than restated as a number.
 const CLUSTER_SLOTS = {
     "bottom-left": [
-        "absolute bottom-(--cell-chrome-fan) left-(--cell-chrome-fan-x)",
-        "absolute bottom-[calc(var(--cell-chrome-fan)+var(--cell-chrome-step))] left-(--cell-chrome-fan-x)",
-        "absolute bottom-(--cell-chrome-fan) left-[calc(var(--cell-chrome-fan-x)+var(--cell-chrome-step))]",
-        "absolute bottom-[calc(var(--cell-chrome-fan)+var(--cell-chrome-step))] left-[calc(var(--cell-chrome-fan-x)+var(--cell-chrome-step))]",
+        "absolute bottom-(--cell-chrome-inset) left-(--cell-chrome-inset)",
+        "absolute bottom-[calc(var(--cell-chrome-inset)+var(--cell-chrome-step))] left-(--cell-chrome-inset)",
+        "absolute bottom-(--cell-chrome-inset) left-[calc(var(--cell-chrome-inset)+var(--cell-chrome-step))]",
+        "absolute bottom-[calc(var(--cell-chrome-inset)+var(--cell-chrome-step))] left-[calc(var(--cell-chrome-inset)+var(--cell-chrome-step))]",
     ],
     "bottom-right": [
         "absolute bottom-(--cell-chrome-inset) right-(--cell-chrome-inset)",
