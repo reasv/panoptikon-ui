@@ -89,19 +89,6 @@ export interface PreviewRequest {
 /** No rung: one frozen array, so an empty ladder is memo-stable as a prop. */
 export const NO_PREVIEW_RUNGS: readonly PreviewRung[] = Object.freeze([])
 
-/**
- * THE RUNG, from the ladder's verdict and the resolved capability.
- *
- * `playability` is handed in rather than derived: the ladder is a question
- * about THIS BROWSER (an injected `canPlayType`, a session downgrade set) and
- * the hosts already have the answer, while this is the one-line policy over
- * it — which is what makes the policy testable without a DOM.
- *
- * An `unsupported` verdict is `"none"` at both rungs and deliberately so: with
- * the transcode rung off, `videoPlayability` collapses `needs-transcode` into
- * `unsupported`, so the single verdict already carries the gate. Nothing here
- * re-applies it.
- */
 /** Everything the ladder weighs that is not the capability. */
 export interface PreviewLadderInput {
   /**
