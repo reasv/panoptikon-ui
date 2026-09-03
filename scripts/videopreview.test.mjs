@@ -1,11 +1,13 @@
 // Assertions for video hover previews: the three-layer PREFERENCE resolution
-// (lib/state/hoverPreviewPref.ts), the RUNG ladder and the request shape
-// (lib/videoPreview.ts), the CANCEL rule and the key's trim segment
-// (lib/videoTranscode.ts), the client-config normalization
+// (lib/state/hoverPreviewPref.ts), the byte-capped RUNG LADDER, its request
+// shapes and its session downgrades (lib/videoPreview.ts), the mp4 stream-copy
+// question (lib/videoPlayability.ts), the CANCEL rule and the key's trim
+// segment (lib/videoTranscode.ts), the client-config normalization
 // (lib/clientConfig.ts) and the V12 frame swap as it reaches the plan
 // (lib/cellPicture.ts). The contract is
-// docs/video-hover-preview-implementation.md §1, decisions V2–V12, and §4's
-// unit list. No test runner in this repo — run it from the ui root:
+// docs/video-hover-preview-implementation.md §1, decisions V2-V12, §4's unit
+// list, and the byte-capped ladder settled after the verifier measured one
+// hover pulling 9.9 MB of a 15.7 MB file. Run it from the ui root:
 //
 //   node --experimental-strip-types scripts/videopreview.test.mjs
 //
@@ -20,8 +22,6 @@ import { register } from "node:module"
 register("./ts-hooks.mjs", import.meta.url)
 
 const {
-  HOVER_PREVIEW_ALL,
-  HOVER_PREVIEW_DIRECT,
   HOVER_PREVIEW_OFF,
   HOVER_PREVIEW_PREF_STORAGE_KEY,
   hoverPreviewCapability,
@@ -34,11 +34,18 @@ const {
   PREVIEW_MAX_CS,
   PREVIEW_MAX_SECONDS,
   PREVIEW_PRESET,
+  PREVIEW_TRIM_PRESET,
+  cellPreviewLadder,
   cellPreviewRung,
+  clearPreviewRungFailures,
+  notePreviewRungFailure,
   previewFeedback,
   previewKey,
+  previewLadder,
   previewRequest,
   previewRung,
+  previewSliceBytes,
+  withinPreviewCap,
 } = await import("../lib/videoPreview.ts")
 const {
   cancelTranscode,
@@ -51,74 +58,112 @@ const {
   transcodeKey,
   transcodeStoreSize,
 } = await import("../lib/videoTranscode.ts")
-const { noteVideoPlaybackError } = await import("../lib/videoPlayability.ts")
+const { noteVideoPlaybackError, videoCodecPlayableInMp4 } = await import(
+  "../lib/videoPlayability.ts"
+)
 const { deriveClientConfig } = await import("../lib/clientConfig.ts")
 const { planCellPicture } = await import("../lib/cellPicture.ts")
 
 const { check, finish } = createChecker()
+const shape = (value) => JSON.stringify(value)
+
+/** The server's default ceiling: 16 MiB (`[transcode] hover_preview_max_bytes`). */
+const CAP = 16 * 1024 * 1024
+
+/** A resolved capability, spelled the way the ladder tests read best. */
+const can = (direct, trim, transcode, maxBytes = CAP) =>
+  hoverPreviewCapability(direct, trim, transcode, maxBytes)
+
+/**
+ * A browser that decodes h264/AAC in mp4 and VP8/VP9/Opus in WebM, and nothing
+ * else — Chrome on a machine with no HEVC. Shaped as the real `canPlayType`
+ * is (a full `mime; codecs="…"` string in, `"probably"` or `""` out), because
+ * the whole point of the mp4 question below is WHICH string gets asked.
+ */
+const chrome = (type) => {
+  const match = /^([^;]+);\s*codecs="([^"]+)"$/.exec(type)
+  if (!match) return ""
+  const [, mime, codecs] = match
+  const plays = {
+    "video/mp4": ["avc1.42E01E", "av01.0.04M.08", "mp4a.40.2", "mp4a.6B", "flac", "opus"],
+    "video/webm": ["vp8", "vp9", "vp09.00.10.08", "opus", "vorbis"],
+  }
+  return (plays[mime] ?? []).includes(codecs) ? "probably" : ""
+}
 
 // ---------------------------------------------------------------------------
-// V5–V7: the preference resolution matrix
+// V5-V7: the preference resolution matrix
 // ---------------------------------------------------------------------------
 //
 // Three layers, one direction: the SERVER says what is allowed, and the
-// browser preference can only ever subtract from it.
+// browser preference can only ever subtract from it. Two slots over three
+// rungs — `direct` governs both rungs that play the item's own bytes.
 
 console.log("\n== the preference resolution matrix (V5-V7) ==")
 {
-  const shape = (capability) => `${capability.direct ? "D" : "-"}${capability.transcode ? "T" : "-"}`
-  // The three server answers a client can see, against the three states a
-  // preference slot can be in. Nine cells, spelled out rather than derived,
-  // because the whole point of the rule is that it is not symmetrical.
+  const form = (c) =>
+    `${c.direct ? "D" : "-"}${c.trim ? "R" : "-"}${c.transcode ? "T" : "-"}`
   const servers = {
     absent: null,
-    denied: hoverPreviewCapability(false, false),
-    "originals only": hoverPreviewCapability(true, false),
-    allowed: hoverPreviewCapability(true, true),
+    denied: can(false, false, false),
+    "copy only": can(false, true, false),
+    "originals only": can(true, true, false),
+    allowed: can(true, true, true),
   }
   const prefs = {
     absent: {},
     on: { direct: true, transcode: true },
-    "originals": { direct: true, transcode: false },
+    originals: { direct: true, transcode: false },
     off: { direct: false, transcode: false },
   }
   const expected = {
-    "absent/absent": "--", "absent/on": "--", "absent/originals": "--", "absent/off": "--",
-    "denied/absent": "--", "denied/on": "--", "denied/originals": "--", "denied/off": "--",
-    "originals only/absent": "D-", "originals only/on": "D-",
-    "originals only/originals": "D-", "originals only/off": "--",
-    "allowed/absent": "DT", "allowed/on": "DT",
-    "allowed/originals": "D-", "allowed/off": "--",
+    "absent/absent": "---", "absent/on": "---",
+    "absent/originals": "---", "absent/off": "---",
+    "denied/absent": "---", "denied/on": "---",
+    "denied/originals": "---", "denied/off": "---",
+    // The `direct` slot governs the stream copy too: turning previews off
+    // must take away the rung that pulls the file's own bytes in pieces
+    // exactly as it takes away the one that pulls them whole.
+    "copy only/absent": "-R-", "copy only/on": "-R-",
+    "copy only/originals": "-R-", "copy only/off": "---",
+    "originals only/absent": "DR-", "originals only/on": "DR-",
+    "originals only/originals": "DR-", "originals only/off": "---",
+    "allowed/absent": "DRT", "allowed/on": "DRT",
+    "allowed/originals": "DR-", "allowed/off": "---",
   }
-  let ok = true
+  let agreed = true
   for (const [serverName, server] of Object.entries(servers)) {
     for (const [prefName, pref] of Object.entries(prefs)) {
       const name = `${serverName}/${prefName}`
-      const got = shape(resolveHoverPreview(server, pref))
+      const got = form(resolveHoverPreview(server, pref))
       if (!check(`server ${serverName}, pref ${prefName} -> ${expected[name]}`,
         got === expected[name], got)) {
-        ok = false
+        agreed = false
       }
     }
   }
-  check("the whole matrix agrees", ok)
-  // The rule the matrix encodes, stated once as its own assertion: a
-  // preference can never turn ON what the server denied.
+  check("the whole matrix agrees", agreed)
   check(
     "a pref of ON against a denying server is still off",
-    resolveHoverPreview(hoverPreviewCapability(false, false),
+    resolveHoverPreview(can(false, false, false),
       { direct: true, transcode: true }) === HOVER_PREVIEW_OFF
   )
+  // The CAP rides through untouched: it is the server's number and no
+  // preference has an opinion about it.
+  check("the cap is carried through the resolution",
+    resolveHoverPreview(can(true, true, true, 1234), {}).maxBytes === 1234)
   // Identity, not just equality: the resolved answer is a PROP on hundreds of
   // memoized cards, and a fresh object per render would defeat that memo for
   // every visible card on every scroll frame.
   check(
-    "the answer is one of four INTERNED constants (memo-stable as a prop)",
-    resolveHoverPreview(hoverPreviewCapability(true, true), {}) === HOVER_PREVIEW_ALL
-      && resolveHoverPreview(hoverPreviewCapability(true, true),
-        { transcode: false }) === HOVER_PREVIEW_DIRECT
+    "equal answers are the SAME object (memo-stable as a prop)",
+    resolveHoverPreview(can(true, true, true), {})
+      === resolveHoverPreview(can(true, true, true), { direct: true })
       && resolveHoverPreview(null, {}) === HOVER_PREVIEW_OFF
+      && can(true, false, true, CAP) === can(true, false, true, CAP)
   )
+  check("...and a different CAP is a different answer",
+    can(true, true, true, CAP) !== can(true, true, true, CAP + 1))
 }
 
 console.log("\n== the stored preference (V7) ==")
@@ -128,7 +173,6 @@ console.log("\n== the stored preference (V7) ==")
     HOVER_PREVIEW_PREF_STORAGE_KEY === "panoptikon.hoverPreviewPref",
     HOVER_PREVIEW_PREF_STORAGE_KEY
   )
-  const shape = (value) => JSON.stringify(value)
   check("nothing stored reads as both slots absent",
     shape(parseHoverPreviewPref(null)) === shape({}))
   check("unparseable JSON reads as absent",
@@ -141,11 +185,10 @@ console.log("\n== the stored preference (V7) ==")
   check("both booleans survive a round trip",
     shape(parseHoverPreviewPref(JSON.stringify({ direct: true, transcode: false })))
       === shape({ direct: true, transcode: false }))
-  // The control writes BOTH slots, because the three positions are points on
-  // one scale: leaving the other slot standing would make "Originals" mean
-  // two different things depending on what came before it.
-  const allowed = hoverPreviewCapability(true, true)
-  const noEncode = hoverPreviewCapability(true, false)
+
+  const allowed = can(true, true, true)
+  const noEncode = can(true, true, false)
+  const copyOnly = can(false, true, false)
   check("Off writes both slots false",
     shape(withHoverPreviewSlot({ direct: true, transcode: true }, "off", allowed))
       === shape({ direct: false, transcode: false }))
@@ -166,98 +209,280 @@ console.log("\n== the stored preference (V7) ==")
     shape(withHoverPreviewSlot({}, "originals", noEncode)))
   check("...and Off stores direct only, by the same rule",
     shape(withHoverPreviewSlot({}, "off", noEncode)) === shape({ direct: false }))
+  // The `direct` SLOT governs both own-bytes rungs, so the stream copy alone
+  // is enough to make it a real choice.
+  check("a server offering only the stream copy still records the direct slot",
+    shape(withHoverPreviewSlot({}, "off", copyOnly)) === shape({ direct: false }))
   check("a server that offers nothing records nothing",
     shape(withHoverPreviewSlot({}, "off", null)) === shape({})
       && shape(withHoverPreviewSlot({}, "originals", HOVER_PREVIEW_OFF)) === shape({}))
-  // ...and a slot stored while the rung WAS offered is cleared when it stops
-  // being, so a preference can never outlive the choice it was made in.
   check("a stale transcode slot is CLEARED when the server stops offering it",
     shape(withHoverPreviewSlot({ direct: true, transcode: false }, "originals", noEncode))
       === shape({ direct: true }))
-  // THE DEFECT, end to end: pick Originals on a server with no encoder, then
-  // put the encoder back. The user must get the rung, not a frozen `false`.
   check("a server that LATER allows the encode reaches the user",
     resolveHoverPreview(allowed,
-      withHoverPreviewSlot({}, "originals", noEncode)) === HOVER_PREVIEW_ALL)
-  // ...while a deliberate Originals made on a server that DID offer the encode
-  // still means what it said.
+      withHoverPreviewSlot({}, "originals", noEncode)) === can(true, true, true))
   check("...but a deliberate Originals on an offering server still holds",
     resolveHoverPreview(allowed,
-      withHoverPreviewSlot({}, "originals", allowed)) === HOVER_PREVIEW_DIRECT)
-  // The control lights the EFFECTIVE answer (D4's rule), so a stored "all"
-  // against a policy that denies the encode reads "Originals".
+      withHoverPreviewSlot({}, "originals", allowed)) === can(true, true, false))
+  // The control lights the EFFECTIVE answer (D4's rule).
   check("the lit segment follows the RESOLVED answer",
     hoverPreviewChoice(HOVER_PREVIEW_OFF) === "off"
-      && hoverPreviewChoice(HOVER_PREVIEW_DIRECT) === "originals"
-      && hoverPreviewChoice(HOVER_PREVIEW_ALL) === "all")
+      && hoverPreviewChoice(can(true, true, false)) === "originals"
+      && hoverPreviewChoice(can(false, true, false)) === "originals"
+      && hoverPreviewChoice(can(true, true, true)) === "all")
   check("a stored All against a transcode-denying server lights Originals",
-    hoverPreviewChoice(resolveHoverPreview(
-      hoverPreviewCapability(true, false),
-      withHoverPreviewSlot({}, "all"))) === "originals")
+    hoverPreviewChoice(resolveHoverPreview(noEncode,
+      withHoverPreviewSlot({}, "all", noEncode))) === "originals")
 }
 
 // ---------------------------------------------------------------------------
-// V2/V3: which rung
+// The mp4 stream-copy question
 // ---------------------------------------------------------------------------
 
-console.log("\n== rung selection (V2/V3) ==")
+console.log("\n== can the video stream play inside an mp4? ==")
 {
-  const all = hoverPreviewCapability(true, true)
-  const originals = hoverPreviewCapability(true, false)
-  check("a playable item takes rung 0 when direct previews are on",
-    previewRung("playable", all) === "direct")
-  check("...and nothing when they are off",
-    previewRung("playable", hoverPreviewCapability(false, true)) === "none")
-  check("a needs-transcode item takes rung 1 when the encode is allowed",
-    previewRung("needs-transcode", all) === "transcode")
-  check("...and nothing when it is not",
-    previewRung("needs-transcode", originals) === "none")
-  check("an unsupported item takes no rung at either setting",
-    previewRung("unsupported", all) === "none"
-      && previewRung("unsupported", originals) === "none")
-  check("previews entirely off take no rung whatever the verdict",
-    previewRung("playable", HOVER_PREVIEW_OFF) === "none"
-      && previewRung("needs-transcode", HOVER_PREVIEW_OFF) === "none")
+  const asks = (item) => videoCodecPlayableInMp4(item, { canPlayType: chrome })
+  // THE CASE THE RUNG EXISTS FOR: unplayable as a file, playable as a copy.
+  check("h264 in a .mkv is eligible — the copy makes it an mp4",
+    asks({ type: "video/x-matroska", video_codec: "h264" }) === true)
+  check("h264 already in an mp4 is eligible too (the trim is still a copy)",
+    asks({ type: "video/mp4", video_codec: "h264" }) === true)
+  // AUDIO IS NOT ASKED: the preset emits -an, so a track that vetoes the whole
+  // file in the playability ladder cannot veto the copy.
+  check("an AC-3 soundtrack does not disqualify the copy — it is dropped",
+    asks({ type: "video/quicktime", video_codec: "h264", audio_codec: "ac3" }) === true)
+  // A codec the browser plays that mp4 CANNOT CARRY. The browser's own answer
+  // for the mp4 container is what rules it out, so nothing here keeps a list.
+  check("VP8 is NOT eligible: mp4 cannot carry it, however well WebM plays it",
+    chrome('video/webm; codecs="vp8"') === "probably"
+      && asks({ type: "video/webm", video_codec: "vp8" }) === false)
+  check("a codec this browser cannot decode at all is not eligible",
+    asks({ type: "video/mp4", video_codec: "hevc" }) === false)
+  check("a codec with no RFC 6381 string on this side is not eligible",
+    asks({ type: "video/mpeg", video_codec: "mpeg2video" }) === false)
+  // NOT SETTLED IS NOT ELIGIBLE: a remux is a promise about bytes.
+  check("an unprobed row is not eligible",
+    asks({ type: "video/mp4", video_codec: null }) === false)
+  check("the two sentinels are not eligible",
+    asks({ type: "video/mp4", video_codec: "none" }) === false
+      && asks({ type: "video/mp4", video_codec: "unknown" }) === false)
+  check("no probe at all is not eligible",
+    videoCodecPlayableInMp4({ type: "video/mp4", video_codec: "h264" },
+      { canPlayType: null }) === false)
 }
 
-console.log("\n== the cell's whole question (cellPreviewRung) ==")
+// ---------------------------------------------------------------------------
+// The byte cap and the slice estimate
+// ---------------------------------------------------------------------------
+
+console.log("\n== the cap and the slice estimate ==")
 {
-  const all = hoverPreviewCapability(true, true)
-  const originals = hoverPreviewCapability(true, false)
-  // A browser that plays h264-in-mp4 and nothing else — the shape the ladder's
-  // own suite uses, injected so this runs with no DOM.
-  const chrome = (type) =>
-    /^video\/mp4; codecs="avc1|^video\/mp4; codecs="mp4a/.test(type)
-      ? "probably"
-      : ""
-  const mp4 = { sha256: "aaa", type: "video/mp4", video_codec: "h264", audio_codec: "aac" }
-  const hevc = { sha256: "bbb", type: "video/mp4", video_codec: "hevc", audio_codec: "aac" }
-  const image = { sha256: "ccc", type: "image/png" }
-  check("an h264 mp4 this browser plays is rung 0",
-    cellPreviewRung(mp4, all, chrome) === "direct")
-  check("an HEVC mp4 it cannot decode is rung 1",
-    cellPreviewRung(hevc, all, chrome) === "transcode")
-  check("...and is NOTHING when the encode is denied (the ladder collapses it)",
-    cellPreviewRung(hevc, originals, chrome) === "none")
+  check("the cap is inclusive", withinPreviewCap(CAP, CAP) === true
+    && withinPreviewCap(CAP + 1, CAP) === false)
+  check("zero bytes are inside every cap", withinPreviewCap(0, CAP) === true)
+  // UNKNOWN IS NOT INSIDE: the cap exists because an unbounded hover pulled
+  // two thirds of a 15.7 MB file, so a row nobody measured goes to a rung
+  // whose cost is known.
+  check("an unknown size is NOT inside the cap",
+    withinPreviewCap(null, CAP) === false
+      && withinPreviewCap(undefined, CAP) === false
+      && withinPreviewCap(Number.NaN, CAP) === false)
+  check("a negative size is not inside it either",
+    withinPreviewCap(-1, CAP) === false)
+
+  check("the slice is the file's own average rate over the kept window",
+    previewSliceBytes(40_000_000, 64) === 10_000_000,
+    String(previewSliceBytes(40_000_000, 64)))
+  check("a file inside the window is its whole self",
+    previewSliceBytes(9_000_000, 8) === 9_000_000
+      && previewSliceBytes(9_000_000, PREVIEW_MAX_SECONDS) === 9_000_000)
+  check("no duration, no estimate",
+    previewSliceBytes(40_000_000, null) === null
+      && previewSliceBytes(40_000_000, 0) === null
+      && previewSliceBytes(40_000_000, -3) === null
+      && previewSliceBytes(40_000_000, Number.POSITIVE_INFINITY) === null)
+  check("no size, no estimate", previewSliceBytes(null, 64) === null)
+  // THE BOUNDARY, both sides of it: a slice exactly at the cap is eligible.
+  const atCap = { size: CAP * 4, duration: PREVIEW_MAX_SECONDS * 4 }
+  check("a slice EXACTLY at the cap is inside it",
+    previewSliceBytes(atCap.size, atCap.duration) === CAP
+      && withinPreviewCap(previewSliceBytes(atCap.size, atCap.duration), CAP))
+  check("...and one byte more is not",
+    withinPreviewCap(previewSliceBytes(atCap.size + 4, atCap.duration), CAP) === false)
+}
+
+// ---------------------------------------------------------------------------
+// The ladder
+// ---------------------------------------------------------------------------
+
+console.log("\n== the rung ladder ==")
+{
+  const ladder = (input, capability) => previewLadder(input, capability).join(">")
+  // A 4 MB thirty-second clip: inside the cap whole, and its first 16 s are
+  // inside it too, so every rung is on offer and the ORDER is what is asserted.
+  const small = { size: 4_000_000, duration: 30 }
+  // 400 MB in a minute — over the cap whole AND over it sliced (106 MB), which
+  // is the only shape that reaches the re-encode on size alone.
+  const dense = { size: 400_000_000, duration: 60 }
+  // 400 MB over ten minutes: far over the cap whole, 10.7 MB sliced.
+  const bigButThin = { size: 400_000_000, duration: 600 }
+
+  check("a small playable file takes the original whole, then the copy, then the encode",
+    ladder({ playability: "playable", mp4Playable: true, ...small },
+      can(true, true, true)) === "direct>trim>transcode")
+  // THE DEFECT THIS LADDER FIXES: a big file no longer mounts whole.
+  check("a file over the cap skips the whole-file rung",
+    ladder({ playability: "playable", mp4Playable: true, ...bigButThin },
+      can(true, true, true)) === "trim>transcode",
+    `slice ${previewSliceBytes(bigButThin.size, bigButThin.duration)} vs cap ${CAP}`)
+  check("...and one whose first 16 s are ALSO over it skips the copy as well",
+    ladder({ playability: "playable", mp4Playable: true, ...dense },
+      can(true, true, true)) === "transcode",
+    `slice ${previewSliceBytes(dense.size, dense.duration)} vs cap ${CAP}`)
+  check("an unplayable container whose stream mp4 can carry takes the copy",
+    ladder({ playability: "needs-transcode", mp4Playable: true, ...small },
+      can(true, true, true)) === "trim>transcode")
+  check("a codec mp4 cannot carry skips the copy",
+    ladder({ playability: "needs-transcode", mp4Playable: false, ...small },
+      can(true, true, true)) === "transcode")
+  // UNKNOWN DURATION NEVER TRIMS: there is no ratio, so no estimate.
+  check("an unknown duration never trims",
+    ladder({ playability: "needs-transcode", mp4Playable: true, size: 4_000_000,
+      duration: null }, can(true, true, true)) === "transcode")
+  check("an unknown size takes neither own-bytes rung",
+    ladder({ playability: "playable", mp4Playable: true, size: null, duration: 30 },
+      can(true, true, true)) === "transcode")
+  // AN UNSUPPORTED ITEM HAS NOTHING TO SHOW — not even a re-encode.
+  check("an unsupported item has an EMPTY ladder",
+    ladder({ playability: "unsupported", mp4Playable: true, ...small },
+      can(true, true, true)) === "")
+  // The capability gates, one at a time.
+  check("previews off means an empty ladder whatever the file",
+    ladder({ playability: "playable", mp4Playable: true, ...small },
+      HOVER_PREVIEW_OFF) === "")
+  check("Originals drops the encode from the end of the ladder",
+    ladder({ playability: "playable", mp4Playable: true, ...small },
+      can(true, true, false)) === "direct>trim")
+  check("...and leaves a needs-transcode item with only the copy",
+    ladder({ playability: "needs-transcode", mp4Playable: true, ...small },
+      can(true, true, false)) === "trim")
+  check("...and with nothing at all when mp4 cannot carry it",
+    ladder({ playability: "needs-transcode", mp4Playable: false, ...small },
+      can(true, true, false)) === "")
+  check("a server offering only the copy never mounts the whole file",
+    ladder({ playability: "playable", mp4Playable: true, ...small },
+      can(false, true, true)) === "trim>transcode")
+  check("a server offering only the whole file never asks for a copy",
+    ladder({ playability: "playable", mp4Playable: true, ...small },
+      can(true, false, true)) === "direct>transcode")
+  // BLOCKED RUNGS are simply absent — this is how a session downgrade reaches
+  // the ladder.
+  check("a blocked direct rung falls to the copy",
+    ladder({ playability: "playable", mp4Playable: true, ...small,
+      blocked: ["direct"] }, can(true, true, true)) === "trim>transcode")
+  check("a blocked copy falls to the encode",
+    ladder({ playability: "needs-transcode", mp4Playable: true, ...small,
+      blocked: ["trim"] }, can(true, true, true)) === "transcode")
+  check("every rung blocked is an empty ladder",
+    ladder({ playability: "playable", mp4Playable: true, ...small,
+      blocked: ["direct", "trim", "transcode"] }, can(true, true, true)) === "")
+  check("an unknown size still leaves the copy when the slice fits",
+    ladder({ playability: "playable", mp4Playable: true, size: null, duration: 30 },
+      can(true, true, true)) === "transcode")
+  check("the first rung is what `previewRung` answers",
+    previewRung({ playability: "playable", mp4Playable: true, ...small },
+      can(true, true, true)) === "direct"
+      && previewRung({ playability: "unsupported", mp4Playable: true, ...small },
+        can(true, true, true)) === "none")
+}
+
+console.log("\n== the cell's whole question (cellPreviewLadder) ==")
+{
+  clearPreviewRungFailures()
+  const rungs = (row, capability) =>
+    cellPreviewLadder(row, capability, chrome).join(">")
+  const all = can(true, true, true)
+  const mp4 = {
+    sha256: "aaa", type: "video/mp4", video_codec: "h264", audio_codec: "aac",
+    size: 4_000_000, duration: 30,
+  }
+  const bigMp4 = { ...mp4, sha256: "bbb", size: 400_000_000, duration: 60 }
+  const thinMkv = {
+    sha256: "ccc", type: "video/x-matroska", video_codec: "h264",
+    audio_codec: "ac3", size: 40_000_000, duration: 640,
+  }
+  const hevc = {
+    sha256: "ddd", type: "video/mp4", video_codec: "hevc", audio_codec: "aac",
+    size: 4_000_000, duration: 30,
+  }
+  const image = { sha256: "eee", type: "image/png", size: 900_000 }
+  check("a small h264 mp4 mounts itself",
+    rungs(mp4, all) === "direct>trim>transcode")
+  check("a huge one goes to the encode (its first 16 s are still over the cap)",
+    rungs(bigMp4, all) === "transcode")
+  check("an h264 .mkv with AC-3 audio takes the silent stream copy",
+    rungs(thinMkv, all) === "trim>transcode")
+  check("HEVC this browser cannot decode goes to the encode",
+    rungs(hevc, all) === "transcode")
   check("a still image is never a preview, whatever is allowed",
-    cellPreviewRung(image, all, chrome) === "none")
-  check("a null row is never a preview",
-    cellPreviewRung(null, all, chrome) === "none")
+    rungs(image, all) === "")
+  check("a null row is never a preview", rungs(null, all) === "")
   // THE SHORT CIRCUIT: with previews off the ladder is not consulted at all,
-  // which is what keeps a grid of stills from probing a codec per card. Proven
-  // by a probe that throws if it is called.
+  // which is what keeps a grid of stills from probing a codec per card.
   const explodes = () => { throw new Error("the probe must not run") }
   check("previews off short-circuit BEFORE the codec probe",
-    cellPreviewRung(mp4, HOVER_PREVIEW_OFF, explodes) === "none")
+    cellPreviewLadder(mp4, HOVER_PREVIEW_OFF, explodes).length === 0)
   check("a non-video short-circuits before the probe too",
-    cellPreviewRung(image, all, explodes) === "none")
-  // THE DOWNGRADE (V3): an item whose element failed to decode in the gallery
-  // is needs-transcode here from the next render on, with no subscription.
-  noteVideoPlaybackError(mp4.sha256)
-  check("a session-downgraded playable item moves to rung 1",
-    cellPreviewRung(mp4, all, chrome) === "transcode")
-  check("...and to nothing when the encode is denied",
-    cellPreviewRung(mp4, originals, chrome) === "none")
+    cellPreviewLadder(image, all, explodes).length === 0)
+  // ...and the mp4 question is only asked when the copy is on offer.
+  const noMp4Probe = (type) => {
+    if (/^video\/mp4; codecs="avc1/.test(type)) throw new Error("mp4 probe ran")
+    return chrome(type)
+  }
+  check("the mp4 question is not asked when the copy is denied",
+    cellPreviewRung(thinMkv, can(true, false, true), noMp4Probe) === "transcode")
+}
+
+console.log("\n== session downgrades ==")
+{
+  clearPreviewRungFailures()
+  const all = can(true, true, true)
+  const rungs = (row) => cellPreviewLadder(row, all, chrome).join(">")
+  // A small playable mp4 whose first 16 s also fit, so every rung is on offer
+  // and the walk down is visible one step at a time.
+  const item = {
+    sha256: "walk", type: "video/mp4", video_codec: "h264", audio_codec: "aac",
+    size: 4_000_000, duration: 30,
+  }
+  check("it starts on the whole file", rungs(item) === "direct>trim>transcode")
+  // A DECODE ERROR ON THE ORIGINAL falls to the COPY, not past it: a container
+  // this browser mis-parses is exactly what a remux fixes.
+  notePreviewRungFailure(item.sha256, "direct")
+  check("a failed direct rung falls to the stream copy",
+    rungs(item) === "trim>transcode")
+  // A REFUSED MUX falls to the re-encode.
+  notePreviewRungFailure(item.sha256, "trim")
+  check("a failed copy falls to the re-encode", rungs(item) === "transcode")
+  notePreviewRungFailure(item.sha256, "transcode")
+  check("a failed re-encode leaves nothing", rungs(item) === "")
+  check("...and none of it touched a different item",
+    rungs({ ...item, sha256: "other" }) === "direct>trim>transcode")
+  // Only the copy is denied, so the direct rung is untouched.
+  clearPreviewRungFailures()
+  notePreviewRungFailure(item.sha256, "trim")
+  check("a failed copy alone does not cost the whole-file rung",
+    rungs(item) === "direct>transcode")
+  clearPreviewRungFailures()
+  // THE GALLERY'S OWN DOWNGRADE is the same evidence about the same bytes, so
+  // it blocks the same rung — and, deliberately, only that one.
+  clearPreviewRungFailures()
+  noteVideoPlaybackError(item.sha256)
+  check("a gallery decode downgrade blocks the whole-file rung",
+    rungs(item) === "trim>transcode")
+  check("...and leaves the encode when the copy is denied too",
+    cellPreviewLadder(item, can(true, false, true), chrome).join(">") === "transcode")
+  clearPreviewRungFailures()
 }
 
 // ---------------------------------------------------------------------------
@@ -266,10 +491,11 @@ console.log("\n== the cell's whole question (cellPreviewRung) ==")
 
 console.log("\n== the preview request (V3) ==")
 {
-  const shape = (value) => JSON.stringify(value)
   check("the cap is 16 s, spelled in both units",
     PREVIEW_MAX_SECONDS === 16 && PREVIEW_MAX_CS === 1600,
     `${PREVIEW_MAX_SECONDS}s / ${PREVIEW_MAX_CS}cs`)
+  check("the two presets are the settled ids",
+    PREVIEW_PRESET === "preview" && PREVIEW_TRIM_PRESET === "preview-trim")
   check("a file longer than the cap carries end_cs",
     shape(previewRequest({ duration: 16.01 }))
       === shape({ preset: PREVIEW_PRESET, end_cs: PREVIEW_MAX_CS }))
@@ -287,12 +513,20 @@ console.log("\n== the preview request (V3) ==")
   check("a zero or negative duration is unknown, not short",
     shape(previewRequest({ duration: 0 }))
       === shape({ preset: PREVIEW_PRESET, end_cs: PREVIEW_MAX_CS }))
-  // The key carries the bound, so a trimmed encode and a whole-file one at the
-  // same preset can never be served for each other.
-  check("the key carries end_cs when the request does",
-    previewKey("sha", previewRequest({ duration: 60 })) === "sha:preview:e1600",
-    previewKey("sha", previewRequest({ duration: 60 })))
-  check("...and does not when it does not",
+  // THE STREAM COPY asks for the same window under a different preset.
+  check("the trim rung names the copy preset and the same window",
+    shape(previewRequest({ duration: 60 }, "trim"))
+      === shape({ preset: PREVIEW_TRIM_PRESET, end_cs: PREVIEW_MAX_CS }))
+  check("...and omits the window on a file already inside it",
+    shape(previewRequest({ duration: 5 }, "trim"))
+      === shape({ preset: PREVIEW_TRIM_PRESET }))
+  check("the two rungs are two keys, so a copy and an encode never collide",
+    previewKey("sha", previewRequest({ duration: 60 }, "trim"))
+      === "sha:preview-trim:e1600"
+      && previewKey("sha", previewRequest({ duration: 60 }, "transcode"))
+        === "sha:preview:e1600",
+    previewKey("sha", previewRequest({ duration: 60 }, "trim")))
+  check("...and does not carry the window when it is not asked for",
     previewKey("sha", previewRequest({ duration: 5 })) === "sha:preview")
   check("an untrimmed key is byte-identical to the two-segment form every "
     + "other caller mints",
@@ -321,8 +555,6 @@ console.log("\n== cancel-only-if-created (V4) ==")
   const key = transcodeKey("zzz", PREVIEW_PRESET, PREVIEW_MAX_CS)
   check("a key with no submit behind it owns no job",
     ownsTranscodeJob(key) === false)
-  // A cell that leaves mid-queue: the state goes back to idle so the next
-  // dwell means what it says.
   setTranscodeState(key, { state: "queued", position: 3 })
   cancelTranscode(key)
   check("cancelling returns the key to idle",
@@ -342,11 +574,10 @@ console.log("\n== cancel-only-if-created (V4) ==")
 console.log("\n== a cancel leaves nothing behind (S3) ==")
 {
   const size = () => transcodeStoreSize()
-  const shape = (value) => JSON.stringify(value)
   const before = size()
   // The pointer resting on one cell and leaving, over and over.
   for (let i = 0; i < 200; i += 1) {
-    const key = transcodeKey("same", PREVIEW_PRESET, PREVIEW_MAX_CS)
+    const key = transcodeKey("same", PREVIEW_TRIM_PRESET, PREVIEW_MAX_CS)
     setTranscodeState(key, { state: "queued", position: 1 })
     cancelTranscode(key)
   }
@@ -373,12 +604,11 @@ console.log("\n== a cancel DURING the POST is not a verdict (S3/V4) ==")
   // the wire. Here it is a fetch of a relative URL under plain node, which
   // fails — and the point is precisely that its failure must NOT be recorded,
   // because by then the state belongs to nobody.
-  const shape = (value) => JSON.stringify(value)
   const before = transcodeStoreSize()
   const key = startTranscode({
     sha256: "inflight",
     dbs: { index_db: "stdtest", user_data_db: null },
-    preset: PREVIEW_PRESET,
+    preset: PREVIEW_TRIM_PRESET,
     endCs: PREVIEW_MAX_CS,
   })
   check("a submit claims the key", getTranscodeState(key).state === "requesting")
@@ -405,7 +635,6 @@ console.log("\n== a cancel DURING the POST is not a verdict (S3/V4) ==")
 
 console.log("\n== the badge's progress and caption (V11) ==")
 {
-  const shape = (value) => JSON.stringify(value)
   check("a POST in flight is an indeterminate sweep",
     shape(previewFeedback({ state: "requesting" }))
       === shape({ progress: "queued", caption: "Transcoding…" }))
@@ -423,9 +652,8 @@ console.log("\n== the badge's progress and caption (V11) ==")
       && previewFeedback({
         state: "done", artifactUrl: "u", filename: null, artifact: null,
       }) === null)
-  // A sticky failure shows NOTHING and never retries in the session: a stalled
-  // ring and an ffmpeg error under a thumbnail are both worse than the frame
-  // the cell already has.
+  // A failure shows NOTHING: it is the ladder's cue to fall to the next rung,
+  // and a stalled ring under a thumbnail says less than the frame already does.
   check("a failure shows nothing",
     previewFeedback({ state: "failed", error: "boom", sticky: true }) === null)
 }
@@ -441,19 +669,25 @@ console.log("\n== client-config normalization (V8) ==")
     client: {},
     hover_preview,
   }).hoverPreview
-  const shape = (value) => JSON.stringify(value)
-  check("a complete pair is passed through",
-    shape(derive({ direct: true, transcode: false }))
-      === shape({ direct: true, transcode: false }))
-  check("both false is a REPORTED denial, not an absence",
-    shape(derive({ direct: false, transcode: false }))
-      === shape({ direct: false, transcode: false }))
-  // ALL-OR-NOTHING: a half-reported capability is one this client cannot see,
-  // and guessing either way is a request the policy may refuse or a preview
-  // the user was entitled to and did not get.
-  check("a missing member reads as NOT REPORTED", derive({ direct: true }) === null)
-  check("a non-boolean member reads as not reported",
-    derive({ direct: true, transcode: "yes" }) === null)
+  const full = { direct: true, trim: true, transcode: false, max_bytes: CAP }
+  check("a complete answer is passed through",
+    shape(derive(full))
+      === shape({ direct: true, trim: true, transcode: false, maxBytes: CAP }))
+  check("all-false is a REPORTED denial, not an absence",
+    shape(derive({ direct: false, trim: false, transcode: false, max_bytes: 0 }))
+      === shape({ direct: false, trim: false, transcode: false, maxBytes: 0 }))
+  // ALL FOUR OR NOTHING. The cap is the member that matters most: without a
+  // number there is nothing to measure a file against, which is the defect the
+  // cap exists to fix.
+  check("a missing CAP reads as not reported",
+    derive({ direct: true, trim: true, transcode: true }) === null)
+  check("a missing rung reads as not reported",
+    derive({ direct: true, transcode: true, max_bytes: CAP }) === null)
+  check("a non-boolean rung reads as not reported",
+    derive({ ...full, trim: "yes" }) === null)
+  check("a non-numeric or negative cap reads as not reported",
+    derive({ ...full, max_bytes: "16MiB" }) === null
+      && derive({ ...full, max_bytes: -1 }) === null)
   check("an absent field reads as not reported (an older Server)",
     derive(undefined) === null && derive(null) === null)
   check("a non-object reads as not reported", derive(true) === null)
@@ -475,66 +709,65 @@ console.log("\n== the V12 frame swap ==")
     sha256: "abc", type: "video/mp4", duration: 42,
     size: 20_000_000, width: 1920, height: 1080,
   }
-  const plan = (smallCell, rung) =>
-    planCellPicture(video, dbs, "grid-s", env(smallCell), rung)
+  const plan = (smallCell, rungs) =>
+    planCellPicture(video, dbs, "grid-s", env(smallCell), rungs)
 
   // PREVIEWS OFF: byte for byte the cells that shipped before this existed.
   check("previews off, small cell: today's frame->mosaic swap",
-    plan(true, "none").kind === "videoSmall")
+    plan(true, []).kind === "videoSmall")
   check("previews off, large cell: today's plain still",
-    plan(false, "none").kind === "still")
+    plan(false, []).kind === "still")
   check("...and the small cell's two URLs are still the frame and the mosaic",
-    plan(true, "none").frame.includes("&big=false")
-      && !plan(true, "none").mosaic.includes("big=false"))
+    plan(true, []).frame.includes("&big=false")
+      && !plan(true, []).mosaic.includes("big=false"))
 
   // PREVIEWS ON, SMALL CELL: never swaps to the 2x2 — the same URL twice, so
   // the card mounts no second layer and binds no listeners for it.
-  const small = plan(true, "direct")
+  const small = plan(true, ["direct", "transcode"])
   check("previews on, small cell: one video plan", small.kind === "video")
   check("...whose base picture IS the single frame",
     small.poster.includes("&big=false"))
   check("...and which therefore never swaps (poster === frame)",
     small.poster === small.frame)
 
-  // PREVIEWS ON, LARGE CELL: the 2x2 base swaps to the 1x1 on hover, which is
-  // the waiting placeholder the video fades in over.
-  const large = plan(false, "direct")
+  // PREVIEWS ON, LARGE CELL: the 2x2 base swaps to the 1x1 on hover.
+  const large = plan(false, ["direct", "transcode"])
   check("previews on, large cell: one video plan", large.kind === "video")
   check("...whose base picture is the 2x2 mosaic",
     !large.poster.includes("big=false"))
   check("...and whose hover placeholder is the single frame",
     large.frame.includes("&big=false") && large.poster !== large.frame)
 
-  // Rung 0 names the ORIGINAL file; rung 1 has no URL until its job is done.
-  check("rung 0 carries the original file URL",
-    typeof large.directSrc === "string" && large.directSrc.includes("/api/items/item/file"),
+  // The direct rung names the ORIGINAL file; the job rungs have no URL until
+  // their job is done.
+  check("a ladder containing the direct rung carries the original file URL",
+    typeof large.directSrc === "string"
+      && large.directSrc.includes("/api/items/item/file"),
     String(large.directSrc))
-  check("rung 1 carries no src at plan time",
-    plan(false, "transcode").directSrc === null)
-  check("the rung rides in the plan",
-    plan(false, "transcode").rung === "transcode"
-      && plan(true, "direct").rung === "direct")
+  check("a ladder without it carries no src at plan time",
+    plan(false, ["trim", "transcode"]).directSrc === null
+      && plan(false, ["transcode"]).directSrc === null)
+  check("the ladder rides in the plan, in order",
+    plan(false, ["trim", "transcode"]).rungs.join(">") === "trim>transcode")
 
   // An EXTREME-ASPECT video: the crop becomes the preview picture and the
   // whole-image swap stands down, so one gesture has one owner.
   const strip = { ...video, width: 2560, height: 1080 }
-  const stripPlan = (rung) =>
-    planCellPicture(strip, dbs, "grid-s", env(false), rung)
+  const stripPlan = (rungs) =>
+    planCellPicture(strip, dbs, "grid-s", env(false), rungs)
   check("an extreme-aspect video with previews OFF keeps its image crop and swap",
-    stripPlan("none").crop.kind === "image"
-      && typeof stripPlan("none").displaySrc === "string")
+    stripPlan([]).crop.kind === "image"
+      && typeof stripPlan([]).displaySrc === "string")
   check("...and with previews ON gets a video crop and no swap",
-    stripPlan("direct").crop.kind === "video"
-      && stripPlan("direct").displaySrc === null)
+    stripPlan(["direct"]).crop.kind === "video"
+      && stripPlan(["direct"]).displaySrc === null)
   check("...whose crop never swaps either (there is no single-frame crop)",
-    stripPlan("direct").crop.poster === stripPlan("direct").crop.frame)
+    stripPlan(["direct"]).crop.poster === stripPlan(["direct"]).crop.frame)
 
-  // A non-video row is untouched by any of it: the rung is the card's answer
-  // and a still card's is always "none", but even a mistaken one must not
-  // turn an image into a video cell.
+  // A non-video row is untouched by any of it.
   const image = { sha256: "ddd", type: "image/png", size: 900_000, width: 800, height: 600 }
   check("a still image is never planned as a video cell",
-    planCellPicture(image, dbs, "grid-s", env(true), "direct").kind === "still")
+    planCellPicture(image, dbs, "grid-s", env(true), ["direct"]).kind === "still")
 }
 
 finish()
