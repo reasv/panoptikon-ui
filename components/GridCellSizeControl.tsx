@@ -151,7 +151,7 @@ export function GridCellSizeControl({ metricsStore }: {
                     <LayoutGrid className="h-5 w-5" />
                 </Button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-80">
+            <PopoverContent align="end" className="w-96">
                 <div className="flex items-center justify-between">
                     <Label className="text-base">Cell Size</Label>
                     {/* tabular-nums and a reserved width so the row does not
@@ -187,22 +187,7 @@ export function GridCellSizeControl({ metricsStore }: {
                         aria-label="Keep page size when the cell size changes"
                     />
                 </div>
-                <div className="mt-4 flex items-center justify-between">
-                    <div className="pr-4">
-                        <Label className="text-sm">Animate</Label>
-                        {/* WHICH RANGE this writes is the one thing the
-                            control has to say out loud (D4): the same popover
-                            shows a different value once the slider crosses the
-                            threshold, and without this that reads as the
-                            toggle having flipped itself. */}
-                        <p className="text-xs text-muted-foreground">
-                            {range === "below"
-                                ? `For cells under ${SMALL_CELL_THRESHOLD_PX}px wide. Larger cells keep their own setting.`
-                                : `For cells ${SMALL_CELL_THRESHOLD_PX}px wide and over. Smaller cells keep their own setting.`}
-                        </p>
-                    </div>
-                    <AnimateModeSegment mode={animateMode} range={range} />
-                </div>
+                <AnimatedImagesRow mode={animateMode} range={range} />
                 <HoverPreviewRow />
                 {/* The only way back to the automatic policy: an explicit cell
                     size REPLACES it rather than adjusting it, so "auto" is not
@@ -225,18 +210,54 @@ export function GridCellSizeControl({ metricsStore }: {
 }
 
 /**
- * The animate toggle (D4): two segments showing the EFFECTIVE mode for the
- * range on screen, and writing only that range's slot.
+ * The animated-images setting (D4), laid out VERTICALLY: the name and one
+ * sentence saying what the setting IS, the control at full width, and under
+ * it one sentence saying what the CURRENT choice does — plus which size band
+ * it is for, which is the one thing this control must say out loud: the same
+ * popover shows a different value once the slider crosses the threshold, and
+ * without it that reads as the toggle having flipped itself.
  *
- * Not a `Switch` like its neighbour, because the two states are named
- * behaviours rather than an on/off of one: "on hover" is not the absence of
- * "always", and a switch labelled with either one reads as the wrong question.
- * `radiogroup`/`radio` rather than a listbox for the same reason a segmented
- * control is not a select — both options are visible and one is chosen.
+ * Named "Animated images" rather than "Animate" so it cannot be confused with
+ * the video-preview setting under it: this one is about GIFs and the other
+ * animated pictures, which have no player and simply run; that one is about
+ * video files, which need a player and a request to start.
  *
  * The write goes STRAIGHT to the preference box (lib/state/animatePref.ts):
  * nothing here touches the URL or the creation-defaults layer, which is the
  * rule the preference exists under (D3).
+ */
+function AnimatedImagesRow({ mode, range }: {
+    mode: AnimateMode
+    range: CellRange
+}) {
+    return (
+        <div className="mt-4">
+            <Label className="text-sm">Animated images</Label>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+                How GIFs and other animated pictures play in the grid.
+            </p>
+            <AnimateModeSegment mode={mode} range={range} />
+            <p className="mt-1.5 text-xs text-muted-foreground">
+                {mode === "always"
+                    ? "Playing as soon as they are on screen. "
+                    : "Still until you rest the pointer on one. "}
+                {range === "below"
+                    ? `Cells under ${SMALL_CELL_THRESHOLD_PX}px wide, the size in use now; wider cells are set separately.`
+                    : `Cells ${SMALL_CELL_THRESHOLD_PX}px wide and over, the size in use now; narrower cells are set separately.`}
+            </p>
+        </div>
+    )
+}
+
+/**
+ * The two segments show the EFFECTIVE mode for the range on screen, and write
+ * only that range's slot.
+ *
+ * Not a `Switch` like the page-size row, because the two states are named
+ * behaviours rather than an on/off of one: "on hover" is not the absence of
+ * "always", and a switch labelled with either one reads as the wrong question.
+ * `radiogroup`/`radio` rather than a listbox for the same reason a segmented
+ * control is not a select — both options are visible and one is chosen.
  */
 function AnimateModeSegment({ mode, range }: {
     mode: AnimateMode
@@ -249,7 +270,7 @@ function AnimateModeSegment({ mode, range }: {
             aria-checked={mode === value}
             onClick={() => setAnimateSlot(range, value === "always")}
             className={cn(
-                "rounded-sm px-2 py-1 text-xs transition-colors",
+                "flex-1 rounded-sm px-2 py-1 text-xs transition-colors",
                 mode === value
                     ? "bg-background text-foreground shadow-xs"
                     : "text-muted-foreground hover:text-foreground"
@@ -261,8 +282,8 @@ function AnimateModeSegment({ mode, range }: {
     return (
         <div
             role="radiogroup"
-            aria-label="When animated results play"
-            className="flex shrink-0 items-center gap-0.5 rounded-md bg-muted p-0.5"
+            aria-label="When animated images play"
+            className="mt-2 flex w-full items-center gap-0.5 rounded-md bg-muted p-0.5"
         >
             {segment("always", "Always")}
             {segment("hover", "On hover")}
@@ -297,39 +318,50 @@ function HoverPreviewRow() {
     const server = useHoverPreviewCapability()
     const choice = hoverPreviewChoice(resolved)
     return (
-        <div className="mt-4 flex items-center justify-between">
-            <div className="pr-4">
-                <Label className="text-sm">Video previews</Label>
-                <p className="text-xs text-muted-foreground">
-                    {hoverPreviewHint(server)}
-                </p>
-            </div>
+        <div className="mt-4">
+            <Label className="text-sm">Video previews</Label>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+                Play a video by resting the pointer on its card.
+            </p>
             <HoverPreviewSegment choice={choice} server={server} />
+            <p className="mt-1.5 text-xs text-muted-foreground">
+                {hoverPreviewHint(choice, server)}
+            </p>
         </div>
     )
 }
 
 /**
- * WHY A SEGMENT IS UNAVAILABLE, in a sentence — and it has to be a sentence
- * rather than a greyed button alone, because "your server will not do this"
- * and "you turned this off" are the same picture otherwise.
+ * WHAT THE CURRENT CHOICE DOES, in a sentence — never the whole menu. The
+ * text under the control describes the lit segment; the only time it talks
+ * about another segment is to say why that one is greyed out, because "your
+ * server will not do this" and "you turned this off" are the same picture
+ * otherwise.
  */
-function hoverPreviewHint(server: HoverPreviewCapability | null): string {
+function hoverPreviewHint(
+    choice: HoverPreviewChoice,
+    server: HoverPreviewCapability | null
+): string {
     if (!server) {
-        return "This server does not offer hover previews."
+        return "This server does not offer video previews."
+    }
+    if (!server.direct && !server.trim) {
+        return "Video previews are turned off for this server."
     }
     // The two own-bytes rungs are one thing to a person — "play the file
-    // itself" — so the hint names what that means rather than which of them
-    // a given file will take (docs/video-hover-preview-implementation.md).
-    const originals = "Play a video by resting on its card. “Originals” plays"
-        + " the file itself, trimmed to its first 16 seconds when it is large."
-    if (!server.direct && !server.trim) {
-        return "Hover previews are turned off for this server."
+    // itself" — so the sentence names what that means rather than which of
+    // them a given file will take (docs/video-hover-preview-implementation.md).
+    const noEncode = server.transcode
+        ? ""
+        : " This server does not convert the ones your browser cannot play, so “All” is unavailable."
+    switch (choice) {
+        case "off":
+            return `Videos show a still frame; nothing plays until you open one.${noEncode}`
+        case "originals":
+            return `Plays the file itself, trimmed to its first 16 seconds when it is large. Videos your browser cannot play stay still.${noEncode}`
+        case "all":
+            return "Plays the file itself, and asks the server for a short converted preview of the ones your browser cannot play."
     }
-    if (!server.transcode) {
-        return `${originals} This server does not convert the ones your browser cannot play, so “All” is unavailable.`
-    }
-    return `${originals} “All” also converts the ones your browser cannot play, which asks the server for a short preview.`
 }
 
 function HoverPreviewSegment({ choice, server }: {
@@ -352,7 +384,7 @@ function HoverPreviewSegment({ choice, server }: {
             // encode rung off forever (see `withHoverPreviewSlot`).
             onClick={() => setHoverPreviewChoice(value, server)}
             className={cn(
-                "rounded-sm px-2 py-1 text-xs transition-colors",
+                "flex-1 rounded-sm px-2 py-1 text-xs transition-colors",
                 !available && "opacity-40 cursor-not-allowed",
                 choice === value
                     ? "bg-background text-foreground shadow-xs"
@@ -370,7 +402,7 @@ function HoverPreviewSegment({ choice, server }: {
         <div
             role="radiogroup"
             aria-label="Video previews on hover"
-            className="flex shrink-0 items-center gap-0.5 rounded-md bg-muted p-0.5"
+            className="mt-2 flex w-full items-center gap-0.5 rounded-md bg-muted p-0.5"
         >
             {segment("off", "Off", true)}
             {/* Offered as soon as EITHER own-bytes rung is: they are one
