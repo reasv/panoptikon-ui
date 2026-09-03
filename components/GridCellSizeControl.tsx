@@ -318,13 +318,18 @@ function hoverPreviewHint(server: HoverPreviewCapability | null): string {
     if (!server) {
         return "This server does not offer hover previews."
     }
-    if (!server.direct) {
+    // The two own-bytes rungs are one thing to a person — "play the file
+    // itself" — so the hint names what that means rather than which of them
+    // a given file will take (docs/video-hover-preview-implementation.md).
+    const originals = "Play a video by resting on its card. “Originals” plays"
+        + " the file itself, trimmed to its first 16 seconds when it is large."
+    if (!server.direct && !server.trim) {
         return "Hover previews are turned off for this server."
     }
     if (!server.transcode) {
-        return "Play a video by resting on its card. This server does not convert the ones your browser cannot play, so “All” is unavailable."
+        return `${originals} This server does not convert the ones your browser cannot play, so “All” is unavailable.`
     }
-    return "Play a video by resting on its card. “All” also converts the ones your browser cannot play, which asks the server for a short preview."
+    return `${originals} “All” also converts the ones your browser cannot play, which asks the server for a short preview.`
 }
 
 function HoverPreviewSegment({ choice, server }: {
@@ -368,7 +373,10 @@ function HoverPreviewSegment({ choice, server }: {
             className="flex shrink-0 items-center gap-0.5 rounded-md bg-muted p-0.5"
         >
             {segment("off", "Off", true)}
-            {segment("originals", "Originals", !!server?.direct)}
+            {/* Offered as soon as EITHER own-bytes rung is: they are one
+                position on this control, and which of the two a given file
+                takes is arithmetic on its size. */}
+            {segment("originals", "Originals", !!server && (server.direct || server.trim))}
             {segment("all", "All", !!server?.transcode)}
         </div>
     )
