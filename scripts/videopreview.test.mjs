@@ -26,6 +26,7 @@ const {
   HOVER_PREVIEW_PREF_STORAGE_KEY,
   hoverPreviewCapability,
   hoverPreviewChoice,
+  isEmptyHoverPreviewPref,
   parseHoverPreviewPref,
   resolveHoverPreview,
   withHoverPreviewSlot,
@@ -44,7 +45,10 @@ const {
   previewLadder,
   previewRequest,
   previewRung,
+  previewArmLadder,
+  previewRungFailures,
   previewSliceBytes,
+  rungAtStep,
   shouldRecordFailure,
   withinPreviewCap,
 } = await import("../lib/videoPreview.ts")
@@ -217,6 +221,18 @@ console.log("\n== the stored preference (V7) ==")
   check("a server that offers nothing records nothing",
     shape(withHoverPreviewSlot({}, "off", null)) === shape({})
       && shape(withHoverPreviewSlot({}, "originals", HOVER_PREVIEW_OFF)) === shape({}))
+  // ...and a preference that records nothing is not WRITTEN at all: storing
+  // `{}` would leave a key meaning exactly what its absence means, minted by a
+  // click that did nothing (verifier round 2, B5).
+  check("a preference with no slots is empty, and is never persisted",
+    isEmptyHoverPreviewPref(withHoverPreviewSlot({}, "off", null)) === true
+      && isEmptyHoverPreviewPref(
+        withHoverPreviewSlot({}, "originals", HOVER_PREVIEW_OFF)) === true)
+  check("...while one with either slot is not",
+    isEmptyHoverPreviewPref({ direct: false }) === false
+      && isEmptyHoverPreviewPref({ transcode: true }) === false
+      && isEmptyHoverPreviewPref(
+        withHoverPreviewSlot({}, "off", can(false, true, false))) === false)
   check("a stale transcode slot is CLEARED when the server stops offering it",
     shape(withHoverPreviewSlot({ direct: true, transcode: false }, "originals", noEncode))
       === shape({ direct: true }))
@@ -483,6 +499,64 @@ console.log("\n== session downgrades ==")
     rungs(item) === "trim>transcode")
   check("...and leaves the encode when the copy is denied too",
     cellPreviewLadder(item, can(true, false, true), chrome).join(">") === "transcode")
+  clearPreviewRungFailures()
+}
+
+console.log("\n== the arm walks a FROZEN ladder (B1) ==")
+{
+  // TWO SUBTRACTIONS THAT MUST NOT COMPOUND. The host re-plans on any render
+  // — one lands milliseconds after a failure, because publishing the badge's
+  // progress sets host state — and its plan already subtracts the session map.
+  // If the arm ALSO advanced an index into that live plan, the failed rung
+  // would come off twice and the walk would land one PAST its fallback.
+  clearPreviewRungFailures()
+  const sha = "frozen"
+  const hostPlan = ["trim", "transcode"]
+
+  // What the arm takes at its mount: the plan minus what is already known bad.
+  const armed = previewArmLadder(hostPlan, previewRungFailures(sha))
+  check("the arm starts on the host's whole ladder when nothing has failed",
+    armed.join(">") === "trim>transcode", armed.join(">"))
+  check("...and the walk starts at its first rung",
+    rungAtStep(armed, 0) === "trim")
+
+  // The trim rung now fails. The component records it AND steps — and the
+  // snapshot must not move under it.
+  notePreviewRungFailure(sha, "trim")
+  check("recording a failure does NOT move the arm's frozen ladder",
+    armed.join(">") === "trim>transcode", armed.join(">"))
+  // THE REGRESSION, both sides of it spelled out: the frozen ladder falls to
+  // the encode, while a freshly re-derived one at the same step is `undefined`
+  // — the two-rung shape in which the cell used to die for the session.
+  check("a two-rung ladder falls to its SECOND rung, not off the end",
+    rungAtStep(armed, 1) === "transcode", rungAtStep(armed, 1))
+  check("...whereas re-deriving mid-walk would have skipped it (the old bug)",
+    rungAtStep(previewArmLadder(hostPlan, previewRungFailures(sha)), 1) === "none")
+
+  // The map still decides where the NEXT arm begins — which is all "never
+  // retry a failed rung" ever meant.
+  check("the next arm begins past the recorded failure",
+    previewArmLadder(hostPlan, previewRungFailures(sha)).join(">") === "transcode")
+
+  // The three-rung shape: one step at a time, nothing skipped.
+  clearPreviewRungFailures()
+  const three = previewArmLadder(["direct", "trim", "transcode"],
+    previewRungFailures(sha))
+  check("a three-rung ladder walks one step at a time",
+    rungAtStep(three, 0) === "direct"
+      && rungAtStep(three, 1) === "trim"
+      && rungAtStep(three, 2) === "transcode")
+  check("...and walking off the end is `none`, never `undefined`",
+    rungAtStep(three, 3) === "none" && rungAtStep(three, 99) === "none")
+
+  // The snapshot's own filtering.
+  check("the snapshot drops every rung already recorded",
+    previewArmLadder(["direct", "trim", "transcode"],
+      new Set(["direct", "transcode"])).join(">") === "trim")
+  check("a fully-failed plan snapshots to nothing",
+    previewArmLadder(["direct", "trim"], new Set(["direct", "trim"])).length === 0)
+  check("...and `none` is never a rung to walk",
+    previewArmLadder(["none"], new Set()).length === 0)
   clearPreviewRungFailures()
 }
 
