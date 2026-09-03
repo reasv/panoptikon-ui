@@ -159,36 +159,45 @@ export function PlayableBadge({ className, progress, caption }: {
                     reads as the ring lighting up rather than as a second ring
                     beside it.
 
-                    `rotate(-90 24 24)` starts it at twelve o'clock, which is
-                    where a person expects a clock-face fill to begin; the
-                    dash pattern is "paint this much, then leave the rest",
-                    which is a fill for a determinate fraction and a sweep for
-                    the indeterminate one once it is spun.
+                    TWO ELEMENTS, TWO TRANSFORMS, and that split is the fix
+                    for a ring that shipped drawn off the disc. The
+                    twelve-o'clock start is the <g>'s `rotate(-90 24 24)`,
+                    an SVG presentation attribute whose own centre is in the
+                    attribute. The indeterminate spin is a CSS animation on
+                    the <circle> with a CSS `transform-origin` at the same
+                    centre. They must never sit on ONE element: Chromium
+                    reads `rotate(-90 24 24)` as `translate(24,24)
+                    rotate(-90) translate(-24,-24)` and THEN applies the CSS
+                    origin on top, which rotates the ring about (48,48) — the
+                    viewBox's bottom-right corner — so the arc landed below
+                    the disc, mostly clipped, and the spin interpolated
+                    between two unrelated transforms and wandered instead of
+                    turning in place. (`transform-box` for SVG defaults to
+                    `view-box`, so `24px 24px` on the child is the middle.)
 
-                    The spin is a `transform` on the ELEMENT, so it composes
-                    with the static rotate above by being applied around the
-                    same user-space centre — `transform-box` for SVG defaults
-                    to `view-box`, so 24px 24px is the viewBox's middle and
-                    needs no fill-box override. */}
+                    The dash pattern is "paint this much, then leave the
+                    rest": a fill for a determinate fraction, a sweep for the
+                    indeterminate one once it is spun. */}
                 {pending && (
-                    <circle
-                        cx="24"
-                        cy="24"
-                        r="22"
-                        fill="none"
-                        stroke="rgba(255,255,255,0.95)"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                        strokeDasharray={`${RING_CIRCUMFERENCE * fraction} ${RING_CIRCUMFERENCE}`}
-                        transform="rotate(-90 24 24)"
-                        className={progress === "queued" ? "animate-spin" : undefined}
-                        style={{
-                            transformOrigin: "24px 24px",
-                            transition: progress === "queued"
-                                ? undefined
-                                : "stroke-dasharray 200ms linear",
-                        }}
-                    />
+                    <g transform="rotate(-90 24 24)">
+                        <circle
+                            cx="24"
+                            cy="24"
+                            r="22"
+                            fill="none"
+                            stroke="rgba(255,255,255,0.95)"
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                            strokeDasharray={`${RING_CIRCUMFERENCE * fraction} ${RING_CIRCUMFERENCE}`}
+                            className={progress === "queued" ? "animate-spin" : undefined}
+                            style={{
+                                transformOrigin: "24px 24px",
+                                transition: progress === "queued"
+                                    ? undefined
+                                    : "stroke-dasharray 200ms linear",
+                            }}
+                        />
+                    </g>
                 )}
             </svg>
             {caption && (
