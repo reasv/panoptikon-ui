@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
-import type { PlaceholderDataURL } from "@/lib/state/blurHashDataURL"
+import { isPlaceholderColour, type CellPlaceholder } from "@/lib/state/blurHashDataURL"
 import { observeAnimatedCell } from "@/lib/state/animatedPlayback"
 
 /**
@@ -74,7 +74,7 @@ export function LoopVideo({
     src,
     poster,
     alt,
-    blurDataURL,
+    placeholder,
     className,
     elementRef,
     registered,
@@ -84,7 +84,7 @@ export function LoopVideo({
     src: string
     poster: string
     alt: string
-    blurDataURL: PlaceholderDataURL | undefined
+    placeholder: CellPlaceholder | undefined
     className?: string
     elementRef?: (element: HTMLElement | null) => void
     /** False while something covers this cell — see LoopPictureProps.occluded. */
@@ -176,12 +176,23 @@ export function LoopVideo({
             preload="none"
             onError={onFailed}
             onPlaying={fadeIn ? () => setLive(true) : undefined}
-            style={blurDataURL ? {
-                backgroundImage: `url("${blurDataURL}")`,
-                backgroundSize: "cover",
-                backgroundPosition: "50% 0%",
-                backgroundRepeat: "no-repeat",
-            } : undefined}
+            // Either form of the placeholder, painted the way a <video> can
+            // paint it. NOT CLEARED ON LOAD, unlike the card's <img>: a video
+            // element fires no load event for its `poster`, and it has no
+            // alpha to let anything through once it does paint — an H.264 loop
+            // is opaque by construction. The colour rung only reaches here at
+            // all on a cell small enough to be `grid-xs` AND animated enough
+            // to be a loop.
+            style={placeholder
+                ? (isPlaceholderColour(placeholder)
+                    ? { backgroundColor: placeholder }
+                    : {
+                        backgroundImage: `url("${placeholder}")`,
+                        backgroundSize: "cover",
+                        backgroundPosition: "50% 0%",
+                        backgroundRepeat: "no-repeat",
+                    })
+                : undefined}
             className={cn(FILL_CLASSES,
                 fadeIn && cn("transition-opacity duration-150",
                     live ? "opacity-100" : "opacity-0"),
