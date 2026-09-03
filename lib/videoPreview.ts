@@ -353,6 +353,44 @@ export type PreviewRow = PlayabilityItem & {
 const rungFailures = new Map<string, Set<PreviewRung>>()
 
 /**
+ * THE RUNGS ONE ARM WILL WALK: the host's plan, minus whatever this item has
+ * already failed.
+ *
+ * TWO SUBTRACTIONS THAT MUST NOT COMPOUND, and this is the whole of that rule.
+ * `cellPreviewLadder` subtracts the session map at PLAN time, and the host
+ * re-plans on any render — one lands a couple of milliseconds after a failure,
+ * because publishing the badge's progress sets host state. A walker that also
+ * advanced an INDEX into the live plan would therefore subtract the failed
+ * rung twice and land one PAST its fallback: on a two-rung ladder that is
+ * `undefined`, i.e. the cell falls off the end and shows nothing for the rest
+ * of the session, and on a three-rung one it skips the middle rung after
+ * creating and cancelling a real job for it (verifier round 2, §4).
+ *
+ * So the arm takes ONE SNAPSHOT and walks that. The map still decides where
+ * the NEXT arm begins — which is what "never retry a failed rung" is made of —
+ * but it can no longer move the ground under an arm in progress.
+ *
+ * Taken from the map rather than trusting the plan's own subtraction, because
+ * the plan may be a render old: a failure recorded by the previous arm reaches
+ * this one whether or not the card has re-rendered since.
+ */
+export function previewArmLadder(
+  rungs: readonly PreviewRung[],
+  failed: ReadonlySet<PreviewRung>
+): readonly PreviewRung[] {
+  const walk = rungs.filter((rung) => rung !== "none" && !failed.has(rung))
+  return walk.length === 0 ? NO_PREVIEW_RUNGS : walk
+}
+
+/** The rung at `step`, or `"none"` once the walk has run off the end. */
+export function rungAtStep(
+  ladder: readonly PreviewRung[],
+  step: number
+): PreviewRung {
+  return ladder[step] ?? "none"
+}
+
+/**
  * IS THIS ELEMENT ERROR EVIDENCE ABOUT THE RUNG?
  *
  * Only while the cell still HOLDS the arm. Letting go — a pointer leave, a

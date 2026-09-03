@@ -13,7 +13,10 @@ import { LoopVideo } from "@/components/LoopVideo"
 import { CELL_HOVER_ROOT_ATTR, useArmedHover } from "@/hooks/useArmedHover"
 import {
   notePreviewRungFailure,
+  previewArmLadder,
   previewFeedback,
+  previewRungFailures,
+  rungAtStep,
   shouldRecordFailure,
   previewKey,
   previewRequest,
@@ -103,52 +106,15 @@ export function VideoHoverPicture({
   /** The badge's progress, published upward — see the hosts' own state. */
   onFeedback: (feedback: PreviewFeedback | null) => void
 }) {
-  // HOW FAR DOWN THE LADDER THIS MOUNT HAS WALKED. A rung that fails hands the
-  // cell to the next one; walking off the end leaves `"none"`, which disarms
-  // the hover and leaves the frame the cell was already showing — the correct
-  // picture, and the one every other failure on these cards lands on.
-  //
-  // The step is LOCAL, while the failure itself is recorded in the session map
-  // (`notePreviewRungFailure`): the local number is what re-renders this mount
-  // onto the next rung, and the map is what stops the card handing the failed
-  // rung back the next time this cell mounts.
-  const [step, setStep] = useState(0)
-  const rung = picture.rungs[step] ?? "none"
-  const armable = !disabled && rung !== "none"
+  // IS THERE ANYTHING LEFT TO TRY? The plan's ladder minus what this item has
+  // already failed — the same subtraction the arm itself makes at its mount
+  // (`PreviewArm`), asked here only to decide whether the hover arms at all.
+  // Cheap: a Map lookup and a filter over at most three strings, on video
+  // cells with previews on and nowhere else.
+  const armable =
+    !disabled &&
+    previewArmLadder(picture.rungs, previewRungFailures(sha256)).length > 0
   const hover = useArmedHover(armable)
-  /**
-   * HAS THIS CELL LET GO? A ref rather than state, and both halves of that are
-   * load-bearing: it is read from an event handler that can fire after the
-   * element is already gone, and flipping it must re-render nothing.
-   *
-   * Written by the `<video>`'s OWN ref, which is the only place that can know
-   * the answer at the right moment: `LoopVideo`'s cleanup calls `elementRef`
-   * with null BEFORE it runs `abortVideo` (see the ref there), so by the time
-   * the abort's `load()` could queue an `error` this is already true.
-   */
-  const released = useRef(false)
-  const attachPreviewVideo = useCallback((element: HTMLElement | null) => {
-    released.current = element === null
-  }, [])
-  const failRung = () => {
-    notePreviewRungFailure(sha256, rung)
-    setStep((current) => current + 1)
-  }
-  /**
-   * The same fall, from an ELEMENT error rather than a job's verdict — and
-   * therefore guarded (`shouldRecordFailure`, which is where the reasoning
-   * lives). A teardown's `error` must neither demote the item for the session
-   * nor step this mount down the ladder.
-   *
-   * The job path deliberately does NOT go through here: a `failed` job is the
-   * server's verdict, it arrives while this cell is mounted and watching, and
-   * between one rung's element unmounting and the next one's mounting there is
-   * a window in which `released` is legitimately true.
-   */
-  const failRungFromElement = () => {
-    if (!shouldRecordFailure({ released: released.current, rung })) return
-    failRung()
-  }
   // The anchor for BOTH the arming and the frame swap's `closest` lookup.
   const baseRef = useRef<HTMLElement | null>(null)
   const attach = useCallback((element: HTMLElement | null) => {
@@ -229,55 +195,156 @@ export function VideoHoverPicture({
           unoptimized
         />
       )}
-      {hover.active && (rung === "direct" && picture.directSrc ? (
-        // THE DIRECT RUNG: the item's OWN file, whole, which this browser can
-        // decode and which the server's cap has already said is small enough
-        // to be worth pulling. `LoopVideo` is `preload="none"` with no
-        // autoplay, so the request starts with the director's `play()` — but
-        // a media element buffers ahead as fast as the link allows once it
-        // does, which is why the cap and not the element is what bounds this.
-        <LoopVideo
-          src={picture.directSrc}
-          poster={picture.frame}
-          alt={alt}
-          // NO placeholder: the frame underneath is it, and a blur (or a flat
-          // colour) behind a layer fading in over a painted picture is the
-          // flash the fade exists to avoid.
-          placeholder={undefined}
-          className={className}
-          elementRef={attachPreviewVideo}
-          fadeIn
-          registered
-          onFailed={failRungFromElement}
-        />
-      ) : rung === "trim" || rung === "transcode" ? (
-        // BOTH JOB RUNGS THROUGH ONE PATH. A stream copy and a re-encode
-        // differ only in the preset they name: same store, same key shape,
-        // same cancel-and-joined rules, same badge ring — the copy is simply
-        // fast enough that the ring barely shows.
-        //
-        // KEYED ON THE RUNG so that falling from `trim` to `transcode`
-        // REMOUNTS this layer: its whole mechanism is its lifetime (see its
-        // doc), and a preset change under a mounted one would leave the first
-        // job's slot claimed and its effect keyed on the old value.
-        <PreviewTranscodeLayer
-          key={rung}
-          rung={rung}
+      {hover.active && (
+        <PreviewArm
+          picture={picture}
           sha256={sha256}
           indexDb={indexDb}
           userDataDb={userDataDb}
           duration={duration}
-          poster={picture.frame}
           alt={alt}
           className={className}
           onFeedback={onFeedback}
-          onJobFailed={failRung}
-          onArtifactFailed={failRungFromElement}
-          elementRef={attachPreviewVideo}
         />
-      ) : null)}
+      )}
     </>
   )
+}
+
+/**
+ * ONE ARM'S WALK DOWN THE LADDER.
+ *
+ * ITS LIFETIME IS THE ARM, and that is the whole reason it is a component
+ * rather than a few more `useState`s in the picture above: the ladder it walks
+ * is SNAPSHOT in its mount and cannot be moved afterwards. The host re-plans
+ * on any render — one lands milliseconds after a failure, because publishing
+ * the badge's progress sets host state — and its plan already subtracts the
+ * session map, so a walker reading the live prop while advancing its own index
+ * would subtract the same failure twice and land one rung PAST its fallback
+ * (verifier round 2, §4: a two-rung ladder fell off the end and the cell never
+ * previewed again; a three-rung one skipped the middle rung after creating and
+ * cancelling a real job for it). `previewArmLadder` carries the rule.
+ *
+ * A failure is still recorded the moment it happens, and still with session
+ * scope — it simply reaches the NEXT arm rather than this one, which is what
+ * "never retry a failed rung" always meant.
+ */
+function PreviewArm({
+  picture,
+  sha256,
+  indexDb,
+  userDataDb,
+  duration,
+  alt,
+  className,
+  onFeedback,
+}: {
+  picture: CellVideoPicture
+  sha256: string
+  indexDb: string | null
+  userDataDb: string | null
+  duration?: number | null
+  alt: string
+  className?: string
+  onFeedback: (feedback: PreviewFeedback | null) => void
+}) {
+  // THE SNAPSHOT, taken once at mount by a lazy initializer — the idiomatic
+  // "freeze a prop for this instance". Re-derived from the session map rather
+  // than trusted from the plan, because the plan may be a render old and a
+  // failure the previous arm recorded has to reach this one.
+  const [ladder] = useState(() =>
+    previewArmLadder(picture.rungs, previewRungFailures(sha256)))
+  // HOW FAR DOWN IT THIS ARM HAS WALKED. Off the end is `"none"`: nothing
+  // mounts, and the frame the cell was already showing stays — the correct
+  // picture, and the one every other failure on these cards lands on.
+  const [step, setStep] = useState(0)
+  const rung = rungAtStep(ladder, step)
+  /**
+   * HAS THIS ARM LET GO? A ref rather than state, and both halves of that are
+   * load-bearing: it is read from an event handler that can fire after the
+   * element is already gone, and flipping it must re-render nothing.
+   *
+   * Written by the `<video>`'s OWN ref, which is the only place that can know
+   * the answer at the right moment: `LoopVideo`'s cleanup calls `elementRef`
+   * with null BEFORE it runs `abortVideo` (see the ref there), so by the time
+   * the abort's `load()` could queue an `error` this is already true.
+   */
+  const released = useRef(false)
+  const attachPreviewVideo = useCallback((element: HTMLElement | null) => {
+    released.current = element === null
+  }, [])
+  const failRung = () => {
+    notePreviewRungFailure(sha256, rung)
+    setStep((current) => current + 1)
+  }
+  /**
+   * The same fall, from an ELEMENT error rather than a job's verdict — and
+   * therefore guarded (`shouldRecordFailure`, which is where the reasoning
+   * lives). A teardown's `error` must neither demote the item for the session
+   * nor step this arm down the ladder.
+   *
+   * The job path deliberately does NOT go through here: a `failed` job is the
+   * server's verdict, it arrives while this arm is mounted and watching, and
+   * between one rung's element unmounting and the next one's mounting there is
+   * a window in which `released` is legitimately true.
+   */
+  const failRungFromElement = () => {
+    if (!shouldRecordFailure({ released: released.current, rung })) return
+    failRung()
+  }
+  if (rung === "direct" && picture.directSrc) {
+    // THE DIRECT RUNG: the item's OWN file, whole, which this browser can
+    // decode and which the server's cap has already said is small enough to
+    // be worth pulling. `LoopVideo` is `preload="none"` with no autoplay, so
+    // the request starts with the director's `play()` — but a media element
+    // buffers ahead as fast as the link allows once it does, which is why the
+    // cap and not the element is what bounds this.
+    return (
+      <LoopVideo
+        src={picture.directSrc}
+        poster={picture.frame}
+        alt={alt}
+        // NO placeholder: the frame underneath is it, and a blur (or a flat
+        // colour) behind a layer fading in over a painted picture is the
+        // flash the fade exists to avoid.
+        placeholder={undefined}
+        className={className}
+        elementRef={attachPreviewVideo}
+        fadeIn
+        registered
+        onFailed={failRungFromElement}
+      />
+    )
+  }
+  if (rung === "trim" || rung === "transcode") {
+    // BOTH JOB RUNGS THROUGH ONE PATH. A stream copy and a re-encode differ
+    // only in the preset they name: same store, same key shape, same
+    // cancel-and-joined rules, same badge ring — the copy is simply fast
+    // enough that the ring barely shows.
+    //
+    // KEYED ON THE RUNG so that falling from `trim` to `transcode` REMOUNTS
+    // this layer: its whole mechanism is its lifetime (see its doc), and a
+    // preset change under a mounted one would leave the first job's slot
+    // claimed and its effect keyed on the old value.
+    return (
+      <PreviewTranscodeLayer
+        key={rung}
+        rung={rung}
+        sha256={sha256}
+        indexDb={indexDb}
+        userDataDb={userDataDb}
+        duration={duration}
+        poster={picture.frame}
+        alt={alt}
+        className={className}
+        onFeedback={onFeedback}
+        onJobFailed={failRung}
+        onArtifactFailed={failRungFromElement}
+        elementRef={attachPreviewVideo}
+      />
+    )
+  }
+  return null
 }
 
 /**
