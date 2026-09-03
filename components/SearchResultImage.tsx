@@ -34,7 +34,7 @@ import {
     HOVER_PREVIEW_OFF,
     type HoverPreviewCapability,
 } from '@/lib/state/hoverPreviewPref';
-import { cellPreviewRung, type PreviewFeedback } from '@/lib/videoPreview';
+import { cellPreviewLadder, type PreviewFeedback } from '@/lib/videoPreview';
 import { VideoHoverPicture } from '@/components/VideoHoverPicture';
 
 // The marker the extreme-aspect swap and the hover arming bind their listeners
@@ -377,12 +377,13 @@ export const SearchResultImage = memo(function SearchResultImage({
     // leaves here with `"still"` having mounted no hook, no listener and no
     // second element — exactly as before any of this existed.
     //
-    // THE PREVIEW RUNG, which is the plan's fifth input and the only one that
-    // depends on what this BROWSER can decode (lib/videoPreview.ts). Short-
-    // circuited to "none" before any probe for every row that is not a video
-    // and on every surface where previews are off, so a grid of stills pays
-    // one string comparison for the feature existing.
-    const previewRung = cellPreviewRung(result, hoverPreview)
+    // THE PREVIEW LADDER, which is the plan's fifth input and the only one that
+    // depends on what this BROWSER can decode and how big the file is
+    // (lib/videoPreview.ts). Short-circuited to the empty ladder before any
+    // probe for every row that is not a video and on every surface where
+    // previews are off, so a grid of stills pays one string comparison for the
+    // feature existing.
+    const previewRungs = cellPreviewLadder(result, hoverPreview)
     const plan = planCellPicture(result, dbs, tierRef.current, {
         animatedFloor,
         displayLoopTrigger,
@@ -390,7 +391,7 @@ export const SearchResultImage = memo(function SearchResultImage({
         // constant (lib/gridCellSize.ts), on a value it already has. A host
         // that measures its box has already said everything this needs.
         smallCell: isSmallCell(cellWidth),
-    }, previewRung)
+    }, previewRungs)
     // The badge rule's input, and the ONLY thing outside the plan that still
     // needs the three-way mode: `"still"` and `"static"` paint the same element
     // and differ only in what the badge means over them (D8).

@@ -12,12 +12,14 @@ import type { CellVideoPicture } from "@/lib/cellPicture"
 import { LoopVideo } from "@/components/LoopVideo"
 import { CELL_HOVER_ROOT_ATTR, useArmedHover } from "@/hooks/useArmedHover"
 import {
+  notePreviewRungFailure,
   previewFeedback,
   previewKey,
   previewRequest,
   releasePreviewTranscode,
   startPreviewTranscode,
   type PreviewFeedback,
+  type PreviewJobRung,
 } from "@/lib/videoPreview"
 import { useTranscodeKeyState } from "@/lib/videoTranscode"
 
@@ -100,13 +102,23 @@ export function VideoHoverPicture({
   /** The badge's progress, published upward — see the hosts' own state. */
   onFeedback: (feedback: PreviewFeedback | null) => void
 }) {
-  // ONE-WAY, like every other picture on these cards: a response that is not a
-  // playable video (a 404 on an evicted artifact, a codec the probe was wrong
-  // about) stops this cell arming for the rest of its life, and the frame it
-  // was already showing is the correct picture.
-  const [failed, setFailed] = useState(false)
-  const armable = !disabled && !failed && picture.rung !== "none"
+  // HOW FAR DOWN THE LADDER THIS MOUNT HAS WALKED. A rung that fails hands the
+  // cell to the next one; walking off the end leaves `"none"`, which disarms
+  // the hover and leaves the frame the cell was already showing — the correct
+  // picture, and the one every other failure on these cards lands on.
+  //
+  // The step is LOCAL, while the failure itself is recorded in the session map
+  // (`notePreviewRungFailure`): the local number is what re-renders this mount
+  // onto the next rung, and the map is what stops the card handing the failed
+  // rung back the next time this cell mounts.
+  const [step, setStep] = useState(0)
+  const rung = picture.rungs[step] ?? "none"
+  const armable = !disabled && rung !== "none"
   const hover = useArmedHover(armable)
+  const failRung = () => {
+    notePreviewRungFailure(sha256, rung)
+    setStep((current) => current + 1)
+  }
   // The anchor for BOTH the arming and the frame swap's `closest` lookup.
   const baseRef = useRef<HTMLElement | null>(null)
   const attach = useCallback((element: HTMLElement | null) => {
@@ -187,11 +199,13 @@ export function VideoHoverPicture({
           unoptimized
         />
       )}
-      {hover.active && (picture.rung === "direct" && picture.directSrc ? (
-        // RUNG 0: the item's OWN file, which this browser can decode.
-        // `LoopVideo` is `preload="none"` with no autoplay, so the bytes are
-        // requested by the director's `play()` — a Range read of the moov atom
-        // and the first seconds, not the file.
+      {hover.active && (rung === "direct" && picture.directSrc ? (
+        // THE DIRECT RUNG: the item's OWN file, whole, which this browser can
+        // decode and which the server's cap has already said is small enough
+        // to be worth pulling. `LoopVideo` is `preload="none"` with no
+        // autoplay, so the request starts with the director's `play()` — but
+        // a media element buffers ahead as fast as the link allows once it
+        // does, which is why the cap and not the element is what bounds this.
         <LoopVideo
           src={picture.directSrc}
           poster={picture.frame}
@@ -203,10 +217,21 @@ export function VideoHoverPicture({
           className={className}
           fadeIn
           registered
-          onFailed={() => setFailed(true)}
+          onFailed={failRung}
         />
-      ) : picture.rung === "transcode" ? (
+      ) : rung === "trim" || rung === "transcode" ? (
+        // BOTH JOB RUNGS THROUGH ONE PATH. A stream copy and a re-encode
+        // differ only in the preset they name: same store, same key shape,
+        // same cancel-and-joined rules, same badge ring — the copy is simply
+        // fast enough that the ring barely shows.
+        //
+        // KEYED ON THE RUNG so that falling from `trim` to `transcode`
+        // REMOUNTS this layer: its whole mechanism is its lifetime (see its
+        // doc), and a preset change under a mounted one would leave the first
+        // job's slot claimed and its effect keyed on the old value.
         <PreviewTranscodeLayer
+          key={rung}
+          rung={rung}
           sha256={sha256}
           indexDb={indexDb}
           userDataDb={userDataDb}
@@ -215,7 +240,7 @@ export function VideoHoverPicture({
           alt={alt}
           className={className}
           onFeedback={onFeedback}
-          onFailed={() => setFailed(true)}
+          onFailed={failRung}
         />
       ) : null)}
     </>
@@ -223,7 +248,8 @@ export function VideoHoverPicture({
 }
 
 /**
- * RUNG 1, mounted only while this cell is the previewing one (V3/V4/V11).
+ * THE TWO JOB RUNGS, mounted only while this cell is the previewing one
+ * (V3/V4/V11).
  *
  * ITS LIFETIME IS THE WHOLE MECHANISM. Mounting submits (or joins) the preview
  * job and claims the single client-wide preview slot; unmounting gives the
@@ -239,6 +265,7 @@ export function VideoHoverPicture({
  * not make its neighbours pay either.
  */
 function PreviewTranscodeLayer({
+  rung,
   sha256,
   indexDb,
   userDataDb,
@@ -249,6 +276,8 @@ function PreviewTranscodeLayer({
   onFeedback,
   onFailed,
 }: {
+  /** Which preset to ask for: the stream copy, or the re-encode. */
+  rung: PreviewJobRung
   sha256: string
   indexDb: string | null
   userDataDb: string | null
@@ -262,7 +291,7 @@ function PreviewTranscodeLayer({
   // The 16 s cap, and the key it produces. Both are pure functions of the row
   // (lib/videoPreview.ts), so the key is a value this component holds rather
   // than something it has to be told.
-  const request = previewRequest({ duration })
+  const request = previewRequest({ duration }, rung)
   const key = previewKey(sha256, request)
   useEffect(() => {
     startPreviewTranscode({
@@ -293,6 +322,15 @@ function PreviewTranscodeLayer({
   // only: the badge goes back to its ordinary self the moment the pointer
   // leaves, whatever the job then does.
   useEffect(() => () => onFeedback(null), [onFeedback])
+  // THE JOB'S OWN VERDICT IS A RUNG FAILURE. `failed` is sticky — the server
+  // negative-caches it — so there is nothing to wait for and nothing to retry
+  // at this preset; what there may be is a rung below (a refused mux falls to
+  // the re-encode). The card records it either way, so a remount starts where
+  // this one left off rather than repeating the refusal.
+  const jobFailed = state.state === "failed"
+  useEffect(() => {
+    if (jobFailed) onFailed()
+  }, [jobFailed, onFailed])
   if (state.state !== "done") return null
   return (
     <LoopVideo

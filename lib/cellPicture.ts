@@ -44,7 +44,7 @@ import { coverBindingEdge } from "./gridCellSize"
 // Type-only, so this module keeps the runtime-import list its header names:
 // lib/videoPreview.ts reaches for the playability ladder and the transcode
 // store, neither of which belongs in a function that decides URLs.
-import type { PreviewRung } from "./videoPreview"
+import { NO_PREVIEW_RUNGS, type PreviewRung } from "./videoPreview"
 
 /**
  * The picture of a VIDEO cell that may hover-preview
@@ -58,14 +58,20 @@ import type { PreviewRung } from "./videoPreview"
  * cell never swaps to the 2×2 while previews are on" a property of the plan
  * rather than a branch in the card.
  *
- * `directSrc` is the ORIGINAL FILE, non-null only at rung 0 — nothing requests
- * it until the dwell fires, and no `<video>` exists in the grid before then.
+ * `directSrc` is the ORIGINAL FILE, non-null only when the `"direct"` rung is
+ * on the ladder — nothing requests it until the dwell fires, and no `<video>`
+ * exists in the grid before then.
+ *
+ * `rungs` is the LADDER, in order (lib/videoPreview.ts): what this cell tries
+ * first, and what it falls to if that rung fails. A list rather than one
+ * answer because a decode error or a refused mux is only knowable by trying,
+ * and the picture is the thing that finds out.
  */
 export interface CellVideoPicture {
   poster: string
   frame: string
   directSrc: string | null
-  rung: PreviewRung
+  rungs: readonly PreviewRung[]
 }
 
 /**
@@ -215,17 +221,17 @@ export function planCellPicture(
   tier: ThumbnailTier | undefined,
   env: CellPictureEnv,
   /**
-   * WHICH PREVIEW RUNG this cell's item is on (lib/videoPreview.ts), decided
-   * by the card from the row, the playability ladder and the host's one
-   * resolved capability — and handed in for the reason `tier` is: this file
-   * must not reach for a media element, and the answer depends on what the
-   * BROWSER can decode, which is not a property of any URL.
+   * THE PREVIEW LADDER for this cell's item (lib/videoPreview.ts), decided by
+   * the card from the row, the playability ladder, the file's size and the
+   * host's one resolved capability — and handed in for the reason `tier` is:
+   * this file must not reach for a media element, and the answer depends on
+   * what the BROWSER can decode, which is not a property of any URL.
    *
-   * `"none"` — the default, and what every surface that knows nothing about
+   * EMPTY — the default, and what every surface that knows nothing about
    * previews passes — reproduces the plans that shipped before this existed,
    * URL for URL.
    */
-  rung: PreviewRung = "none"
+  rungs: readonly PreviewRung[] = NO_PREVIEW_RUNGS
 ): CellPicturePlan {
   const extreme = isExtremeAspect(row.width, row.height)
   const animated = animatedCellMode(row, env.animatedFloor)
@@ -233,7 +239,7 @@ export function planCellPicture(
   // Is the hover gesture this card's PREVIEW's? Everything V12 changes hangs
   // off this one boolean, and with it false every branch below is the branch
   // that shipped before hover previews existed.
-  const previews = video && rung !== "none"
+  const previews = video && rungs.length > 0
   // D9: at small sizes a video's 2×2 frame mosaic is four thumbnails' worth of
   // detail in a box too small to read any of them, so the cell asks for the
   // single frame instead and swaps to the mosaic on hover. NOT applied to an
@@ -258,10 +264,13 @@ export function planCellPicture(
   const videoPicture = (poster: string, frame: string): CellVideoPicture => ({
     poster,
     frame,
-    // Rung 0 mounts the item's OWN bytes; rung 1 has no URL until its job is
-    // done, and the cell asks the transcode store for one when the dwell fires.
-    directSrc: rung === "direct" ? originalFileURL(dbs, row.sha256) : null,
-    rung,
+    // The direct rung mounts the item's OWN bytes; the two job rungs have no
+    // URL until their job is done, and the cell asks the transcode store for
+    // one when the dwell fires.
+    directSrc: rungs.includes("direct")
+      ? originalFileURL(dbs, row.sha256)
+      : null,
+    rungs,
   })
   if (extreme) {
     return {

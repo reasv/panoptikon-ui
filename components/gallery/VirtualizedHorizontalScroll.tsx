@@ -38,7 +38,7 @@ import {
     HOVER_PREVIEW_OFF,
     type HoverPreviewCapability,
 } from '@/lib/state/hoverPreviewPref'
-import { cellPreviewRung, type PreviewFeedback } from '@/lib/videoPreview'
+import { cellPreviewLadder, type PreviewFeedback } from '@/lib/videoPreview'
 import { VideoHoverPicture } from '@/components/VideoHoverPicture'
 import type { CellVideoPicture } from '@/lib/cellPicture'
 
@@ -563,23 +563,23 @@ function VirtualHorizontalScrollElement({
     // with no listener and no state.
     const animated = animatedCellMode(item, animatedFloor)
     // THE PREVIEW (V9: the strip is one of the two surfaces that gets it).
-    // Short-circuited to "none" before any codec probe for every card that is
-    // not a video and whenever previews are off, so a strip of stills pays one
-    // string comparison for the feature existing.
-    const previewRung = cellPreviewRung(item, hoverPreview)
+    // Short-circuited to the empty ladder before any codec probe for every
+    // card that is not a video and whenever previews are off, so a strip of
+    // stills pays one string comparison for the feature existing.
+    const previewRungs = cellPreviewLadder(item, hoverPreview)
     // The strip card is 240 CSS px wide, i.e. always in the LARGE range, so
     // V12's large-cell rule applies verbatim: the base picture is the 2x2
     // mosaic this card has always shown, the single frame arrives with the
     // hover as the waiting placeholder, and the preview fades in over it.
-    const previewPicture: CellVideoPicture | null = previewRung === "none"
+    const previewPicture: CellVideoPicture | null = previewRungs.length === 0
         ? null
         : {
             poster: thumbnailURL,
             frame: thumbnailPictureURL(dbs, item, null, tier, false),
-            directSrc: previewRung === "direct"
+            directSrc: previewRungs.includes("direct")
                 ? originalFileURL(dbs, item.sha256)
                 : null,
-            rung: previewRung,
+            rungs: previewRungs,
         }
     // What the badge says while a preview transcode is pending (V11). LOCAL
     // state, written by the picture below; the SUBSCRIPTION to the job lives
