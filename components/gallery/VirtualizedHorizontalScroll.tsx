@@ -16,7 +16,7 @@ import { useSelectedDBs } from "@/lib/state/database"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { PinButton } from './PinButton'
 import { FindButton } from './FindButton'
-import { blurHashToDataURL, type PlaceholderDataURL } from '@/lib/state/blurHashDataURL'
+import { cellPlaceholder, clearPlaceholderColour, isPlaceholderColour, type CellPlaceholder } from '@/lib/state/blurHashDataURL'
 import { LoopVideo } from '@/components/LoopVideo'
 import { PlayableBadge } from '@/components/PlayableBadge'
 import { useSearchLoading } from '@/lib/state/zust'
@@ -24,6 +24,7 @@ import { topRowHighlightItem, virtualPageOf } from '@/lib/scrollMode'
 import {
     animatedCellMode,
     showsMotionBadge,
+    placeholderForTier,
     tierForCellWidth,
     type AnimatedFloor,
     type ThumbnailTier,
@@ -632,7 +633,19 @@ function VirtualHorizontalScrollElement({
         onNavigate(ownIndex % nItems)
         setSelected(item)
     }
-    const blurDataURL = useMemo(() => item.blurhash ? blurHashToDataURL(item.blurhash) : undefined, [item.blurhash])
+    // The placeholder off the SAME tier the card's rendition uses, which on
+    // this surface is the strip's one answer for its fixed 240x320 box — so it
+    // moves only with the device pixel ratio, never per card. NOT a constant
+    // rung: at dpr 1 the binding edge is 320 device px, i.e. `grid-s`, and the
+    // strip remounts cards at virtualized rates exactly as the result grid
+    // does. `tier` is in the deps because it is a LIVE prop here (unlike the
+    // grid's latched one), so a dpr change must not strand a value keyed to
+    // the old rung. `cellPlaceholder` is the one switch — a cheap rung never
+    // reaches the decoder here either.
+    const rung = placeholderForTier(tier)
+    const placeholder = useMemo(
+        () => cellPlaceholder(item.blurhash, rung),
+        [item.blurhash, rung])
     const searchLoading = useSearchLoading(state => state.loading)
     const handleDragStart = (event: React.DragEvent<HTMLImageElement | HTMLAnchorElement | HTMLDivElement>): void => {
         if (!item) return;
@@ -730,7 +743,7 @@ function VirtualHorizontalScrollElement({
                                 poster={thumbnailURL}
                                 loop={thumbnailMediaURL(dbs, item.sha256, tier)}
                                 alt={item.path}
-                                blurDataURL={blurDataURL}
+                                placeholder={placeholder}
                             />
                             : previewPicture
                                 // A VIDEO card with previews on. Every class
@@ -744,14 +757,14 @@ function VirtualHorizontalScrollElement({
                                     userDataDb={dbs.user_data_db}
                                     duration={item.duration}
                                     alt={item.path}
-                                    blurDataURL={blurDataURL}
+                                    placeholder={placeholder}
                                     onFeedback={setPreview}
                                     className="object-cover object-top rounded-md cursor-pointer"
                                 />
                                 : <StripCardImage
                                     src={thumbnailURL}
                                     alt={item.path}
-                                    blurDataURL={blurDataURL}
+                                    placeholder={placeholder}
                                 />}
                     </div>
                 </Link>
@@ -852,12 +865,22 @@ function VirtualHorizontalScrollElement({
  * classes, or the moment the video fades in would also be a moment the picture
  * moved.
  */
-function StripCardImage({ src, alt, blurDataURL, elementRef }: {
+function StripCardImage({ src, alt, placeholder, elementRef }: {
     src: string
     alt: string
-    blurDataURL: PlaceholderDataURL | undefined
+    placeholder: CellPlaceholder | undefined
     elementRef?: (element: HTMLImageElement | null) => void
 }) {
+    // The `"colour"` rung: one inline `background-color` on the <img>, which
+    // under `fill` is the picture box itself, cleared the moment the picture
+    // paints so a transparent thumbnail never sits on a tint — the same two
+    // lines the grid card runs, and `clearPlaceholderColour` carries the
+    // reasoning for both. RARE HERE, not impossible: the strip's box is a
+    // fixed 320 CSS px, which is `grid-s` from dpr 1 up, so the rung is
+    // reached only where the device pixel ratio drops below ~0.9 — a
+    // zoomed-out browser. Present because a rung must mean the same thing on
+    // every surface, not because this one is expected to take it.
+    const colour = isPlaceholderColour(placeholder)
     return (
         <Image
             ref={elementRef}
@@ -865,6 +888,8 @@ function StripCardImage({ src, alt, blurDataURL, elementRef }: {
             alt={alt}
             className="object-cover object-top rounded-md cursor-pointer"
             fill
+            style={colour ? { backgroundColor: placeholder } : undefined}
+            onLoad={colour ? clearPlaceholderColour : undefined}
             // Direct data URL, never `placeholder="blur"` — the filmstrip
             // virtualizes and remounts a card per item exactly like the grid,
             // and 'blur' would emit a unique `data:image/svg+xml` blur wrapper
@@ -874,7 +899,7 @@ function StripCardImage({ src, alt, blurDataURL, elementRef }: {
             // components/SearchResultImage.tsx). Do not reintroduce. The
             // data-URL template type is the real guard (next/image validates
             // only in dev); `?? 'empty'` just documents the fallback.
-            placeholder={blurDataURL ?? 'empty'}
+            placeholder={colour ? 'empty' : (placeholder ?? 'empty')}
             unoptimized={true}
             sizes="240px"
         />
@@ -895,11 +920,11 @@ function StripCardImage({ src, alt, blurDataURL, elementRef }: {
  * every other card in the strip renders the `<Image>` it always did and mounts
  * none of it.
  */
-function StripLoopPicture({ poster, loop, alt, blurDataURL }: {
+function StripLoopPicture({ poster, loop, alt, placeholder }: {
     poster: string
     loop: string
     alt: string
-    blurDataURL: PlaceholderDataURL | undefined
+    placeholder: CellPlaceholder | undefined
 }) {
     const [failed, setFailed] = useState(false)
     const hover = useArmedHover(!failed)
@@ -909,7 +934,7 @@ function StripLoopPicture({ poster, loop, alt, blurDataURL }: {
                 elementRef={hover.attach}
                 src={poster}
                 alt={alt}
-                blurDataURL={blurDataURL}
+                placeholder={placeholder}
             />
             {hover.active && (
                 <LoopVideo
@@ -919,7 +944,7 @@ function StripLoopPicture({ poster, loop, alt, blurDataURL }: {
                     // The poster underneath is the placeholder; a blurhash
                     // behind a layer fading in over a painted picture would be
                     // the flash the fade exists to avoid.
-                    blurDataURL={undefined}
+                    placeholder={undefined}
                     className="object-cover object-top rounded-md"
                     fadeIn
                     registered

@@ -3,7 +3,11 @@
 import Image from "next/image"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
-import type { PlaceholderDataURL } from "@/lib/state/blurHashDataURL"
+import {
+  clearPlaceholderColour,
+  isPlaceholderColour,
+  type CellPlaceholder,
+} from "@/lib/state/blurHashDataURL"
 import type { CellVideoPicture } from "@/lib/cellPicture"
 import { LoopVideo } from "@/components/LoopVideo"
 import { CELL_HOVER_ROOT_ATTR, useArmedHover } from "@/hooks/useArmedHover"
@@ -59,7 +63,7 @@ export function VideoHoverPicture({
   userDataDb,
   duration,
   alt,
-  blurDataURL,
+  placeholder,
   className,
   elementRef,
   disabled,
@@ -78,7 +82,15 @@ export function VideoHoverPicture({
   /** The row's indexed duration in seconds — the 16 s cap's input (V3). */
   duration?: number | null
   alt: string
-  blurDataURL: PlaceholderDataURL | undefined
+  /**
+   * WHAT THE BASE POSTER PAINTS BEHIND ITSELF — one value in either form
+   * (lib/state/blurHashDataURL.ts), computed once by the host from its tier
+   * rung. The `<video>` layers never take it: the poster underneath IS the
+   * placeholder by then, and a blur or a flat colour behind a layer fading in
+   * over a painted picture is the flash the fade exists to avoid — the same
+   * rule HoverLoopPicture states.
+   */
+  placeholder: CellPlaceholder | undefined
   /** The host's object-fit / rounding classes, applied to whichever paints. */
   className?: string
   /** The extreme-aspect swap's anchor, when this picture is inside one. */
@@ -135,18 +147,24 @@ export function VideoHoverPicture({
   // painting until the single frame has fired its own `load`, so a slow
   // response shows the picture the cell already had rather than an empty box.
   const showFrame = swaps && hovered && frameLoaded
+  // The colour rung rides the element's own inline style and is cleared on
+  // `load`; every other rung is a PNG data URL handed to `placeholder`
+  // DIRECTLY (`placeholder="blur"` is forbidden here as everywhere else in a
+  // virtualized grid). Both halves are `CellStillImage`'s verbatim — see the
+  // settled law there for the measurements behind each.
+  const colour = isPlaceholderColour(placeholder)
   return (
     <>
-      {/* The blurhash PNG data URL is handed to `placeholder` DIRECTLY and
-          `placeholder="blur"` is forbidden here as everywhere else in a
-          virtualized grid — see the settled law on `CellStillImage` in
-          components/SearchResultImage.tsx for the measurement behind it. */}
       <Image
         ref={attach}
         src={picture.poster}
         alt={alt}
         fill
-        placeholder={blurDataURL ?? "empty"}
+        placeholder={colour ? "empty" : (placeholder ?? "empty")}
+        style={colour ? { backgroundColor: placeholder } : undefined}
+        // ONLY at the colour rung, so no other tier pays for a listener it
+        // would never use — see CellStillImage.
+        onLoad={colour ? clearPlaceholderColour : undefined}
         unoptimized
         className={cn(
           (requested || showFrame) && "transition-opacity duration-150",
@@ -178,10 +196,10 @@ export function VideoHoverPicture({
           src={picture.directSrc}
           poster={picture.frame}
           alt={alt}
-          // NO blurhash: the frame underneath is the placeholder, and a blur
-          // behind a layer fading in over a painted picture is the flash the
-          // fade exists to avoid.
-          blurDataURL={undefined}
+          // NO placeholder: the frame underneath is it, and a blur (or a flat
+          // colour) behind a layer fading in over a painted picture is the
+          // flash the fade exists to avoid.
+          placeholder={undefined}
           className={className}
           fadeIn
           registered
@@ -282,7 +300,7 @@ function PreviewTranscodeLayer({
       poster={poster}
       alt={alt}
       // The frame underneath is the placeholder — see the rung-0 layer.
-      blurDataURL={undefined}
+      placeholder={undefined}
       className={className}
       fadeIn
       registered
