@@ -26,56 +26,76 @@
 import { createValueBox } from "./valueBox"
 
 /**
- * The two rungs, as one answer. `direct` is rung 0 (mount the ORIGINAL file,
- * which this browser can already decode); `transcode` is rung 1 (ask the
- * server for a 16 s preview encode of one it cannot). They are independent
- * facts on the wire — a policy may allow the first and deny the second — even
- * though the control that writes the preference offers only the three
- * combinations that make sense to a person (see `HoverPreviewChoice`).
+ * THE THREE RUNGS AND THE CAP, as one answer.
+ *
+ *   - `direct` — mount the ORIGINAL file, which this browser can already
+ *     decode. Free for the server (Range reads), and bounded by `maxBytes`:
+ *     one hover on a 15.7 MB clip was measured pulling 9.9 MB of it, so the
+ *     rung is only offered where the whole file is small enough to be worth a
+ *     glance;
+ *   - `trim` — ask the server to STREAM-COPY the first 16 seconds into an mp4
+ *     (`preview-trim`: no re-encode, keyframe-cut, no audio). Still the
+ *     item's own bytes, at a bounded count, for a file the rung above cannot
+ *     afford or a container this browser cannot open;
+ *   - `transcode` — the 480p re-encode (`preview`), for an item no copy can
+ *     make playable. The only rung that costs the server real work, and the
+ *     only one behind the "All" position of the toggle;
+ *   - `maxBytes` — the server's ceiling on what either of the first two may
+ *     pull (`[transcode] hover_preview_max_bytes`).
+ *
+ * They are independent facts on the wire — a policy may allow some and deny
+ * others — even though the control that writes the preference offers only the
+ * three combinations that make sense to a person (see `HoverPreviewChoice`).
  */
 export interface HoverPreviewCapability {
   direct: boolean
+  trim: boolean
   transcode: boolean
+  /** Bytes. The ceiling `direct` and `trim` are measured against. */
+  maxBytes: number
 }
 
-/**
- * The FOUR possible answers, interned.
- *
- * Identity matters here in a way it does not for an ordinary pure function:
- * the resolved capability is handed to hundreds of memoized grid cards as a
- * prop, and a freshly-built object per render would defeat that memo for every
- * visible card on every scroll frame — the exact per-frame re-execution
- * `React.memo` on `SearchResultImage` exists to stop. Four frozen constants
- * mean the prop moves only when the ANSWER moves.
- */
+/** Nothing offered: an older Server, a denying policy, the config in flight. */
 export const HOVER_PREVIEW_OFF: HoverPreviewCapability = Object.freeze({
   direct: false,
+  trim: false,
   transcode: false,
-})
-export const HOVER_PREVIEW_DIRECT: HoverPreviewCapability = Object.freeze({
-  direct: true,
-  transcode: false,
-})
-export const HOVER_PREVIEW_ALL: HoverPreviewCapability = Object.freeze({
-  direct: true,
-  transcode: true,
-})
-/**
- * Reachable only from a wire value that says so (a deployment that allows the
- * preview encode but not the direct mount). Nothing in the UI writes it.
- */
-export const HOVER_PREVIEW_TRANSCODE_ONLY: HoverPreviewCapability = Object.freeze({
-  direct: false,
-  transcode: true,
+  maxBytes: 0,
 })
 
-/** The interned constant for a pair of booleans. */
+/**
+ * THE INTERNING TABLE, and it is not an optimisation.
+ *
+ * The resolved capability is handed to hundreds of memoized grid cards as a
+ * prop, and a freshly-built object per render would defeat that memo for every
+ * visible card on every scroll frame — the exact per-frame re-execution
+ * `React.memo` on `SearchResultImage` exists to stop. So every answer with the
+ * same four members IS the same object.
+ *
+ * A table rather than the four frozen constants this held while the answer was
+ * two booleans: `maxBytes` is a number off the wire, so the space is no longer
+ * enumerable. It is still tiny in practice — the cap comes from one server
+ * config and the three flags from one policy, so a session sees one or two
+ * entries — and the key is built from the members themselves, so two equal
+ * answers can never miss each other.
+ */
+const interned = new Map<string, HoverPreviewCapability>()
+
+/** The interned answer for a set of members. */
 export function hoverPreviewCapability(
   direct: boolean,
-  transcode: boolean
+  trim: boolean,
+  transcode: boolean,
+  maxBytes: number
 ): HoverPreviewCapability {
-  if (direct) return transcode ? HOVER_PREVIEW_ALL : HOVER_PREVIEW_DIRECT
-  return transcode ? HOVER_PREVIEW_TRANSCODE_ONLY : HOVER_PREVIEW_OFF
+  if (!direct && !trim && !transcode) return HOVER_PREVIEW_OFF
+  const id = `${direct ? 1 : 0}${trim ? 1 : 0}${transcode ? 1 : 0}:${maxBytes}`
+  const found = interned.get(id)
+  if (found) return found
+  const made: HoverPreviewCapability =
+    Object.freeze({ direct, trim, transcode, maxBytes })
+  interned.set(id, made)
+  return made
 }
 
 /**
@@ -83,6 +103,12 @@ export function hoverPreviewCapability(
  * as `true`: it means the user has not said, so a later change to the server's
  * default (or to a policy) reaches them. Only `false` is a decision this side
  * records — the preference can only subtract (see the module doc).
+ *
+ * TWO SLOTS FOR THREE RUNGS, and that is deliberate rather than an omission:
+ * `direct` governs BOTH rungs that play the item's own bytes (the whole file
+ * and the stream-copied first 16 seconds), because to a person they are one
+ * thing — "play the file itself" — and the choice between them is arithmetic
+ * on the file's size that no one should have to make per library.
  */
 export interface HoverPreviewPref {
   direct?: boolean
@@ -96,10 +122,11 @@ export const DEFAULT_HOVER_PREVIEW_PREF: HoverPreviewPref = {}
 
 /**
  * The three positions the toggle offers (A6), which are the only combinations
- * worth a control: no previews at all; previews of files this browser can
- * already play; and those plus a server-side encode for the ones it cannot.
- * "transcode but not direct" is expressible on the wire and is not a thing a
- * person would ask for.
+ * worth a control: no previews at all; previews made of the FILE'S OWN BYTES
+ * (whole when it is small, its first 16 seconds stream-copied when it is not);
+ * and those plus a server-side re-encode for the ones no copy can make
+ * playable. "transcode but not the others" is expressible on the wire and is
+ * not a thing a person would ask for.
  */
 export type HoverPreviewChoice = "off" | "originals" | "all"
 
@@ -120,9 +147,15 @@ export function resolveHoverPreview(
   pref: HoverPreviewPref
 ): HoverPreviewCapability {
   if (!server) return HOVER_PREVIEW_OFF
-  const direct = server.direct && pref.direct !== false
-  const transcode = server.transcode && pref.transcode !== false
-  return hoverPreviewCapability(direct, transcode)
+  // ONE SLOT OVER TWO RUNGS: `direct` is the user's answer to "play the file
+  // itself", which both own-bytes rungs are (see `HoverPreviewPref`).
+  const ownBytes = pref.direct !== false
+  return hoverPreviewCapability(
+    server.direct && ownBytes,
+    server.trim && ownBytes,
+    server.transcode && pref.transcode !== false,
+    server.maxBytes
+  )
 }
 
 /**
@@ -136,8 +169,8 @@ export function resolveHoverPreview(
 export function hoverPreviewChoice(
   resolved: HoverPreviewCapability
 ): HoverPreviewChoice {
-  if (!resolved.direct && !resolved.transcode) return "off"
-  return resolved.transcode ? "all" : "originals"
+  if (resolved.transcode) return "all"
+  return resolved.direct || resolved.trim ? "originals" : "off"
 }
 
 /**
@@ -170,7 +203,10 @@ export function withHoverPreviewSlot(
   capability: HoverPreviewCapability | null | undefined
 ): HoverPreviewPref {
   const next: HoverPreviewPref = { ...pref }
-  writeOfferedSlot(next, "direct", choice !== "off", capability?.direct)
+  // The `direct` slot governs BOTH own-bytes rungs, so it is a real choice as
+  // soon as the server offers EITHER of them.
+  const ownBytes = !!capability && (capability.direct || capability.trim)
+  writeOfferedSlot(next, "direct", choice !== "off", ownBytes)
   writeOfferedSlot(next, "transcode", choice === "all", capability?.transcode)
   return next
 }

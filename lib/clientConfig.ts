@@ -14,6 +14,27 @@ import type { HoverPreviewCapability } from "@/lib/state/hoverPreviewPref"
 export type ClientConfigResponse = components["schemas"]["ClientConfigResponse"] & {
   desktop_managed?: boolean
   desktop_shell_available?: boolean
+  /**
+   * TWO MEMBERS AHEAD OF THE GENERATED TYPE, and this widening is temporary.
+   *
+   * `openapi.json` currently describes `hover_preview` as `{direct,
+   * transcode}` (the shape that shipped with the 480p preview preset). The
+   * byte-capped ladder adds `trim` — the `preview-trim` stream copy — and
+   * `max_bytes`, the ceiling both own-bytes rungs are measured against; the
+   * backend commit that carries them into the schema has not landed, so they
+   * are declared here rather than left off the type while the UI is written
+   * against them.
+   *
+   * TO REMOVE: regenerate with `npm run gen:api` once that commit is in, and
+   * delete this member — the normalizer below is unchanged either way, because
+   * it reads the value as `unknown` and answers all-or-nothing over the four.
+   */
+  hover_preview?:
+    | null
+    | (components["schemas"]["HoverPreview"] & {
+        trim?: boolean
+        max_bytes?: number
+      })
 }
 
 // The derived shape the UI actually consumes. Computed by deriveClientConfig
@@ -192,6 +213,12 @@ function wireBooleans(obj: unknown, keys: readonly string[]): boolean[] | null {
   return values
 }
 
+/** One wire member as a finite, non-negative number, or null. */
+function wireNumber(obj: unknown, key: string): number | null {
+  const values = wireNumbers(obj, [key])
+  return values ? values[0] : null
+}
+
 /**
  * `hover_preview` as the two rungs, or null.
  *
@@ -210,10 +237,17 @@ function wireBooleans(obj: unknown, keys: readonly string[]): boolean[] | null {
 function normalizeHoverPreview(
   hoverPreview: unknown
 ): HoverPreviewCapability | null {
-  const values = wireBooleans(hoverPreview, ["direct", "transcode"])
-  if (!values) return null
-  const [direct, transcode] = values
-  return { direct, transcode }
+  // ALL FOUR MEMBERS OR NOTHING. A cap this client cannot read is the case
+  // that matters: with `max_bytes` missing there is no number to measure a
+  // file against, and both own-bytes rungs would either be refused outright or
+  // pull whatever the file happens to weigh — which is the defect the cap
+  // exists to fix.
+  const flags = wireBooleans(hoverPreview, ["direct", "trim", "transcode"])
+  if (!flags) return null
+  const maxBytes = wireNumber(hoverPreview, "max_bytes")
+  if (maxBytes === null) return null
+  const [direct, trim, transcode] = flags
+  return { direct, trim, transcode, maxBytes }
 }
 
 function normalizeDisplayLoopTrigger(
