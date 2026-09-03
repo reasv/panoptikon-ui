@@ -8,11 +8,12 @@ import { ItemMetaLine } from "@/components/ItemMetaLine";
 import { PlayableBadge } from "@/components/PlayableBadge";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { PinButton } from './gallery/PinButton';
-import { blurHashToDataURL, type PlaceholderDataURL } from '@/lib/state/blurHashDataURL';
+import { blurHashAverageColour, blurHashToDataURL, type PlaceholderDataURL } from '@/lib/state/blurHashDataURL';
 import { useCellCallbacks, useCellFlags } from '@/lib/state/cellActions';
 import { PIN_SHA_PREFIX_LENGTH } from '@/lib/pinboardCrop';
 import {
     animatedCellMode,
+    placeholderForTier,
     showsMotionBadge,
     type AnimateMode,
     type AnimatedFloor,
@@ -353,7 +354,18 @@ export const SearchResultImage = memo(function SearchResultImage({
             onImageClick(index)
         }
     }, [onImageClick, index])
-    const blurDataURL = useMemo(() => result.blurhash ? blurHashToDataURL(result.blurhash) : undefined, [result.blurhash])
+    // THE PLACEHOLDER RUNG, from the card's own LATCHED tier — the same value
+    // the picture's `src` was built from, so the two can never disagree about
+    // how big this cell is. `"none"` and `"colour"` never reach the decoder:
+    // the rung is tested here, not inside it (lib/thumbnailTier.ts).
+    const rung = placeholderForTier(tierRef.current)
+    const blurDataURL = useMemo(
+        () => typeof rung === "number" ? blurHashToDataURL(result.blurhash, rung) : undefined,
+        [result.blurhash, rung])
+    // The cheap rung: the hash's DC term as a flat colour on the picture BOX,
+    // which every branch below paints into and which an `object-cover` picture
+    // covers completely once it arrives.
+    const boxColour = rung === "colour" ? blurHashAverageColour(result.blurhash) : undefined
     // The one refresh for the anchor's href — see the comment on the anchor.
     const refreshHref = galleryLink
         ? (event: React.SyntheticEvent<HTMLAnchorElement>) => {
@@ -379,6 +391,7 @@ export const SearchResultImage = memo(function SearchResultImage({
             <div className={cn("overflow-hidden relative w-full pb-full mb-2",
                 showLoadingSpinner ? "" : "group"
             )}
+                style={boxColour ? { backgroundColor: boxColour } : undefined}
                 // Always present, whether or not this card is extreme: the
                 // attribute is static markup and costs a normal card nothing,
                 // while making it conditional would put a prop-dependent

@@ -1,11 +1,16 @@
 import { decode } from "blurhash"
 
-const PLACEHOLDER_WIDTH = 32
-const PLACEHOLDER_HEIGHT = 32
+/**
+ * The rung a caller that names no size gets. The tier-aware call sites ask
+ * `placeholderForTier` (lib/thumbnailTier.ts) instead; this is what everything
+ * else has always had.
+ */
+const DEFAULT_PLACEHOLDER_EDGE = 32
 
 /**
- * Decoded placeholders, keyed by the blurhash string alone — the placeholder
- * dimensions are module constants, so they can never vary between two entries.
+ * Decoded placeholders, keyed by `edge:hash` — the placeholder edge is now a
+ * per-tier choice (`placeholderForTier`), so two surfaces can hold the same
+ * hash at two resolutions and the key has to carry both.
  *
  * A blurhash is decoded AND PNG-encoded in pure JS — 4096 `String.fromCharCode`
  * calls, a hand-rolled deflate-store and a CRC pass — and a grid cell does it
@@ -36,23 +41,61 @@ const cache = new Map<string, PlaceholderDataURL>()
 export type PlaceholderDataURL = `data:image/png;base64,${string}`
 
 export function blurHashToDataURL(
-  hash: string | undefined
+  hash: string | undefined,
+  /**
+   * The square edge to decode and encode at, in pixels. A blurhash carries a
+   * handful of cosine components, so a bigger raster of it holds no more
+   * information — it only costs more to build, quadratically. See
+   * `placeholderForTier`.
+   */
+  edge: number = DEFAULT_PLACEHOLDER_EDGE
 ): PlaceholderDataURL | undefined {
   if (!hash) return undefined
-  const hit = cache.get(hash)
+  const key = `${edge}:${hash}`
+  const hit = cache.get(key)
   if (hit !== undefined) {
-    cache.delete(hash)
-    cache.set(hash, hit)
+    cache.delete(key)
+    cache.set(key, hit)
     return hit
   }
-  const pixels = decode(hash, PLACEHOLDER_WIDTH, PLACEHOLDER_HEIGHT)
-  const dataURL = parsePixels(pixels, PLACEHOLDER_WIDTH, PLACEHOLDER_HEIGHT)
-  cache.set(hash, dataURL)
+  const pixels = decode(hash, edge, edge)
+  const dataURL = parsePixels(pixels, edge, edge)
+  cache.set(key, dataURL)
   if (cache.size > CACHE_LIMIT) {
     const oldest = cache.keys().next()
     if (!oldest.done) cache.delete(oldest.value)
   }
   return dataURL
+}
+
+/** blurhash's base83 alphabet, in its canonical order. */
+const BASE83 =
+  "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~"
+
+/**
+ * THE HASH'S AVERAGE COLOUR, as a CSS `rgb()` string — the `"colour"` rung.
+ *
+ * A blurhash's first two characters are its size flag and quantised maximum;
+ * characters 2..6 are the DC term, a base83 24-bit sRGB triple. That triple is
+ * the image's average colour and is stored ALREADY sRGB-encoded (the decoder's
+ * job is to turn it back into linear light), so it is a CSS colour verbatim —
+ * four base83 digits and three masks, no raster, no PNG, no base64.
+ *
+ * `undefined` for anything that is not a well-formed hash of at least six
+ * characters, so a malformed value paints the cell's own background rather
+ * than a wrong colour.
+ */
+export function blurHashAverageColour(
+  hash: string | undefined
+): string | undefined {
+  if (!hash || hash.length < 6) return undefined
+  let dc = 0
+  for (let i = 2; i < 6; i++) {
+    const digit = BASE83.indexOf(hash[i])
+    if (digit < 0) return undefined
+    dc = dc * 83 + digit
+  }
+  return `rgb(${dc >> 16},${(dc >> 8) & 255},${dc & 255})`
 }
 
 // thanks to https://github.com/wheany/js-png-encoder

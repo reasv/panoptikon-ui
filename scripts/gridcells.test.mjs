@@ -27,8 +27,16 @@ const {
   isAboveAnimatedFloor,
   isAnimatedItem,
   isExtremeAspect,
+  placeholderForTier,
   tierForCellWidth,
 } = await import("../lib/thumbnailTier.ts")
+// The one module here with a dependency: `blurhash` itself. It is a plain ESM
+// package with no bundler-only syntax, so node resolves it exactly as the
+// import above resolves a local file — which is what lets the DC-term rung be
+// asserted against the library's own decoder below.
+const { blurHashAverageColour, blurHashToDataURL } = await import(
+  "../lib/state/blurHashDataURL.ts")
+const { decode } = await import("blurhash")
 const {
   AUTO_IMAGE_BOX_HEIGHT_4XL_PX,
   AUTO_IMAGE_BOX_HEIGHT_5XL_PX,
@@ -691,6 +699,103 @@ console.log("\n== the co-write snaps to whole rows (design §4's row invariant) 
   check("the default size scales onto the board's own lattice",
     Number(onV2[3]) === Math.round(10 * (V2_GRID.columns / V1_GRID.columns)),
     onV2.join(","))
+}
+
+console.log("\n== the placeholder rung (placeholderForTier) ==")
+{
+  // THE CLAIM: the smallest tier mounts no placeholder at all. Measured at
+  // cs=140 on a 4K viewport, a fixed 32,100 px scroll: ScriptDuration
+  // 3621 -> 1375 ms, RecalcStyleDuration 449 -> 177 ms, and zero cells ever
+  // reached the viewport without their picture (cold cache, 1000 and
+  // 4000 px/s) — the virtualizer's overscan is a bigger head start than the
+  // 23-34 ms from mount to the <img>'s load event.
+  check("grid-xs mounts no placeholder",
+    placeholderForTier("grid-xs") === "none")
+  // Every other tier is UNCHANGED by this branch. The numeric rungs are a
+  // separate question (how big a raster a tier that keeps its blur decodes),
+  // and this switch is the single place that answer goes.
+  for (const tier of ["grid-s", "grid-m", "display"]) {
+    if (!check(`${tier} keeps today's 32x32 placeholder`,
+      placeholderForTier(tier) === 32, String(placeholderForTier(tier)))) break
+  }
+  // A surface that has not measured its box keeps the conservative answer for
+  // the same reason `tierForCellWidth` answers `display` for it: the cheap
+  // rung is a claim about a cell being small, and "unknown" is not that claim.
+  check("an unmeasured tier keeps the placeholder",
+    placeholderForTier(undefined) === 32)
+  // The contract the call sites rely on: a rung is either a NUMBER (decode at
+  // that edge) or one of the two no-decode strings. `typeof rung === "number"`
+  // is the test both call sites make, so nothing else may ever be returned.
+  const rungs = ["grid-xs", "grid-s", "grid-m", "display", undefined]
+    .map(placeholderForTier)
+  check("every rung is a number or a no-decode string",
+    rungs.every((r) => typeof r === "number" || r === "none" || r === "colour"),
+    rungs.join(","))
+}
+
+console.log("\n== the DC-term average colour (blurHashAverageColour) ==")
+{
+  // sRGB <-> linear, the two conversions blurhash's own decoder uses. The DC
+  // term is the image's average in LINEAR light, stored already sRGB-encoded —
+  // so the oracle is the linear-space mean of a decoded raster, not the mean of
+  // its sRGB bytes.
+  const s2l = (v) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4) }
+  const l2s = (v) => { const c = Math.max(0, Math.min(1, v)); return Math.round(c <= 0.0031308 ? c * 12.92 * 255 + 0.5 : (1.055 * Math.pow(c, 1 / 2.4) - 0.055) * 255 + 0.5) }
+  const HASHES = [
+    "LEHV6nWB2yk8pyo0adR*.7kCMdnj",
+    "LKO2?U%2Tw=w]~RBVZRi};RPxuwH",
+    "L6PZfSi_.AyE_3t7t7R**0o#DgR4",
+    "LlMF%n00%#MwS|WCWEM{R*bbWBbH",
+  ]
+  for (const hash of HASHES) {
+    // 128x128 rather than something smaller: the DC is the CONTINUOUS mean of
+    // the basis functions, and a discrete raster mean only converges to it —
+    // a 32x32 sample is off by up to 3 on a hash with strong AC terms.
+    const N = 128
+    const px = decode(hash, N, N)
+    let r = 0, g = 0, b = 0
+    for (let i = 0; i < N * N; i++) { r += s2l(px[i * 4]); g += s2l(px[i * 4 + 1]); b += s2l(px[i * 4 + 2]) }
+    const n = N * N
+    const mine = blurHashAverageColour(hash)
+    const parsed = mine.slice(4, -1).split(",").map(Number)
+    const oracle = [l2s(r / n), l2s(g / n), l2s(b / n)]
+    // +/-1 per channel: the oracle rounds a 1024-sample mean through two
+    // transcendental conversions, the rung reads the stored integer directly.
+    if (!check(`${hash.slice(0, 8)}… DC matches the decoded linear mean`,
+      parsed.every((v, i) => Math.abs(v - oracle[i]) <= 1),
+      `${mine} vs rgb(${oracle.join(",")})`)) break
+  }
+  check("a colour is a bare CSS rgb() triple",
+    /^rgb\(\d{1,3},\d{1,3},\d{1,3}\)$/.test(blurHashAverageColour(HASHES[0])),
+    blurHashAverageColour(HASHES[0]))
+  // Malformed input paints the cell's own background rather than a wrong
+  // colour: no hash, too short to hold a DC, and a DC with a character outside
+  // base83 (space and backslash are the two the alphabet omits).
+  check("no hash has no colour", blurHashAverageColour(undefined) === undefined)
+  check("a hash too short to hold a DC has no colour",
+    blurHashAverageColour("LEHV6") === undefined)
+  check("a non-base83 character in the DC has no colour",
+    blurHashAverageColour("LE V6nWB2yk8pyo0adR*.7kCMdnj") === undefined)
+}
+
+console.log("\n== the placeholder edge (blurHashToDataURL size) ==")
+{
+  // The rung's number reaches the decoder: two edges of the same hash are two
+  // DIFFERENT data URLs, and the cache — keyed by `edge:hash` since the edge
+  // stopped being a module constant — hands each caller back its own.
+  const hash = "LKO2?U%2Tw=w]~RBVZRi};RPxuwH"
+  const small = blurHashToDataURL(hash, 8)
+  const big = blurHashToDataURL(hash, 32)
+  check("a smaller edge is a smaller data URL",
+    small.length < big.length, `${small.length} vs ${big.length}`)
+  check("both are PNG data URLs",
+    small.startsWith("data:image/png;base64,") && big.startsWith("data:image/png;base64,"))
+  check("the cache does not collapse two edges of one hash",
+    blurHashToDataURL(hash, 8) === small && blurHashToDataURL(hash, 32) === big)
+  check("the default edge is today's 32",
+    blurHashToDataURL(hash) === big)
+  check("no hash is no placeholder",
+    blurHashToDataURL(undefined, 8) === undefined)
 }
 
 finish()

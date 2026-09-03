@@ -16,7 +16,7 @@ import { useSelectedDBs } from "@/lib/state/database"
 import { useItemSelection } from "@/lib/state/itemSelection"
 import { PinButton } from './PinButton'
 import { FindButton } from './FindButton'
-import { blurHashToDataURL, type PlaceholderDataURL } from '@/lib/state/blurHashDataURL'
+import { blurHashAverageColour, blurHashToDataURL, type PlaceholderDataURL } from '@/lib/state/blurHashDataURL'
 import { LoopVideo } from '@/components/LoopVideo'
 import { PlayableBadge } from '@/components/PlayableBadge'
 import { useSearchLoading } from '@/lib/state/zust'
@@ -24,6 +24,7 @@ import { topRowHighlightItem, virtualPageOf } from '@/lib/scrollMode'
 import {
     animatedCellMode,
     showsMotionBadge,
+    placeholderForTier,
     tierForCellWidth,
     type AnimatedFloor,
     type ThumbnailTier,
@@ -587,7 +588,14 @@ function VirtualHorizontalScrollElement({
         onNavigate(ownIndex % nItems)
         setSelected(item)
     }
-    const blurDataURL = useMemo(() => item.blurhash ? blurHashToDataURL(item.blurhash) : undefined, [item.blurhash])
+    // The placeholder rung for the strip's ONE tier (lib/thumbnailTier.ts).
+    // `"none"` and `"colour"` short-circuit before the decoder, exactly as in
+    // the grid card.
+    const rung = placeholderForTier(tier)
+    const blurDataURL = useMemo(
+        () => typeof rung === "number" ? blurHashToDataURL(item.blurhash, rung) : undefined,
+        [item.blurhash, rung])
+    const boxColour = rung === "colour" ? blurHashAverageColour(item.blurhash) : undefined
     const searchLoading = useSearchLoading(state => state.loading)
     const handleDragStart = (event: React.DragEvent<HTMLImageElement | HTMLAnchorElement | HTMLDivElement>): void => {
         if (!item) return;
@@ -679,7 +687,8 @@ function VirtualHorizontalScrollElement({
                     : undefined}
             >
                 <Link href={imageLink} onClick={onClick}>
-                    <div className="w-full h-full relative">
+                    <div className="w-full h-full relative"
+                        style={boxColour ? { backgroundColor: boxColour } : undefined}>
                         {animated === "loop"
                             ? <StripLoopPicture
                                 poster={thumbnailURL}

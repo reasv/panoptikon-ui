@@ -420,3 +420,75 @@ export function showsMotionBadge(
   if (mode === "still") return false
   return !!item.duration && item.duration > 0
 }
+
+// ---------------------------------------------------------------------------
+// The placeholder rung (docs: grid placeholder cost)
+// ---------------------------------------------------------------------------
+
+/**
+ * WHAT A CELL PAINTS WHILE ITS PICTURE IS IN FLIGHT.
+ *
+ * - a NUMBER is the square edge, in pixels, the blurhash is decoded and
+ *   PNG-encoded at (`blurHashToDataURL`'s `size`);
+ * - `"colour"` is the hash's DC term alone — the average colour, four base83
+ *   characters, no raster and no encoder;
+ * - `"none"` is nothing at all: `placeholder="empty"`, the cell's own
+ *   background until the `<img>` paints.
+ *
+ * A `"none"` or `"colour"` answer must SHORT-CIRCUIT BEFORE THE DECODE at the
+ * call site — the whole point of the rung is that no blurhash raster is built,
+ * so a caller that decodes first and discards has bought nothing.
+ */
+export type PlaceholderRung = "none" | "colour" | 8 | 16 | 32
+
+/**
+ * The rung for a tier, and the only place the choice is made.
+ *
+ * The tier is a proxy for the CELL'S SIZE ON SCREEN and, through it, for both
+ * halves of the trade:
+ *
+ * - how much a placeholder is WORTH — a `grid-xs` cell is at most 288 device
+ *   pixels of an ~20 KB rendition, and it is not even the first thing the
+ *   virtualizer mounts: the overscan puts a cell in the DOM roughly three rows
+ *   BEFORE it reaches the viewport, which at 4000 px/s is ~170 ms of head
+ *   start against a measured 23-34 ms from mount to the `<img>`'s load event.
+ *   Measured against the stdtest gateway, cold cache, at 1000 and 4000 px/s:
+ *   the number of cells ON SCREEN without their picture never left ZERO. The
+ *   placeholder at this tier is not a fallback that rarely shows — it is one
+ *   that never shows;
+ * - how much it COSTS — the placeholder is built once per cell MOUNT, and
+ *   mounts scale with the inverse square of the cell size. The smallest tier is
+ *   where the most cells per second cross the viewport, so it is exactly where
+ *   a per-mount cost is multiplied hardest. At `cs=140` on a 4K viewport a
+ *   scroll mounts ~330 cells a second; dropping the placeholder there took
+ *   ScriptDuration 3621 -> 1375 ms and RecalcStyleDuration 449 -> 177 ms over a
+ *   fixed 32,100 px scroll, and it was measurably FASTER to the picture itself
+ *   (mount -> load p90 64 -> 34 ms cold) because the main thread was free to
+ *   deliver the load events.
+ *
+ * So the smallest tier gets nothing, and every bigger one keeps today's 32.
+ * `display` is the gallery, where one picture is on screen for seconds and its
+ * placeholder is the only thing between an empty frame and the image.
+ *
+ * `"colour"` is IMPLEMENTED AND MEASURED but not selected here. It is the rung
+ * for a deployment where the picture is genuinely late — a gateway that is not
+ * on localhost, a first scan still generating renditions — where `"none"` is a
+ * wall of empty frames and the DC term is a wall of the images' own average
+ * colours for four characters of base83 and no raster. It costs, over the same
+ * scroll, ~230 ms of task and ~260 ms of style recalc against `"none"` (the
+ * inline `background-color` is a style attribute per cell, which is most of
+ * what the placeholder's own `background-image` cost), and it leaves that
+ * colour behind a transparent thumbnail permanently, where the blur is cleared
+ * on load. One word here switches it on.
+ *
+ * The numeric rungs are the OTHER axis and are deliberately left at today's
+ * value: how big a raster a tier that keeps its blur decodes is a separate
+ * measurement (8x8 alone took ScriptDuration to 1980 ms — better than 32, worse
+ * than dropping it), and this switch is where that answer goes.
+ */
+export function placeholderForTier(
+  tier: ThumbnailTier | undefined
+): PlaceholderRung {
+  if (tier === "grid-xs") return "none"
+  return 32
+}
