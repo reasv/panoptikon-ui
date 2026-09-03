@@ -14,27 +14,6 @@ import type { HoverPreviewCapability } from "@/lib/state/hoverPreviewPref"
 export type ClientConfigResponse = components["schemas"]["ClientConfigResponse"] & {
   desktop_managed?: boolean
   desktop_shell_available?: boolean
-  /**
-   * TWO MEMBERS AHEAD OF THE GENERATED TYPE, and this widening is temporary.
-   *
-   * `openapi.json` currently describes `hover_preview` as `{direct,
-   * transcode}` (the shape that shipped with the 480p preview preset). The
-   * byte-capped ladder adds `trim` — the `preview-trim` stream copy — and
-   * `max_bytes`, the ceiling both own-bytes rungs are measured against; the
-   * backend commit that carries them into the schema has not landed, so they
-   * are declared here rather than left off the type while the UI is written
-   * against them.
-   *
-   * TO REMOVE: regenerate with `npm run gen:api` once that commit is in, and
-   * delete this member — the normalizer below is unchanged either way, because
-   * it reads the value as `unknown` and answers all-or-nothing over the four.
-   */
-  hover_preview?:
-    | null
-    | (components["schemas"]["HoverPreview"] & {
-        trim?: boolean
-        max_bytes?: number
-      })
 }
 
 // The derived shape the UI actually consumes. Computed by deriveClientConfig
