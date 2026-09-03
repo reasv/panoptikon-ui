@@ -235,6 +235,54 @@ export function videoPlayability(
   return "playable"
 }
 
+/**
+ * CAN THIS BROWSER DECODE THIS ITEM'S VIDEO STREAM INSIDE AN MP4?
+ *
+ * The question the hover preview's stream-copy rung has to answer before it
+ * asks the server to remux (docs/video-hover-preview-implementation.md, the
+ * byte-capped ladder): `preview-trim` copies the video stream into an mp4 and
+ * drops everything else, so what matters is not whether the browser can play
+ * the FILE — it demonstrably cannot, or the rung above would have taken it —
+ * but whether it could play that one stream in the container the copy
+ * produces.
+ *
+ * TWO WAYS IT DIFFERS FROM `videoPlayability`, and both are the point:
+ *
+ *   - the CONTAINER is forced to `video/mp4`. An h264 stream in a .mkv is
+ *     unplayable as a file and a byte-for-byte copy of it into an mp4 plays
+ *     everywhere — that case is the whole reason this rung exists. It also
+ *     rules the reverse out: a VP8 stream a browser plays happily in WebM
+ *     answers `""` for `video/mp4`, because mp4 cannot carry it, and a remux
+ *     would produce a file nothing could open;
+ *   - AUDIO IS NOT ASKED. The preset emits `-an`, so an AC-3 or raw-PCM track
+ *     that vetoes the whole file in the ladder cannot veto here — the copy
+ *     simply leaves it behind, which turns "unplayable soundtrack" into a
+ *     silent preview rather than a re-encode.
+ *
+ * FALSE for anything not settled: an unprobed row (NULL codec), the two
+ * sentinels, and a codec this client has no RFC 6381 string for. A remux is a
+ * promise about bytes, and the honest answer to "I do not know" is to let the
+ * re-encode rung below handle it.
+ */
+export function videoCodecPlayableInMp4(
+  item: PlayabilityItem | null | undefined,
+  options: { canPlayType?: CanPlayType | null } = {}
+): boolean {
+  const probe =
+    options.canPlayType === undefined ? defaultCanPlayType() : options.canPlayType
+  if (!probe) return false
+  const codec = normalizeCodec(item?.video_codec)
+  if (codec === null || codec === CODEC_NONE || codec === CODEC_UNKNOWN) {
+    return false
+  }
+  const codecs = videoCodecString(codec, MP4_MIME)
+  if (!codecs) return false
+  return accepts(probe, MP4_MIME, codecs)
+}
+
+/** The container the stream copy writes, and the one the probe above asks. */
+const MP4_MIME = "video/mp4"
+
 // ---- in-session recovery ----------------------------------------------
 //
 // The representative-profile compromise above can say `probably` for a stream
