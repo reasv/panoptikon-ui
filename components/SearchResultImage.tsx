@@ -70,6 +70,18 @@ const HOVER_ROOT_ATTR = CELL_HOVER_ROOT_ATTR
  * picture box: `position:absolute; inset:0`, the same box next/image paints
  * its own blur into. That is the whole of the rung's cost — no ref, no state,
  * no effect, no second element (see `clearPlaceholderColour`).
+ *
+ * ON THE <img> AND NOT ON A WRAPPER, and it is not only tidiness. next/image
+ * already writes an inline `style` on this element (position, inset,
+ * object-fit, `color: transparent`), so the colour is one more property on an
+ * attribute that exists; put on the card's box instead it is a style attribute
+ * on an element that had none, and the browser charges for that. Measured on
+ * this build at `cs=140`, 8 s / 32,100 px: RecalcStyleDuration 251 ms against
+ * the 479 ms of the 32x32 raster it replaces — where the wrapper-hosted
+ * version of the same colour had measured ~260 ms MORE style recalc than
+ * painting nothing at all. It also puts the colour in the one box the picture
+ * is guaranteed to cover, rather than in a wrapper that is taller than the
+ * picture by its own margin.
  */
 function CellStillImage({
     src,
