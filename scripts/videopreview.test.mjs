@@ -45,6 +45,7 @@ const {
   previewRequest,
   previewRung,
   previewSliceBytes,
+  shouldRecordFailure,
   withinPreviewCap,
 } = await import("../lib/videoPreview.ts")
 const {
@@ -483,6 +484,26 @@ console.log("\n== session downgrades ==")
   check("...and leaves the encode when the copy is denied too",
     cellPreviewLadder(item, can(true, false, true), chrome).join(">") === "transcode")
   clearPreviewRungFailures()
+}
+
+console.log("\n== a teardown is not a rung failure ==")
+{
+  // The hazard: letting go of the arm unmounts the <video>, and unmounting it
+  // runs `abortVideo` — clear `src`, call `load()` — which the media load
+  // algorithm may answer with an `error`. Recording THAT would demote the item
+  // for the whole session because the pointer moved.
+  check("an element error while the arm is HELD is evidence",
+    shouldRecordFailure({ released: false, rung: "direct" }) === true
+      && shouldRecordFailure({ released: false, rung: "trim" }) === true
+      && shouldRecordFailure({ released: false, rung: "transcode" }) === true)
+  check("an element error after the cell RELEASED is ignored",
+    shouldRecordFailure({ released: true, rung: "direct" }) === false
+      && shouldRecordFailure({ released: true, rung: "trim" }) === false
+      && shouldRecordFailure({ released: true, rung: "transcode" }) === false)
+  // Walked off the end of the ladder: no element, so nothing to blame.
+  check("an error with no rung is never evidence",
+    shouldRecordFailure({ released: false, rung: "none" }) === false
+      && shouldRecordFailure({ released: true, rung: "none" }) === false)
 }
 
 // ---------------------------------------------------------------------------

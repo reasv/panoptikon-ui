@@ -352,6 +352,40 @@ export type PreviewRow = PlayabilityItem & {
 
 const rungFailures = new Map<string, Set<PreviewRung>>()
 
+/**
+ * IS THIS ELEMENT ERROR EVIDENCE ABOUT THE RUNG?
+ *
+ * Only while the cell still HOLDS the arm. Letting go — a pointer leave, a
+ * scroll that cancels the dwell, the cell scrolling out of the virtual window
+ * — unmounts the `<video>`, and unmounting it runs `abortVideo`: clear `src`,
+ * call `load()`. That is the spec's ABORT, and the media load algorithm it
+ * runs on an empty source is entitled to fire `error` on the way out.
+ *
+ * An `error` from THAT is a fact about the teardown and not about the file, so
+ * recording it would blame a rung for the user moving the pointer — and the
+ * record is a SESSION one (`notePreviewRungFailure`), so the item would be
+ * demoted for the rest of the tab on the strength of a leave. That is exactly
+ * what "never retry the failed rung" must not be made of.
+ *
+ * The `rung` half is belt and braces: `"none"` is the walked-off-the-end
+ * state, which owns no element and therefore has nothing to blame.
+ *
+ * PURE AND HERE rather than an `if` in the component, because what it decides
+ * is a rule about the ladder — see scripts/videopreview.test.mjs, which pins
+ * it. Whether `released` is TRUE at the right moment is the component's half
+ * and is a browser question: it is written by the `<video>`'s own ref
+ * cleanup, which `LoopVideo` runs BEFORE the abort (see the ref there), so the
+ * flag is already set by the time the abort's `load()` could queue anything.
+ */
+export function shouldRecordFailure(state: {
+  /** Has the cell let go of the arm — see above. */
+  released: boolean
+  /** Which rung the element was serving. */
+  rung: PreviewRung
+}): boolean {
+  return !state.released && state.rung !== "none"
+}
+
 /** Record that a rung did not work for this item. */
 export function notePreviewRungFailure(
   sha256: string | null | undefined,

@@ -14,6 +14,7 @@ import { CELL_HOVER_ROOT_ATTR, useArmedHover } from "@/hooks/useArmedHover"
 import {
   notePreviewRungFailure,
   previewFeedback,
+  shouldRecordFailure,
   previewKey,
   previewRequest,
   releasePreviewTranscode,
@@ -115,9 +116,38 @@ export function VideoHoverPicture({
   const rung = picture.rungs[step] ?? "none"
   const armable = !disabled && rung !== "none"
   const hover = useArmedHover(armable)
+  /**
+   * HAS THIS CELL LET GO? A ref rather than state, and both halves of that are
+   * load-bearing: it is read from an event handler that can fire after the
+   * element is already gone, and flipping it must re-render nothing.
+   *
+   * Written by the `<video>`'s OWN ref, which is the only place that can know
+   * the answer at the right moment: `LoopVideo`'s cleanup calls `elementRef`
+   * with null BEFORE it runs `abortVideo` (see the ref there), so by the time
+   * the abort's `load()` could queue an `error` this is already true.
+   */
+  const released = useRef(false)
+  const attachPreviewVideo = useCallback((element: HTMLElement | null) => {
+    released.current = element === null
+  }, [])
   const failRung = () => {
     notePreviewRungFailure(sha256, rung)
     setStep((current) => current + 1)
+  }
+  /**
+   * The same fall, from an ELEMENT error rather than a job's verdict — and
+   * therefore guarded (`shouldRecordFailure`, which is where the reasoning
+   * lives). A teardown's `error` must neither demote the item for the session
+   * nor step this mount down the ladder.
+   *
+   * The job path deliberately does NOT go through here: a `failed` job is the
+   * server's verdict, it arrives while this cell is mounted and watching, and
+   * between one rung's element unmounting and the next one's mounting there is
+   * a window in which `released` is legitimately true.
+   */
+  const failRungFromElement = () => {
+    if (!shouldRecordFailure({ released: released.current, rung })) return
+    failRung()
   }
   // The anchor for BOTH the arming and the frame swap's `closest` lookup.
   const baseRef = useRef<HTMLElement | null>(null)
@@ -215,9 +245,10 @@ export function VideoHoverPicture({
           // flash the fade exists to avoid.
           placeholder={undefined}
           className={className}
+          elementRef={attachPreviewVideo}
           fadeIn
           registered
-          onFailed={failRung}
+          onFailed={failRungFromElement}
         />
       ) : rung === "trim" || rung === "transcode" ? (
         // BOTH JOB RUNGS THROUGH ONE PATH. A stream copy and a re-encode
@@ -240,7 +271,9 @@ export function VideoHoverPicture({
           alt={alt}
           className={className}
           onFeedback={onFeedback}
-          onFailed={failRung}
+          onJobFailed={failRung}
+          onArtifactFailed={failRungFromElement}
+          elementRef={attachPreviewVideo}
         />
       ) : null)}
     </>
@@ -274,7 +307,9 @@ function PreviewTranscodeLayer({
   alt,
   className,
   onFeedback,
-  onFailed,
+  onJobFailed,
+  onArtifactFailed,
+  elementRef,
 }: {
   /** Which preset to ask for: the stream copy, or the re-encode. */
   rung: PreviewJobRung
@@ -286,7 +321,12 @@ function PreviewTranscodeLayer({
   alt: string
   className?: string
   onFeedback: (feedback: PreviewFeedback | null) => void
-  onFailed: () => void
+  /** The JOB refused. Always evidence — see the caller's two callbacks. */
+  onJobFailed: () => void
+  /** The finished artifact would not PLAY. Guarded by the caller. */
+  onArtifactFailed: () => void
+  /** The released flag's writer — see the caller. */
+  elementRef: (element: HTMLElement | null) => void
 }) {
   // The 16 s cap, and the key it produces. Both are pure functions of the row
   // (lib/videoPreview.ts), so the key is a value this component holds rather
@@ -329,8 +369,8 @@ function PreviewTranscodeLayer({
   // this one left off rather than repeating the refusal.
   const jobFailed = state.state === "failed"
   useEffect(() => {
-    if (jobFailed) onFailed()
-  }, [jobFailed, onFailed])
+    if (jobFailed) onJobFailed()
+  }, [jobFailed, onJobFailed])
   if (state.state !== "done") return null
   return (
     <LoopVideo
@@ -340,9 +380,10 @@ function PreviewTranscodeLayer({
       // The frame underneath is the placeholder — see the rung-0 layer.
       placeholder={undefined}
       className={className}
+      elementRef={elementRef}
       fadeIn
       registered
-      onFailed={onFailed}
+      onFailed={onArtifactFailed}
     />
   )
 }
