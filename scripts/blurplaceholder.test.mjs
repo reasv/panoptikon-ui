@@ -323,6 +323,11 @@ console.log("\n== the DC-term average colour (blurHashAverageColour) ==")
     blurHashAverageColour("LEHV6") === undefined)
   check("a non-base83 character in the DC has no colour",
     blurHashAverageColour("LE V6nWB2yk8pyo0adR*.7kCMdnj") === undefined)
+  // "~~~~" is base83's largest four-digit value (83^4 - 1), past 24 bits: a
+  // DC the encoder can never write, and one that would otherwise parse into
+  // an out-of-range channel.
+  check("a DC above 24 bits has no colour",
+    blurHashAverageColour("LE~~~~WB2yk8pyo0adR*.7kCMdnj") === undefined)
 }
 
 console.log("\n== the encoder honours the requested size ==")

@@ -182,6 +182,9 @@ export function blurHashAverageColour(
     if (digit < 0) return undefined
     dc = dc * 83 + digit
   }
+  // Four base83 digits span past 24 bits; a value above 0xffffff is not a
+  // colour the encoder could have written, so it is treated as malformed too.
+  if (dc > 0xffffff) return undefined
   return `rgb(${dc >> 16},${(dc >> 8) & 255},${dc & 255})`
 }
 
