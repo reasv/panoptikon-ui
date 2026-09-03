@@ -420,3 +420,103 @@ export function showsMotionBadge(
   if (mode === "still") return false
   return !!item.duration && item.duration > 0
 }
+
+// ---------------------------------------------------------------------------
+// The placeholder rung
+// ---------------------------------------------------------------------------
+
+/**
+ * WHAT A CELL PAINTS WHILE ITS PICTURE IS IN FLIGHT.
+ *
+ * - a NUMBER is the square edge, in pixels, the blurhash is decoded and
+ *   PNG-encoded at (`blurHashToDataURL`'s `size`);
+ * - `"colour"` is the hash's DC term alone — the average colour as one inline
+ *   `background-color`, four base83 characters, no raster and no encoder;
+ * - `"none"` is nothing at all: `placeholder="empty"`, the cell's own
+ *   background until the `<img>` paints.
+ *
+ * A `"none"` or `"colour"` answer must SHORT-CIRCUIT BEFORE THE DECODE — the
+ * whole point of the rung is that no blurhash raster is built, so a caller
+ * that decodes first and discards has bought nothing. `cellPlaceholder`
+ * (lib/state/blurHashDataURL.ts) is that switch, and is what both call sites
+ * use rather than testing the rung themselves.
+ */
+export type PlaceholderRung = "none" | "colour" | 8 | 16 | 32
+
+/** The rungs that are a raster — `blurHashToDataURL`'s `size` argument. */
+export type PlaceholderSize = Extract<PlaceholderRung, number>
+
+/**
+ * THE LADDER, and the only place the choice is made.
+ *
+ * The tier is a proxy for the CELL'S SIZE ON SCREEN and, through it, for both
+ * halves of the trade:
+ *
+ * - how much a placeholder is WORTH — a `grid-xs` cell is at most 288 device
+ *   pixels of an ~20 KB rendition, and it is not even the first thing the
+ *   virtualizer mounts: the overscan puts a cell in the DOM roughly three rows
+ *   BEFORE it reaches the viewport, which at 4000 px/s is ~170 ms of head
+ *   start against a measured 23-34 ms from mount to the `<img>`'s load event.
+ *   Measured against the stdtest gateway, cold cache, at 1000 and 4000 px/s:
+ *   the number of cells ON SCREEN without their picture never left ZERO. At
+ *   real speed against a local gateway the placeholder at this tier is not a
+ *   fallback that rarely shows — it is one that never shows. It is there for
+ *   the deployment where the picture is genuinely late (a gateway that is not
+ *   on localhost, a first scan still generating renditions), and a request has
+ *   to be ~170 ms late before anything of it is seen at all;
+ * - how much it COSTS — the placeholder is built once per cell MOUNT, and
+ *   mounts scale with the inverse square of the cell size. The smallest tier is
+ *   where the most cells per second cross the viewport, so it is exactly where
+ *   a per-mount cost is multiplied hardest. At `cs=140` on a 4K viewport a
+ *   scroll mounts ~330 cells a second, where a 32x32 raster was 36% of ALL busy
+ *   JS during the scroll and the wall between 42 and 68 fps.
+ *
+ * MEASURED, over a fixed 32,100 px / 8 s scroll at `cs=140` on a 4K viewport,
+ * each against the 32x32 the whole grid used to pay (2026-09-03):
+ *
+ * | rung at grid-xs | script | task | style |
+ * |---|---|---|---|
+ * | 32x32 (was) | — | — | — |
+ * | 8x8 | -44% | -18% | ~ |
+ * | `"none"` | -62% | -38% | -61% |
+ * | `"colour"` | ~ `"none"` | +5% vs `"none"` | +263 ms vs `"none"` |
+ *
+ * So `grid-xs` takes `"colour"`: it is within noise of `"none"` on script, and
+ * the +5% of task and +263 ms of style recalc (one inline style attribute per
+ * cell) buy the only rung that shows ANYTHING when loads are slow. `"none"` is
+ * the cheaper answer and is kept in the type because it is one word away, but
+ * a wall of empty frames is the wrong trade for 5%.
+ *
+ * `grid-s` takes 16 rather than the same 8: its mount rate is already a
+ * quarter of `grid-xs`'s, so there is little left to win, and 16x16 costs
+ * ~70 µs against 8x8's ~21 µs and 32x32's ~284 µs (node micro-benchmark, same
+ * machine). `grid-m` and `display` keep the full 32 — a handful of mounts per
+ * second, nothing there to buy, and `display` is the gallery, where one
+ * picture is on screen for seconds and its placeholder is the only thing
+ * between an empty frame and the image.
+ *
+ * WHY A SMALL RASTER LOSES NOTHING. A blurhash carries 4x3 cosine components;
+ * there is no detail in it that a 32x32 raster holds and an 8x8 one does not,
+ * and next/image paints either as a `background-image` scaled to the box with
+ * smoothing. A `grid-xs` box is at most 256 x 1.125 = 288 device pixels, so
+ * the raster is upscaled ~36x either way.
+ */
+export const TIER_PLACEHOLDER_RUNG = {
+  "grid-xs": "colour",
+  "grid-s": 16,
+  "grid-m": 32,
+  display: 32,
+} as const satisfies Record<ThumbnailTier, PlaceholderRung>
+
+/**
+ * An UNKNOWN tier answers the full 32, the conservative direction: unknown
+ * means "this surface has not measured itself yet" (`tierForCellWidth`'s own
+ * conservative answer is `display` for the same reason), and a surface that
+ * cannot say how big its cards are must not be handed a rung reserved for the
+ * smallest ones.
+ */
+export function placeholderForTier(
+  tier: ThumbnailTier | undefined
+): PlaceholderRung {
+  return tier === undefined ? 32 : TIER_PLACEHOLDER_RUNG[tier]
+}
