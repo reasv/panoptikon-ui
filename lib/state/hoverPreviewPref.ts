@@ -222,6 +222,11 @@ function writeOfferedSlot(
   else delete pref[slot]
 }
 
+/** Does this preference record anything at all? See `setHoverPreviewChoice`. */
+export function isEmptyHoverPreviewPref(pref: HoverPreviewPref): boolean {
+  return pref.direct === undefined && pref.transcode === undefined
+}
+
 /**
  * Read a stored value back. Anything unusable — absent, unparseable, the wrong
  * shape, a hand-edited string — reads as "nothing stored", i.e. both rungs
@@ -328,10 +333,20 @@ export function setHoverPreviewChoice(
 ): void {
   const pref = withHoverPreviewSlot(box.get(), choice, capability)
   try {
-    window.localStorage.setItem(
-      HOVER_PREVIEW_PREF_STORAGE_KEY,
-      JSON.stringify(pref)
-    )
+    // NO SLOTS, NO KEY. Under a policy that offers nothing, every segment is a
+    // no-op and the write above records nothing — so storing `{}` would leave
+    // a key in the user's profile that means exactly what its absence means,
+    // and that did not exist before they clicked. Removing rather than
+    // skipping, so a preference that becomes empty (the server stopped
+    // offering the rungs it was about) is cleaned up rather than frozen.
+    if (isEmptyHoverPreviewPref(pref)) {
+      window.localStorage.removeItem(HOVER_PREVIEW_PREF_STORAGE_KEY)
+    } else {
+      window.localStorage.setItem(
+        HOVER_PREVIEW_PREF_STORAGE_KEY,
+        JSON.stringify(pref)
+      )
+    }
   } catch {
     // Storage refused (private mode, blocked site data). The preference still
     // applies for this session — publishing it is what the user asked for, and
