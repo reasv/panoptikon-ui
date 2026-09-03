@@ -25,10 +25,17 @@ import {
     extremeCropArmsHover,
     planCellPicture,
     type CellCrop,
+    type CellVideoPicture,
 } from '@/lib/cellPicture';
 import { isSmallCell } from '@/lib/gridCellSize';
 import { LoopVideo } from '@/components/LoopVideo';
 import { CELL_HOVER_ROOT_ATTR, useArmedHover } from '@/hooks/useArmedHover';
+import {
+    HOVER_PREVIEW_OFF,
+    type HoverPreviewCapability,
+} from '@/lib/state/hoverPreviewPref';
+import { cellPreviewLadder, type PreviewFeedback } from '@/lib/videoPreview';
+import { VideoHoverPicture } from '@/components/VideoHoverPicture';
 
 // The marker the extreme-aspect swap and the hover arming bind their listeners
 // to. It is the element that carries `group`, so the JS hover regions and the
@@ -222,6 +229,7 @@ export const SearchResultImage = memo(function SearchResultImage({
     animatedFloor,
     displayLoopTrigger,
     animateMode = "always",
+    hoverPreview = HOVER_PREVIEW_OFF,
 }: {
     result: SearchResult,
     index: number,
@@ -316,6 +324,19 @@ export const SearchResultImage = memo(function SearchResultImage({
      * knows nothing about this feature keeps the cells it always had.
      */
     animateMode?: AnimateMode
+    /**
+     * WHAT A HOVERED VIDEO CELL MAY DO here (V7/V8): the server's answer with
+     * the browser preference already subtracted, resolved ONCE by the host
+     * (`useHoverPreview`) and handed down on the same rule as the animated
+     * floor above — never a hook per card, which is what the whole feature's
+     * "costs nothing un-hovered" claim rests on.
+     *
+     * One of four interned constants, so it is memo-safe as a prop. Omitted is
+     * `HOVER_PREVIEW_OFF`: a surface that knows nothing about previews (the
+     * similarity sidebar, the similar-items view) keeps exactly the cells it
+     * always had, and so does this one while the client config is in flight.
+     */
+    hoverPreview?: HoverPreviewCapability
 }) {
     const fileUrl = overrideURL ? overrideURL : originalFileURL(dbs, result.sha256)
     // THE TIER, LATCHED AT MOUNT, and that is the whole of the no-flash rule
@@ -355,6 +376,14 @@ export const SearchResultImage = memo(function SearchResultImage({
     // fields the row already carries and two stable props, and a static card
     // leaves here with `"still"` having mounted no hook, no listener and no
     // second element — exactly as before any of this existed.
+    //
+    // THE PREVIEW LADDER, which is the plan's fifth input and the only one that
+    // depends on what this BROWSER can decode and how big the file is
+    // (lib/videoPreview.ts). Short-circuited to the empty ladder before any
+    // probe for every row that is not a video and on every surface where
+    // previews are off, so a grid of stills pays one string comparison for the
+    // feature existing.
+    const previewRungs = cellPreviewLadder(result, hoverPreview)
     const plan = planCellPicture(result, dbs, tierRef.current, {
         animatedFloor,
         displayLoopTrigger,
@@ -362,7 +391,7 @@ export const SearchResultImage = memo(function SearchResultImage({
         // constant (lib/gridCellSize.ts), on a value it already has. A host
         // that measures its box has already said everything this needs.
         smallCell: isSmallCell(cellWidth),
-    })
+    }, previewRungs)
     // The badge rule's input, and the ONLY thing outside the plan that still
     // needs the three-way mode: `"still"` and `"static"` paint the same element
     // and differ only in what the badge means over them (D8).
@@ -421,6 +450,19 @@ export const SearchResultImage = memo(function SearchResultImage({
     // React no-op, so repeated entries cost nothing.
     const [overlayActive, setOverlayActive] = useState(false)
     const armOverlay = () => setOverlayActive(true)
+    // WHAT THE BADGE SAYS WHILE A PREVIEW TRANSCODE IS PENDING (V11). Local
+    // state written by the previewing picture below, for the same reason the
+    // overlay latch is local: the card's memo holds only while it renders from
+    // stable props, and a store subscription here would re-render every
+    // visible card. The SUBSCRIPTION to the job lives one level further in,
+    // inside a component that exists only while this cell is previewing — so
+    // no other cell hears about the job at all.
+    //
+    // It reaches the badge rather than being drawn beside the picture because
+    // the badge IS the affordance the progress belongs on: it is already the
+    // thing that says "this one plays", already centred on the frame, and
+    // already scaled to the cell.
+    const [preview, setPreview] = useState<PreviewFeedback | null>(null)
     return (
         <div className={cn("border rounded p-2", className)}>
             <div className={cn("overflow-hidden relative w-full pb-full mb-2",
@@ -511,6 +553,11 @@ export const SearchResultImage = memo(function SearchResultImage({
                             imageClassName={imageClassName}
                             disabled={!!showLoadingSpinner}
                             animateMode={animateMode}
+                            sha256={result.sha256}
+                            indexDb={dbs.index_db}
+                            userDataDb={dbs.user_data_db}
+                            duration={result.duration}
+                            onPreviewFeedback={setPreview}
                         />
                     ) : plan.kind === "loop" ? (
                         <CellLoopPicture
@@ -541,6 +588,22 @@ export const SearchResultImage = memo(function SearchResultImage({
                                 showLoadingSpinner ? "" : "group-hover:object-contain group-hover:object-center",
                                 imageClassName)}
                         />
+                    ) : plan.kind === "video" ? (
+                        <VideoHoverPicture
+                            picture={plan}
+                            sha256={result.sha256}
+                            indexDb={dbs.index_db}
+                            userDataDb={dbs.user_data_db}
+                            duration={result.duration}
+                            alt={`Result ${result.path}`}
+                            placeholder={placeholder}
+                            disabled={!!showLoadingSpinner}
+                            onFeedback={setPreview}
+                            className={cn(
+                                "object-cover object-top",
+                                showLoadingSpinner ? "" : "group-hover:object-contain group-hover:object-center",
+                                imageClassName)}
+                        />
                     ) : (
                         <CellStillImage
                             src={plan.src}
@@ -563,7 +626,10 @@ export const SearchResultImage = memo(function SearchResultImage({
                         pointer events, so the click and the drag still belong
                         to the anchor. */}
                     {showsMotionBadge(result, animated, animateMode)
-                        && <PlayableBadge />}
+                        && <PlayableBadge
+                            progress={preview?.progress ?? null}
+                            caption={preview?.caption ?? null}
+                        />}
                 </a>
                 {showLoadingSpinner && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-white bg-opacity-50">
@@ -622,6 +688,11 @@ function ExtremeAspectPicture({
     imageClassName,
     disabled,
     animateMode,
+    sha256,
+    indexDb,
+    userDataDb,
+    duration,
+    onPreviewFeedback,
 }: {
     /**
      * The stored grid rendition — a still crop, or the CROPPED LOOP when the
@@ -645,6 +716,12 @@ function ExtremeAspectPicture({
     disabled: boolean
     /** Passed through to the crop when it is a loop — see CellLoopPicture. */
     animateMode: AnimateMode
+    /** Passed through to the crop when it PREVIEWS — see VideoHoverPicture. */
+    sha256: string
+    indexDb: string | null
+    userDataDb: string | null
+    duration?: number | null
+    onPreviewFeedback: (feedback: PreviewFeedback | null) => void
 }) {
     // A CALLBACK ref rather than a typed object ref, because the crop layer is
     // an <img> for a still item and a <video> for an animated one and this only
@@ -779,6 +856,27 @@ function ExtremeAspectPicture({
                     // unaffected either way: the crop loop is the picture there
                     // and plays under the director like every other loop cell.
                     armable={extremeCropArmsHover(crop, displaySrc)}
+                />
+            ) : crop.kind === "video" ? (
+                // A STRIP-SHAPED VIDEO WITH PREVIEWS ON. The plan makes
+                // `displaySrc` null for exactly this case (lib/cellPicture.ts),
+                // so the swap above binds no listeners and the hover belongs to
+                // the preview alone — the same one-owner rule
+                // `extremeCropArmsHover` states for the loop crop, decided
+                // there rather than here because it is a question about the
+                // plan.
+                <VideoHoverPicture
+                    picture={crop}
+                    sha256={sha256}
+                    indexDb={indexDb}
+                    userDataDb={userDataDb}
+                    duration={duration}
+                    alt={alt}
+                    placeholder={placeholder}
+                    disabled={disabled}
+                    onFeedback={onPreviewFeedback}
+                    className={cropClassName}
+                    elementRef={attachCrop}
                 />
             ) : (
                 <CellStillImage
@@ -1093,3 +1191,4 @@ function VideoStillPicture({
         </>
     )
 }
+

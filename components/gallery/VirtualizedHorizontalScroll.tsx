@@ -32,8 +32,15 @@ import {
 import { useDevicePixelRatio } from '@/hooks/useDevicePixelRatio'
 import { CELL_HOVER_ROOT_ATTR, useArmedHover } from '@/hooks/useArmedHover'
 import { trackHoverPointer } from '@/lib/state/animatedPlayback'
-import { useAnimatedFloor } from '@/lib/useClientConfig'
+import { useAnimatedFloor, useHoverPreview } from '@/lib/useClientConfig'
 import type { ResultsSource } from '@/lib/searchHooks'
+import {
+    HOVER_PREVIEW_OFF,
+    type HoverPreviewCapability,
+} from '@/lib/state/hoverPreviewPref'
+import { cellPreviewLadder, type PreviewFeedback } from '@/lib/videoPreview'
+import { VideoHoverPicture } from '@/components/VideoHoverPicture'
+import type { CellVideoPicture } from '@/lib/cellPicture'
 
 // The BINDING EDGE of the strip's card box, in CSS pixels: the LARGER of the
 // `w-[240px] h-80` figure below — its 320px height.
@@ -207,6 +214,12 @@ export function VirtualGalleryHorizontalScroll({
     // (D8). react-query keeps the object's identity across refetches that
     // change nothing.
     const animatedFloor = useAnimatedFloor()
+    // AND ONE HOVER-PREVIEW CAPABILITY for the whole strip, read here for
+    // exactly the reason the floor above it is: the server's answer and the
+    // browser's preference are both subscriptions, identical for every card,
+    // and `useHoverPreview` returns one of four interned constants so passing
+    // it down costs the cards nothing (V7/V8).
+    const hoverPreview = useHoverPreview()
     // The pointer tracking the hover arming reads — bound for as long as the
     // strip is mounted, refcounted with the grid's (see trackHoverPointer).
     useEffect(() => trackHoverPointer(), [])
@@ -429,6 +442,7 @@ export function VirtualGalleryHorizontalScroll({
                                 onViewerOpenChange={onViewerOpenChange}
                                 tier={tier}
                                 animatedFloor={animatedFloor}
+                                hoverPreview={hoverPreview}
                             />
                         )
                     })}
@@ -475,6 +489,7 @@ function VirtualHorizontalScrollElement({
     onViewerOpenChange,
     tier,
     animatedFloor,
+    hoverPreview = HOVER_PREVIEW_OFF,
 }: {
     item: SearchResult
     ownIndex: number
@@ -494,6 +509,12 @@ function VirtualHorizontalScrollElement({
     tier: ThumbnailTier
     /** The animated raw floor — read once by the strip. See its own read. */
     animatedFloor: AnimatedFloor | null
+    /**
+     * What a hovered VIDEO card may do (V7/V8) — read once by the strip, on
+     * the same rule as the floor. Omitted is "off", i.e. the card that
+     * shipped before hover previews existed.
+     */
+    hoverPreview?: HoverPreviewCapability
 }) {
     const [qIndex] = useGalleryIndex()
     // The same mapping the strip scrolls to (see stripTarget): clamped, not
@@ -541,6 +562,30 @@ function VirtualHorizontalScrollElement({
     // animated one already animating in its own <img>, keeps today's picture
     // with no listener and no state.
     const animated = animatedCellMode(item, animatedFloor)
+    // THE PREVIEW (V9: the strip is one of the two surfaces that gets it).
+    // Short-circuited to the empty ladder before any codec probe for every
+    // card that is not a video and whenever previews are off, so a strip of
+    // stills pays one string comparison for the feature existing.
+    const previewRungs = cellPreviewLadder(item, hoverPreview)
+    // The strip card is 240 CSS px wide, i.e. always in the LARGE range, so
+    // V12's large-cell rule applies verbatim: the base picture is the 2x2
+    // mosaic this card has always shown, the single frame arrives with the
+    // hover as the waiting placeholder, and the preview fades in over it.
+    const previewPicture: CellVideoPicture | null = previewRungs.length === 0
+        ? null
+        : {
+            poster: thumbnailURL,
+            frame: thumbnailPictureURL(dbs, item, null, tier, false),
+            directSrc: previewRungs.includes("direct")
+                ? originalFileURL(dbs, item.sha256)
+                : null,
+            rungs: previewRungs,
+        }
+    // What the badge says while a preview transcode is pending (V11). LOCAL
+    // state, written by the picture below; the SUBSCRIPTION to the job lives
+    // inside a component that exists only while this card is previewing, so no
+    // other card in the strip hears about it.
+    const [preview, setPreview] = useState<PreviewFeedback | null>(null)
     // Every hover report this card makes goes through here, so the card can
     // know whether the dock's hover subject is currently ITS item. Tracked
     // from the reports rather than from raw pointer presence: the unmount
@@ -700,11 +745,27 @@ function VirtualHorizontalScrollElement({
                                 alt={item.path}
                                 placeholder={placeholder}
                             />
-                            : <StripCardImage
-                                src={thumbnailURL}
-                                alt={item.path}
-                                placeholder={placeholder}
-                            />}
+                            : previewPicture
+                                // A VIDEO card with previews on. Every class
+                                // is StripCardImage's verbatim, so the layer
+                                // that fades in sits exactly where the picture
+                                // it replaces was.
+                                ? <VideoHoverPicture
+                                    picture={previewPicture}
+                                    sha256={item.sha256}
+                                    indexDb={dbs.index_db}
+                                    userDataDb={dbs.user_data_db}
+                                    duration={item.duration}
+                                    alt={item.path}
+                                    placeholder={placeholder}
+                                    onFeedback={setPreview}
+                                    className="object-cover object-top rounded-md cursor-pointer"
+                                />
+                                : <StripCardImage
+                                    src={thumbnailURL}
+                                    alt={item.path}
+                                    placeholder={placeholder}
+                                />}
                     </div>
                 </Link>
                 {/* Same stacking rule as the grid card's copy: after the
@@ -715,7 +776,10 @@ function VirtualHorizontalScrollElement({
                     show posters and play only what the pointer dwells on —
                     so a card that CAN move and is not moving is exactly what
                     the badge is for. */}
-                {showsMotionBadge(item, animated, "hover") && <PlayableBadge />}
+                {showsMotionBadge(item, animated, "hover") && <PlayableBadge
+                    progress={preview?.progress ?? null}
+                    caption={preview?.caption ?? null}
+                />}
                 {searchLoading && (
                     <div className="absolute inset-0 z-10 flex items-center rounded-md justify-center bg-white bg-opacity-50">
                         <Image

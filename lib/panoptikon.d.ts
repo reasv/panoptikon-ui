@@ -1871,8 +1871,10 @@ export interface components {
             /**
              * @description The policy's `[policies.client]` table, verbatim (empty object when
              *     unset). Free-form; recognized-by-convention keys include
-             *     `search_throttle_ms`, `disable_backend_open`, and `relay_enabled`
-             *     (Relay is enabled when the key is absent).
+             *     `search_throttle_ms`, `disable_backend_open`, `relay_enabled`
+             *     (Relay is enabled when the key is absent), `transcode_presets`, and
+             *     `hover_preview` (see the resolved `hover_preview` field below, which
+             *     is what a client should read).
              */
             client: unknown;
             /**
@@ -1886,6 +1888,7 @@ export interface components {
              */
             desktop_shell_available: boolean;
             display_loop_trigger?: null | components["schemas"]["DisplayLoopTrigger"];
+            hover_preview?: null | components["schemas"]["HoverPreview"];
             /** @description Name of the policy that matched this request. */
             policy: string;
         };
@@ -2397,6 +2400,69 @@ export interface components {
             shutting_down: boolean;
             /** @description `"ok"` normally, `"shutting_down"` once shutdown has begun. */
             status: string;
+        };
+        /**
+         * @description The server's resolved answer to "may this client preview a video on
+         *     hover?", for the three rungs of the ladder
+         *     (docs/video-hover-preview-implementation.md §2).
+         *
+         *     Resolved here rather than derived client-side: each rung is a conjunction
+         *     of facts the client cannot see (the policy's own switch, the `[transcode]
+         *     hover_preview` server default, whether this policy may POST a transcode at
+         *     all, and whether the preset each rung needs survives that policy's
+         *     `transcode_presets` limit).
+         *
+         *     The client picks a rung per item against `max_bytes`; the server only says
+         *     which rungs exist and where the line is.
+         *
+         *     The three flags are independent answers, not a scale. Each names its own
+         *     conjunction, and the only thing they share is the policy switch
+         *     (`[policies.client] hover_preview`), which is a negative override on all
+         *     three — so a `direct: false` answer does mean the whole feature is off for
+         *     this policy, but no other pair of members implies anything about each
+         *     other. A policy can perfectly well offer the re-encode and not the remux
+         *     (`transcode_presets` listing `preview` alone), or the reverse.
+         */
+        HoverPreview: {
+            /**
+             * @description Rung 0: mount a muted `<video>` on the item's own file, for a file at
+             *     or under `max_bytes` the browser can already decode.
+             *
+             *     Requires nothing but the policy switch: the rung costs the server only
+             *     Range reads, needs no job and no preset, so there is nothing else that
+             *     could withhold it.
+             */
+            direct: boolean;
+            /**
+             * Format: int64
+             * @description The byte cap the ladder turns on (`[transcode]
+             *     hover_preview_max_bytes`). A file at or under it plays directly; over
+             *     it, the client estimates the 16 s slice as `size * min(16, duration) /
+             *     duration` and takes rung 1 when that fits, rung 2 otherwise. An item
+             *     with no known duration cannot be estimated and never takes rung 1.
+             */
+            max_bytes: number;
+            /**
+             * @description Rung 2: request the 480p `preview` re-encode for an item neither
+             *     cheaper rung can serve.
+             *
+             *     Requires the policy switch, the `[transcode] hover_preview` server
+             *     default, permission to `POST /api/video/transcode`, and `preview`
+             *     surviving that policy's `transcode_presets` limit.
+             */
+            transcode: boolean;
+            /**
+             * @description Rung 1: request the `preview-trim` rendition — the source's own
+             *     packets remuxed, no decode and no encode — when the estimated 16 s
+             *     slice fits under `max_bytes`.
+             *
+             *     Requires the policy switch, permission to `POST /api/video/transcode`,
+             *     and `preview-trim` surviving that policy's `transcode_presets` limit.
+             *     Deliberately **not** gated on the hardware-encoder probe or on
+             *     `[transcode] hover_preview`: there is no encoder in this rung to have
+             *     an opinion about.
+             */
+            trim: boolean;
         };
         InBookmarks: components["schemas"]["SortableOptions"] & {
             /**
@@ -4214,7 +4280,7 @@ export interface components {
          *     user-declared profile appears in the right dropdowns with no client change.
          * @enum {string}
          */
-        Surface: "playback" | "clip" | "mosaic";
+        Surface: "playback" | "clip" | "mosaic" | "preview";
         SystemConfig: {
             continuous_filescan?: components["schemas"]["ContinuousFilescanConfig"];
             cron_jobs?: components["schemas"]["CronJob"][];
