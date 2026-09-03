@@ -665,9 +665,11 @@ async function deleteJob(jobId: string): Promise<void> {
  *   - a terminal key is left alone: `done` is a cached artifact (the whole
  *     point), and a failure is a verdict, not work in progress.
  *
- * The state is returned to idle either way so the next dwell means what it
- * says, and the marker in `cancelled` is what stops the settled job's own
- * `failed` event landing as a sticky verdict about the file.
+ * The key is FORGOTTEN either way (see below) so the next dwell means what it
+ * says, and the three lines above are between them what stop the settled job's
+ * own `failed` event landing as a sticky verdict about the file: the stream is
+ * closed and the poller flagged here, and a POST still on the wire is
+ * invalidated by dropping this key's `submits` generation.
  */
 export function cancelTranscode(key: string): void {
   const current = states.get(key)
