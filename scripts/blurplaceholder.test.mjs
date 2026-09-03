@@ -1,19 +1,42 @@
-// Assertions for the BLUR PLACEHOLDER RUNG: which square raster a card's
-// thumbnail tier asks the blurhash to be decoded at, and the cache that has to
-// keep the rungs apart — plus the module-scope date formatter, the second half
-// of the same measured fix. The profiling that motivated both charged 36% of
-// all busy JS during a 140px-cell scroll to the placeholder and 4-5% to
+// Assertions for the GRID PLACEHOLDER RUNG: what a card paints while its
+// picture is in flight, which is a per-tier choice (`placeholderForTier`,
+// lib/thumbnailTier.ts) applied by one switch (`cellPlaceholder`,
+// lib/state/blurHashDataURL.ts) — plus the raster cache that has to keep the
+// rungs apart, and the module-scope date formatter, the other half of the same
+// measured fix.
+//
+// The measurement behind the ladder, all over the same fixed 32,100 px / 8 s
+// scroll at `cs=140` on a 4K viewport (~330 cell mounts/s), each against the
+// 32x32 raster the whole grid used to pay: 8x8 took script -44%; `"none"` took
+// script -62%, task -38% and style -61%; `"colour"` is within noise of `"none"`
+// on script and costs it +5% of task and +263 ms of style recalc. The profile
+// that started it charged 36% of all busy JS to the placeholder and 4-5% to
 // `getLocale`. No test runner in this repo — run it from the ui root:
 //
 //   node --experimental-strip-types scripts/blurplaceholder.test.mjs
 //
-// `placeholderSizeForTier` is pure and lives next to the tier ladder it rides,
-// so it executes under plain node like the rest of lib/thumbnailTier.ts.
-// `blurHashToDataURL` is not import-free — it pulls the `blurhash` package —
-// but that package is plain ESM with no DOM in it, so node loads it and the
-// encoder runs here exactly as it does in a browser (it already prefers
-// `Buffer` over `btoa` for the base64 step). That is what lets the CACHE be
-// asserted rather than described.
+// The tier ladder itself, the cell-size slider and the pin algebra are
+// scripts/gridcells.test.mjs's; the thumbnail URLs the tier feeds are
+// scripts/thumbnailurl.test.mjs's. Nothing about the placeholder is asserted
+// in either — this file is the whole of it.
+//
+// `placeholderForTier` is pure and lives next to the tier ladder it rides, so
+// it executes under plain node. `cellPlaceholder` and `blurHashToDataURL` are
+// not import-free — they pull the `blurhash` package — but that package is
+// plain ESM with no DOM in it, so node loads it and the encoder runs here
+// exactly as it does in a browser (it already prefers `Buffer` over `btoa` for
+// the base64 step). That is what lets the CACHE be asserted rather than
+// described.
+//
+// WHAT THIS FILE CANNOT REACH: the WIRING. `CellStillImage` and the strip's
+// `StripCardImage` live in .tsx files that import React and next/image,
+// neither of which resolves outside a bundler, so "the colour goes on the
+// <img> and not into next/image's `placeholder` prop" and "next/image really
+// calls our onLoad" are not asserted here. Everything those two branches key
+// on IS: the rung, the switch, `isPlaceholderColour` over the whole union, and
+// `clearPlaceholderColour` itself, which takes a plain `{currentTarget}` and
+// so runs under node. The residue needing a BROWSER is named in the section
+// below.
 //
 // Exits non-zero on failure.
 
@@ -23,22 +46,29 @@ register("./ts-hooks.mjs", import.meta.url)
 
 const {
   TIER_LADDER,
-  TIER_PLACEHOLDER_SIZE,
+  TIER_PLACEHOLDER_RUNG,
   TIER_SHORT_SIDE,
-  placeholderSizeForTier,
+  placeholderForTier,
   tierForCellWidth,
 } = await import("../lib/thumbnailTier.ts")
-const { blurHashToDataURL } = await import("../lib/state/blurHashDataURL.ts")
+const {
+  blurHashAverageColour,
+  blurHashToDataURL,
+  cellPlaceholder,
+  clearPlaceholderColour,
+  isPlaceholderColour,
+} = await import("../lib/state/blurHashDataURL.ts")
+const { decode } = await import("blurhash")
 const { getLocale } = await import("../lib/utils.ts")
 
 const { check, finish } = createChecker()
 
-// A real 4x3-component hash, and a couple of others so the LRU has distinct
-// keys to walk. Base83 never contains ":", which is what makes the "<size>:"
-// key prefix unambiguous.
+// Real 4x3-component hashes. Base83 never contains ":", which is what makes
+// the "<size>:" cache-key prefix unambiguous.
 const HASH = "LEHV6nWB2yk8pyo0adR*.7kCMdnj"
 const HASH_B = "L6PZfSi_.AyE_3t7t7R**0o#DgR4"
 const HASH_C = "LKO2?U%2Tw=w]~RBVZRi};RPxuwH"
+const HASH_D = "LlMF%n00%#MwS|WCWEM{R*bbWBbH"
 
 /** The raw PNG bytes behind a `data:image/png;base64,...` value. */
 function pngBytes(dataURL) {
@@ -61,41 +91,60 @@ function pngDims(dataURL) {
   return [bytes.readUInt32BE(16), bytes.readUInt32BE(20)]
 }
 
-console.log("\n== the tier -> raster mapping ==")
+console.log("\n== the ladder: which rung each tier takes ==")
 {
+  // THE DECISION, spelled as the assertion. `grid-xs` takes the cheap rung and
+  // not `"none"` deliberately: it measured within noise of `"none"` on script
+  // and costs it +5% of task, and it is the only rung that shows anything at
+  // all when the pictures are genuinely late.
   check(
-    "grid-xs decodes at 8, grid-s at 16, grid-m and display at 32",
-    placeholderSizeForTier("grid-xs") === 8
-      && placeholderSizeForTier("grid-s") === 16
-      && placeholderSizeForTier("grid-m") === 32
-      && placeholderSizeForTier("display") === 32,
-    JSON.stringify(TIER_PLACEHOLDER_SIZE)
+    "grid-xs paints the average colour, grid-s 16x16, grid-m and display 32x32",
+    placeholderForTier("grid-xs") === "colour"
+      && placeholderForTier("grid-s") === 16
+      && placeholderForTier("grid-m") === 32
+      && placeholderForTier("display") === 32,
+    JSON.stringify(TIER_PLACEHOLDER_RUNG)
   )
   check(
     "an UNKNOWN tier answers the full 32, the conservative direction",
-    placeholderSizeForTier(undefined) === 32
+    placeholderForTier(undefined) === 32
   )
   check(
     "every tier the ladder names has a rung — no tier falls through",
     [...TIER_LADDER, "display"].every(
-      (tier) => TIER_PLACEHOLDER_SIZE[tier] !== undefined
+      (tier) => TIER_PLACEHOLDER_RUNG[tier] !== undefined
     )
   )
+  // The contract both call sites rely on THROUGH `cellPlaceholder`: a rung is
+  // either a raster size or one of the two no-decode words, and nothing else
+  // may ever be returned.
+  const rungs = [...TIER_LADDER, "display", undefined].map(placeholderForTier)
   check(
-    "the rung never grows as the tier shrinks (monotone with the ladder)",
+    "every rung is a number or one of the two no-decode words",
+    rungs.every((r) => typeof r === "number" || r === "none" || r === "colour"),
+    rungs.join(",")
+  )
+  // The ladder's shape: cost may only go UP as the cell gets bigger. A cheap
+  // word sorts below every raster.
+  const weight = (rung) =>
+    typeof rung === "number" ? rung : rung === "colour" ? 1 : 0
+  check(
+    "the rung never shrinks as the tier grows (monotone with the ladder)",
     TIER_LADDER.every((tier, i) =>
       i === 0
         ? true
-        : TIER_PLACEHOLDER_SIZE[tier] >= TIER_PLACEHOLDER_SIZE[TIER_LADDER[i - 1]]
+        : weight(TIER_PLACEHOLDER_RUNG[tier])
+          >= weight(TIER_PLACEHOLDER_RUNG[TIER_LADDER[i - 1]])
     ),
-    TIER_LADDER.map((t) => `${t}=${TIER_PLACEHOLDER_SIZE[t]}`).join(" ")
+    TIER_LADDER.map((t) => `${t}=${TIER_PLACEHOLDER_RUNG[t]}`).join(" ")
   )
   check(
-    "the raster is never larger than the tier's own short side — an 8x8 " +
-      "placeholder is upscaled at least 32x inside a grid-xs box",
-    TIER_LADDER.every(
-      (tier) => TIER_PLACEHOLDER_SIZE[tier] * 32 <= TIER_SHORT_SIDE[tier]
-    )
+    "a raster rung is at least 32x smaller than its tier's own short side — " +
+      "the placeholder is an upscale by construction, so its resolution is free",
+    TIER_LADDER.every((tier) => {
+      const rung = TIER_PLACEHOLDER_RUNG[tier]
+      return typeof rung !== "number" || rung * 32 <= TIER_SHORT_SIDE[tier]
+    })
   )
 }
 
@@ -104,22 +153,176 @@ console.log("\n== what the two call sites' boxes actually land on ==")
   // The result grid at the size slider's 140px minimum — the case the whole
   // measurement was taken at. Any dpr from 1 to 2 stays inside grid-xs.
   check(
-    "a 140px grid cell asks for 8x8 at dpr 1, 1.25 and 2",
+    "a 140px grid cell takes the colour rung at dpr 1, 1.25 and 2",
     [1, 1.25, 2].every(
-      (dpr) => placeholderSizeForTier(tierForCellWidth(140, dpr)) === 8
+      (dpr) => placeholderForTier(tierForCellWidth(140, dpr)) === "colour"
     )
   )
   // The gallery strip's fixed box: STRIP_CARD_CSS_BINDING_EDGE = 320.
   check(
     "the strip's 320px binding edge asks for 16x16 at dpr 1 and 32x32 at dpr 2",
-    placeholderSizeForTier(tierForCellWidth(320, 1)) === 16
-      && placeholderSizeForTier(tierForCellWidth(320, 2)) === 32
+    placeholderForTier(tierForCellWidth(320, 1)) === 16
+      && placeholderForTier(tierForCellWidth(320, 2)) === 32
+  )
+  // ...but it is NOT out of the colour rung's reach, which is why the strip
+  // carries the paint and the clear rather than treating them as the grid's
+  // private business: a zoomed-out browser drops the device pixel ratio below
+  // 1 and 320 CSS px stops binding 256 device px.
+  check(
+    "a zoomed-out browser (dpr <= 0.85) does put the strip on the colour rung",
+    [0.67, 0.75, 0.85].every(
+      (dpr) => placeholderForTier(tierForCellWidth(320, dpr)) === "colour"
+    )
   )
   check(
     "a large grid cell (slider >= 600) keeps the full 32x32",
-    placeholderSizeForTier(tierForCellWidth(600, 1.25)) === 32
-      && placeholderSizeForTier(tierForCellWidth(900, 1)) === 32
+    placeholderForTier(tierForCellWidth(600, 1.25)) === 32
+      && placeholderForTier(tierForCellWidth(900, 1)) === 32
   )
+}
+
+console.log("\n== the switch: cellPlaceholder applies a rung, once ==")
+{
+  // THE SHORT-CIRCUIT IS THE POINT. A cheap rung must never build a raster —
+  // a caller that decoded first and discarded would have bought nothing — and
+  // this is the single place both call sites go through, so asserting it here
+  // covers both.
+  const colour = cellPlaceholder(HASH, "colour")
+  check(
+    "the colour rung answers a bare rgb() and NOT a data URL",
+    isPlaceholderColour(colour) && pngBytes(colour) === null,
+    String(colour)
+  )
+  check(
+    "the colour rung's answer is the DC term itself",
+    colour === blurHashAverageColour(HASH)
+  )
+  check(
+    "the none rung answers nothing at all",
+    cellPlaceholder(HASH, "none") === undefined
+  )
+  for (const size of [8, 16, 32]) {
+    const url = cellPlaceholder(HASH, size)
+    if (
+      !check(
+        `a numeric rung (${size}) answers that hash's PNG at ${size}x${size}`,
+        !isPlaceholderColour(url)
+          && JSON.stringify(pngDims(url)) === `[${size},${size}]`,
+        `IHDR ${pngDims(url)?.join("x") ?? "not a PNG"}`
+      )
+    ) break
+  }
+  check(
+    "no hash is no placeholder, at every rung",
+    ["none", "colour", 8, 16, 32].every(
+      (rung) =>
+        cellPlaceholder(undefined, rung) === undefined
+        && cellPlaceholder("", rung) === undefined
+    )
+  )
+}
+
+console.log("\n== the two forms are told apart totally (isPlaceholderColour) ==")
+{
+  // This predicate is what the paint/clear branch in CellStillImage keys on:
+  // true means "an inline background-color, and clear it on load", false means
+  // "hand it to next/image's placeholder prop". A wrong answer either way is a
+  // silent garbage background in a production build (next/image validates the
+  // prop only in dev), so it is asserted over every value the union can hold
+  // rather than spot-checked.
+  const colours = [HASH, HASH_B, HASH_C, HASH_D].map(blurHashAverageColour)
+  const rasters = [8, 16, 32].map((s) => blurHashToDataURL(HASH, s))
+  check(
+    "every DC colour is recognised as a colour",
+    colours.every(isPlaceholderColour),
+    colours.join(" ")
+  )
+  check(
+    "no PNG data URL is ever mistaken for a colour",
+    rasters.every((url) => !isPlaceholderColour(url))
+  )
+  check("undefined is not a colour", !isPlaceholderColour(undefined))
+}
+
+console.log("\n== the colour is dropped when the picture paints ==")
+{
+  // WHY IT HAS TO BE: the stored WebP tier keeps an alpha channel, so a colour
+  // left standing behind a transparent thumbnail shows through it forever.
+  //
+  // The clear is a DIRECT STYLE WRITE on the element next/image hands to
+  // `onLoad` (`currentTarget`, which next/image sets to the <img> itself — see
+  // handleLoading in next/dist/client/image-component.js) rather than a state
+  // change, so it costs no re-render at ~330 mounts/s. What can be asserted
+  // outside a browser is exactly that: the handler is total over "an object
+  // with a currentTarget that has a style", writes only backgroundColor, and
+  // is ONE module-scope function shared by both surfaces rather than a closure
+  // minted per cell.
+  //
+  // NEEDS A BROWSER: that next/image really fires it (it does so only after
+  // `decode()` resolves and only while the element is still connected), and
+  // that the tint is visibly gone behind a transparent PNG afterwards.
+  const el = { style: { backgroundColor: "rgb(1,2,3)", opacity: "0.5" } }
+  clearPlaceholderColour({ currentTarget: el })
+  check(
+    "the handler clears the background colour it was painted with",
+    el.style.backgroundColor === ""
+  )
+  check(
+    "...and touches nothing else on the element's style",
+    el.style.opacity === "0.5"
+  )
+  check(
+    "clearing an already-clear element is a no-op, not a throw",
+    (() => {
+      const clean = { style: { backgroundColor: "" } }
+      clearPlaceholderColour({ currentTarget: clean })
+      return clean.style.backgroundColor === ""
+    })()
+  )
+  check(
+    "it is one shared function — both surfaces pass the same reference",
+    typeof clearPlaceholderColour === "function"
+      && clearPlaceholderColour === clearPlaceholderColour
+  )
+}
+
+console.log("\n== the DC-term average colour (blurHashAverageColour) ==")
+{
+  // sRGB <-> linear, the two conversions blurhash's own decoder uses. The DC
+  // term is the image's average in LINEAR light, stored already sRGB-encoded —
+  // so the oracle is the linear-space mean of a decoded raster, not the mean of
+  // its sRGB bytes.
+  const s2l = (v) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4) }
+  const l2s = (v) => { const c = Math.max(0, Math.min(1, v)); return Math.round(c <= 0.0031308 ? c * 12.92 * 255 + 0.5 : (1.055 * Math.pow(c, 1 / 2.4) - 0.055) * 255 + 0.5) }
+  for (const hash of [HASH, HASH_B, HASH_C, HASH_D]) {
+    // 128x128 rather than something smaller: the DC is the CONTINUOUS mean of
+    // the basis functions, and a discrete raster mean only converges to it —
+    // a 32x32 sample is off by up to 3 on a hash with strong AC terms.
+    const N = 128
+    const px = decode(hash, N, N)
+    let r = 0, g = 0, b = 0
+    for (let i = 0; i < N * N; i++) { r += s2l(px[i * 4]); g += s2l(px[i * 4 + 1]); b += s2l(px[i * 4 + 2]) }
+    const n = N * N
+    const mine = blurHashAverageColour(hash)
+    const parsed = mine.slice(4, -1).split(",").map(Number)
+    const oracle = [l2s(r / n), l2s(g / n), l2s(b / n)]
+    // +/-1 per channel: the oracle rounds a 16,384-sample mean through two
+    // transcendental conversions, the rung reads the stored integer directly.
+    if (!check(`${hash.slice(0, 8)}… DC matches the decoded linear mean`,
+      parsed.every((v, i) => Math.abs(v - oracle[i]) <= 1),
+      `${mine} vs rgb(${oracle.join(",")})`)) break
+  }
+  check("a colour is a bare CSS rgb() triple",
+    /^rgb\(\d{1,3},\d{1,3},\d{1,3}\)$/.test(blurHashAverageColour(HASH)),
+    blurHashAverageColour(HASH))
+  // Malformed input paints the cell's own background rather than a wrong
+  // colour: no hash, too short to hold a DC, and a DC with a character outside
+  // base83 (space and backslash are the two the alphabet omits).
+  check("no hash has no colour", blurHashAverageColour(undefined) === undefined)
+  check("a hash too short to hold a DC has no colour",
+    blurHashAverageColour("LEHV6") === undefined)
+  check("a non-base83 character in the DC has no colour",
+    blurHashAverageColour("LE V6nWB2yk8pyo0adR*.7kCMdnj") === undefined)
 }
 
 console.log("\n== the encoder honours the requested size ==")
@@ -167,7 +370,9 @@ console.log("\n== the cache is keyed by hash AND size ==")
       && blurHashToDataURL(HASH, 32) === large
   )
   // Interleave the two sizes: a hash-only key would have the second size
-  // evict/overwrite the first on every alternation.
+  // evict/overwrite the first on every alternation. The result grid and the
+  // gallery strip sit on the same page at different card sizes, so this is a
+  // real sequence rather than a synthetic one.
   const interleaved = [8, 32, 8, 32, 8].map((s) => blurHashToDataURL(HASH, s))
   check(
     "alternating sizes never contaminate each other",
@@ -176,9 +381,9 @@ console.log("\n== the cache is keyed by hash AND size ==")
   check(
     "different hashes at the same size stay distinct",
     new Set([
-      blurHashToDataURL(HASH, 8),
-      blurHashToDataURL(HASH_B, 8),
-      blurHashToDataURL(HASH_C, 8),
+      blurHashToDataURL(HASH, 16),
+      blurHashToDataURL(HASH_B, 16),
+      blurHashToDataURL(HASH_C, 16),
     ]).size === 3
   )
 }
@@ -187,11 +392,11 @@ console.log("\n== the LRU still evicts ==")
 {
   // The cache is module-private, so residency is not directly observable. It is
   // observable through TIME: a hit is a `Map.get`, a miss is a blurhash decode
-  // plus a PNG encode, and even at the cheapest 8x8 rung that is ~21 µs against
-  // well under a microsecond. Two batches of 200 DISTINCT hashes each — never
-  // 200 reads of one hash, which would recompute once and then hit 199 times
-  // and measure nothing — separate the two by two orders of magnitude, so the
-  // 5x threshold below is not a tuned number.
+  // plus a PNG encode, and even at the cheapest raster rung that is tens of
+  // microseconds against well under one. Two batches of 200 DISTINCT hashes
+  // each — never 200 reads of one hash, which would recompute once and then
+  // hit 199 times and measure nothing — separate the two by two orders of
+  // magnitude, so the 5x threshold below is not a tuned number.
   //
   // Distinct valid hashes come from rewriting the last four base83 payload
   // digits of a known-good 4x3 hash: the leading size and DC digits are what

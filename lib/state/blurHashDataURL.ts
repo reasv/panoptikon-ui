@@ -1,5 +1,5 @@
 import { decode } from "blurhash"
-import type { PlaceholderSize } from "../thumbnailTier"
+import type { PlaceholderRung, PlaceholderSize } from "../thumbnailTier"
 
 /**
  * Decoded placeholders, keyed by hash AND raster size.
@@ -7,11 +7,11 @@ import type { PlaceholderSize } from "../thumbnailTier"
  * THE SIZE IS PART OF THE KEY, and that is not defensive — it is required.
  * The raster used to be a pair of module constants, so one hash had exactly
  * one rendering; it is now a per-card rung off the thumbnail tier
- * (`placeholderSizeForTier`, lib/thumbnailTier.ts), so the SAME hash legitimately
- * has an 8x8, a 16x16 and a 32x32 form live in one tab at once — the result
- * grid and the gallery strip sit on the same page at different card sizes.
- * Keyed by hash alone, whichever surface mounted first would silently hand its
- * raster to the other.
+ * (`placeholderForTier`, lib/thumbnailTier.ts), so the SAME hash legitimately
+ * has a 16x16 and a 32x32 form live in one tab at once — the result grid and
+ * the gallery strip sit on the same page at different card sizes. Keyed by
+ * hash alone, whichever surface mounted first would silently hand its raster
+ * to the other.
  *
  * A blurhash is decoded AND PNG-encoded in pure JS — one `String.fromCharCode`
  * per byte, a hand-rolled deflate-store and a CRC pass — and a grid cell does
@@ -34,14 +34,13 @@ import type { PlaceholderSize } from "../thumbnailTier"
  * short scroll back. 2048 covers ~6 s of that scroll, which is the range a
  * user actually reverses over.
  *
- * The memory that buys is small BECAUSE of the ladder above, and the two
- * decisions are coupled. An entry is ~5.5 KB at 32x32, ~1.5 KB at 16x16 and
- * ~0.5 KB at 8x8 (measured, scripts/blurplaceholder.test.mjs). The rung that
- * can actually fill 2048 slots is `grid-xs`, i.e. 8x8 — about 1 MB full. The
- * 32x32 rung is reached only by big cells and the gallery, where the mount
- * rate is single digits per second and the cache never approaches the cap; a
- * cache full of 32x32 entries would be ~11 MB, and no surface in the app
- * produces one.
+ * The memory that buys is small BECAUSE of the ladder, and the two decisions
+ * are coupled. An entry is ~5.5 KB at 32x32 and ~1.5 KB at 16x16 (measured,
+ * scripts/blurplaceholder.test.mjs). The fastest-mounting surface — `grid-xs`
+ * — does not decode at all any more (it takes the `"colour"` rung), so the
+ * only rungs that reach this cache belong to cells big enough that the mount
+ * rate is tens per second at most, and no surface in the app fills 2048 slots.
+ * A full cache of 32x32 entries would be ~11 MB; nothing produces one.
  */
 const CACHE_LIMIT = 2048
 const cache = new Map<string, PlaceholderDataURL>()
@@ -59,10 +58,80 @@ const cache = new Map<string, PlaceholderDataURL>()
 export type PlaceholderDataURL = `data:image/png;base64,${string}`
 
 /**
+ * The `"colour"` rung's value: a bare CSS `rgb(r,g,b)`, which is an inline
+ * `background-color` and NEVER next/image's `placeholder` prop. The two are
+ * distinguished at the one place that paints them (`isPlaceholderColour`), so
+ * the template literal is the guard there exactly as it is above.
+ */
+export type PlaceholderColour = `rgb(${string})`
+
+/**
+ * WHAT A CARD PAINTS BEHIND ITS PICTURE — one value, either form, threaded to
+ * every picture element a cell can render. A card computes it once from its
+ * rung and passes it down; nothing below re-decides.
+ */
+export type CellPlaceholder = PlaceholderDataURL | PlaceholderColour
+
+/**
+ * Which form a placeholder is. A `rgb(` prefix cannot collide with a
+ * `data:image/png;base64,` one, so this is a total test over the union rather
+ * than a heuristic.
+ */
+export function isPlaceholderColour(
+  placeholder: CellPlaceholder | undefined
+): placeholder is PlaceholderColour {
+  return placeholder !== undefined && placeholder.startsWith("rgb(")
+}
+
+/**
+ * DROP THE COLOUR ONCE THE PICTURE IS THERE — every surface's `<img>` onLoad,
+ * and the reason the `"colour"` rung is safe behind a TRANSPARENT thumbnail.
+ * The stored WebP tier keeps an alpha channel, and a placeholder colour left
+ * standing behind one shows through it forever: the picture would sit on a
+ * random tint instead of on the page.
+ *
+ * A DIRECT STYLE WRITE on the element, exactly as next/image clears its own
+ * blur, and NOT a React state change: this fires once per cell mount at up to
+ * ~330 mounts/s on the surface the rung exists for, and a `setState` there
+ * would re-render every one of those cells a second time — more than the whole
+ * rung costs. It survives React's style diffing because React writes a style
+ * key only when the RENDERED value changed, and a cell's rendered value never
+ * changes after mount (the card's memo holds and its rung is latched off a
+ * ref). Under `placeholder="empty"` next/image itself re-renders the image on
+ * neither load nor decode, so nothing repaints it either.
+ *
+ * Module scope, so it is ONE function for the tab rather than a closure per
+ * cell — the rung must cost nothing beyond its one inline style.
+ */
+export function clearPlaceholderColour(
+  event: { currentTarget: HTMLElement }
+): void {
+  event.currentTarget.style.backgroundColor = ""
+}
+
+/**
+ * THE RUNG APPLIED — the one switch between a rung and a thing to paint, so
+ * that no call site tests `typeof rung === "number"` for itself and no surface
+ * can decode a raster it then throws away.
+ *
+ * The short-circuit is the point: `"none"` and `"colour"` never reach
+ * `blurHashToDataURL`.
+ */
+export function cellPlaceholder(
+  hash: string | undefined,
+  rung: PlaceholderRung
+): CellPlaceholder | undefined {
+  if (rung === "none") return undefined
+  if (rung === "colour") return blurHashAverageColour(hash)
+  return blurHashToDataURL(hash, rung)
+}
+
+/**
  * `size` is REQUIRED and has no default, deliberately: every call site knows
  * which tier its card is on, and a default would be the 32 this work exists to
  * stop paying at the small ones — silently, in whatever surface forgot. Get it
- * from `placeholderSizeForTier` rather than writing a number.
+ * from `placeholderForTier` (through `cellPlaceholder`) rather than writing a
+ * number.
  */
 export function blurHashToDataURL(
   hash: string | undefined,
@@ -85,6 +154,37 @@ export function blurHashToDataURL(
   }
   return dataURL
 }
+
+/** blurhash's base83 alphabet, in its canonical order. */
+const BASE83 =
+  "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~"
+
+/**
+ * THE HASH'S AVERAGE COLOUR, as a CSS `rgb()` string — the `"colour"` rung.
+ *
+ * A blurhash's first two characters are its size flag and quantised maximum;
+ * characters 2..6 are the DC term, a base83 24-bit sRGB triple. That triple is
+ * the image's average colour and is stored ALREADY sRGB-encoded (the decoder's
+ * job is to turn it back into linear light), so it is a CSS colour verbatim —
+ * four base83 digits and three masks, no raster, no PNG, no base64.
+ *
+ * `undefined` for anything that is not a well-formed hash of at least six
+ * characters, so a malformed value paints the cell's own background rather
+ * than a wrong colour.
+ */
+export function blurHashAverageColour(
+  hash: string | undefined
+): PlaceholderColour | undefined {
+  if (!hash || hash.length < 6) return undefined
+  let dc = 0
+  for (let i = 2; i < 6; i++) {
+    const digit = BASE83.indexOf(hash[i])
+    if (digit < 0) return undefined
+    dc = dc * 83 + digit
+  }
+  return `rgb(${dc >> 16},${(dc >> 8) & 255},${dc & 255})`
+}
+
 
 // thanks to https://github.com/wheany/js-png-encoder
 function parsePixels(

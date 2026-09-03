@@ -8,12 +8,12 @@ import { ItemMetaLine } from "@/components/ItemMetaLine";
 import { PlayableBadge } from "@/components/PlayableBadge";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { PinButton } from './gallery/PinButton';
-import { blurHashToDataURL, type PlaceholderDataURL } from '@/lib/state/blurHashDataURL';
+import { cellPlaceholder, clearPlaceholderColour, isPlaceholderColour, type CellPlaceholder } from '@/lib/state/blurHashDataURL';
 import { useCellCallbacks, useCellFlags } from '@/lib/state/cellActions';
 import { PIN_SHA_PREFIX_LENGTH } from '@/lib/pinboardCrop';
 import {
     animatedCellMode,
-    placeholderSizeForTier,
+    placeholderForTier,
     showsMotionBadge,
     type AnimateMode,
     type AnimatedFloor,
@@ -57,33 +57,49 @@ const HOVER_ROOT_ATTR = CELL_HOVER_ROOT_ATTR
  * through (plain `background-image: url(<png>)`, no SVG, no Document)
  * Documents hold at 1 and the curve is flat.
  *
- * The TYPE of `blurDataURL` (`data:image/png;base64,…` template literal) is
+ * The TYPE of `placeholder` (`data:image/png;base64,…` template literal) is
  * the real guard: next/image only validates the placeholder string in dev
  * builds — in production an invalid string silently becomes a garbage
  * background. `?? 'empty'` is equivalent to omitting the prop; it is kept as
  * documentation.
+ *
+ * THE `"colour"` RUNG TAKES THE OTHER PATH. A flat `rgb()` is not a picture
+ * and must never reach next/image's `placeholder` (it is not a data URL, and
+ * in a production build that is a silent garbage background) — it is one
+ * inline `background-color` on the `<img>` itself, which under `fill` IS the
+ * picture box: `position:absolute; inset:0`, the same box next/image paints
+ * its own blur into. That is the whole of the rung's cost — no ref, no state,
+ * no effect, no second element (see `clearPlaceholderColour`).
  */
 function CellStillImage({
     src,
     alt,
-    blurDataURL,
+    placeholder,
     className,
     elementRef,
 }: {
     src: string
     alt: string
     /** Omitted (not null) where the layer underneath IS the placeholder. */
-    blurDataURL?: PlaceholderDataURL
+    placeholder?: CellPlaceholder
     className?: string
     elementRef?: (element: HTMLImageElement | null) => void
 }) {
+    const colour = isPlaceholderColour(placeholder)
     return (
         <Image
             ref={elementRef}
             src={src}
             alt={alt}
             fill
-            placeholder={blurDataURL ?? 'empty'}
+            placeholder={colour ? 'empty' : (placeholder ?? 'empty')}
+            style={colour ? { backgroundColor: placeholder } : undefined}
+            // ONLY at the colour rung, so no other tier pays for a listener it
+            // would never use — `load` is one of the events React attaches to
+            // the element itself rather than delegating, so an unconditional
+            // handler here would be a real `addEventListener` on every cell
+            // the grid ever mounts.
+            onLoad={colour ? clearPlaceholderColour : undefined}
             className={className}
             unoptimized
         />
@@ -354,15 +370,25 @@ export const SearchResultImage = memo(function SearchResultImage({
             onImageClick(index)
         }
     }, [onImageClick, index])
-    // The placeholder raster rides the card's LATCHED tier, not a live one, for
-    // exactly the reason the tier is latched at all (see `tierRef` above):
-    // recomputing it would swap the `background-image` under a mounted <img>,
-    // i.e. re-introduce across every visible card the viewport-wide flash the
-    // latch exists to prevent. `tierRef` is written once at mount, so the
-    // hash-only dep list is honest rather than a stale closure.
-    const blurDataURL = useMemo(() => result.blurhash
-        ? blurHashToDataURL(result.blurhash, placeholderSizeForTier(tierRef.current))
-        : undefined, [result.blurhash])
+    // THE PLACEHOLDER, from the card's own LATCHED tier — the same value the
+    // picture's `src` was built from, so the two can never disagree about how
+    // big this cell is. Latched, not live, for exactly the reason the tier is
+    // latched at all (see `tierRef` above): recomputing it would swap what is
+    // painted under a mounted <img>, i.e. re-introduce across every visible
+    // card the viewport-wide flash the latch exists to prevent. `tierRef` is
+    // written once at mount, so the hash-only dep list is honest rather than a
+    // stale closure.
+    //
+    // ONE VALUE, either form: at this card's tier `cellPlaceholder` answers a
+    // blurhash PNG data URL, a flat `rgb()` (the DC term, no raster) or
+    // nothing at all, and everything below simply paints what it is handed.
+    // The rung is never tested here — the whole point of the cheap rungs is
+    // that no raster is built, and one switch (lib/state/blurHashDataURL.ts)
+    // is what keeps that true at every call site.
+    const rung = placeholderForTier(tierRef.current)
+    const placeholder = useMemo(
+        () => cellPlaceholder(result.blurhash, rung),
+        [result.blurhash, rung])
     // The one refresh for the anchor's href — see the comment on the anchor.
     const refreshHref = galleryLink
         ? (event: React.SyntheticEvent<HTMLAnchorElement>) => {
@@ -469,7 +495,7 @@ export const SearchResultImage = memo(function SearchResultImage({
                             crop={plan.crop}
                             displaySrc={plan.displaySrc}
                             alt={`Result ${result.path}`}
-                            blurDataURL={blurDataURL}
+                            placeholder={placeholder}
                             imageClassName={imageClassName}
                             disabled={!!showLoadingSpinner}
                             animateMode={animateMode}
@@ -479,7 +505,7 @@ export const SearchResultImage = memo(function SearchResultImage({
                             src={plan.src}
                             poster={plan.poster}
                             alt={`Result ${result.path}`}
-                            blurDataURL={blurDataURL}
+                            placeholder={placeholder}
                             mode={animateMode}
                             // The still card's classes, verbatim, so a loop
                             // cell is indistinguishable from the picture it
@@ -496,7 +522,7 @@ export const SearchResultImage = memo(function SearchResultImage({
                             src={plan.frame}
                             mosaicSrc={plan.mosaic}
                             alt={`Result ${result.path}`}
-                            blurDataURL={blurDataURL}
+                            placeholder={placeholder}
                             disabled={!!showLoadingSpinner}
                             className={cn(
                                 "object-cover object-top",
@@ -507,7 +533,7 @@ export const SearchResultImage = memo(function SearchResultImage({
                         <CellStillImage
                             src={plan.src}
                             alt={`Result ${result.path}`}
-                            blurDataURL={blurDataURL}
+                            placeholder={placeholder}
                             className={cn(
                                 "object-cover object-top",
                                 showLoadingSpinner ? "" : "group-hover:object-contain group-hover:object-center",
@@ -580,7 +606,7 @@ function ExtremeAspectPicture({
     crop,
     displaySrc,
     alt,
-    blurDataURL,
+    placeholder,
     imageClassName,
     disabled,
     animateMode,
@@ -601,7 +627,7 @@ function ExtremeAspectPicture({
      */
     displaySrc: string | null
     alt: string
-    blurDataURL: PlaceholderDataURL | undefined
+    placeholder: CellPlaceholder | undefined
     imageClassName?: string
     /** The loading-spinner state, where the card shows no hover at all. */
     disabled: boolean
@@ -697,7 +723,7 @@ function ExtremeAspectPicture({
                     src={crop.src}
                     poster={crop.poster}
                     alt={alt}
-                    blurDataURL={blurDataURL}
+                    placeholder={placeholder}
                     mode={animateMode}
                     className={cropClassName}
                     elementRef={attachCrop}
@@ -747,7 +773,7 @@ function ExtremeAspectPicture({
                     elementRef={attachCrop}
                     src={crop.src}
                     alt={alt}
-                    blurDataURL={blurDataURL}
+                    placeholder={placeholder}
                     className={cropClassName}
                 />
             )}
@@ -802,7 +828,7 @@ function AnimatedCellPicture({
     src,
     poster,
     alt,
-    blurDataURL,
+    placeholder,
     className,
     elementRef,
     occluded,
@@ -814,7 +840,7 @@ function AnimatedCellPicture({
                 elementRef={elementRef}
                 src={poster}
                 alt={alt}
-                blurDataURL={blurDataURL}
+                placeholder={placeholder}
                 className={className}
             />
         )
@@ -829,7 +855,7 @@ function AnimatedCellPicture({
             // loop cell has the same something-shaped-like-the-picture behind
             // it as its neighbours in the moment before the poster paints.
             // Never an SVG wrapper: see the settled law on CellStillImage.
-            blurDataURL={blurDataURL}
+            placeholder={placeholder}
             className={className}
             elementRef={elementRef}
             registered={!occluded}
@@ -868,7 +894,7 @@ function HoverLoopPicture({
     src,
     poster,
     alt,
-    blurDataURL,
+    placeholder,
     className,
     elementRef,
     occluded,
@@ -889,7 +915,7 @@ function HoverLoopPicture({
                 elementRef={attach}
                 src={poster}
                 alt={alt}
-                blurDataURL={blurDataURL}
+                placeholder={placeholder}
                 className={className}
             />
             {hover.active && (
@@ -900,7 +926,7 @@ function HoverLoopPicture({
                     // NO blurhash background: the poster underneath is the
                     // placeholder, and a blur behind a layer fading in over a
                     // painted picture is the flash this construction avoids.
-                    blurDataURL={undefined}
+                    placeholder={undefined}
                     className={className}
                     fadeIn
                     registered
@@ -918,7 +944,7 @@ interface LoopPictureProps {
     /** The same tier with `still=true`: the loop's poster, and the fallback. */
     poster: string
     alt: string
-    blurDataURL: PlaceholderDataURL | undefined
+    placeholder: CellPlaceholder | undefined
     /** The card's object-fit/opacity classes, applied to whichever paints. */
     className?: string
     /** The extreme-aspect swap's anchor, when this loop is inside one. */
@@ -983,7 +1009,7 @@ function VideoStillPicture({
     src,
     mosaicSrc,
     alt,
-    blurDataURL,
+    placeholder,
     className,
     disabled,
 }: {
@@ -992,7 +1018,7 @@ function VideoStillPicture({
     /** The 2×2 mosaic: the same tier with the parameter left off. */
     mosaicSrc: string
     alt: string
-    blurDataURL: PlaceholderDataURL | undefined
+    placeholder: CellPlaceholder | undefined
     className?: string
     /** The loading-spinner state, where the card shows no hover at all. */
     disabled: boolean
@@ -1030,7 +1056,7 @@ function VideoStillPicture({
                 elementRef={attachFrame}
                 src={src}
                 alt={alt}
-                blurDataURL={blurDataURL}
+                placeholder={placeholder}
                 className={cn(
                     (requested || showMosaic) && "transition-opacity duration-150",
                     showMosaic ? "opacity-0" : "opacity-100",
