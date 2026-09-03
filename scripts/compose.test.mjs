@@ -36,6 +36,7 @@ const { mosaicGeometry, resolvePinDraw, itemOutputSize } = await import(
 )
 const { V2_GRID, effectiveGrid } = await import("../lib/pinboardGrid.ts")
 const { videoStateOf } = await import("../lib/pinboardMedia.ts")
+const { outroCutPoint } = await import("../lib/videoTrim.ts")
 const { packHField } = await import("../lib/pinboardCrop.ts")
 
 const { check, finish } = createChecker()
@@ -620,7 +621,7 @@ function solveAt(width, only) {
     trim: null,
     state: PLAYING,
     duration: 12,
-    contentEndMs: 8005,
+    outroCutSec: 7.94,
     outroSkip: true,
     ...over,
   })
@@ -628,17 +629,17 @@ function solveAt(width, only) {
     {
       name: "an eligible pin with no end bound names the outro",
       input: outro({}),
-      want: { kind: "outro_span", start_cs: 0, end_cs: 1200 },
+      want: { kind: "outro_span", start_cs: 0, end_cs: 794 },
     },
     {
       name: "…and a start bound of its own keeps it",
       input: outro({ trim: { start: 3, end: null } }),
-      want: { kind: "outro_span", start_cs: 300, end_cs: 1200 },
+      want: { kind: "outro_span", start_cs: 300, end_cs: 794 },
     },
     {
-      name: "the end_cs sent is the UNTRIMMED end, never a guess at the cut",
-      input: outro({ duration: 20 }),
-      want: { kind: "outro_span", start_cs: 0, end_cs: 2000 },
+      name: "a cut past the item's own end is not a cut",
+      input: outro({ duration: 5 }),
+      want: { kind: "outro_span", start_cs: 0, end_cs: 500 },
     },
     {
       name: "a user END bound is always explicit, outro or not",
@@ -656,9 +657,19 @@ function solveAt(width, only) {
       want: { kind: "span", start_cs: 0, end_cs: 1200 },
     },
     {
-      name: "no detected boundary, no name to send",
-      input: outro({ contentEndMs: null }),
+      name: "no cut point, no name to send",
+      input: outro({ outroCutSec: null }),
       want: { kind: "span", start_cs: 0, end_cs: 1200 },
+    },
+    {
+      name: "a cut inside the freeze band of the start does not govern",
+      input: outro({ trim: { start: 7.93, end: null } }),
+      want: { kind: "span", start_cs: 793, end_cs: 1200 },
+    },
+    {
+      name: "…one centisecond further out and it does",
+      input: outro({ trim: { start: 7.91, end: null } }),
+      want: { kind: "outro_span", start_cs: 791, end_cs: 794 },
     },
     {
       name: "a stopped pin is still its own frozen frame",
@@ -674,7 +685,7 @@ function solveAt(width, only) {
         duration: 3,
         mime: "image/gif",
         spanCapableImageMimes: LIMITS.span_capable_image_mimes,
-        contentEndMs: 2000,
+        outroCutSec: 2,
         outroSkip: true,
       },
       want: { kind: "span", start_cs: 0, end_cs: 300 },
@@ -1527,12 +1538,32 @@ function solveAt(width, only) {
     targetWidth: null,
     background: "#101820",
     outroSkip: true,
+    // The real arithmetic, injected exactly as the menu hooks inject it — a
+    // fake here would assert the plumbing against itself.
+    outroCut: outroCutPoint,
   })
   const outroItem = outroDoc.ok ? outroDoc.doc.body.items[0] : null
+  // 795, where the server will resolve 794: the client ROUNDS its estimate and
+  // the server FLOORS the real thing (`outro_cut_cs` — later is *into* the
+  // card, the one direction the guard exists to avoid). The centisecond
+  // between them is the whole reason this end is named rather than trusted;
+  // asserting the client's number here pins that it is an estimate and is
+  // allowed to differ.
   check(
     "the outro-skip preference reaches the document",
-    shape(outroItem?.time) === shape({ kind: "outro_span", start_cs: 150, end_cs: 1200 }),
+    shape(outroItem?.time) === shape({ kind: "outro_span", start_cs: 150, end_cs: 795 }),
     shape(outroItem?.time)
+  )
+  // THE regression this shape exists to prevent: the client's loop-memory and
+  // length estimates decide the canvas BEFORE the POST, and they run on the
+  // document's own numbers. An `end_cs` left at the untrimmed 12 s would make
+  // the target 12 s here and 7.94 s on the server — and every pin between
+  // those two lengths starts looping there and not here, which is a board that
+  // passes this guard and earns a `loop_memory` 422.
+  check(
+    "…and the document's own length is estimated on the CUT, not the file",
+    outroDoc.ok && outroDoc.doc.requestedSeconds === 6.45,
+    `${outroDoc.ok ? outroDoc.doc.requestedSeconds : "refused"}`
   )
   check(
     "…and an outro span still mixes its audio, exactly as a stated one does",

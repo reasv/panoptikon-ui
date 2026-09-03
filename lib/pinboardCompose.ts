@@ -152,6 +152,29 @@ function toCs(seconds: number): number {
 }
 
 /**
+ * The freeze band in CENTISECONDS — `api/video.rs`'s `FREEZE_GUARD_CS`, and
+ * the same band `lib/videoTrim`'s `FREEZE_EPS` (0.02 s) draws for playback.
+ * A window this narrow is a still that happens to be spelled as a range.
+ *
+ * Compared on the lattice rather than in seconds for the reason
+ * `lib/videoClip` documents at its own copy: `3.02 - 3` is
+ * 0.020000000000000018 in floats, which clears an `<= 0.02` test by a
+ * rounding error and would send a range the server refuses.
+ */
+const FREEZE_GUARD_CS = 2
+
+/**
+ * Where playback would end an item because of its outro, in seconds —
+ * `lib/videoTrim`'s `outroCutPoint`, passed in rather than imported so this
+ * module stays free of React (see `ItemTimeInput.outroCutSec`).
+ */
+export type OutroCutFn = (
+  contentEndMs: number | null | undefined,
+  serverDurationSec?: number | null,
+  browserDurationSec?: number | null
+) => number | null
+
+/**
  * Whether this time PLAYS — true for both spellings of a span, the one whose
  * end the client states and the one whose end the server derives from the
  * item's outro.
@@ -189,10 +212,20 @@ export interface ItemTimeInput {
    */
   spanCapableImageMimes?: readonly string[]
   /**
-   * The item's detected outro boundary in milliseconds (`ComposeItemMeta`'s
-   * `content_end_ms`), or null/absent when it has none.
+   * Where PLAYBACK would end this item because of its detected outro, in
+   * seconds — `lib/videoTrim`'s `outroCutPoint` for this item — or null when
+   * it has no detected boundary, none the browser can place, or the item is
+   * not a video.
+   *
+   * Computed by the caller and injected, like every other impure input to
+   * this module (`getMeta`, `probe`, `thumb`): the arithmetic lives in a
+   * React module, and this one is asserted from plain node. `CompositionOptions.outroCut`
+   * is the function the builders call to fill it.
+   *
+   * It decides WHETHER the outro governs and seeds the estimates; it never
+   * decides where the encoder cuts. See `resolveItemTime`.
    */
-  contentEndMs?: number | null
+  outroCutSec?: number | null
   /**
    * The viewer's outro-skip preference (`useOutroSkipEnabled`), passed in
    * rather than read here so this module stays free of React and of the
@@ -305,16 +338,35 @@ export function resolveItemTime(input: ItemTimeInput): ItemTime {
       // Equal (or inverted) bounds are a freeze frame spelled as a range; the
       // server refuses that shape outright, and a still is what it means.
       if (endCs > startCs) {
-        // The same three facts `outroSkipGoverns` composes for playback, minus
-        // the cut point — which is the server's to derive. An end bound the
-        // user placed is always explicit, outro or no outro.
-        const outro =
-          !!input.outroSkip &&
+        // `outroSkipGoverns`'s three facts, spelled on the centisecond
+        // lattice: the preference is on, the user placed no end of their own,
+        // and the cut clears the start by more than the freeze band — the
+        // same predicate `effectiveVideoTrim` applies before it lets the
+        // default stand, so a pin that plays to its natural end never exports
+        // cut, and one that plays cut never exports whole.
+        const cutCs = input.outroCutSec == null ? null : toCs(input.outroCutSec)
+        if (
+          input.outroSkip &&
           trim?.end == null &&
-          input.contentEndMs != null &&
-          isFinite(input.contentEndMs)
-        const kind = outro ? "outro_span" : "span"
-        return { kind, start_cs: startCs, end_cs: endCs }
+          cutCs != null &&
+          cutCs - startCs > FREEZE_GUARD_CS
+        ) {
+          // The cut point rides along as `end_cs`, and is NOT the authority:
+          // the server re-derives the boundary from the same
+          // `content_end_ms` in the file's own timeline and overwrites this
+          // number (`resolve_outro_spans`). It is sent for the two jobs a
+          // name cannot do — it is the client's own answer for the length and
+          // loop-memory estimates that decide the canvas BEFORE the round
+          // trip, and it is what stands if the item's outro has gone away by
+          // the time the POST lands. `min` because a cut past the item's own
+          // end is not a cut.
+          return {
+            kind: "outro_span",
+            start_cs: startCs,
+            end_cs: Math.min(cutCs, endCs),
+          }
+        }
+        return { kind: "span", start_cs: startCs, end_cs: endCs }
       }
     }
   }
@@ -771,6 +823,8 @@ export interface CompositionOptions {
    * as off — see `ItemTimeInput.outroSkip`.
    */
   outroSkip?: boolean
+  /** `lib/videoTrim`'s `outroCutPoint`; absent reads as "no cut anywhere". */
+  outroCut?: OutroCutFn
   /** Item metadata, called once per UNIQUE sha (a react-query cache hit). */
   getMeta: (sha256: string) => Promise<ComposeItemMeta | null>
   /** The live state of one pin's <video>, or null when it has none. */
@@ -971,6 +1025,7 @@ export async function buildCompositionDoc(
         carriesAudio,
         spanMimes,
         outroSkip,
+        outroCut: opts.outroCut,
       })
       if (item) items.push(item)
       else skipped.push(placement.sha256)
@@ -1077,6 +1132,8 @@ export interface ItemCompositionOptions {
    * as off — see `ItemTimeInput.outroSkip`.
    */
   outroSkip?: boolean
+  /** `lib/videoTrim`'s `outroCutPoint`; absent reads as "no cut anywhere". */
+  outroCut?: OutroCutFn
 }
 
 /**
@@ -1147,6 +1204,7 @@ export function buildItemCompositionDoc(
     spanMimes:
       limits?.span_capable_image_mimes ?? FALLBACK_LIMITS.spanCapableImageMimes,
     outroSkip: !!opts.outroSkip,
+    outroCut: opts.outroCut,
   })
   if (!item) {
     return refuse(
@@ -1258,6 +1316,8 @@ function composeItem(input: {
   spanMimes: readonly string[]
   /** The viewer's outro-skip preference (see `ItemTimeInput.outroSkip`). */
   outroSkip: boolean
+  /** `outroCutPoint`, or absent when the caller cannot supply it. */
+  outroCut?: OutroCutFn
 }): ComposeItem | null {
   const { placement, meta, state } = input
   // The FULL hash, never the board's 10-char prefix: the document is cache-keyed
@@ -1273,7 +1333,11 @@ function composeItem(input: {
     duration: meta?.duration ?? null,
     mime: meta?.type ?? null,
     spanCapableImageMimes: input.spanMimes,
-    contentEndMs: meta?.content_end_ms ?? null,
+    outroCutSec: input.outroCut?.(
+      meta?.content_end_ms ?? null,
+      meta?.duration ?? null,
+      state?.duration ?? null
+    ),
     outroSkip: input.outroSkip,
     thumbnail: input.thumb,
   })

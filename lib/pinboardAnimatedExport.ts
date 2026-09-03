@@ -36,6 +36,7 @@ import {
 import { useVideoComposeEnabled } from "@/lib/useClientConfig"
 import { useVideoPresets } from "@/lib/useVideoPresets"
 import { useOutroSkipEnabled } from "@/lib/videoPlayerState"
+import { outroCutPoint } from "@/lib/videoTrim"
 import { createMenuGuard } from "@/lib/menuGuard"
 import {
   POLL_TIMEOUT_MS,
@@ -444,14 +445,19 @@ export function useComposeScope(
   const metas = placements.map((p) => cachedItemMeta(queryClient, dbs, p.sha256))
   const times = placements.map((placement, i) => {
     const meta = metas[i]
+    const state = probePinVideoState(placement.key)
     return resolveItemTime({
       isVideo: (meta?.type ?? "").startsWith("video/"),
       trim: placement.trim,
-      state: probePinVideoState(placement.key),
+      state,
       duration: meta?.duration ?? null,
       mime: meta?.type ?? null,
       spanCapableImageMimes: spanMimes,
-      contentEndMs: meta?.content_end_ms ?? null,
+      outroCutSec: outroCutPoint(
+        meta?.content_end_ms ?? null,
+        meta?.duration ?? null,
+        state?.duration ?? null
+      ),
       outroSkip,
     })
   })
@@ -556,6 +562,7 @@ export function useAnimatedMosaicExport(
           proportional,
           background: pageBackground(),
           outroSkip,
+          outroCut: outroCutPoint,
           getMeta,
           probe: probePinVideoState,
           thumb: probePinThumbnailSize,
@@ -622,7 +629,11 @@ export function useAnimatedItemExport(key: string | null): AnimatedRowSet {
         duration: meta?.duration ?? null,
         mime: meta?.type ?? null,
         spanCapableImageMimes: limits?.span_capable_image_mimes ?? [],
-        contentEndMs: meta?.content_end_ms ?? null,
+        outroCutSec: outroCutPoint(
+          meta?.content_end_ms ?? null,
+          meta?.duration ?? null,
+          state?.duration ?? null
+        ),
         outroSkip,
       })
     : null
@@ -654,6 +665,7 @@ export function useAnimatedItemExport(key: string | null): AnimatedRowSet {
           targetWidth: null,
           background: pageBackground(),
           outroSkip,
+          outroCut: outroCutPoint,
         }),
     })
   }
