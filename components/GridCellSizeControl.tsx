@@ -242,8 +242,8 @@ function AnimatedImagesRow({ mode, range }: {
                     ? "Playing as soon as they are on screen. "
                     : "Still until you rest the pointer on one. "}
                 {range === "below"
-                    ? `Cells under ${SMALL_CELL_THRESHOLD_PX}px wide, the size in use now; wider cells are set separately.`
-                    : `Cells ${SMALL_CELL_THRESHOLD_PX}px wide and over, the size in use now; narrower cells are set separately.`}
+                    ? `Applies to the current cell size range (under ${SMALL_CELL_THRESHOLD_PX}px).`
+                    : `Applies to the current cell size range (${SMALL_CELL_THRESHOLD_PX}px and up).`}
             </p>
         </div>
     )
