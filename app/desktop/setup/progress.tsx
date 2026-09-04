@@ -47,7 +47,16 @@ export function WizardProgress({ completion }: { completion: Completion }) {
   const active = queue?.filter((job) => trackedIds.has(job.queue_id)) ?? []
   const outcomeById = new Map(outcomes.map((outcome) => [outcome.queue_id, outcome]))
   const terminalCount = completion.jobs.filter((job) => outcomeById.has(job.queue_id)).length
-  const failures = completion.jobs.filter((job) => outcomeById.get(job.queue_id)?.status === "failed")
+  // "partial" counts here as well as "failed". A partial job ran to the end
+  // but some of the items it selected were never processed — a worker death
+  // costs a whole in-flight window — and its `error` field carries the summary
+  // of what is still owed. Treating it as a clean completion is exactly the
+  // bug the status was added to fix, so it must not reach the "complete,
+  // ready to explore" headline.
+  const unfinished = completion.jobs.filter((job) => {
+    const status = outcomeById.get(job.queue_id)?.status
+    return status === "failed" || status === "partial"
+  })
   const allDone = completion.jobs.length > 0 && terminalCount === completion.jobs.length
   const progress = completion.jobs.length === 0 ? 0 : Math.round((terminalCount / completion.jobs.length) * 100)
 
@@ -62,8 +71,8 @@ export function WizardProgress({ completion }: { completion: Completion }) {
     <section className="mx-auto max-w-3xl space-y-6 pb-6">
       <div className="flex flex-col items-center text-center">
         <Image src="/spinner.svg" alt="Panoptikon processing" width={112} height={112} priority />
-        <h1 className="mt-2 text-2xl font-semibold">{failures.length > 0 ? "Initial processing needs attention" : allDone ? "Initial processing complete" : "Building your index"}</h1>
-        <p className="mt-2 max-w-2xl text-muted-foreground">{failures.length > 0 ? `One or more jobs for ${completion.index_db} failed. Review the details below or open the Scan page for the full job history.` : allDone ? `The initial jobs for ${completion.index_db} completed. Your files and generated data are ready to explore.` : `Panoptikon is scanning ${completion.index_db} and will run each selected model afterward. This continues in the background if you close this window.`}</p>
+        <h1 className="mt-2 text-2xl font-semibold">{unfinished.length > 0 ? "Initial processing needs attention" : allDone ? "Initial processing complete" : "Building your index"}</h1>
+        <p className="mt-2 max-w-2xl text-muted-foreground">{unfinished.length > 0 ? `One or more jobs for ${completion.index_db} did not finish all of their work. Review the details below or open the Scan page for the full job history.` : allDone ? `The initial jobs for ${completion.index_db} completed. Your files and generated data are ready to explore.` : `Panoptikon is scanning ${completion.index_db} and will run each selected model afterward. This continues in the background if you close this window.`}</p>
       </div>
 
       {completion.jobs.length > 0 ? (
@@ -82,6 +91,7 @@ export function WizardProgress({ completion }: { completion: Completion }) {
                   {status === "queued" && <Badge variant="secondary"><Timer className="mr-1 h-3 w-3" />Queued</Badge>}
                   {status === "completed" && <Badge variant="outline"><Check className="mr-1 h-3 w-3" />Completed</Badge>}
                   {status === "failed" && <Badge variant="destructive"><AlertTriangle className="mr-1 h-3 w-3" />Failed</Badge>}
+                  {status === "partial" && <Badge variant="secondary"><AlertTriangle className="mr-1 h-3 w-3" />Partly done</Badge>}
                   {status === "cancelled" && <Badge variant="outline"><Ban className="mr-1 h-3 w-3" />Cancelled</Badge>}
                   {status === "checking" && <Badge variant="secondary">Checking…</Badge>}
                 </div>
