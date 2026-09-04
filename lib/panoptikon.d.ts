@@ -2031,6 +2031,21 @@ export interface components {
             /** @description `count` | `sum` | `max-times-count`; absent for the `none` class. */
             aggregation?: string | null;
             /**
+             * Format: int32
+             * @description The per-item **pixel canvas** this model's inputs are priced against
+             *     (`metadata.cost.canvas_pixels`, or a canvas filled in from the model's
+             *     own load report), or `null` for uncapped. Only `pixel`-priced models
+             *     ever carry one.
+             *
+             *     It is the difference between a grant that means what the operator
+             *     thinks it means and one that does not: under a canvas the worker
+             *     prices every input at `min(raw_pixels, canvas_pixels)`, so the same
+             *     `last_grant_units` describes a very different batch depending on
+             *     whether a canvas is in force — and the *effective* canvas may be one
+             *     the registry never stated.
+             */
+            canvas_pixels?: number | null;
+            /**
              * @description True when the registry declared nothing usable and the conservative
              *     `(item, count)` fallback is in force.
              */
@@ -2701,6 +2716,17 @@ export interface components {
              */
             gpus: components["schemas"]["GpuInfo"][];
             /**
+             * @description The inference **client** side: one entry per endpoint this process
+             *     holds a client for, sorted by base URL. Empty on a node that only
+             *     serves inference (`panoptikon inferio`), which has no client — and on a
+             *     gateway that has not yet talked to its endpoints.
+             *
+             *     The models above describe what the orchestrator wants; this describes
+             *     what the transport under it will actually carry. Run2's S1 was
+             *     precisely a disagreement between the two that neither half could see.
+             */
+            inference_clients: components["schemas"]["InferenceTransportHealth"][];
+            /**
              * @description Models whose loads are failing (R9), sorted by inference_id. An entry
              *     exists from the first failed load until a load succeeds or the history
              *     is pruned; `retry_after_secs` is 0 for one that has cooled down but is
@@ -2711,6 +2737,13 @@ export interface components {
             model_count: number;
             /** @description Per loaded model liveness/queue snapshot, sorted by inference_id. */
             models: components["schemas"]["ModelHealth"][];
+            /**
+             * @description The inference **server** side's one memory bound that a peer can move:
+             *     how much of this process's predict-body budget is spoken for, and how
+             *     often it has had to refuse a request. See
+             *     [`crate::inferio::http::PREDICT_INFLIGHT_BODY_BYTES`].
+             */
+            predict_body_budget: components["schemas"]["PredictBodyBudgetHealth"];
             /**
              * @description Prewarm pool snapshot (design §8): master/lazy switches plus one
              *     entry per impl class held (state "warm" | "spawning" |
@@ -2876,6 +2909,44 @@ export interface components {
              *     index of the `inputs` entry it attaches to.
              */
             files?: components["schemas"]["BinaryBlob"][] | null;
+        };
+        /**
+         * @description What one inference endpoint's client is doing right now, for `/health`.
+         *
+         *     It exists because run2's S1 could not be diagnosed from `/health` at all:
+         *     the transport in force, the connections it was really using and the
+         *     concurrency it was really allowing were each either absent or, in the one
+         *     log line that mentioned them, wrong. Everything here is a *measured*
+         *     quantity, not a constant restated.
+         */
+        InferenceTransportHealth: {
+            /** @description The endpoint this describes. */
+            base_url: string;
+            /**
+             * @description Of those, how many are carrying at least one request right now — the
+             *     sockets actually in use. `null` under HTTP/1.1.
+             */
+            connections_in_use?: number | null;
+            /** @description Of those, how many are in flight right now. */
+            in_flight_requests: number;
+            /**
+             * @description Requests the gate currently admits. Under h2c this follows the
+             *     endpoint's own published desired-in-flight figure between a floor and
+             *     a ceiling; under HTTP/1.1 it is fixed.
+             */
+            max_concurrent_requests: number;
+            /**
+             * @description Independent connections this client may hold to the endpoint; `null`
+             *     under HTTP/1.1, where a connection is a request rather than a pool
+             *     slot.
+             */
+            pool_connections?: number | null;
+            /**
+             * @description `h2c` | `http/1.1` | `unknown` (nothing has talked to it yet, so the
+             *     job-side descriptor budget reads it as the conservative HTTP/1.1
+             *     case).
+             */
+            transport: string;
         };
         ItemBookmarks: {
             bookmarks: components["schemas"]["ExistingBookmarkMetadata"][];
@@ -3175,6 +3246,20 @@ export interface components {
             reserved_mb?: number | null;
             /** Format: int64 */
             seed_units: number;
+            /**
+             * Format: int64
+             * @description Shape ceiling (run2 S1): a batch size this model's own kernels have
+             *     said they cannot execute at the shapes this corpus is feeding them —
+             *     an int32 index limit in a CUDA/HIP pooling kernel, reported as
+             *     `clamped.reason = "index_limit"`. `None` until one is reported.
+             *
+             *     It caps `unit_budget` and stops the ramp, and it is **not** a memory
+             *     condition: it never deflates anything. Runtime-only and denominated in
+             *     the canvas and cost epoch shown for this replica — it is re-learned
+             *     after a restart and dropped when the canvas, the epoch or the corpus
+             *     moves, so it appears in no calibration profile.
+             */
+            shape_ceiling_units?: number | null;
             /**
              * @description Warm-pool throughput observations behind the knee fit. Runtime-only:
              *     the store persists the fitted knee, not the series.
@@ -3577,6 +3662,22 @@ export interface components {
             cost: components["schemas"]["CostHealth"];
             /**
              * Format: int64
+             * @description Items the orchestrator is asking callers to keep inside their
+             *     in-flight predict requests for this model — the same figure the
+             *     `x-panoptikon-desired-in-flight-items` response header carries
+             *     (`dispatch.rs`, `desired_in_flight_items`). `null` until a window has
+             *     been formed.
+             *
+             *     It is here because it was *not*: run2's S1 had to reconstruct this
+             *     column arithmetically from `ramp_step`, `unit_budget` and
+             *     `max_units_measured` in the logs, because the one number that crosses
+             *     the core/orchestrator boundary was visible on neither side. With it,
+             *     "the server asked for 1 632 and the job delivered 200" is a two-field
+             *     comparison instead of a phase of analysis.
+             */
+            desired_in_flight_items?: number | null;
+            /**
+             * Format: int64
              * @description Monotonic load generation (bumps on every respawn).
              */
             generation: number;
@@ -3596,6 +3697,13 @@ export interface components {
              *     window dispatches. This is what a user cap bounds on the unpriced path.
              */
             last_window_items?: number | null;
+            /**
+             * Format: int64
+             * @description Of those, the ones formed short of the unit budget the ledger allowed:
+             *     the queue, not the board, decided their size. A ramp that is not
+             *     advancing while this climbs is being starved, not squeezed.
+             */
+            queue_bound_windows: number;
             /** @description Requests waiting in the model's FIFO queue. */
             queue_depth: number;
             /**
@@ -4010,6 +4118,43 @@ export interface components {
              *     ]
              */
             select?: components["schemas"]["Column"][];
+        };
+        /**
+         * @description What this process's predict-body budget is doing right now, for
+         *     `/health`.
+         *
+         *     A refusal is a `503` an operator will see in a job's logs, so the state
+         *     that produced it has to be readable somewhere that is not a guess. The
+         *     pair to watch is `in_flight_bytes` against `budget_bytes`: a job that is
+         *     being refused while the first is far below the second is being refused by
+         *     a *burst* rather than by a level, and the answer is the caller's request
+         *     sizing, not this number.
+         */
+        PredictBodyBudgetHealth: {
+            /**
+             * Format: int64
+             * @description [`PREDICT_INFLIGHT_BODY_BYTES`]: predict body bytes this process will
+             *     hold at once, across every connection and peer.
+             */
+            budget_bytes: number;
+            /**
+             * Format: int64
+             * @description Of those, how many are reserved right now — bodies arriving, plus
+             *     bodies being parsed.
+             */
+            in_flight_bytes: number;
+            /**
+             * Format: int64
+             * @description Predict requests refused for want of budget since this process
+             *     started. `0` is the number an operator should expect to see.
+             */
+            refused_requests: number;
+            /**
+             * Format: int64
+             * @description [`PREDICT_BODY_LIMIT`]: the largest single predict body this server
+             *     will read, past which it answers `413`.
+             */
+            request_limit_bytes: number;
         };
         /**
          * @description JSON envelope of a predict response (used whenever the outputs are not
@@ -6224,8 +6369,17 @@ export interface operations {
                     "multipart/mixed": components["schemas"]["BinaryBlob"];
                 };
             };
-            /** @description Malformed multipart body or inputs */
+            /** @description Malformed multipart body or inputs. `detail` is a plain string when the bytes themselves are wrong, and an object carrying `kind = "request_incomplete"` when the request body did not arrive in full — that one says the batch was never parsed and never reached a model, so its items are untouched and re-submitting them is correct. */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InferenceErrorBody"];
+                };
+            };
+            /** @description The request body is larger than this server will read. Send fewer inputs per request; re-sending the same body will get the same answer. */
+            413: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6244,6 +6398,15 @@ export interface operations {
             };
             /** @description Model load or prediction failure. `detail` is a plain string for an ordinary failure and an object carrying a machine-readable `kind` for the ones a caller must act on differently — `worker_died` says the inference worker process died with the request in flight, so the request's items were never attempted and re-submitting them is correct. */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InferenceErrorBody"];
+                };
+            };
+            /** @description Temporarily refused, with a `Retry-After`. `kind = "body_budget_exhausted"` means the server is already holding its whole predict-body budget in memory, so this body was never read and its items were never attempted — re-submit it. `kind = "load_cooldown"` is the opposite case and must not be retried before `retry_at`. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
