@@ -276,10 +276,23 @@ export const dataLogColumns: ColumnDef<components["schemas"]["LogRecord"]>[] = [
                 </Button>
             )
         },
-        cell: ({ row }) =>
-            row.getValue("completed") ? "Completed" :
+        // The job's own word for how it ended, when it recorded one. Before
+        // `outcome` existed this had to be inferred from `completed`, and a job
+        // that lost a whole in-flight window of items to one worker death set
+        // `completed` and read "Completed" here — the symptom run1 finding F7
+        // measured. Rows written before the column existed, and jobs still
+        // running, carry "running" and keep the old inference.
+        cell: ({ row }) => {
+            switch (row.original.outcome) {
+                case "completed": return "Completed"
+                case "partial": return "Partly done"
+                case "failed": return "Failed"
+                case "cancelled": return "Cancelled"
+            }
+            return row.getValue("completed") ? "Completed" :
                 row.getValue("failed") ? "Failed" :
                     row.getValue("status") === -1 ? "Stopped" :
-                        "Processing",
+                        "Processing"
+        },
     }
 ]

@@ -2321,8 +2321,13 @@ export interface components {
         ExtractionFailuresResponse: {
             /**
              * @description The jobs those failures belong to, newest first, paged by the same
-             *     `limit`/`offset`. Empty (with a total of 0) when any filter that only
-             *     describes an individual failure is present.
+             *     `limit`/`offset`. Empty (with a total of 0) when `error_class` or
+             *     `mime_prefix` is present, for the reason given on `job_failures`.
+             *
+             *     Deliberately **not** narrowed by `setter` or `stage`, even though
+             *     `job_failures` is: a job record already names its setter, and a job is
+             *     not attributable to one stage at all, so filtering here would hide the
+             *     context of the rows above rather than refine it.
              */
             failed_jobs: components["schemas"]["FailedJobRecord"][];
             /**
@@ -2370,9 +2375,15 @@ export interface components {
          */
         FailedJobRecord: {
             /**
-             * @description When the job actually stopped. A job that never reached its own
-             *     finalization is stamped by the cleanup instead, so this is never the
-             *     creation timestamp the row was inserted with.
+             * @description When the job actually stopped.
+             *
+             *     Every path that records an ending writes this afresh. The one
+             *     exception is a job whose *process* died: the later sweep that finds
+             *     the row deliberately leaves `end_time` alone, because for such a row
+             *     "now" is when it was noticed, not when it stopped. Note also that the
+             *     timestamps have one-second resolution, so `end_time == start_time` is
+             *     a legitimate reading for a short job — `outcome` is what says whether
+             *     an ending was recorded.
              */
             end_time: string;
             /**
@@ -2384,8 +2395,16 @@ export interface components {
              * Format: int64
              * @description Items attempted whose failure nothing explains — `errors` minus the
              *     subset backed by a retry-ledger verdict. This is the count that makes
-             *     a job partial, and the count of rows this job has in
-             *     `data_job_failures`.
+             *     a job partial.
+             *
+             *     It is derived from the job's own counters, which are exact, and is
+             *     therefore the authority. The `job_failures` list can be *shorter*: it
+             *     is capped at 10 000 rows per job, and its rows are pruned once the job's
+             *     `data_jobs` row is gone — which under `atomic_extraction_jobs` (off by
+             *     default) is at the start of the next extraction job for every job that
+             *     did not finish, because that mode deletes unfinished job rows outright.
+             *     A shortfall therefore means the listing was truncated or aged out,
+             *     never that the count is wrong.
              */
             failed_items: number;
             /** @description Why, when the job knew. Null for a job whose process went away. */
@@ -3017,7 +3036,12 @@ export interface components {
             job_id: number;
             /** @description The item's mime type. */
             mime_type: string;
-            /** @description When the job recorded the failure. */
+            /**
+             * @description When the item failed, as the job stamped it. Not the moment the
+             *     record was written: the job buffers these and writes them once at the
+             *     end, so a write-time stamp would date every failure of a long job to
+             *     its last second.
+             */
             occurred_at: string;
             /**
              * @description One of the paths this item is stored under, chosen deterministically
@@ -6703,8 +6727,10 @@ export interface operations {
                 /** @description `input`, `blocked` or `resource`. Anything else is a 400. */
                 error_class?: string | null;
                 /**
-                 * @description `prepare` (the gateway could not produce the model's input) or
-                 *     `inference` (the worker rejected it).
+                 * @description `prepare` (the gateway could not produce the model's input),
+                 *     `inference` (the worker rejected it) or `output` (the results could
+                 *     not be written). `output` only ever appears on `job_failures`: a
+                 *     recorded verdict is about the media, and a write that failed is not.
                  */
                 stage?: string | null;
                 /** @description Prefix of the recorded mime type, e.g. `image/`. */
