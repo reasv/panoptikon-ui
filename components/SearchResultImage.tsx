@@ -36,6 +36,9 @@ import {
 } from '@/lib/state/hoverPreviewPref';
 import { cellPreviewLadder, type PreviewFeedback } from '@/lib/videoPreview';
 import { VideoHoverPicture } from '@/components/VideoHoverPicture';
+import { usePreviewTriggerArm } from '@/hooks/usePreviewTriggerArm';
+import type { CountdownPhase } from '@/lib/previewCountdown';
+import type { HoverPreviewTrigger } from '@/lib/state/hoverPreviewTrigger';
 
 // The marker the extreme-aspect swap and the hover arming bind their listeners
 // to. It is the element that carries `group`, so the JS hover regions and the
@@ -230,6 +233,7 @@ export const SearchResultImage = memo(function SearchResultImage({
     displayLoopTrigger,
     animateMode = "always",
     hoverPreview = HOVER_PREVIEW_OFF,
+    previewTrigger = "card",
 }: {
     result: SearchResult,
     index: number,
@@ -337,6 +341,16 @@ export const SearchResultImage = memo(function SearchResultImage({
      * always had, and so does this one while the client config is in flight.
      */
     hoverPreview?: HoverPreviewCapability
+    /**
+     * WHERE THE POINTER HAS TO REST for a video cell to preview (T1) — read
+     * once by the host, like the four props above it, and never per card.
+     *
+     * `"card"` is the default because a surface that does not pass it is a
+     * surface with previews off (it passes no capability either), and that is
+     * the behaviour it has always had. The two surfaces V9 names — the result
+     * grid and the gallery filmstrip — both pass the real answer.
+     */
+    previewTrigger?: HoverPreviewTrigger
 }) {
     const fileUrl = overrideURL ? overrideURL : originalFileURL(dbs, result.sha256)
     // THE TIER, LATCHED AT MOUNT, and that is the whole of the no-flash rule
@@ -463,6 +477,16 @@ export const SearchResultImage = memo(function SearchResultImage({
     // thing that says "this one plays", already centred on the frame, and
     // already scaled to the cell.
     const [preview, setPreview] = useState<PreviewFeedback | null>(null)
+    // THE BADGE'S OWN ARM (T3), mounted here rather than inside the picture
+    // because the badge and the picture are SIBLINGS: the badge is drawn over
+    // the anchor's whole box, the picture inside it, and the arm has to reach
+    // both — the badge for the ring it fills, the picture for the start and
+    // the frame swap. Enabled only where there is something to start: the
+    // `"button"` trigger AND a plan that can actually preview (`"video"` is
+    // the plan a video gets when its ladder is non-empty), so every other card
+    // in the grid pays one comparison and binds nothing.
+    const buttonTrigger = previewTrigger === "button" && plan.kind === "video"
+    const arm = usePreviewTriggerArm(buttonTrigger)
     return (
         <div className={cn("border rounded p-2", className)}>
             <div className={cn("overflow-hidden relative w-full pb-full mb-2",
@@ -558,6 +582,8 @@ export const SearchResultImage = memo(function SearchResultImage({
                             userDataDb={dbs.user_data_db}
                             duration={result.duration}
                             onPreviewFeedback={setPreview}
+                            previewTrigger={previewTrigger}
+                            armPhase={arm.phase}
                         />
                     ) : plan.kind === "loop" ? (
                         <CellLoopPicture
@@ -599,6 +625,8 @@ export const SearchResultImage = memo(function SearchResultImage({
                             placeholder={placeholder}
                             disabled={!!showLoadingSpinner}
                             onFeedback={setPreview}
+                            trigger={previewTrigger}
+                            armPhase={arm.phase}
                             className={cn(
                                 "object-cover object-top",
                                 showLoadingSpinner ? "" : "group-hover:object-contain group-hover:object-center",
@@ -627,8 +655,25 @@ export const SearchResultImage = memo(function SearchResultImage({
                         to the anchor. */}
                     {showsMotionBadge(result, animated, animateMode)
                         && <PlayableBadge
-                            progress={preview?.progress ?? null}
+                            // THE JOB'S RING WINS OVER THE COUNTDOWN'S, and
+                            // they cannot overlap anyway: the countdown ends at
+                            // the same instant the preview starts, which is the
+                            // earliest a job can exist. The fallthrough is what
+                            // makes the ring one continuous object — it fills
+                            // for the trigger, then fills again for the encode
+                            // — rather than two chrome elements taking turns.
+                            progress={preview?.progress ?? arm.progress ?? null}
                             caption={preview?.caption ?? null}
+                            countdown={preview == null && arm.progress != null}
+                            // THE TARGET, until the moment it starts something
+                            // (T6): from the start the badge is an ordinary
+                            // badge again, so the card's hover fade hides it —
+                            // which is exactly what the `"card"` trigger does
+                            // at the same point, and why the two modes are
+                            // indistinguishable once a preview is playing.
+                            interactive={buttonTrigger && arm.phase !== "started"}
+                            elementRef={buttonTrigger ? arm.attach : undefined}
+                            onActivate={buttonTrigger ? arm.click : undefined}
                         />}
                 </a>
                 {showLoadingSpinner && (
@@ -693,6 +738,8 @@ function ExtremeAspectPicture({
     userDataDb,
     duration,
     onPreviewFeedback,
+    previewTrigger,
+    armPhase,
 }: {
     /**
      * The stored grid rendition — a still crop, or the CROPPED LOOP when the
@@ -722,6 +769,9 @@ function ExtremeAspectPicture({
     userDataDb: string | null
     duration?: number | null
     onPreviewFeedback: (feedback: PreviewFeedback | null) => void
+    /** The trigger and its countdown, straight through — see VideoHoverPicture. */
+    previewTrigger: HoverPreviewTrigger
+    armPhase: CountdownPhase
 }) {
     // A CALLBACK ref rather than a typed object ref, because the crop layer is
     // an <img> for a still item and a <video> for an animated one and this only
@@ -875,6 +925,8 @@ function ExtremeAspectPicture({
                     placeholder={placeholder}
                     disabled={disabled}
                     onFeedback={onPreviewFeedback}
+                    trigger={previewTrigger}
+                    armPhase={armPhase}
                     className={cropClassName}
                     elementRef={attachCrop}
                 />

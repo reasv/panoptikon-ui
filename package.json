@@ -32,7 +32,8 @@
     "test:thumbnailurl": "node --experimental-strip-types scripts/thumbnailurl.test.mjs",
     "test:thumbnailformats": "node --experimental-strip-types scripts/thumbnailformats.test.mjs",
     "test:policytoken": "node --experimental-strip-types scripts/policytoken.test.mjs",
-    "test:blurplaceholder": "node --experimental-strip-types scripts/blurplaceholder.test.mjs"
+    "test:blurplaceholder": "node --experimental-strip-types scripts/blurplaceholder.test.mjs",
+    "test:previewtrigger": "node --experimental-strip-types scripts/previewtrigger.test.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.1.2",

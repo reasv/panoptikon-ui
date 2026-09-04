@@ -40,6 +40,9 @@ import {
 } from '@/lib/state/hoverPreviewPref'
 import { cellPreviewLadder, type PreviewFeedback } from '@/lib/videoPreview'
 import { VideoHoverPicture } from '@/components/VideoHoverPicture'
+import { usePreviewTriggerArm } from '@/hooks/usePreviewTriggerArm'
+import { useHoverPreviewTrigger } from '@/hooks/useHoverPreviewTrigger'
+import type { HoverPreviewTrigger } from '@/lib/state/hoverPreviewTrigger'
 import type { CellVideoPicture } from '@/lib/cellPicture'
 
 // The BINDING EDGE of the strip's card box, in CSS pixels: the LARGER of the
@@ -220,6 +223,11 @@ export function VirtualGalleryHorizontalScroll({
     // and `useHoverPreview` returns one of four interned constants so passing
     // it down costs the cards nothing (V7/V8).
     const hoverPreview = useHoverPreview()
+    // AND WHERE THE POINTER HAS TO REST for one of those previews to start
+    // (T1): the strip shares `VideoHoverPicture` with the grid, so it shares
+    // the setting too. One string for every card, read here for the same
+    // reason the capability above it is.
+    const previewTrigger = useHoverPreviewTrigger()
     // The pointer tracking the hover arming reads — bound for as long as the
     // strip is mounted, refcounted with the grid's (see trackHoverPointer).
     useEffect(() => trackHoverPointer(), [])
@@ -443,6 +451,7 @@ export function VirtualGalleryHorizontalScroll({
                                 tier={tier}
                                 animatedFloor={animatedFloor}
                                 hoverPreview={hoverPreview}
+                                previewTrigger={previewTrigger}
                             />
                         )
                     })}
@@ -490,6 +499,7 @@ function VirtualHorizontalScrollElement({
     tier,
     animatedFloor,
     hoverPreview = HOVER_PREVIEW_OFF,
+    previewTrigger = "card",
 }: {
     item: SearchResult
     ownIndex: number
@@ -515,6 +525,12 @@ function VirtualHorizontalScrollElement({
      * shipped before hover previews existed.
      */
     hoverPreview?: HoverPreviewCapability
+    /**
+     * WHERE the pointer has to rest for that preview to start (T1) — read once
+     * by the strip, like the capability above it. `"card"` when omitted, which
+     * is the trigger that shipped first.
+     */
+    previewTrigger?: HoverPreviewTrigger
 }) {
     const [qIndex] = useGalleryIndex()
     // The same mapping the strip scrolls to (see stripTarget): clamped, not
@@ -586,6 +602,13 @@ function VirtualHorizontalScrollElement({
     // inside a component that exists only while this card is previewing, so no
     // other card in the strip hears about it.
     const [preview, setPreview] = useState<PreviewFeedback | null>(null)
+    // THE BADGE'S OWN ARM (T3), mounted here for the reason the grid card
+    // mounts it: the badge is a SIBLING of the picture (there, inside the
+    // anchor over it; here, beside the link), and the arm has to reach both.
+    // Enabled only where there is something to start — the `"button"` trigger
+    // and a non-empty ladder — so every other card in the strip binds nothing.
+    const buttonTrigger = previewTrigger === "button" && previewPicture !== null
+    const arm = usePreviewTriggerArm(buttonTrigger)
     // Every hover report this card makes goes through here, so the card can
     // know whether the dock's hover subject is currently ITS item. Tracked
     // from the reports rather than from raw pointer presence: the unmount
@@ -759,6 +782,8 @@ function VirtualHorizontalScrollElement({
                                     alt={item.path}
                                     placeholder={placeholder}
                                     onFeedback={setPreview}
+                                    trigger={previewTrigger}
+                                    armPhase={arm.phase}
                                     className="object-cover object-top rounded-md cursor-pointer"
                                 />
                                 : <StripCardImage
@@ -777,8 +802,16 @@ function VirtualHorizontalScrollElement({
                     so a card that CAN move and is not moving is exactly what
                     the badge is for. */}
                 {showsMotionBadge(item, animated, "hover") && <PlayableBadge
-                    progress={preview?.progress ?? null}
+                    // The grid card's expression verbatim (T3/T6): the job's
+                    // ring wins over the countdown's, the badge is the target
+                    // until the moment it starts something, and after that it
+                    // is an ordinary badge the card's hover fade hides.
+                    progress={preview?.progress ?? arm.progress ?? null}
                     caption={preview?.caption ?? null}
+                    countdown={preview == null && arm.progress != null}
+                    interactive={buttonTrigger && arm.phase !== "started"}
+                    elementRef={buttonTrigger ? arm.attach : undefined}
+                    onActivate={buttonTrigger ? arm.click : undefined}
                 />}
                 {searchLoading && (
                     <div className="absolute inset-0 z-10 flex items-center rounded-md justify-center bg-white bg-opacity-50">

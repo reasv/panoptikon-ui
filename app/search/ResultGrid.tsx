@@ -36,6 +36,7 @@ import {
 } from "@/lib/gridCellSize"
 import { useDevicePixelRatio } from "@/hooks/useDevicePixelRatio"
 import { useAnimateModeForRange } from "@/hooks/useAnimateMode"
+import { useHoverPreviewTrigger } from "@/hooks/useHoverPreviewTrigger"
 import { cellRange } from "@/lib/state/animatePref"
 import { trackHoverPointer } from "@/lib/state/animatedPlayback"
 import {
@@ -377,6 +378,12 @@ export function ResultGrid({
     // memo-stable prop; both of its inputs are subscriptions, and reading
     // either per card is what F1 removed.
     const hoverPreview = useHoverPreview()
+    // AND THE FIFTH: WHERE the pointer has to rest for one of those previews
+    // to start (T1). A browser preference with no server half at all — the
+    // server has no say in a gesture — read here on the same rule as the four
+    // above it: one string for every card on the page, and a subscription per
+    // card is what F1 removed.
+    const previewTrigger = useHoverPreviewTrigger()
     // The pointer tracking the hover arming is written in terms of, bound for
     // as long as this grid is mounted rather than by the cells (which mount by
     // the hundred, and would each bind it a moment too late to answer the
@@ -1279,6 +1286,10 @@ export function ResultGrid({
                                                 // the whole grid, moving only
                                                 // when the answer does.
                                                 hoverPreview={hoverPreview}
+                                                // One more stable primitive,
+                                                // moving only when the user
+                                                // changes the setting.
+                                                previewTrigger={previewTrigger}
                                             />
                                         )
                                     })}
