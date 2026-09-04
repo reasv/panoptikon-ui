@@ -30,6 +30,14 @@ import {
     type HoverPreviewCapability,
     type HoverPreviewChoice,
 } from "@/lib/state/hoverPreviewPref"
+import {
+    HOVER_PREVIEW_TRIGGER_LABELS,
+    hoverPreviewLead,
+    hoverPreviewTriggerHint,
+    setHoverPreviewTrigger,
+    type HoverPreviewTrigger,
+} from "@/lib/state/hoverPreviewTrigger"
+import { useHoverPreviewTrigger } from "@/hooks/useHoverPreviewTrigger"
 import { useHoverPreview, useHoverPreviewCapability } from "@/lib/useClientConfig"
 import { useGridCellSize } from "@/lib/state/cellSize"
 import { useCellSizePageLock } from "@/lib/state/cellSizePageLock"
@@ -189,6 +197,7 @@ export function GridCellSizeControl({ metricsStore }: {
                 </div>
                 <AnimatedImagesRow mode={animateMode} range={range} />
                 <HoverPreviewRow />
+                <PreviewTriggerRow />
                 {/* The only way back to the automatic policy: an explicit cell
                     size REPLACES it rather than adjusting it, so "auto" is not
                     a position on the track. Page size is deliberately left
@@ -317,11 +326,16 @@ function HoverPreviewRow() {
     const resolved = useHoverPreview()
     const server = useHoverPreviewCapability()
     const choice = hoverPreviewChoice(resolved)
+    // THE SENTENCE FOLLOWS THE TRIGGER (T8). This row is about what a preview
+    // may COST, and the row under it about the gesture that starts one — but
+    // the first thing this row's sentence has to do is name that gesture, and
+    // a fixed one would describe a grid the user may no longer have.
+    const trigger = useHoverPreviewTrigger()
     return (
         <div className="mt-4">
             <Label className="text-sm">Video previews</Label>
             <p className="mt-0.5 text-xs text-muted-foreground">
-                Play a video by resting the pointer on its card.
+                {hoverPreviewLead(trigger)}
             </p>
             <HoverPreviewSegment choice={choice} server={server} />
             <p className="mt-1.5 text-xs text-muted-foreground">
@@ -410,6 +424,72 @@ function HoverPreviewSegment({ choice, server }: {
                 takes is arithmetic on its size. */}
             {segment("originals", "Originals", !!server && (server.direct || server.trim))}
             {segment("all", "All", !!server?.transcode)}
+        </div>
+    )
+}
+
+/**
+ * WHERE THE POINTER HAS TO REST for a video preview to start (T8), laid out
+ * like every other setting in this popover: the name, one sentence saying what
+ * the setting is, the control at full width, and under it one sentence saying
+ * what the current choice does.
+ *
+ * BESIDE "Video previews" RATHER THAN INSIDE IT, because they are different
+ * questions with different owners: that one is a negotiation with the server
+ * about what a preview may cost and its segments grey out when a policy denies
+ * a rung; this one is about a gesture, is nobody's business but the browser's,
+ * and is always available — including when previews are off, where it is
+ * simply the answer that applies when they are turned back on.
+ *
+ * The write goes STRAIGHT to the preference box
+ * (lib/state/hoverPreviewTrigger.ts): nothing here touches the URL or the
+ * creation-defaults layer.
+ */
+function PreviewTriggerRow() {
+    const trigger = useHoverPreviewTrigger()
+    return (
+        <div className="mt-4">
+            <Label className="text-sm">Start on</Label>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+                What the pointer has to be over for a video preview to begin.
+            </p>
+            <PreviewTriggerSegment trigger={trigger} />
+            <p className="mt-1.5 text-xs text-muted-foreground">
+                {hoverPreviewTriggerHint(trigger)}
+            </p>
+        </div>
+    )
+}
+
+/**
+ * Two named behaviours rather than an on/off, so the same `radiogroup`
+ * segmented shape as its two neighbours — and no disabled state anywhere in
+ * it: there is no server half to deny either position.
+ */
+function PreviewTriggerSegment({ trigger }: { trigger: HoverPreviewTrigger }) {
+    return (
+        <div
+            role="radiogroup"
+            aria-label="Where a video preview starts"
+            className="mt-2 flex w-full items-center gap-0.5 rounded-md bg-muted p-0.5"
+        >
+            {HOVER_PREVIEW_TRIGGER_LABELS.map(([value, label]) => (
+                <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={trigger === value}
+                    onClick={() => setHoverPreviewTrigger(value)}
+                    className={cn(
+                        "flex-1 rounded-sm px-2 py-1 text-xs transition-colors",
+                        trigger === value
+                            ? "bg-background text-foreground shadow-xs"
+                            : "text-muted-foreground hover:text-foreground"
+                    )}
+                >
+                    {label}
+                </button>
+            ))}
         </div>
     )
 }

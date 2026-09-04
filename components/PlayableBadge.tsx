@@ -35,10 +35,14 @@ import { cn } from "@/lib/utils"
  * Rules it has to obey, since it sits ON a picture that is also a link, a
  * drag source and a hover surface:
  *
- *   - `pointer-events-none`, always. The thumbnail's click-to-open and its
- *     drag both belong to the anchor underneath, and a centered overlay is
- *     exactly where a click or a drag starts.
- *   - fades out on hover. The corners fill with verb buttons and the grid
+ *   - `pointer-events-none` on the BOX, always. The thumbnail's click-to-open
+ *     and its drag both belong to the anchor underneath, and a centered
+ *     overlay is exactly where a click or a drag starts. The one exception is
+ *     the disc itself under `interactive` (T3): the trigger setting makes the
+ *     badge the thing you rest on or click, so that shape — and nothing else
+ *     in this overlay — takes pointer events, and its click stops there.
+ *   - fades out on hover, unless it is that trigger (see `interactive`) or a
+ *     preview job is pending on it. The corners fill with verb buttons and the grid
  *     card swaps to `object-contain` at that moment — the badge has already
  *     said what it had to say by then, and inspecting a frame is when you
  *     least want something drawn over the middle of it. (Drop the
@@ -62,7 +66,15 @@ const RING_CIRCUMFERENCE = 2 * Math.PI * 22
 /** How much of the ring the indeterminate sweep paints. */
 const SWEEP_FRACTION = 0.22
 
-export function PlayableBadge({ className, progress, caption }: {
+export function PlayableBadge({
+    className,
+    progress,
+    caption,
+    countdown,
+    interactive,
+    elementRef,
+    onActivate,
+}: {
     className?: string
     /**
      * A PREVIEW TRANSCODE IS PENDING FOR THIS CELL (V11): an indeterminate
@@ -84,6 +96,33 @@ export function PlayableBadge({ className, progress, caption }: {
     progress?: "queued" | number | null
     /** A word under the badge — "Transcoding…", "Queued #2" (V11). */
     caption?: string | null
+    /**
+     * THE FRACTION IS BEING DRIVEN PER FRAME — the trigger countdown (T3),
+     * which fills the ring from a `requestAnimationFrame` loop rather than
+     * from a job's progress samples. It turns the ring's own 200 ms transition
+     * OFF: a value that already moves every frame must not ALSO be
+     * interpolated, or the ring lags a fifth of a second behind the pointer
+     * and the drain (T4) runs backwards through a queue of stale targets.
+     */
+    countdown?: boolean
+    /**
+     * THIS BADGE IS THE TRIGGER (T3/T6): the disc takes pointer events, shows
+     * a pointer cursor, gains a touch of contrast on card hover, and does NOT
+     * fade with the card's `group-hover` — it is the thing the user is aiming
+     * at, so hiding it at the moment they reach for it is the one thing it
+     * must not do. The contrast is a stylesheet rule and costs no state.
+     *
+     * Turned OFF again at the start (the card stops passing it), which is what
+     * hands the badge back to its ordinary behaviour: the fade returns, the
+     * pointer is by definition on the card, and the badge disappears — while a
+     * pending job's ring keeps it up on its own, because `progress` non-null
+     * suppresses the same fade.
+     */
+    interactive?: boolean
+    /** The arm's anchor: the SVG itself, which is the shape being aimed at. */
+    elementRef?: (element: SVGSVGElement | null) => void
+    /** The click path (T3): start the preview at once, countdown skipped. */
+    onActivate?: () => void
 }) {
     const pending = progress != null
     const fraction = typeof progress === "number"
@@ -111,7 +150,12 @@ export function PlayableBadge({ className, progress, caption }: {
                 // assumes the fade is unconditional: the exception below is
                 // the previewing VIDEO cell, which that branch does not cover
                 // (a video always earns a badge, whatever is playing).
-                !pending && "group-hover:opacity-0",
+                //
+                // `interactive` suppresses it for the same reason from the
+                // other end (T6): under the `"button"` trigger the badge is
+                // the target, and a target that fades as the pointer
+                // approaches it is not one.
+                !pending && !interactive && "group-hover:opacity-0",
                 className,
             )}
         >
@@ -133,8 +177,43 @@ export function PlayableBadge({ className, progress, caption }: {
                 small enough to make 22% illegible, and one large enough to
                 make it a target rather than a hint. */}
             <svg
+                ref={elementRef}
                 viewBox="0 0 48 48"
-                className="w-[clamp(28px,22cqmin,96px)] h-[clamp(28px,22cqmin,96px)] drop-shadow-[0_1px_3px_rgba(0,0,0,0.45)]"
+                className={cn(
+                    "w-[clamp(28px,22cqmin,96px)] h-[clamp(28px,22cqmin,96px)] drop-shadow-[0_1px_3px_rgba(0,0,0,0.45)]",
+                    // THE TARGET (T3/T6). `pointer-events-auto` against the
+                    // wrapper's `none`, so the only part of this overlay that
+                    // takes a pointer is the disc itself — the rest of the
+                    // picture stays the anchor's, click and drag included.
+                    //
+                    // The contrast is three stylesheet rules on card hover and
+                    // nothing else: the disc darkens, its ring and its glyph go
+                    // to full white. `[&>circle]` reaches the disc alone — the
+                    // progress ring is a `<circle>` inside a `<g>`, so the
+                    // direct-child selector cannot touch it.
+                    interactive && [
+                        "pointer-events-auto cursor-pointer",
+                        "transition-transform duration-150 group-hover:scale-105",
+                        "[&>circle]:transition-all [&>path]:transition-all",
+                        "group-hover:[&>circle]:fill-[rgba(15,23,42,0.55)]",
+                        "group-hover:[&>circle]:stroke-white",
+                        "group-hover:[&>path]:fill-white",
+                    ],
+                )}
+                onClick={interactive && onActivate
+                    ? (event) => {
+                        // The badge sits INSIDE the grid card's anchor, whose
+                        // own click opens the gallery. Both halves are needed:
+                        // `preventDefault` stops the anchor's navigation and
+                        // `stopPropagation` stops React's synthetic click from
+                        // reaching its `onClick`. The card's DRAG is
+                        // untouched — `dragstart` is a different event, and
+                        // the draggable element is an ancestor.
+                        event.preventDefault()
+                        event.stopPropagation()
+                        onActivate()
+                    }
+                    : undefined}
             >
                 {/* The four alphas are one ghost, tuned together — the disc
                     carries the contrast, the ring the edge, the glyph the
@@ -192,7 +271,13 @@ export function PlayableBadge({ className, progress, caption }: {
                             className={progress === "queued" ? "animate-spin" : undefined}
                             style={{
                                 transformOrigin: "24px 24px",
-                                transition: progress === "queued"
+                                // NO transition for the two forms that already
+                                // move on their own: the indeterminate sweep
+                                // spins, and the countdown is redrawn every
+                                // frame (see `countdown`). Only a job's
+                                // progress — a handful of samples a second —
+                                // wants the ring to interpolate between them.
+                                transition: progress === "queued" || countdown
                                     ? undefined
                                     : "stroke-dasharray 200ms linear",
                             }}

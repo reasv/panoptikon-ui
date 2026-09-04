@@ -26,6 +26,8 @@ import {
   type PreviewJobRung,
 } from "@/lib/videoPreview"
 import { useTranscodeKeyState } from "@/lib/videoTranscode"
+import { previewFrameShown, type CountdownPhase } from "@/lib/previewCountdown"
+import type { HoverPreviewTrigger } from "@/lib/state/hoverPreviewTrigger"
 
 /**
  * The picture of a VIDEO card whose cell may hover-PREVIEW
@@ -47,8 +49,12 @@ import { useTranscodeKeyState } from "@/lib/videoTranscode"
  *      than as a second event after the dwell — the correction user QA made to
  *      the small cell's mosaic swap (D9), applied here in the other direction;
  *   3. the `<video>`, mounted only once the ARMED hover has fired (200 ms of
- *      real dwell, not scroll-suspended) and fading in on its first decoded
- *      frame. NOTHING IS REQUESTED BEFORE THAT: no `<video>` element exists,
+ *      real dwell, not scroll-suspended — on the CARD or on the play badge,
+ *      whichever the trigger setting names, and after the badge's countdown in
+ *      the latter case) and fading in on its first decoded frame. The two
+ *      triggers converge here: whatever produced the start, what follows is
+ *      the same ladder, the same requests and the same job.
+ *      NOTHING IS REQUESTED BEFORE THAT: no `<video>` element exists,
  *      no transcode is submitted, and the grid as a whole issues zero video
  *      requests while the pointer is only passing over it.
  *
@@ -74,6 +80,8 @@ export function VideoHoverPicture({
   elementRef,
   disabled,
   onFeedback,
+  trigger = "card",
+  armPhase = "idle",
 }: {
   picture: CellVideoPicture
   sha256: string
@@ -105,6 +113,25 @@ export function VideoHoverPicture({
   disabled?: boolean
   /** The badge's progress, published upward — see the hosts' own state. */
   onFeedback: (feedback: PreviewFeedback | null) => void
+  /**
+   * WHERE THE POINTER HAS TO REST for this cell to preview (T1). `"card"` is
+   * the trigger that shipped first and the default here, so a surface that
+   * knows nothing about the setting keeps that behaviour byte for byte.
+   *
+   * Under `"button"` this picture arms NOTHING of its own: the badge is the
+   * target, its arm lives one level up in the card (the badge and the picture
+   * are siblings), and what reaches here is the answer — see `armPhase`.
+   */
+  trigger?: HoverPreviewTrigger
+  /**
+   * THE BADGE COUNTDOWN'S PHASE, from the card's `usePreviewTriggerArm`. Two
+   * of its four values matter here and they are different questions:
+   * `"started"` mounts the preview (the same mount the card arm produces —
+   * same ladder, same requests, same job), and `"counting"` shows the single
+   * frame, which is what makes the swap the first feedback that a preview is
+   * coming (T7). Always `"idle"` under the `"card"` trigger.
+   */
+  armPhase?: CountdownPhase
 }) {
   // IS THERE ANYTHING LEFT TO TRY? The plan's ladder minus what this item has
   // already failed — the same subtraction the arm itself makes at its mount
@@ -114,7 +141,14 @@ export function VideoHoverPicture({
   const armable =
     !disabled &&
     previewArmLadder(picture.rungs, previewRungFailures(sha256)).length > 0
-  const hover = useArmedHover(armable)
+  // ONE TRIGGER OWNS THE GESTURE (T2/T3). Under `"button"` this hook is handed
+  // `false` and binds nothing at all: the card-wide arm is not merely ignored,
+  // it does not exist, so a cell in that mode carries two fewer listeners and
+  // cannot arm from a rest anywhere but the badge.
+  const hover = useArmedHover(armable && trigger === "card")
+  const started = trigger === "card"
+    ? hover.active
+    : armable && armPhase === "started"
   // The anchor for BOTH the arming and the frame swap's `closest` lookup.
   const baseRef = useRef<HTMLElement | null>(null)
   const attach = useCallback((element: HTMLElement | null) => {
@@ -131,8 +165,22 @@ export function VideoHoverPicture({
   const [hovered, setHovered] = useState(false)
   const [requested, setRequested] = useState(false)
   const [frameLoaded, setFrameLoaded] = useState(false)
+  // WHEN THE SINGLE FRAME IS WANTED, as one pure rule over the trigger, the
+  // cell's size and the countdown's phase (lib/previewCountdown.ts). Under
+  // `"card"` it is plain `:hover`, as it has always been; under `"button"` the
+  // card hover is left alone — the 2x2 zooms out like any image card, with the
+  // badge on it — and the swap lands when the badge arm fires.
+  const frameWanted = previewFrameShown({
+    trigger,
+    swaps,
+    cardHovered: hovered,
+    phase: armPhase,
+  })
   useEffect(() => {
-    if (disabled || !swaps) return
+    // The `"card"` trigger's own listeners, which the `"button"` one does not
+    // need: there the swap follows the countdown, and the pointer's presence
+    // on the card is the stylesheet's business alone.
+    if (disabled || !swaps || trigger !== "card") return
     // The group root, not this <img>: the corner buttons sit over the picture,
     // and the swap must track the stylesheet's hover region — see
     // ExtremeAspectPicture in components/SearchResultImage.tsx for the full
@@ -150,11 +198,18 @@ export function VideoHoverPicture({
       root.removeEventListener("mouseenter", enter)
       root.removeEventListener("mouseleave", leave)
     }
-  }, [disabled, swaps])
+  }, [disabled, swaps, trigger])
+  // THE `"button"` TRIGGER'S HALF OF THE SAME LATCH. The card path sets both
+  // flags in one handler (one commit for the whole hover); here the request is
+  // the arm's consequence, so it is latched from the answer instead. A no-op
+  // on every other render, and never reached under the `"card"` trigger.
+  useEffect(() => {
+    if (trigger !== "card" && frameWanted) setRequested(true)
+  }, [trigger, frameWanted])
   // LATCH-UNTIL-LOADED, VideoStillPicture's rule in reverse: the mosaic keeps
   // painting until the single frame has fired its own `load`, so a slow
   // response shows the picture the cell already had rather than an empty box.
-  const showFrame = swaps && hovered && frameLoaded
+  const showFrame = frameWanted && frameLoaded
   // The colour rung rides the element's own inline style and is cleared on
   // `load`; every other rung is a PNG data URL handed to `placeholder`
   // DIRECTLY (`placeholder="blur"` is forbidden here as everywhere else in a
@@ -195,7 +250,7 @@ export function VideoHoverPicture({
           unoptimized
         />
       )}
-      {hover.active && (
+      {started && (
         <PreviewArm
           picture={picture}
           sha256={sha256}
