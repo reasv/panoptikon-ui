@@ -181,6 +181,21 @@ export function GridCellSizeControl({ metricsStore }: {
                     className="mt-4"
                     aria-label="Cell width in pixels"
                 />
+                {/* The only way back to the automatic policy: an explicit cell
+                    size REPLACES it rather than adjusting it, so "auto" is not
+                    a position on the track. Page size is deliberately left
+                    alone here — the width auto will produce is not known until
+                    the grid has re-laid-out, so there is no ratio to preserve
+                    it against. */}
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3 w-full"
+                    disabled={auto}
+                    onClick={() => void setCellSize(null)}
+                >
+                    Use automatic size
+                </Button>
                 <div className="mt-4 flex items-center justify-between">
                     <div className="pr-4">
                         <Label className="text-sm">Keep page size</Label>
@@ -195,24 +210,16 @@ export function GridCellSizeControl({ metricsStore }: {
                         aria-label="Keep page size when the cell size changes"
                     />
                 </div>
+                {/* Two groups, one rule: everything above the line is about
+                    how big a card is (the slider, its reset, and the page
+                    lock that rides along with size changes); everything below
+                    is about what a card does once it is on screen. Without
+                    the line the reset used to sit at the very bottom, four
+                    unrelated controls away from the slider it belongs to. */}
+                <div className="my-4 border-t border-border" />
                 <AnimatedImagesRow mode={animateMode} range={range} />
                 <HoverPreviewRow />
                 <PreviewTriggerRow />
-                {/* The only way back to the automatic policy: an explicit cell
-                    size REPLACES it rather than adjusting it, so "auto" is not
-                    a position on the track. Page size is deliberately left
-                    alone here — the width auto will produce is not known until
-                    the grid has re-laid-out, so there is no ratio to preserve
-                    it against. */}
-                <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-4 w-full"
-                    disabled={auto}
-                    onClick={() => void setCellSize(null)}
-                >
-                    Use automatic size
-                </Button>
             </PopoverContent>
         </Popover>
     )
@@ -240,7 +247,7 @@ function AnimatedImagesRow({ mode, range }: {
     range: CellRange
 }) {
     return (
-        <div className="mt-4">
+        <div>
             <Label className="text-sm">Animated images</Label>
             <p className="mt-0.5 text-xs text-muted-foreground">
                 How GIFs and other animated pictures play in the grid.
