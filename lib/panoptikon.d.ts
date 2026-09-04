@@ -810,7 +810,7 @@ export interface paths {
         };
         /**
          * List recorded data extraction failures
-         * @description The extraction failure ledger: media a setter has already rejected, which the work query therefore skips. Read-only by design — a row is cleared when the file's content changes, when a missing dependency appears, or by a shipped retry directive, never by an API call. Newest first, paginated with limit/offset against `total`.
+         * @description Everything a data extraction has failed on, in three lists. `failures` is the extraction failure ledger: media a setter has already rejected, which the work query therefore skips. Read-only by design — a row is cleared when the file's content changes, when a missing dependency appears, or by a shipped retry directive, never by an API call. `job_failures` is the opposite: items a job attempted and could not finish, with nothing on record explaining why (the inference worker died mid-request, the server was down, a write failed); those items are untouched and the next run selects them again. `failed_jobs` is the jobs behind them, `partial` included — a partial job ran to the end with some of its items left undone. All three are newest first and share the limit/offset window, each against its own total.
          */
         get: operations["get_extraction_failures"];
         put?: never;
@@ -2319,11 +2319,38 @@ export interface components {
             stage: string;
         };
         ExtractionFailuresResponse: {
-            failures: components["schemas"]["ExtractionFailure"][];
+            /**
+             * @description The jobs those failures belong to, newest first, paged by the same
+             *     `limit`/`offset`. Empty (with a total of 0) when any filter that only
+             *     describes an individual failure is present.
+             */
+            failed_jobs: components["schemas"]["FailedJobRecord"][];
             /**
              * Format: int64
-             * @description How many failures match the filters, ignoring the page window — the
-             *     denominator for `limit`/`offset` paging.
+             * @description How many jobs ended `partial`, `failed` or `cancelled`, ignoring the
+             *     page window.
+             */
+            failed_jobs_total: number;
+            /** @description The retry ledger: media a setter has already rejected. */
+            failures: components["schemas"]["ExtractionFailure"][];
+            /**
+             * @description Items a job could not process and has no verdict for. Paged by the
+             *     same `limit`/`offset` as `failures`, and filtered by `setter` and
+             *     `stage` only: `error_class` and `mime_prefix` describe a recorded
+             *     verdict, which a row here is by definition not, so either of them
+             *     present answers with an empty list and a total of 0.
+             */
+            job_failures: components["schemas"]["JobItemFailure"][];
+            /**
+             * Format: int64
+             * @description How many per-job item failures match the filters, ignoring the page
+             *     window.
+             */
+            job_failures_total: number;
+            /**
+             * Format: int64
+             * @description How many recorded media verdicts match the filters, ignoring the page
+             *     window — the denominator for `limit`/`offset` paging of `failures`.
              */
             total: number;
         };
@@ -2333,6 +2360,65 @@ export interface components {
              *     (the pipeline rejected its media, or a dependency it needs is missing)
              */
             failed_for: string;
+        };
+        /**
+         * @description A job that did not complete cleanly, as the failures surface serves it.
+         *
+         *     Every field run1 found missing on such a record is here: a real `end_time`
+         *     (T8 measured `end_time == start_time`), the count of items left unprocessed
+         *     and unexplained, the segment count, and the reason.
+         */
+        FailedJobRecord: {
+            /**
+             * @description When the job actually stopped. A job that never reached its own
+             *     finalization is stamped by the cleanup instead, so this is never the
+             *     creation timestamp the row was inserted with.
+             */
+            end_time: string;
+            /**
+             * Format: int64
+             * @description Every item failure the job counted, verdicts included.
+             */
+            errors: number;
+            /**
+             * Format: int64
+             * @description Items attempted whose failure nothing explains — `errors` minus the
+             *     subset backed by a retry-ledger verdict. This is the count that makes
+             *     a job partial, and the count of rows this job has in
+             *     `data_job_failures`.
+             */
+            failed_items: number;
+            /** @description Why, when the job knew. Null for a job whose process went away. */
+            failure_reason?: string | null;
+            /**
+             * Format: int64
+             * @description The subset of `errors` that is a recorded verdict about the media.
+             */
+            input_errors: number;
+            /**
+             * Format: int64
+             * @description `data_jobs.id`, which is what a failure row carries. Null once the job
+             *     row has been deleted.
+             */
+            job_id?: number | null;
+            /**
+             * Format: int64
+             * @description `data_log.id`, the id the job history and the job-data deletion
+             *     endpoint use.
+             */
+            log_id: number;
+            /** @description `partial`, `failed` or `cancelled`. */
+            outcome: string;
+            setter: string;
+            start_time: string;
+            /**
+             * Format: int64
+             * @description Items still matching the job's work query when it stopped.
+             */
+            total_remaining: number;
+            /** Format: int64 */
+            total_segments: number;
+            type: string;
         };
         FileRecordResponse: {
             filename: string;
@@ -2473,14 +2559,27 @@ export interface components {
             headroom_mb: number;
             /**
              * Format: int64
-             * @description The admission budget: `min(total × cap_fraction, total − external ×
-             *     (1 + margin))`.
+             * @description The admission budget: `min(total × cap_fraction,
+             *     total − external − reserve_mb)`.
              */
             limit_mb: number;
             /** Format: int64 */
             load_reservations_mb: number;
             /** Format: double */
             margin: number;
+            /**
+             * Format: int64
+             * @description The VRAM withheld from the budget on top of `external_mb` itself: the
+             *     reserve **actually applied** to this board, in MiB (run2 change R5).
+             */
+            reserve_mb: number;
+            /**
+             * @description Which rule produced `reserve_mb`: `"user_margin"` (the board's
+             *     configured margin, honoured verbatim and uncapped) or
+             *     `"capped_default"` (nobody configured this board, so the default
+             *     fraction applies and is clamped to 1 GiB).
+             */
+            reserve_rule: string;
             /** Format: int64 */
             total_mb: number;
             workers: components["schemas"]["LedgerWorkerHealth"][];
@@ -2582,6 +2681,13 @@ export interface components {
              *     the host has no GPU inventory, in which case workers are not pinned.
              */
             gpus: components["schemas"]["GpuInfo"][];
+            /**
+             * @description Models whose loads are failing (R9), sorted by inference_id. An entry
+             *     exists from the first failed load until a load succeeds or the history
+             *     is pruned; `retry_after_secs` is 0 for one that has cooled down but is
+             *     still counting (the next failure waits twice as long).
+             */
+            load_cooldowns: components["schemas"]["LoadCooldownHealth"][];
             /** @description Number of loaded models (== `models.len()`). */
             model_count: number;
             /** @description Per loaded model liveness/queue snapshot, sorted by inference_id. */
@@ -2692,6 +2798,53 @@ export interface components {
          * @enum {string}
          */
         IndexMode: "auto" | "exact" | "quant" | "ann";
+        /**
+         * @description The body every inference error path serializes. Same `{"detail": …}`
+         *     envelope as [`crate::api_error::ErrorBody`]; only the detail is allowed to
+         *     be an object.
+         */
+        InferenceErrorBody: {
+            detail: components["schemas"]["InferenceErrorDetail"];
+        };
+        /**
+         * @description The `{"detail": …}` body of an inference error, in the two shapes this
+         *     surface answers with.
+         *
+         *     The string form is the original one and stays byte-identical for every
+         *     failure that already had a detail string (router.py parity, see the module
+         *     docs). The object form is additive and exists for the failures a *caller*
+         *     has to act on differently — today a worker death (a job re-queues) and,
+         *     for the load-failure cooldown, an "unavailable until" answer — so the
+         *     machine-readable half never has to be recovered by pattern-matching prose.
+         */
+        InferenceErrorDetail: string | components["schemas"]["InferenceErrorFields"];
+        /**
+         * @description The fields a structured [`InferenceErrorDetail`] can carry. One flat,
+         *     wholly-optional-but-`kind` struct rather than a variant per kind: every
+         *     consumer dispatches on `kind` first, and a single shape keeps the wire
+         *     contract (and the generated client type) from growing a case per failure
+         *     mode.
+         */
+        InferenceErrorFields: {
+            /**
+             * Format: int32
+             * @description Consecutive failures counted so far.
+             */
+            failures?: number | null;
+            /**
+             * @description What went wrong, as a stable token: [`WORKER_DIED_KIND`], or
+             *     `load_cooldown` for the per-model load-failure backoff.
+             */
+            kind: string;
+            /** @description The last error that put the model in this state. */
+            last_error?: string | null;
+            /** @description Human-readable summary; the string the plain form would have carried. */
+            message?: string | null;
+            /** @description The model the failure is about, `group/name`. */
+            model?: string | null;
+            /** @description RFC 3339 instant the model may be retried at. */
+            retry_at?: string | null;
+        };
         /** @description Multipart form body of `POST /predict/{group}/{inference_id}`. */
         InferencePredictRequest: {
             /**
@@ -2833,6 +2986,56 @@ export interface components {
             pql_query: components["schemas"]["QueryElement"];
             setter_names?: string[];
         };
+        /**
+         * @description One item a job could not process and has no verdict for.
+         *
+         *     The counterpart of [`ExtractionFailure`], and the difference matters: an
+         *     `ExtractionFailure` is a *verdict* about the media, recorded so the work
+         *     query skips the item. This is the opposite — work that simply did not
+         *     happen (the inference server went away, a worker process died with the
+         *     request in flight, a write failed). The item is untouched and the next run
+         *     selects it again, so nothing here suppresses anything.
+         *
+         *     Before run2 these failures were invisible: they were counted in
+         *     `data_log.errors` and nowhere else, so a job that lost 1 542 items to one
+         *     worker death reported *completed* and this endpoint answered
+         *     `{"total": 0}` (run1 findings F7 and Q8/T8).
+         */
+        JobItemFailure: {
+            /** @description The error text, clamped when it was recorded. */
+            error: string;
+            /**
+             * Format: int64
+             * @description Row id, stable for as long as the row lives.
+             */
+            id: number;
+            /**
+             * Format: int64
+             * @description The `data_jobs` id of the job that failed the item. Matches
+             *     `FailedJob.job_id`, and the `data_log` history's `job_id`.
+             */
+            job_id: number;
+            /** @description The item's mime type. */
+            mime_type: string;
+            /** @description When the job recorded the failure. */
+            occurred_at: string;
+            /**
+             * @description One of the paths this item is stored under, chosen deterministically
+             *     (an available file first, then the lexicographically smallest path).
+             *     Null when every file of the item has gone away.
+             */
+            path?: string | null;
+            /**
+             * @description Whether the item's inference was re-submitted once after the worker
+             *     died and then failed again — its one retry was already spent.
+             */
+            requeued: boolean;
+            /** @description The model whose job failed the item. */
+            setter_name: string;
+            sha256: string;
+            /** @description `prepare`, `inference` or `output`. */
+            stage: string;
+        };
         JobModel: {
             /** Format: int64 */
             batch_size?: number | null;
@@ -2849,13 +3052,17 @@ export interface components {
             threshold?: number | null;
         };
         JobOutcomeModel: {
+            /**
+             * @description The failure message for [`JobOutcomeStatus::Failed`], and the summary
+             *     of what was left undone for [`JobOutcomeStatus::Partial`].
+             */
             error?: string | null;
             /** Format: int64 */
             queue_id: number;
             status: components["schemas"]["JobOutcomeStatus"];
         };
         /** @enum {string} */
-        JobOutcomeStatus: "completed" | "failed" | "cancelled";
+        JobOutcomeStatus: "completed" | "partial" | "failed" | "cancelled";
         JobSettings: {
             /**
              * Format: int64
@@ -2955,6 +3162,37 @@ export interface components {
              */
             unit_budget: number;
         };
+        /**
+         * @description One model's load-failure cooldown in the [`HealthReport`] (R9). This is
+         *     the only place the state is visible when the model is *not* loaded — and
+         *     it never is, which is why it cannot live in `models[]`.
+         */
+        LoadCooldownHealth: {
+            /**
+             * Format: int32
+             * @description Consecutive failed loads.
+             */
+            failures: number;
+            inference_id: string;
+            /** @description The failure that armed the current window (clamped to 2000 bytes). */
+            last_error: string;
+            /**
+             * Format: int64
+             * @description Whole seconds until then; 0 once the window has passed.
+             */
+            retry_after_secs: number;
+            /**
+             * @description RFC 3339 wall-clock instant the model may be retried at, rendered from
+             *     the monotonic deadline when this report was built.
+             */
+            retry_at: string;
+            /**
+             * Format: int64
+             * @description The window this failure count earned, in seconds — `base × 2^(n−1)`
+             *     capped at the configured maximum.
+             */
+            window_secs: number;
+        };
         LogRecord: {
             /** Format: int64 */
             batch_size: number;
@@ -2965,8 +3203,26 @@ export interface components {
             end_time: string;
             /** Format: int64 */
             errors: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Legacy "this job did not complete" flag, 0 or 1. Kept exactly as it
+             *     was for every client that reads it, and *corrected*: it now also reads
+             *     1 for a job whose [`Self::outcome`] says it failed or was cancelled,
+             *     which is the case run1 measured reading 0 (finding T8).
+             */
             failed: number;
+            /**
+             * Format: int64
+             * @description Items this job attempted, could not finish, and has no verdict for —
+             *     `errors` minus `input_errors`. These are the rows the failures
+             *     endpoint lists, and the count that makes a job `partial`.
+             */
+            failed_items: number;
+            /**
+             * @description Why the job ended the way it did, for `partial`, `failed` and
+             *     `cancelled`.
+             */
+            failure_reason?: string | null;
             /** Format: int64 */
             id: number;
             /** Format: int64 */
@@ -2985,6 +3241,17 @@ export interface components {
             items_in_db: number;
             /** Format: int64 */
             other_files: number;
+            /**
+             * @description How the job ended: `completed`, `partial`, `failed`, `cancelled`, or
+             *     `running` for a job still in flight (and for every row written before
+             *     the column existed, which is the same thing as far as a reader is
+             *     concerned: nothing recorded an ending).
+             *
+             *     `partial` is the value that did not exist before run1 finding F7: a
+             *     job that lost a whole in-flight window of items to one worker death
+             *     reported `completed`.
+             */
+            outcome: string;
             setter: string;
             start_time: string;
             /** Format: int64 */
@@ -5923,6 +6190,8 @@ export interface operations {
             /** @description Model outputs */
             200: {
                 headers: {
+                    /** @description Items the orchestrator would like the caller to keep inside in-flight predict requests for this model. Additive and optional: absent means the orchestrator has no opinion (an older server, or a model that has not dispatched a window yet) and the caller keeps its own floor. */
+                    "x-panoptikon-desired-in-flight-items"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -5949,13 +6218,13 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Model load or prediction failure */
+            /** @description Model load or prediction failure. `detail` is a plain string for an ordinary failure and an object carrying a machine-readable `kind` for the ones a caller must act on differently — `worker_died` says the inference worker process died with the request in flight, so the request's items were never attempted and re-submitting them is correct. */
             500: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["InferenceErrorBody"];
                 };
             };
         };
