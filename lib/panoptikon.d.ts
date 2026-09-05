@@ -1753,8 +1753,7 @@ export interface components {
             duration_ms?: number | null;
             /**
              * Format: int64
-             * @description Inputs in the batch (not cost-dimension units — see the worker
-             *     protocol's "Memory sensing").
+             * @description Inputs in the batch, not cost-dimension units.
              */
             items?: number | null;
             /** Format: int64 */
@@ -1765,8 +1764,7 @@ export interface components {
             reserved_before_mb?: number | null;
             /**
              * Format: int64
-             * @description Per-worker sequence number; strictly increasing, gaps mean the ring
-             *     evicted samples between reads.
+             * @description Per-worker sequence number; a gap means the ring evicted samples.
              */
             seq: number;
         };
@@ -1790,10 +1788,7 @@ export interface components {
         };
         /** @description Response of `GET /cache/{cache_key}`. */
         CacheKeyResponse: {
-            /**
-             * @description inference_id -> ISO-8601 expiration; never-expiring entries
-             *     (ttl -1) render as `9999-12-31T23:59:59.999999`.
-             */
+            /** @description inference_id -> ISO-8601 expiry; ttl -1 is `9999-12-31T23:59:59.999999`. */
             expirations: {
                 [key: string]: string;
             };
@@ -2033,21 +2028,14 @@ export interface components {
             /**
              * Format: int32
              * @description The per-item **pixel canvas** this model's inputs are priced against
-             *     (`metadata.cost.canvas_pixels`, or a canvas filled in from the model's
-             *     own load report), or `null` for uncapped. Only `pixel`-priced models
-             *     ever carry one.
-             *
-             *     It is the difference between a grant that means what the operator
-             *     thinks it means and one that does not: under a canvas the worker
-             *     prices every input at `min(raw_pixels, canvas_pixels)`, so the same
-             *     `last_grant_units` describes a very different batch depending on
-             *     whether a canvas is in force — and the *effective* canvas may be one
-             *     the registry never stated.
+             *     (`metadata.cost.canvas_pixels`, or one from the model's own load
+             *     report), or `null` for uncapped. Under a canvas the worker prices every
+             *     input at `min(raw_pixels, canvas_pixels)`.
              */
             canvas_pixels?: number | null;
             /**
-             * @description True when the registry declared nothing usable and the conservative
-             *     `(item, count)` fallback is in force.
+             * @description True when the registry declared nothing usable and `(item, count)` is
+             *     in force.
              */
             degraded: boolean;
             /** Format: int32 */
@@ -2282,8 +2270,7 @@ export interface components {
         ExtractionFailure: {
             /**
              * @description `attempts >= skip_after`: the verdict is confirmed and the work query
-             *     is skipping this item. False means the verdict is recorded but
-             *     unconfirmed and will be retried.
+             *     is skipping this item. False means it is recorded but unconfirmed.
              */
             active: boolean;
             /** Format: int64 */
@@ -2300,27 +2287,24 @@ export interface components {
             first_seen: string;
             /**
              * Format: int64
-             * @description Ledger row id. Stable for as long as the row lives, which is what the
-             *     UI keys rows on.
+             * @description Ledger row id, stable for as long as the row lives; the UI keys on it.
              */
             id: number;
             /**
              * Format: int64
              * @description The last job that saw this failure. Null only when it was recorded
-             *     outside a job. This is *not* a foreign key and nothing nulls it when
-             *     job rows are cleaned up, so the id may name a job that no longer
-             *     exists — the ledger has to outlive the job history it refers to.
+             *     outside a job, and *not* a foreign key: the ledger outlives the job
+             *     history it refers to, so the id may name a job that no longer exists.
              */
             last_job_id?: number | null;
             last_seen: string;
             /** @description The item's mime type as recorded when the failure happened. */
             mime_type: string;
             /**
-             * @description One of the paths this item is stored under, chosen deterministically
-             *     (an available file first, then the lexicographically smallest path).
-             *     An item can have several files and the ledger keys on the item, so
-             *     this is a representative, not the whole story. Null when every file of
-             *     the item has gone away.
+             * @description One of the paths the item is stored under, chosen deterministically
+             *     (an available file first, then the lexicographically smallest). The
+             *     ledger keys on the item, so this is a representative, not the whole
+             *     story; null when every file of the item has gone away.
              */
             path?: string | null;
             setter_name: string;
@@ -2336,41 +2320,35 @@ export interface components {
         ExtractionFailuresResponse: {
             /**
              * @description The jobs those failures belong to, newest first, paged by the same
-             *     `limit`/`offset`. Empty (with a total of 0) when `error_class` or
-             *     `mime_prefix` is present, for the reason given on `job_failures`.
-             *
-             *     Deliberately **not** narrowed by `setter` or `stage`, even though
-             *     `job_failures` is: a job record already names its setter, and a job is
-             *     not attributable to one stage at all, so filtering here would hide the
-             *     context of the rows above rather than refine it.
+             *     `limit`/`offset`. Empty when `error_class` or `mime_prefix` is present,
+             *     for the reason given on `job_failures`. Deliberately **not** narrowed by
+             *     `setter` or `stage`: a job record already names its setter and is not
+             *     attributable to one stage, so filtering would hide the context of the
+             *     rows above rather than refine it.
              */
             failed_jobs: components["schemas"]["FailedJobRecord"][];
             /**
              * Format: int64
-             * @description How many jobs ended `partial`, `failed` or `cancelled`, ignoring the
-             *     page window.
+             * @description Jobs that ended `partial`, `failed` or `cancelled`, ignoring the page.
              */
             failed_jobs_total: number;
             /** @description The retry ledger: media a setter has already rejected. */
             failures: components["schemas"]["ExtractionFailure"][];
             /**
-             * @description Items a job could not process and has no verdict for. Paged by the
-             *     same `limit`/`offset` as `failures`, and filtered by `setter` and
-             *     `stage` only: `error_class` and `mime_prefix` describe a recorded
-             *     verdict, which a row here is by definition not, so either of them
-             *     present answers with an empty list and a total of 0.
+             * @description Items a job could not process and has no verdict for. Paged by the same
+             *     `limit`/`offset` as `failures`, and filtered by `setter` and `stage`
+             *     only: `error_class` and `mime_prefix` describe a recorded verdict, which
+             *     a row here is not, so either present answers with an empty list.
              */
             job_failures: components["schemas"]["JobItemFailure"][];
             /**
              * Format: int64
-             * @description How many per-job item failures match the filters, ignoring the page
-             *     window.
+             * @description Per-job item failures matching the filters, ignoring the page window.
              */
             job_failures_total: number;
             /**
              * Format: int64
-             * @description How many recorded media verdicts match the filters, ignoring the page
-             *     window — the denominator for `limit`/`offset` paging of `failures`.
+             * @description Recorded media verdicts matching the filters, ignoring the page window.
              */
             total: number;
         };
@@ -2381,24 +2359,13 @@ export interface components {
              */
             failed_for: string;
         };
-        /**
-         * @description A job that did not complete cleanly, as the failures surface serves it.
-         *
-         *     Every field run1 found missing on such a record is here: a real `end_time`
-         *     (T8 measured `end_time == start_time`), the count of items left unprocessed
-         *     and unexplained, the segment count, and the reason.
-         */
+        /** @description A job that did not complete cleanly, as the failures surface serves it. */
         FailedJobRecord: {
             /**
-             * @description When the job actually stopped.
-             *
-             *     Every path that records an ending writes this afresh. The one
-             *     exception is a job whose *process* died: the later sweep that finds
-             *     the row deliberately leaves `end_time` alone, because for such a row
-             *     "now" is when it was noticed, not when it stopped. Note also that the
-             *     timestamps have one-second resolution, so `end_time == start_time` is
-             *     a legitimate reading for a short job — `outcome` is what says whether
-             *     an ending was recorded.
+             * @description When the job actually stopped. Every path that records an ending writes
+             *     it afresh, except a job whose *process* died, where the later sweep
+             *     leaves it alone. One-second resolution, so `end_time == start_time` is
+             *     legitimate for a short job; `outcome` says if an ending was recorded.
              */
             end_time: string;
             /**
@@ -2409,17 +2376,9 @@ export interface components {
             /**
              * Format: int64
              * @description Items attempted whose failure nothing explains — `errors` minus the
-             *     subset backed by a retry-ledger verdict. This is the count that makes
-             *     a job partial.
-             *
-             *     It is derived from the job's own counters, which are exact, and is
-             *     therefore the authority. The `job_failures` list can be *shorter*: it
-             *     is capped at 10 000 rows per job, and its rows are pruned once the job's
-             *     `data_jobs` row is gone — which under `atomic_extraction_jobs` (off by
-             *     default) is at the start of the next extraction job for every job that
-             *     did not finish, because that mode deletes unfinished job rows outright.
-             *     A shortfall therefore means the listing was truncated or aged out,
-             *     never that the count is wrong.
+             *     subset backed by a retry-ledger verdict, and the count that makes a job
+             *     partial. Derived from the job's own exact counters, so it is the
+             *     authority: the `job_failures` listing can be shorter (capped, pruned).
              */
             failed_items: number;
             /** @description Why, when the job knew. Null for a job whose process went away. */
@@ -2431,14 +2390,12 @@ export interface components {
             input_errors: number;
             /**
              * Format: int64
-             * @description `data_jobs.id`, which is what a failure row carries. Null once the job
-             *     row has been deleted.
+             * @description `data_jobs.id`, what a failure row carries. Null once that row is gone.
              */
             job_id?: number | null;
             /**
              * Format: int64
-             * @description `data_log.id`, the id the job history and the job-data deletion
-             *     endpoint use.
+             * @description `data_log.id`, the id job history and job-data deletion use.
              */
             log_id: number;
             /** @description `partial`, `failed` or `cancelled`. */
@@ -2558,10 +2515,9 @@ export interface components {
             /**
              * Format: int64
              * @description What the residents actually cost the GPU: `Σ` per-worker
-             *     `footprint + max(0, grants − pool growth)`. This — not
-             *     `footprints_mb + grants_mb` — is what `headroom_mb` is derived from: a
-             *     post-fit grant is denominated in the same memory the footprint's
-             *     pool-growth term already counts, so the two overlap per worker.
+             *     `footprint + max(0, grants − pool growth)`. This, not
+             *     `footprints_mb + grants_mb`, is what `headroom_mb` derives from: a grant
+             *     is denominated in the same memory the pool-growth term already counts.
              */
             charges_mb: number;
             /**
@@ -2604,14 +2560,13 @@ export interface components {
             /**
              * Format: int64
              * @description The VRAM withheld from the budget on top of `external_mb` itself: the
-             *     reserve **actually applied** to this GPU, in MiB (run2 change R5).
+             *     reserve **actually applied** to this GPU, in MiB.
              */
             reserve_mb: number;
             /**
-             * @description Which rule produced `reserve_mb`: `"user_margin"` (the GPU's
-             *     configured margin, honoured verbatim and uncapped) or
-             *     `"capped_default"` (nobody configured this GPU, so the default
-             *     fraction applies and is clamped to 1 GiB).
+             * @description Which rule produced `reserve_mb`: `"user_margin"` (the GPU's configured
+             *     margin, honoured verbatim and uncapped) or `"capped_default"` (nobody
+             *     configured this GPU, so the default fraction applies and is clamped).
              */
             reserve_rule: string;
             /** Format: int64 */
@@ -2621,34 +2576,29 @@ export interface components {
         /** @description One visible GPU, from nvidia-smi (CUDA) or KFD topology (ROCm). */
         GpuInfo: {
             /**
-             * @description PCI address `dddd:bb:dd.f`. ROCm only: it is the key into amdgpu's
-             *     per-GPU sysfs counters (the memory refresh, D5) and the one
-             *     vocabulary a worker can independently report about itself (D3).
-             *     `None` on CUDA, where the UUID already serves both purposes.
+             * @description PCI address `dddd:bb:dd.f`. ROCm only: the key into amdgpu's per-GPU
+             *     sysfs counters and the one vocabulary a worker can report about
+             *     itself. `None` on CUDA, where the UUID serves both.
              */
             bdf?: string | null;
             /**
-             * @description Compute capability as `major.minor` (`"12.0"`), the same value
-             *     `HostComputeCaps` filters models with — per GPU here, because
-             *     default placement picks the fastest one. `None` when nvidia-smi could
-             *     not report it for this GPU (`[N/A]` on vGPU slices and some
-             *     datacenter SKUs): the GPU is still a usable, pinnable identity, it
-             *     just cannot be ranked or used to unlock a capability-gated model.
-             *     Always `None` on ROCm — HIP has no analogue at all.
+             * @description Compute capability as `major.minor` (`"12.0"`), per GPU because
+             *     default placement picks the fastest one. `None` when nvidia-smi did
+             *     not report it, and always `None` on ROCm: the GPU stays pinnable but
+             *     cannot be ranked or unlock a capability-gated model.
              */
             compute_cap?: string | null;
             /**
              * Format: int32
-             * @description KFD's packed ISA target (`110000` = gfx1100). ROCm only; recorded so
-             *     a future gfx-arch allowlist has its datum without another probe
-             *     (D7). `None` on CUDA.
+             * @description KFD's packed ISA target (`110000` = gfx1100). ROCm only; recorded so a
+             *     future gfx-arch allowlist needs no second probe. `None` on CUDA.
              */
             gfx_target_version?: number | null;
             /**
              * Format: int32
              * @description Enumeration index: nvidia-smi's on CUDA, the position within the
-             *     openable KFD-node set on ROCm (which is the HIP device index). Useful
-             *     only for resolving registry `devices = ["3"]` pins; never an identity.
+             *     openable KFD-node set on ROCm (which is the HIP device index). Only
+             *     for resolving registry `devices = ["3"]` pins; never an identity.
              */
             index: number;
             /**
@@ -2660,43 +2610,26 @@ export interface components {
             total_mb: number;
             /**
              * Format: int64
-             * @description Host RAM this GPU's memory is carved out of, in MiB — present
-             *     exactly on **unified** GPUs (Apple Silicon today; AMD APUs when
-             *     backend B lands), absent on a discrete GPU with private VRAM. Its
-             *     presence *is* the unified flag ([`GpuInfo::unified`]), because the two
-             *     facts are one: a GPU is unified precisely when its memory is the
-             *     host's.
-             *
-             *     Two things downstream read it. The ledger records a synthetic negative
-             *     sample when a replica dies mid-window on such a GPU (DP-2: on a
-             *     dGPU a mid-window death has too many non-memory causes, on a unified
-             *     GPU it is overwhelmingly the OS memory killer), and it is the only
-             *     sanity bound on the authoritative total a worker reports back (DP-4)
-             *     — the GPU's own `total_mb` is a *policy* number there, tunable by
-             *     the user, so it cannot bound anything.
+             * @description Host RAM this GPU's memory is carved out of, in MiB — present exactly
+             *     on **unified** GPUs, so its presence *is* the unified flag
+             *     ([`GpuInfo::unified`]). It bounds the authoritative total a worker may
+             *     report, and gates the synthetic negative the ledger records for a
+             *     mid-window replica death (docs/unified-memory-admission.md, DP-2/4).
              */
             unified_ram_mb?: number | null;
             /**
              * @description GPU UUID (`GPU-…`), the budget/ledger key and the pin form CUDA
-             *     accepts directly in `CUDA_VISIBLE_DEVICES`. On ROCm it is the fused
-             *     KFD `unique_id` or a synthetic `GPU-BDF-…` (see `rocm.rs`) — an
-             *     identity, not a pin form, because HIP only accepts indices.
+             *     accepts directly. On ROCm it is the fused KFD `unique_id` or a
+             *     synthetic `GPU-BDF-…` — an identity only, since HIP takes indices.
              */
             uuid: string;
             /**
              * Format: int64
-             * @description The device-local VRAM carve-out of a unified **ROCm** GPU (an APU's
-             *     `mem_info_vram_total`), in MiB — the part of [`Self::total_mb`] that
-             *     is not GTT. `None` on every other GPU, including MPS, where no such
-             *     split exists.
-             *
-             *     It is carried because the carve-out is a figure other components
-             *     legitimately mean by "this GPU's memory", and they must not be
-             *     refused for it. HIP's `total_memory` on an APU may report the
-             *     carve-out, the carve+GTT sum, or something else again — unverified
-             *     until a BC-250 field pass — so the registration cross-check accepts
-             *     **either**. It is also the placement rank
-             *     ([`Self::placement_total_mb`]).
+             * @description The device-local VRAM carve-out of a unified **ROCm** GPU, in MiB —
+             *     the part of [`Self::total_mb`] that is not GTT, and the placement rank
+             *     ([`Self::placement_total_mb`]). `None` on every other GPU. The
+             *     registration cross-check accepts it *or* the carve+GTT sum, since HIP
+             *     may report either.
              */
             vram_carveout_mb?: number | null;
         };
@@ -2705,65 +2638,39 @@ export interface components {
             has_data_unprocessed: components["schemas"]["DerivedDataArgs"];
         };
         /**
-         * @description `GET /health` response (design §7, additive — Python has no such
-         *     endpoint, so this shape is ours to define). Serialized as-is by the HTTP
-         *     layer; `Deserialize` exists so tests can round-trip the wire shape.
+         * @description `GET /health` response (design §7). Serialized as-is by the HTTP layer;
+         *     `Deserialize` exists so tests can round-trip the wire shape.
          */
         HealthReport: {
-            /**
-             * @description Visible GPUs by GPU UUID (batch-calibration step 1a); empty when
-             *     the host has no GPU inventory, in which case workers are not pinned.
-             */
+            /** @description Visible GPUs by UUID; empty when the host has no inventory. */
             gpus: components["schemas"]["GpuInfo"][];
             /**
-             * @description The inference **client** side: one entry per endpoint this process
-             *     holds a client for, sorted by base URL. Empty on a node that only
-             *     serves inference (`panoptikon inferio`), which has no client — and on a
-             *     gateway that has not yet talked to its endpoints.
-             *
-             *     The models above describe what the orchestrator wants; this describes
-             *     what the transport under it will actually carry. Run2's S1 was
-             *     precisely a disagreement between the two that neither half could see.
+             * @description The inference **client** side: one entry per endpoint this process holds
+             *     a client for, sorted by base URL.
              */
             inference_clients: components["schemas"]["InferenceTransportHealth"][];
             /**
-             * @description Models whose loads are failing (R9), sorted by inference_id. An entry
-             *     exists from the first failed load until a load succeeds or the history
-             *     is pruned; `retry_after_secs` is 0 for one that has cooled down but is
-             *     still counting (the next failure waits twice as long).
+             * @description Models whose loads are failing, sorted by inference_id; an entry lives
+             *     from the first failed load until one succeeds or the history is pruned.
              */
             load_cooldowns: components["schemas"]["LoadCooldownHealth"][];
             /** @description Number of loaded models (== `models.len()`). */
             model_count: number;
             /** @description Per loaded model liveness/queue snapshot, sorted by inference_id. */
             models: components["schemas"]["ModelHealth"][];
-            /**
-             * @description The inference **server** side's one memory bound that a peer can move:
-             *     how much of this process's predict-body budget is spoken for, and how
-             *     often it has had to refuse a request. See
-             *     [`crate::inferio::http::PREDICT_INFLIGHT_BODY_BYTES`].
-             */
+            /** @description How much of the predict-body budget is spoken for, and refusals so far. */
             predict_body_budget: components["schemas"]["PredictBodyBudgetHealth"];
-            /**
-             * @description Prewarm pool snapshot (design §8): master/lazy switches plus one
-             *     entry per impl class held (state "warm" | "spawning" |
-             *     "failed_prepare").
-             */
+            /** @description Prewarm snapshot: the switches plus one entry per impl class held. */
             prewarm: components["schemas"]["PrewarmHealth"];
-            /**
-             * @description Whether the inference registry currently loads (see `health()` docs
-             *     for exactly what this checks).
-             */
+            /** @description Whether the inference registry currently loads (see `health()`). */
             registry_ok: boolean;
             /** @description Same signal as `status`, machine-friendly. */
             shutting_down: boolean;
             /** @description `"ok"` normally, `"shutting_down"` once shutdown has begun. */
             status: string;
             /**
-             * @description Per-GPU VRAM ledger: budgets, footprints, outstanding grants, ramp and
-             *     deflation state and the fitted cost model (batch-calibration step 1b).
-             *     Empty on a host with no GPU inventory, where nothing is admitted and
-             *     every model takes the unpriced dispatch path.
+             * @description Per-GPU VRAM ledger: budgets, footprints, grants, ramp and deflation
+             *     state, the fitted cost model. Empty with no GPU inventory.
              */
             vram: components["schemas"]["GpuBudgetHealth"][];
         };
@@ -2851,31 +2758,20 @@ export interface components {
          */
         IndexMode: "auto" | "exact" | "quant" | "ann";
         /**
-         * @description The body every inference error path serializes. Same `{"detail": …}`
-         *     envelope as [`crate::api_error::ErrorBody`]; only the detail is allowed to
-         *     be an object.
+         * @description The body every inference error path serializes: `{"detail": …}` as in
+         *     [`crate::api_error::ErrorBody`], with an object detail permitted.
          */
         InferenceErrorBody: {
             detail: components["schemas"]["InferenceErrorDetail"];
         };
         /**
-         * @description The `{"detail": …}` body of an inference error, in the two shapes this
-         *     surface answers with.
-         *
-         *     The string form is the original one and stays byte-identical for every
-         *     failure that already had a detail string (router.py parity, see the module
-         *     docs). The object form is additive and exists for the failures a *caller*
-         *     has to act on differently — today a worker death (a job re-queues) and,
-         *     for the load-failure cooldown, an "unavailable until" answer — so the
-         *     machine-readable half never has to be recovered by pattern-matching prose.
+         * @description The `{"detail": …}` body of an inference error, in two shapes: the string
+         *     form byte-identical for router.py parity, the object form additive.
          */
         InferenceErrorDetail: string | components["schemas"]["InferenceErrorFields"];
         /**
-         * @description The fields a structured [`InferenceErrorDetail`] can carry. One flat,
-         *     wholly-optional-but-`kind` struct rather than a variant per kind: every
-         *     consumer dispatches on `kind` first, and a single shape keeps the wire
-         *     contract (and the generated client type) from growing a case per failure
-         *     mode.
+         * @description The fields a structured [`InferenceErrorDetail`] can carry — one flat
+         *     struct, since every consumer dispatches on `kind` first.
          */
         InferenceErrorFields: {
             /**
@@ -2884,13 +2780,13 @@ export interface components {
              */
             failures?: number | null;
             /**
-             * @description What went wrong, as a stable token: [`WORKER_DIED_KIND`], or
-             *     `load_cooldown` for the per-model load-failure backoff.
+             * @description A stable token: [`WORKER_DIED_KIND`], [`REQUEST_INCOMPLETE_KIND`],
+             *     [`BODY_BUDGET_KIND`], `load_cooldown`.
              */
             kind: string;
             /** @description The last error that put the model in this state. */
             last_error?: string | null;
-            /** @description Human-readable summary; the string the plain form would have carried. */
+            /** @description Human-readable summary: the string the plain form would carry. */
             message?: string | null;
             /** @description The model the failure is about, `group/name`. */
             model?: string | null;
@@ -2900,24 +2796,16 @@ export interface components {
         /** @description Multipart form body of `POST /predict/{group}/{inference_id}`. */
         InferencePredictRequest: {
             /**
-             * @description JSON string of the batch: `{"inputs": [...]}` where each entry is an
-             *     object, a string, or null (null = file-only input).
+             * @description JSON string of the batch: `{"inputs": [...]}`, each entry an object,
+             *     a string, or null (file-only).
              */
             data: string;
-            /**
-             * @description Binary batch inputs. Each part's *filename* must be the integer
-             *     index of the `inputs` entry it attaches to.
-             */
+            /** @description Binary batch inputs; each part's *filename* is its `inputs` index. */
             files?: components["schemas"]["BinaryBlob"][] | null;
         };
         /**
          * @description What one inference endpoint's client is doing right now, for `/health`.
-         *
-         *     It exists because run2's S1 could not be diagnosed from `/health` at all:
-         *     the transport in force, the connections it was really using and the
-         *     concurrency it was really allowing were each either absent or, in the one
-         *     log line that mentioned them, wrong. Everything here is a *measured*
-         *     quantity, not a constant restated.
+         *     Every field is a measured quantity, not a constant restated.
          */
         InferenceTransportHealth: {
             /** @description The endpoint this describes. */
@@ -2930,21 +2818,18 @@ export interface components {
             /** @description Of those, how many are in flight right now. */
             in_flight_requests: number;
             /**
-             * @description Requests the gate currently admits. Under h2c this follows the
-             *     endpoint's own published desired-in-flight figure between a floor and
-             *     a ceiling; under HTTP/1.1 it is fixed.
+             * @description Requests the gate currently admits: under h2c the endpoint's own
+             *     published figure, clamped; under HTTP/1.1 a constant.
              */
             max_concurrent_requests: number;
             /**
              * @description Independent connections this client may hold to the endpoint; `null`
-             *     under HTTP/1.1, where a connection is a request rather than a pool
-             *     slot.
+             *     under HTTP/1.1, where a connection is a request, not a pool slot.
              */
             pool_connections?: number | null;
             /**
-             * @description `h2c` | `http/1.1` | `unknown` (nothing has talked to it yet, so the
-             *     job-side descriptor budget reads it as the conservative HTTP/1.1
-             *     case).
+             * @description `h2c` | `http/1.1` | `unknown` (nothing has talked to it yet, which
+             *     the job-side descriptor budget reads as the HTTP/1.1 case).
              */
             transport: string;
         };
@@ -3082,14 +2967,10 @@ export interface components {
          *     The counterpart of [`ExtractionFailure`], and the difference matters: an
          *     `ExtractionFailure` is a *verdict* about the media, recorded so the work
          *     query skips the item. This is the opposite — work that simply did not
-         *     happen (the inference server went away, a worker process died with the
-         *     request in flight, a write failed). The item is untouched and the next run
-         *     selects it again, so nothing here suppresses anything.
-         *
-         *     Before run2 these failures were invisible: they were counted in
-         *     `data_log.errors` and nowhere else, so a job that lost 1 542 items to one
-         *     worker death reported *completed* and this endpoint answered
-         *     `{"total": 0}` (run1 findings F7 and Q8/T8).
+         *     happen — so the item is untouched, the next run selects it again, and
+         *     nothing here suppresses anything.
+         *     See docs/failed-media-retry-design.md "The other half: failures with no
+         *     verdict (run2, R2)".
          */
         JobItemFailure: {
             /** @description The error text, clamped when it was recorded. */
@@ -3101,23 +2982,19 @@ export interface components {
             id: number;
             /**
              * Format: int64
-             * @description The `data_jobs` id of the job that failed the item. Matches
-             *     `FailedJob.job_id`, and the `data_log` history's `job_id`.
+             * @description The `data_jobs` id of the job that failed the item; see `FailedJob`.
              */
             job_id: number;
             /** @description The item's mime type. */
             mime_type: string;
             /**
-             * @description When the item failed, as the job stamped it. Not the moment the
-             *     record was written: the job buffers these and writes them once at the
-             *     end, so a write-time stamp would date every failure of a long job to
-             *     its last second.
+             * @description When the item failed, as the job stamped it — not when the record was
+             *     written, since the job buffers these and writes them once at the end.
              */
             occurred_at: string;
             /**
-             * @description One of the paths this item is stored under, chosen deterministically
-             *     (an available file first, then the lexicographically smallest path).
-             *     Null when every file of the item has gone away.
+             * @description One of the paths this item is stored under (an available file first,
+             *     then the smallest). Null when every file of the item has gone away.
              */
             path?: string | null;
             /**
@@ -3195,9 +3072,8 @@ export interface components {
             deflation: number;
             /**
              * Format: double
-             * @description The margin this model's windows are actually priced under: the
-             *     GPU's configured margin, widened while the fit is unconfirmed or
-             *     scattered.
+             * @description The margin this model's windows are actually priced under: the GPU's
+             *     configured margin, widened while the fit is unconfirmed or scattered.
              */
             effective_margin: number;
             fit?: null | components["schemas"]["FitHealth"];
@@ -3223,9 +3099,9 @@ export interface components {
             knee_units?: number | null;
             /**
              * Format: int32
-             * @description Local clean high-water samples behind this model's fit, including any
-             *     a local calibration profile restored. Below
-             *     `LOCAL_CONFIRMATION_SAMPLES` the effective margin is widened.
+             * @description Local clean high-water samples behind this model's fit, including any a
+             *     local calibration profile restored. Below `LOCAL_CONFIRMATION_SAMPLES`
+             *     the effective margin is widened.
              */
             local_samples: number;
             /**
@@ -3248,16 +3124,10 @@ export interface components {
             seed_units: number;
             /**
              * Format: int64
-             * @description Shape ceiling (run2 S1): a batch size this model's own kernels have
-             *     said they cannot execute at the shapes this corpus is feeding them —
-             *     an int32 index limit in a CUDA/HIP pooling kernel, reported as
-             *     `clamped.reason = "index_limit"`. `None` until one is reported.
-             *
-             *     It caps `unit_budget` and stops the ramp, and it is **not** a memory
-             *     condition: it never deflates anything. Runtime-only and denominated in
-             *     the canvas and cost epoch shown for this replica — it is re-learned
-             *     after a restart and dropped when the canvas, the epoch or the corpus
-             *     moves, so it appears in no calibration profile.
+             * @description Shape ceiling: a batch size this model's own kernels have said they cannot
+             *     execute at the shapes this corpus feeds them, reported as
+             *     `clamped.reason = "index_limit"`. It caps `unit_budget` and stops the
+             *     ramp, never deflates anything, and is runtime-only.
              */
             shape_ceiling_units?: number | null;
             /**
@@ -3272,9 +3142,8 @@ export interface components {
             unit_budget: number;
         };
         /**
-         * @description One model's load-failure cooldown in the [`HealthReport`] (R9). This is
-         *     the only place the state is visible when the model is *not* loaded — and
-         *     it never is, which is why it cannot live in `models[]`.
+         * @description One model's load-failure cooldown in the [`HealthReport`]. A cooling-down
+         *     model is by construction not loaded, so this cannot live in `models[]`.
          */
         LoadCooldownHealth: {
             /**
@@ -3290,15 +3159,11 @@ export interface components {
              * @description Whole seconds until then; 0 once the window has passed.
              */
             retry_after_secs: number;
-            /**
-             * @description RFC 3339 wall-clock instant the model may be retried at, rendered from
-             *     the monotonic deadline when this report was built.
-             */
+            /** @description RFC 3339 instant the model may be retried at. */
             retry_at: string;
             /**
              * Format: int64
-             * @description The window this failure count earned, in seconds — `base × 2^(n−1)`
-             *     capped at the configured maximum.
+             * @description The window this failure count earned, in seconds.
              */
             window_secs: number;
         };
@@ -3655,25 +3520,13 @@ export interface components {
         ModelHealth: {
             /** @description Cache keys currently referencing the model, sorted. */
             cache_keys: string[];
-            /**
-             * @description Cost dimension resolved from registry metadata at load time
-             *     (batch-calibration step 1a).
-             */
+            /** @description Cost dimension resolved from registry metadata at load time. */
             cost: components["schemas"]["CostHealth"];
             /**
              * Format: int64
-             * @description Items the orchestrator is asking callers to keep inside their
-             *     in-flight predict requests for this model — the same figure the
-             *     `x-panoptikon-desired-in-flight-items` response header carries
-             *     (`dispatch.rs`, `desired_in_flight_items`). `null` until a window has
-             *     been formed.
-             *
-             *     It is here because it was *not*: run2's S1 had to reconstruct this
-             *     column arithmetically from `ramp_step`, `unit_budget` and
-             *     `max_units_measured` in the logs, because the one number that crosses
-             *     the core/orchestrator boundary was visible on neither side. With it,
-             *     "the server asked for 1 632 and the job delivered 200" is a two-field
-             *     comparison instead of a phase of analysis.
+             * @description Items the orchestrator wants callers to keep in flight — the figure
+             *     `x-panoptikon-desired-in-flight-items` carries. `null` before the first
+             *     window.
              */
             desired_in_flight_items?: number | null;
             /**
@@ -3686,36 +3539,25 @@ export interface components {
             inference_id: string;
             /**
              * Format: int64
-             * @description Unit budget of the grant on the most recently dispatched window;
-             *     `null` until a window carries one (nothing dispatched yet, or this
-             *     model is on the unpriced path — see `dispatch.rs`).
+             * @description Unit budget of the grant on the most recently dispatched window; `null`
+             *     until one carries a grant, and always on the unpriced path.
              */
             last_grant_units?: number | null;
             /**
              * Format: int32
-             * @description Inputs in the most recently dispatched window; `null` until the first
-             *     window dispatches. This is what a user cap bounds on the unpriced path.
+             * @description Inputs in the most recently dispatched window; `null` until the first.
              */
             last_window_items?: number | null;
             /**
              * Format: int64
-             * @description Of those, the ones formed short of the unit budget the ledger allowed:
-             *     the queue, not the GPU, decided their size. A ramp that is not
-             *     advancing while this climbs is being starved, not squeezed.
+             * @description Of those, the ones the queue rather than the GPU decided the size of.
              */
             queue_bound_windows: number;
             /** @description Requests waiting in the model's FIFO queue. */
             queue_depth: number;
-            /**
-             * @description WorkerSet occupancy: `free < total` means replicas are running
-             *     windows right now.
-             */
+            /** @description WorkerSet occupancy: `free < total` means replicas are running windows. */
             replicas: components["schemas"]["ReplicaHealth"];
-            /**
-             * @description One entry per replica: which GPU it sits on and the freshest memory
-             *     sensing it reported. This is the raw material step 1b's per-GPU
-             *     ledger is built from.
-             */
+            /** @description Per replica: its GPU and the freshest memory sensing it reported. */
             replicas_detail: components["schemas"]["ReplicaTelemetryHealth"][];
             /**
              * Format: int64
@@ -4120,52 +3962,39 @@ export interface components {
             select?: components["schemas"]["Column"][];
         };
         /**
-         * @description What this process's predict-body budget is doing right now, for
-         *     `/health`.
-         *
-         *     A refusal is a `503` an operator will see in a job's logs, so the state
-         *     that produced it has to be readable somewhere that is not a guess. The
-         *     pair to watch is `in_flight_bytes` against `budget_bytes`: a job that is
-         *     being refused while the first is far below the second is being refused by
-         *     a *burst* rather than by a level, and the answer is the caller's request
-         *     sizing, not this number.
+         * @description What this process's predict-body budget is doing, for `/health`. A caller
+         *     refused while `in_flight_bytes` is far below `budget_bytes` is hitting a
+         *     *burst*, and the answer is its own request sizing.
          */
         PredictBodyBudgetHealth: {
             /**
              * Format: int64
-             * @description [`PREDICT_INFLIGHT_BODY_BYTES`]: predict body bytes this process will
-             *     hold at once, across every connection and peer.
+             * @description [`PREDICT_INFLIGHT_BODY_BYTES`]: predict body bytes held at once.
              */
             budget_bytes: number;
             /**
              * Format: int64
-             * @description Of those, how many are reserved right now — bodies arriving, plus
-             *     bodies being parsed.
+             * @description Of those, how many are reserved now: arriving plus being parsed.
              */
             in_flight_bytes: number;
             /**
              * Format: int64
-             * @description Predict requests refused for want of budget since this process
-             *     started. `0` is the number an operator should expect to see.
+             * @description Predict requests refused for want of budget since startup; `0` is
+             *     what an operator should expect.
              */
             refused_requests: number;
             /**
              * Format: int64
-             * @description [`PREDICT_BODY_LIMIT`]: the largest single predict body this server
-             *     will read, past which it answers `413`.
+             * @description [`PREDICT_BODY_LIMIT`]: the largest body read, then `413`.
              */
             request_limit_bytes: number;
         };
-        /**
-         * @description JSON envelope of a predict response (used whenever the outputs are not
-         *     all binary).
-         */
+        /** @description JSON envelope of a predict response, unless every output is binary. */
         PredictJsonResponse: {
             /**
-             * @description One output per input; binary outputs are wrapped as
-             *     `{"__type__": "base64", "content": "<base64>"}`, and an input the
-             *     model rejected on its own is
-             *     `{"__error__": {"class": "input" | "transient", "message": "..."}}`.
+             * @description One output per input; binary ones wrapped as
+             *     `{"__type__": "base64", "content": ...}`, a rejected input as
+             *     `{"__error__": {"class": ..., "message": ...}}`.
              */
             outputs: components["schemas"]["Value"][];
         };
@@ -4228,11 +4057,9 @@ export interface components {
             total: number;
         };
         /**
-         * @description Per-replica GPU placement plus its freshest memory report. Every field
-         *     after `gpu` is `null` until the worker reports it (no torch, a remote-API
-         *     impl, or no predict yet). A CPU or MPS host does report: its figures are
-         *     denominated in system RAM and Metal's budget respectively, not in VRAM
-         *     (docs/unified-memory-admission.md).
+         * @description Per-replica GPU placement plus its freshest memory report; every field after
+         *     `gpu` is `null` until the worker reports it. On a CPU or MPS host the figures
+         *     are system RAM and Metal's budget.
          */
         ReplicaTelemetryHealth: {
             /** Format: int64 */
@@ -4250,42 +4077,27 @@ export interface components {
              * @description Freshest device sample, and how long ago it was recorded.
              */
             free_mb?: number | null;
-            /**
-             * @description Which driver reported `free_mb`/`total_mb` (`"nvml"` |
-             *     `"amdgpu-sysfs"` | `"torch"`); they disagree by gigabytes, so a reader
-             *     comparing samples needs it.
-             */
+            /** @description Driver behind `free_mb`/`total_mb`; they disagree by gigabytes. */
             free_source?: string | null;
             /**
-             * @description Resolved device pin the worker was *spawned* with — a GPU UUID on a
-             *     known CUDA inventory, a HIP device index on a known ROCm one (the two
-             *     backends' visibility variables accept different vocabularies; see
-             *     `gpu::pin_env_var`).
+             * @description Resolved device pin the worker was *spawned* with — a GPU UUID on CUDA,
+             *     a HIP device index on ROCm; the visibility variables differ.
              */
             gpu?: string | null;
             gpu_name?: string | null;
             /**
-             * @description The GPU the worker itself reports being on: the pin above can be an
-             *     index, absent, or a UUID CUDA reordered, and only the worker can see
-             *     what it actually got. `null` on a ROCm replica — torch's HIP-rendered
-             *     UUID is a third vocabulary the worker deliberately suppresses, and
-             *     those replicas are admitted to the ledger by PCI address instead
-             *     (docs/rocm-batch-calibration-parity.md, D3), which this view does not
-             *     surface yet.
+             * @description The GPU the worker itself reports being on; only it can see what it got.
+             *     `null` on ROCm, which the ledger admits by PCI address instead.
              */
             gpu_uuid?: string | null;
             /**
              * Format: int64
-             * @description Measurements this replica has reported since it loaded, including any
-             *     the bounded ring has since evicted.
+             * @description Measurements reported since load, including ones the ring evicted.
              */
             measurements_recorded: number;
             /** Format: int64 */
             memory_age_ms?: number | null;
-            /**
-             * @description The tail of the measurement ring, oldest first — a sample of what 1b's
-             *     cost fit consumes, not the whole ring (health is a status page).
-             */
+            /** @description The tail of the measurement ring, oldest first — a sample, not all. */
             recent_batches: components["schemas"]["BatchHealth"][];
             /** Format: int64 */
             reserved_at_load_mb?: number | null;
@@ -4377,13 +4189,9 @@ export interface components {
             /**
              * @description `attempts >= skip_after`: the verdict is confirmed. Not the same as
              *     "this path will be skipped": the walker also requires the file to still
-             *     have the `last_modified`/`file_size` the failure was recorded against,
-             *     so a file that has been repaired or otherwise modified since is
-             *     re-attempted on the next scan even though this reads true.
-             *
-             *     A `decode`-stage row never suppresses anything at any `attempts`: its
-             *     file *is* indexed (only the visuals failed), so the row is audit-only
-             *     and retry scheduling is the visuals cache's, not this ledger's.
+             *     have the `last_modified`/`file_size` the failure was recorded against.
+             *     A `decode`-stage row never suppresses anything at any `attempts` — its
+             *     file *is* indexed, so the row is audit-only.
              */
             active: boolean;
             /** Format: int64 */
@@ -4398,9 +4206,8 @@ export interface components {
             /**
              * Format: int64
              * @description The last scan that saw this failure. Null only when it was recorded
-             *     outside a scan. This is *not* a foreign key and nothing nulls it when
-             *     `file_scans` rows are cleaned up, so the id may name a scan that no
-             *     longer exists.
+             *     outside a scan, and *not* a foreign key, so the id may name a scan that
+             *     no longer exists.
              */
             last_scan_id?: number | null;
             last_seen: string;
@@ -6263,11 +6070,7 @@ export interface operations {
                 cache_key: string;
                 lru_size: number;
                 ttl_seconds: number;
-                /**
-                 * @description Additive over Python: lazy prewarm hint (design §8). Absent = true;
-                 *     `prewarm=false` suppresses keeping a warm worker of this model's
-                 *     impl class after the load.
-                 */
+                /** @description Additive: lazy prewarm hint (absent = true); false keeps no warm worker. */
                 prewarm?: boolean;
             };
             header?: never;
@@ -6336,9 +6139,9 @@ export interface operations {
                 cache_key: string;
                 lru_size: number;
                 ttl_seconds: number;
-                /** @description Additive over Python: per-request cap on dispatch-time batch merging. */
+                /** @description Additive: per-request cap on dispatch-time batch merging. */
                 max_batch?: number;
-                /** @description Additive over Python: lazy prewarm hint, as on load (absent = true). */
+                /** @description Additive: lazy prewarm hint, as on load (absent = true). */
                 prewarm?: boolean;
             };
             header?: never;
@@ -6879,21 +6682,17 @@ export interface operations {
                 user_data_db?: string | null;
                 /**
                  * @description Only failures recorded for this setter. Deliberately *not* validated
-                 *     against the known setters: the vocabulary is free-form and depends on
-                 *     which models the user has ever run, so there is no closed list to check
-                 *     against. A typo therefore answers "no failures", which is acceptable
-                 *     here — unlike `error_class`, whose vocabulary is closed and enforced,
-                 *     because a mistyped class silently reading as "nothing is wrong" is
-                 *     exactly what an audit surface must not do.
+                 *     against the known setters: the vocabulary is free-form, so a typo
+                 *     answers "no failures" — acceptable here, unlike `error_class`, whose
+                 *     vocabulary is closed and enforced.
                  */
                 setter?: string | null;
                 /** @description `input`, `blocked` or `resource`. Anything else is a 400. */
                 error_class?: string | null;
                 /**
                  * @description `prepare` (the gateway could not produce the model's input),
-                 *     `inference` (the worker rejected it) or `output` (the results could
-                 *     not be written). `output` only ever appears on `job_failures`: a
-                 *     recorded verdict is about the media, and a write that failed is not.
+                 *     `inference` (the worker rejected it) or `output` (the results could not
+                 *     be written). `output` only ever appears on `job_failures`.
                  */
                 stage?: string | null;
                 /** @description Prefix of the recorded mime type, e.g. `image/`. */
@@ -7155,10 +6954,9 @@ export interface operations {
                 /** @description The name of the `user_data` database to open and use for this API call. Find available databases with `/api/db` */
                 user_data_db?: string | null;
                 /**
-                 * @description Include per-setter vector/quantized counts (progress and size on
-                 *     disk). These are full index scans over each setter's rows; pass
-                 *     false from latency-sensitive surfaces that only need profile names
-                 *     and states. Defaults to true.
+                 * @description Include per-setter vector/quantized counts (progress and size on disk).
+                 *     These are full index scans over each setter's rows; pass false from
+                 *     latency-sensitive surfaces that need only names and states.
                  */
                 counts?: boolean;
             };
