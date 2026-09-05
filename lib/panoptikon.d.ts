@@ -2551,13 +2551,13 @@ export interface components {
             excluded_folders: string[];
             included_folders: string[];
         };
-        /** @description One board's ledger state in `GET /health`. */
+        /** @description One GPU's ledger state in `GET /health`. */
         GpuBudgetHealth: {
             /** Format: double */
             cap_fraction?: number | null;
             /**
              * Format: int64
-             * @description What the residents actually cost the board: `Σ` per-worker
+             * @description What the residents actually cost the GPU: `Σ` per-worker
              *     `footprint + max(0, grants − pool growth)`. This — not
              *     `footprints_mb + grants_mb` — is what `headroom_mb` is derived from: a
              *     post-fit grant is denominated in the same memory the footprint's
@@ -2604,13 +2604,13 @@ export interface components {
             /**
              * Format: int64
              * @description The VRAM withheld from the budget on top of `external_mb` itself: the
-             *     reserve **actually applied** to this board, in MiB (run2 change R5).
+             *     reserve **actually applied** to this GPU, in MiB (run2 change R5).
              */
             reserve_mb: number;
             /**
-             * @description Which rule produced `reserve_mb`: `"user_margin"` (the board's
+             * @description Which rule produced `reserve_mb`: `"user_margin"` (the GPU's
              *     configured margin, honoured verbatim and uncapped) or
-             *     `"capped_default"` (nobody configured this board, so the default
+             *     `"capped_default"` (nobody configured this GPU, so the default
              *     fraction applies and is clamped to 1 GiB).
              */
             reserve_rule: string;
@@ -2618,21 +2618,21 @@ export interface components {
             total_mb: number;
             workers: components["schemas"]["LedgerWorkerHealth"][];
         };
-        /** @description One visible board, from nvidia-smi (CUDA) or KFD topology (ROCm). */
+        /** @description One visible GPU, from nvidia-smi (CUDA) or KFD topology (ROCm). */
         GpuInfo: {
             /**
              * @description PCI address `dddd:bb:dd.f`. ROCm only: it is the key into amdgpu's
-             *     per-board sysfs counters (the memory refresh, D5) and the one
+             *     per-GPU sysfs counters (the memory refresh, D5) and the one
              *     vocabulary a worker can independently report about itself (D3).
              *     `None` on CUDA, where the UUID already serves both purposes.
              */
             bdf?: string | null;
             /**
              * @description Compute capability as `major.minor` (`"12.0"`), the same value
-             *     `HostComputeCaps` filters models with — per board here, because
+             *     `HostComputeCaps` filters models with — per GPU here, because
              *     default placement picks the fastest one. `None` when nvidia-smi could
-             *     not report it for this board (`[N/A]` on vGPU slices and some
-             *     datacenter SKUs): the board is still a usable, pinnable identity, it
+             *     not report it for this GPU (`[N/A]` on vGPU slices and some
+             *     datacenter SKUs): the GPU is still a usable, pinnable identity, it
              *     just cannot be ranked or used to unlock a capability-gated model.
              *     Always `None` on ROCm — HIP has no analogue at all.
              */
@@ -2660,24 +2660,24 @@ export interface components {
             total_mb: number;
             /**
              * Format: int64
-             * @description Host RAM this board's memory is carved out of, in MiB — present
-             *     exactly on **unified** boards (Apple Silicon today; AMD APUs when
-             *     backend B lands), absent on a discrete board with private VRAM. Its
+             * @description Host RAM this GPU's memory is carved out of, in MiB — present
+             *     exactly on **unified** GPUs (Apple Silicon today; AMD APUs when
+             *     backend B lands), absent on a discrete GPU with private VRAM. Its
              *     presence *is* the unified flag ([`GpuInfo::unified`]), because the two
-             *     facts are one: a board is unified precisely when its memory is the
+             *     facts are one: a GPU is unified precisely when its memory is the
              *     host's.
              *
              *     Two things downstream read it. The ledger records a synthetic negative
-             *     sample when a replica dies mid-window on such a board (DP-2: on a
+             *     sample when a replica dies mid-window on such a GPU (DP-2: on a
              *     dGPU a mid-window death has too many non-memory causes, on a unified
-             *     board it is overwhelmingly the OS memory killer), and it is the only
+             *     GPU it is overwhelmingly the OS memory killer), and it is the only
              *     sanity bound on the authoritative total a worker reports back (DP-4)
-             *     — the board's own `total_mb` is a *policy* number there, tunable by
+             *     — the GPU's own `total_mb` is a *policy* number there, tunable by
              *     the user, so it cannot bound anything.
              */
             unified_ram_mb?: number | null;
             /**
-             * @description Board UUID (`GPU-…`), the budget/ledger key and the pin form CUDA
+             * @description GPU UUID (`GPU-…`), the budget/ledger key and the pin form CUDA
              *     accepts directly in `CUDA_VISIBLE_DEVICES`. On ROCm it is the fused
              *     KFD `unique_id` or a synthetic `GPU-BDF-…` (see `rocm.rs`) — an
              *     identity, not a pin form, because HIP only accepts indices.
@@ -2685,13 +2685,13 @@ export interface components {
             uuid: string;
             /**
              * Format: int64
-             * @description The device-local VRAM carve-out of a unified **ROCm** board (an APU's
+             * @description The device-local VRAM carve-out of a unified **ROCm** GPU (an APU's
              *     `mem_info_vram_total`), in MiB — the part of [`Self::total_mb`] that
-             *     is not GTT. `None` on every other board, including MPS, where no such
+             *     is not GTT. `None` on every other GPU, including MPS, where no such
              *     split exists.
              *
              *     It is carried because the carve-out is a figure other components
-             *     legitimately mean by "this board's memory", and they must not be
+             *     legitimately mean by "this GPU's memory", and they must not be
              *     refused for it. HIP's `total_memory` on an APU may report the
              *     carve-out, the carve+GTT sum, or something else again — unverified
              *     until a BC-250 field pass — so the registration cross-check accepts
@@ -2711,7 +2711,7 @@ export interface components {
          */
         HealthReport: {
             /**
-             * @description Visible GPUs by board UUID (batch-calibration step 1a); empty when
+             * @description Visible GPUs by GPU UUID (batch-calibration step 1a); empty when
              *     the host has no GPU inventory, in which case workers are not pinned.
              */
             gpus: components["schemas"]["GpuInfo"][];
@@ -3180,7 +3180,7 @@ export interface components {
             /**
              * Format: int64
              * @description `footprint + max(0, grants − pool growth)`: what this replica charges the
-             *     board right now, grant overlap netted out.
+             *     GPU right now, grant overlap netted out.
              */
             charge_mb: number;
             /**
@@ -3196,7 +3196,7 @@ export interface components {
             /**
              * Format: double
              * @description The margin this model's windows are actually priced under: the
-             *     board's configured margin, widened while the fit is unconfirmed or
+             *     GPU's configured margin, widened while the fit is unconfirmed or
              *     scattered.
              */
             effective_margin: number;
@@ -3700,7 +3700,7 @@ export interface components {
             /**
              * Format: int64
              * @description Of those, the ones formed short of the unit budget the ledger allowed:
-             *     the queue, not the board, decided their size. A ramp that is not
+             *     the queue, not the GPU, decided their size. A ramp that is not
              *     advancing while this climbs is being starved, not squeezed.
              */
             queue_bound_windows: number;
@@ -4257,7 +4257,7 @@ export interface components {
              */
             free_source?: string | null;
             /**
-             * @description Resolved device pin the worker was *spawned* with — a board UUID on a
+             * @description Resolved device pin the worker was *spawned* with — a GPU UUID on a
              *     known CUDA inventory, a HIP device index on a known ROCm one (the two
              *     backends' visibility variables accept different vocabularies; see
              *     `gpu::pin_env_var`).
@@ -4265,7 +4265,7 @@ export interface components {
             gpu?: string | null;
             gpu_name?: string | null;
             /**
-             * @description The board the worker itself reports being on: the pin above can be an
+             * @description The GPU the worker itself reports being on: the pin above can be an
              *     index, absent, or a UUID CUDA reordered, and only the worker can see
              *     what it actually got. `null` on a ROCm replica — torch's HIP-rendered
              *     UUID is a third vocabulary the worker deliberately suppresses, and
