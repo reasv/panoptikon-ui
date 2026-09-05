@@ -273,6 +273,13 @@ check(
     transcodeKey("abc", "playback") !== transcodeKey("abc", "clip")
 )
 check(
+  "a named cut is its own segment after the bound, and absent when not asked",
+  transcodeKey("abc", "preview", 1600, "outro") === "abc:preview:e1600:outro" &&
+    transcodeKey("abc", "preview", null, "outro") === "abc:preview:outro" &&
+    transcodeKey("abc", "preview", 1600, null) === "abc:preview:e1600" &&
+    transcodeKey("abc", "preview", 1600) === "abc:preview:e1600"
+)
+check(
   "a fresh key reads idle without being written first",
   getTranscodeState(KEY).state === "idle"
 )

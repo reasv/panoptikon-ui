@@ -353,10 +353,18 @@ let submitGeneration = 0
 export function transcodeKey(
   sha256: string,
   preset: string = PLAYBACK_PRESET,
-  endCs?: number | null
+  endCs?: number | null,
+  /**
+   * A named cut (`"outro"`) the server resolves — see `PREVIEW_CUT_OUTRO`.
+   * Its own segment, after the bound: a capped request and a capped-and-cut
+   * one are different jobs before the server has said where the cut falls.
+   */
+  cut?: string | null
 ): string {
-  const base = `${sha256}:${preset}`
-  return endCs == null ? base : `${base}:e${endCs}`
+  let key = `${sha256}:${preset}`
+  if (endCs != null) key += `:e${endCs}`
+  if (cut) key += `:${cut}`
+  return key
 }
 
 function setState(key: string, next: TranscodeState) {
@@ -548,17 +556,23 @@ export function startTranscode(options: {
    * are different bytes at the same preset.
    */
   endCs?: number | null
+  /**
+   * A named cut the server resolves (`"outro"`), composing with `endCs` as
+   * the earlier of the two. In the key for the same reason the bound is.
+   */
+  cut?: string | null
 }): string {
   const preset = options.preset ?? PLAYBACK_PRESET
   const endCs = options.endCs ?? null
-  const key = transcodeKey(options.sha256, preset, endCs)
+  const cut = options.cut ?? null
+  const key = transcodeKey(options.sha256, preset, endCs, cut)
   if (!shouldSubmit(states.get(key))) return key
   // Claimed BEFORE the state write, so a POST already on the wire for this key
   // (one a cancel invalidated a moment ago) can see that it no longer owns it.
   const generation = ++submitGeneration
   submits.set(key, generation)
   setState(key, { state: "requesting" })
-  void submitJob(key, generation, options.sha256, preset, options.dbs, endCs)
+  void submitJob(key, generation, options.sha256, preset, options.dbs, endCs, cut)
   return key
 }
 
@@ -582,7 +596,8 @@ async function submitJob(
   sha256: string,
   preset: string,
   dbs: { index_db: string | null; user_data_db: string | null },
-  endCs: number | null
+  endCs: number | null,
+  cut: string | null
 ) {
   try {
     const { data, error } = await fetchClient.POST("/api/video/transcode", {
@@ -594,6 +609,8 @@ async function submitJob(
         // Omitted rather than sent null when there is no bound: the whole file
         // is the request, and the key above says the same thing.
         ...(endCs == null ? {} : { end_cs: endCs }),
+        // Likewise the cut: absent means "no cut", never `null`.
+        ...(cut == null ? {} : { cut }),
       },
     })
     // THE KEY MOVED ON while the POST was in flight (V4) — see `submits`.

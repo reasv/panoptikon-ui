@@ -33,6 +33,7 @@ import { useDevicePixelRatio } from '@/hooks/useDevicePixelRatio'
 import { CELL_HOVER_ROOT_ATTR, useArmedHover } from '@/hooks/useArmedHover'
 import { trackHoverPointer } from '@/lib/state/animatedPlayback'
 import { useAnimatedFloor, useHoverPreview } from '@/lib/useClientConfig'
+import { useOutroSkipEnabled } from '@/lib/videoPlayerState'
 import type { ResultsSource } from '@/lib/searchHooks'
 import {
     HOVER_PREVIEW_OFF,
@@ -223,6 +224,10 @@ export function VirtualGalleryHorizontalScroll({
     // and `useHoverPreview` returns one of four interned constants so passing
     // it down costs the cards nothing (V7/V8).
     const hoverPreview = useHoverPreview()
+    // The outro-skip preference the gallery player itself follows — read
+    // once here so a strip card's preview ends where the viewer above it
+    // would, without a subscription per card.
+    const outroSkip = useOutroSkipEnabled()
     // AND WHERE THE POINTER HAS TO REST for one of those previews to start
     // (T1): the strip shares `VideoHoverPicture` with the grid, so it shares
     // the setting too. One string for every card, read here for the same
@@ -452,6 +457,7 @@ export function VirtualGalleryHorizontalScroll({
                                 animatedFloor={animatedFloor}
                                 hoverPreview={hoverPreview}
                                 previewTrigger={previewTrigger}
+                                outroSkip={outroSkip}
                             />
                         )
                     })}
@@ -500,6 +506,7 @@ function VirtualHorizontalScrollElement({
     animatedFloor,
     hoverPreview = HOVER_PREVIEW_OFF,
     previewTrigger = "card",
+    outroSkip = false,
 }: {
     item: SearchResult
     ownIndex: number
@@ -525,6 +532,11 @@ function VirtualHorizontalScrollElement({
      * shipped before hover previews existed.
      */
     hoverPreview?: HoverPreviewCapability
+    /**
+     * The viewer's outro-skip preference — read once by the strip, like the
+     * capability above it. False when omitted (see SearchResultImage's).
+     */
+    outroSkip?: boolean
     /**
      * WHERE the pointer has to rest for that preview to start (T1) — read once
      * by the strip, like the capability above it. `"card"` when omitted, which
@@ -582,7 +594,7 @@ function VirtualHorizontalScrollElement({
     // Short-circuited to the empty ladder before any codec probe for every
     // card that is not a video and whenever previews are off, so a strip of
     // stills pays one string comparison for the feature existing.
-    const previewRungs = cellPreviewLadder(item, hoverPreview)
+    const previewRungs = cellPreviewLadder(item, hoverPreview, undefined, outroSkip)
     // The strip card is 240 CSS px wide, i.e. always in the LARGE range, so
     // V12's large-cell rule applies verbatim: the base picture is the 2x2
     // mosaic this card has always shown, the single frame arrives with the
@@ -779,6 +791,8 @@ function VirtualHorizontalScrollElement({
                                     indexDb={dbs.index_db}
                                     userDataDb={dbs.user_data_db}
                                     duration={item.duration}
+                                    contentEndMs={item.content_end_ms}
+                                    outroSkip={outroSkip}
                                     alt={item.path}
                                     placeholder={placeholder}
                                     onFeedback={setPreview}

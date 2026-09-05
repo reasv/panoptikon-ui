@@ -55,6 +55,7 @@ import {
   type TranscodeState,
 } from "./videoTranscode"
 import type { HoverPreviewCapability } from "./state/hoverPreviewPref"
+import { outroCutPoint } from "./videoTrim"
 
 /** The re-encode rung's preset (V3, backend B1). */
 export const PREVIEW_PRESET = "preview"
@@ -74,6 +75,16 @@ export const PREVIEW_TRIM_PRESET = "preview-trim"
 export const PREVIEW_MAX_SECONDS = 16
 export const PREVIEW_MAX_CS = PREVIEW_MAX_SECONDS * 100
 
+/**
+ * The `cut` a preview request names when the item's detected outro governs
+ * its end (docs/video-outro-skip-design.md; the clip route's own spelling).
+ * NAMED, NOT MEASURED: the server resolves it from `content_end_ms` on the
+ * file's own timeline and takes the earlier of it and `end_cs`, so the
+ * artifact's key moves exactly when the cut does — an outro past the 16 s
+ * window resolves to the window's own key, one inside it to a key of its own.
+ */
+export const PREVIEW_CUT_OUTRO = "outro" as const
+
 export type PreviewRung = "direct" | "trim" | "transcode" | "none"
 
 /** The two rungs that ask the server for something. */
@@ -84,6 +95,8 @@ export interface PreviewRequest {
   preset: typeof PREVIEW_PRESET | typeof PREVIEW_TRIM_PRESET
   /** Absent when the whole file is already inside the cap — see below. */
   end_cs?: number
+  /** Present when the outro governs the end — see `previewOutroCut`. */
+  cut?: typeof PREVIEW_CUT_OUTRO
 }
 
 /** No rung: one frozen array, so an empty ladder is memo-stable as a prop. */
@@ -106,6 +119,12 @@ export interface PreviewLadderInput {
   size?: number | null
   /** The item's duration in seconds. Unknown never trims — see below. */
   duration?: number | null
+  /**
+   * Where the item's detected outro cuts it, in seconds, when that governs
+   * the preview (`previewOutroCut`); null otherwise. Shortens the window the
+   * stream-copy rung is measured over — never lengthens it.
+   */
+  outroCutSec?: number | null
   /** Rungs this item has already failed this session; never tried again. */
   blocked?: Iterable<PreviewRung>
 }
@@ -148,7 +167,7 @@ export function previewLadder(
     !blocked.has("trim") &&
     input.mp4Playable &&
     withinPreviewCap(
-      previewSliceBytes(input.size, input.duration),
+      previewSliceBytes(input.size, input.duration, input.outroCutSec),
       resolved.maxBytes
     )
   ) {
@@ -189,10 +208,15 @@ export function withinPreviewCap(
  * HOW BIG THE STREAM COPY WILL BE, estimated the only way a client can: the
  * file's own average rate over the window the copy keeps.
  *
- * `size × min(16, duration) / duration`. It is an estimate and it is allowed
- * to be one — a variable-bitrate opening can weigh more or less than its
- * share — because the alternative is asking the server to measure every
- * hovered file before the hover means anything.
+ * `size × min(16, outro cut, duration) / duration`. It is an estimate and it
+ * is allowed to be one — a variable-bitrate opening can weigh more or less
+ * than its share — because the alternative is asking the server to measure
+ * every hovered file before the hover means anything.
+ *
+ * THE OUTRO CUT SHORTENS THE WINDOW, which is what lets a short TikTok take
+ * the copy at all: a 12 s file with an 8 s cut was "inside the window whole"
+ * before, i.e. its whole weight, and over the cap meant straight to the
+ * encoder; two thirds of it may well fit.
  *
  * NULL WHENEVER IT CANNOT BE COMPUTED, which is the case the rule exists for:
  * with no duration on record there is no ratio, so a two-hour film the probe
@@ -201,7 +225,8 @@ export function withinPreviewCap(
  */
 export function previewSliceBytes(
   size: number | null | undefined,
-  duration: number | null | undefined
+  duration: number | null | undefined,
+  outroCutSec?: number | null
 ): number | null {
   if (typeof size !== "number" || !Number.isFinite(size) || size < 0) return null
   if (
@@ -211,7 +236,51 @@ export function previewSliceBytes(
   ) {
     return null
   }
-  return (size * Math.min(PREVIEW_MAX_SECONDS, duration)) / duration
+  const cut =
+    typeof outroCutSec === "number" && Number.isFinite(outroCutSec) && outroCutSec > 0
+      ? outroCutSec
+      : Number.POSITIVE_INFINITY
+  return (size * Math.min(PREVIEW_MAX_SECONDS, cut, duration)) / duration
+}
+
+/**
+ * WHERE THE OUTRO CUTS THIS ITEM FOR A PREVIEW, in seconds — or null when
+ * nothing about the row lets the outro govern.
+ *
+ * The client's HALF of the server's `usable_outro_cut_cs` rule
+ * (`api/video.rs`), asked BEFORE the request so that naming an outro the
+ * server would 404 is a stale-row race and not a routine: no recorded
+ * boundary, a boundary at or past the end of the item (no card to cut), or a
+ * cut inside the guard-and-freeze band (`outroCutPoint`'s own floor) all
+ * answer null, and null means the request names no cut at all. The
+ * preference gates it first, so a viewer who turned outro skip off previews
+ * the card exactly as the gallery would play it.
+ *
+ * START-ANCHORED ON PURPOSE. At plan time there is no element, so no browser
+ * duration to split the difference with; the number is used for the copy
+ * rung's size estimate and for whether to name the cut, and the server
+ * measures the real one. The direct rung refines it against its own element
+ * once metadata arrives (the picture's own layer).
+ */
+export function previewOutroCut(
+  row: { content_end_ms?: number | null; duration?: number | null },
+  outroSkip: boolean
+): number | null {
+  if (!outroSkip) return null
+  const contentEndMs = row.content_end_ms
+  if (typeof contentEndMs !== "number" || !Number.isFinite(contentEndMs)) {
+    return null
+  }
+  const duration = row.duration
+  if (
+    typeof duration === "number" &&
+    Number.isFinite(duration) &&
+    duration > 0 &&
+    contentEndMs / 1000 >= duration
+  ) {
+    return null
+  }
+  return outroCutPoint(contentEndMs, duration)
 }
 
 /**
@@ -232,11 +301,20 @@ export function previewSliceBytes(
  * where omitting the bound could hand ffmpeg a two-hour film to encode in full
  * for a thumbnail nobody asked to watch. For every row that carries a real
  * duration the two readings agree exactly.
+ *
+ * THE OUTRO rides alongside, never instead: when `outroCutSec` is set the
+ * body also names `cut: "outro"`, and the server ends the preview at the
+ * earlier of the cut and `end_cs`. The window rule above is untouched by it
+ * — a 12 s file with an 8 s cut sends the cut and no `end_cs`, a 30 s file
+ * with a 26 s cut sends both and resolves to the window — so the request's
+ * shape, and with it the key, changes only for the items whose preview does.
  */
 export function previewRequest(
   row: { duration?: number | null },
   /** Which rung is asking — the two presets differ, the window does not. */
-  rung: PreviewJobRung = "transcode"
+  rung: PreviewJobRung = "transcode",
+  /** `previewOutroCut`'s answer for the row; null names no cut. */
+  outroCutSec?: number | null
 ): PreviewRequest {
   const preset = rung === "trim" ? PREVIEW_TRIM_PRESET : PREVIEW_PRESET
   const duration = row.duration
@@ -245,14 +323,26 @@ export function previewRequest(
     Number.isFinite(duration) &&
     duration > 0 &&
     duration <= PREVIEW_MAX_SECONDS
+  const cut = outroCutSec != null ? { cut: PREVIEW_CUT_OUTRO } : {}
   return wholeFileFits
-    ? { preset }
-    : { preset, end_cs: PREVIEW_MAX_CS }
+    ? { preset, ...cut }
+    : { preset, end_cs: PREVIEW_MAX_CS, ...cut }
 }
 
-/** The store key one preview lands on. `end_cs` rides in it (V4). */
+/**
+ * The store key one preview lands on. `end_cs` and the cut both ride in it
+ * (V4): the server resolves the cut into the artifact's own key, but the
+ * client has to tell a capped-and-cut request from a merely capped one
+ * before any answer arrives — and the preference flipping must land the next
+ * hover on a different slot, not on the other setting's job.
+ */
 export function previewKey(sha256: string, request: PreviewRequest): string {
-  return transcodeKey(sha256, request.preset, request.end_cs ?? null)
+  return transcodeKey(
+    sha256,
+    request.preset,
+    request.end_cs ?? null,
+    request.cut ?? null
+  )
 }
 
 /**
@@ -272,7 +362,13 @@ export function previewKey(sha256: string, request: PreviewRequest): string {
 export function cellPreviewLadder(
   row: PreviewRow | null | undefined,
   resolved: HoverPreviewCapability,
-  canPlayType?: CanPlayType | null
+  canPlayType?: CanPlayType | null,
+  /**
+   * The viewer's outro-skip preference (`useOutroSkipEnabled`), read once
+   * per surface and handed down like the capability. False when omitted: a
+   * surface that says nothing plans exactly the ladder it always did.
+   */
+  outroSkip = false
 ): readonly PreviewRung[] {
   if (!resolved.direct && !resolved.trim && !resolved.transcode) {
     return NO_PREVIEW_RUNGS
@@ -301,6 +397,7 @@ export function cellPreviewLadder(
         : false,
       size: row.size,
       duration: row.duration,
+      outroCutSec: previewOutroCut(row, outroSkip),
       blocked,
     },
     resolved
@@ -323,6 +420,8 @@ export type PreviewRow = PlayabilityItem & {
   size?: number | null
   /** Seconds, ffprobe's. */
   duration?: number | null
+  /** The detected outro boundary, ms; null when none or detection is off. */
+  content_end_ms?: number | null
 }
 
 // ---- what failed, this session ------------------------------------------
@@ -513,6 +612,7 @@ export function startPreviewTranscode(options: {
     dbs: options.dbs,
     preset: options.request.preset,
     endCs: options.request.end_cs ?? null,
+    cut: options.request.cut ?? null,
   })
   return key
 }

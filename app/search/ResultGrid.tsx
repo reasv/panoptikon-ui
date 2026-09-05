@@ -44,6 +44,7 @@ import {
     useDisplayLoopTrigger,
     useHoverPreview,
 } from "@/lib/useClientConfig"
+import { useOutroSkipEnabled } from "@/lib/videoPlayerState"
 
 // md, lg, xl, 2xl, 4xl, 5xl — the Tailwind breakpoints used by the result grid
 // rows, restated for matchMedia.
@@ -378,6 +379,12 @@ export function ResultGrid({
     // memo-stable prop; both of its inputs are subscriptions, and reading
     // either per card is what F1 removed.
     const hoverPreview = useHoverPreview()
+    // AND THE OUTRO-SKIP PREFERENCE (docs/video-outro-skip-design.md): the
+    // same global the gallery player follows, so a video cell's preview ends
+    // where its playback would — at the detected end card — while it is on.
+    // Read here once, on the rule of the four above: one boolean for every
+    // card on the page, never a subscription per card.
+    const outroSkip = useOutroSkipEnabled()
     // AND THE FIFTH: WHERE the pointer has to rest for one of those previews
     // to start (T1). A browser preference with no server half at all — the
     // server has no say in a gesture — read here on the same rule as the four
@@ -1290,6 +1297,10 @@ export function ResultGrid({
                                                 // moving only when the user
                                                 // changes the setting.
                                                 previewTrigger={previewTrigger}
+                                                // And the last: the outro
+                                                // preference, one boolean for
+                                                // the whole grid.
+                                                outroSkip={outroSkip}
                                             />
                                         )
                                     })}

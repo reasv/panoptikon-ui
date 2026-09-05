@@ -15,6 +15,7 @@ import {
   notePreviewRungFailure,
   previewArmLadder,
   previewFeedback,
+  previewOutroCut,
   previewRungFailures,
   rungAtStep,
   shouldRecordFailure,
@@ -26,6 +27,7 @@ import {
   type PreviewJobRung,
 } from "@/lib/videoPreview"
 import { useTranscodeKeyState } from "@/lib/videoTranscode"
+import { outroCutPoint, useVideoDuration, useVideoTrim } from "@/lib/videoTrim"
 import { previewFrameShown, type CountdownPhase } from "@/lib/previewCountdown"
 import type { HoverPreviewTrigger } from "@/lib/state/hoverPreviewTrigger"
 
@@ -74,6 +76,8 @@ export function VideoHoverPicture({
   indexDb,
   userDataDb,
   duration,
+  contentEndMs,
+  outroSkip = false,
   alt,
   placeholder,
   className,
@@ -95,6 +99,20 @@ export function VideoHoverPicture({
   userDataDb: string | null
   /** The row's indexed duration in seconds — the 16 s cap's input (V3). */
   duration?: number | null
+  /**
+   * The row's detected outro boundary in ms (`content_end_ms`), null when
+   * there is none or the database has detection off. With `outroSkip` it is
+   * what keeps the TikTok end card out of the preview: the job rungs name the
+   * cut for the server to resolve, and the direct rung loops at it in the
+   * browser exactly as the gallery player does (docs/video-outro-skip-design.md).
+   */
+  contentEndMs?: number | null
+  /**
+   * The viewer's outro-skip preference (`useOutroSkipEnabled`), read once by
+   * the surface and handed down like the capability. False when omitted, so
+   * a surface that says nothing previews exactly what it always did.
+   */
+  outroSkip?: boolean
   alt: string
   /**
    * WHAT THE BASE POSTER PAINTS BEHIND ITSELF — one value in either form
@@ -257,6 +275,8 @@ export function VideoHoverPicture({
           indexDb={indexDb}
           userDataDb={userDataDb}
           duration={duration}
+          contentEndMs={contentEndMs}
+          outroSkip={outroSkip}
           alt={alt}
           className={className}
           onFeedback={onFeedback}
@@ -290,6 +310,8 @@ function PreviewArm({
   indexDb,
   userDataDb,
   duration,
+  contentEndMs,
+  outroSkip,
   alt,
   className,
   onFeedback,
@@ -299,10 +321,21 @@ function PreviewArm({
   indexDb: string | null
   userDataDb: string | null
   duration?: number | null
+  contentEndMs?: number | null
+  outroSkip: boolean
   alt: string
   className?: string
   onFeedback: (feedback: PreviewFeedback | null) => void
 }) {
+  // WHERE THE OUTRO CUTS THIS ITEM, or null when it does not govern — the
+  // preference off, no boundary on the row, or a boundary the server would
+  // refuse (lib/videoPreview.ts `previewOutroCut`). One pure call on row
+  // fields, shared by the two kinds of layer below: the job rungs send it as
+  // the named cut, the direct rung enforces it on its own element.
+  const outroCutSec = previewOutroCut(
+    { content_end_ms: contentEndMs, duration },
+    outroSkip
+  )
   // THE SNAPSHOT, taken once at mount by a lazy initializer — the idiomatic
   // "freeze a prop for this instance". Re-derived from the session map rather
   // than trusted from the plan, because the plan may be a render old and a
@@ -355,19 +388,17 @@ function PreviewArm({
     // buffers ahead as fast as the link allows once it does, which is why the
     // cap and not the element is what bounds this.
     return (
-      <LoopVideo
+      <PreviewCutVideo
         src={picture.directSrc}
         poster={picture.frame}
         alt={alt}
-        // NO placeholder: the frame underneath is it, and a blur (or a flat
-        // colour) behind a layer fading in over a painted picture is the
-        // flash the fade exists to avoid.
-        placeholder={undefined}
         className={className}
         elementRef={attachPreviewVideo}
-        fadeIn
-        registered
         onFailed={failRungFromElement}
+        cutSec={outroCutSec}
+        // The ORIGINAL: its metadata is what the index measured, so the
+        // element's own duration can refine the cut the way the player's does.
+        refine={{ contentEndMs, duration }}
       />
     )
   }
@@ -389,6 +420,7 @@ function PreviewArm({
         indexDb={indexDb}
         userDataDb={userDataDb}
         duration={duration}
+        outroCutSec={outroCutSec}
         poster={picture.frame}
         alt={alt}
         className={className}
@@ -400,6 +432,117 @@ function PreviewArm({
     )
   }
   return null
+}
+
+/**
+ * A PREVIEW ELEMENT THAT LOOPS AT THE OUTRO CUT in the browser, when one
+ * governs — the direct rung's original, and the copy rung's artifact.
+ *
+ * THE GALLERY PLAYER'S OWN MECHANISM, not a second one: `useVideoTrim` in
+ * loop mode watches the playhead and seeks back to the start when it crosses
+ * the end bound. What the bound is depends on what is playing:
+ *
+ *   - the ORIGINAL (`refine` given): `outroCutPoint` fed the row's boundary,
+ *     its indexed duration and this element's own — the midpoint anchoring
+ *     the player uses, within about a tenth of a second of the card. Good
+ *     enough for a muted thumbnail; the player's frame-exact refinement is
+ *     deliberately NOT asked for: the rVFC end probe mounts a second,
+ *     offscreen `<video>` and seeks it to the END of the file, i.e. a second
+ *     Range request of the file's tail on every hover — the very traffic the
+ *     byte cap exists to bound;
+ *   - the STREAM COPY (`refine` absent): the plan's own start-anchored
+ *     `cutSec`, unrefined. The server already ended the artifact at the cut,
+ *     but a packet copy cannot end on the frame: MEASURED, ffmpeg's
+ *     output-side `-t` on a B-frame source kept two frames past the bound
+ *     (241 frames / 8.03 s for `-t 7.94` at 30 fps — reordering, not the
+ *     GOP), which is a frame or two of end card at every loop seam. The
+ *     copy keeps the source's timestamps, so the same cut in the same
+ *     timeline seeks back before those frames play. The element's own
+ *     duration is no anchor here — it is the artifact's, not the file's, and
+ *     `outroCutPoint` would rightly read the disagreement as two files.
+ *
+ * The re-encode rung needs none of this: a decoded stream is cut on the
+ * frame, so its artifact simply ends where the cut is and native loop wraps.
+ * It passes `cutSec` null and this binds nothing.
+ *
+ * The native `loop` attribute STAYS ON (LoopVideo's). The crossing check
+ * seeks before the natural end is ever reached, and when the cut does not
+ * apply — the original's duration disagrees with the index by a second or
+ * more, say, or a copy of a long item whose cut lies past the 16 s window —
+ * native loop wraps at zero, which is the start anyway. Nothing here can make
+ * the preview stop.
+ *
+ * ONLY THE PREVIEWING CELL PAYS: this component, its duration listener and
+ * its playhead check exist for the one element the pointer has armed, and
+ * for no other card on the surface.
+ */
+function PreviewCutVideo({
+  src,
+  poster,
+  alt,
+  className,
+  elementRef,
+  onFailed,
+  cutSec,
+  refine,
+}: {
+  src: string
+  poster: string
+  alt: string
+  className?: string
+  /** The released flag's writer — see the caller. */
+  elementRef: (element: HTMLElement | null) => void
+  /** The element would not decode. Guarded by the caller. */
+  onFailed: () => void
+  /** `previewOutroCut`'s verdict: null means the cut does not govern. */
+  cutSec: number | null
+  /**
+   * Refine the cut against this element's own duration — only when the
+   * element plays the ORIGINAL file, whose metadata the row describes.
+   */
+  refine?: { contentEndMs?: number | null; duration?: number | null }
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const attach = useCallback(
+    (element: HTMLElement | null) => {
+      videoRef.current = element as HTMLVideoElement | null
+      elementRef(element)
+    },
+    [elementRef]
+  )
+  const governs = cutSec != null
+  // The element's own duration, once its metadata loads — the second anchor
+  // of the midpoint cut. NaN until then, which `outroCutPoint` reads as
+  // "unusable" and answers with the start-anchored cut, so the bound exists
+  // from the first frame and merely refines when the metadata arrives.
+  // Subscribed only when there is something to refine against.
+  const browserDuration = useVideoDuration(videoRef, governs && !!refine)
+  const cut = !governs
+    ? null
+    : refine
+      ? outroCutPoint(refine.contentEndMs, refine.duration, browserDuration)
+      : cutSec
+  useVideoTrim({
+    videoRef,
+    trim: cut == null ? null : { start: null, end: cut },
+    active: governs,
+  })
+  return (
+    <LoopVideo
+      src={src}
+      poster={poster}
+      alt={alt}
+      // NO placeholder: the frame underneath is it, and a blur (or a flat
+      // colour) behind a layer fading in over a painted picture is the
+      // flash the fade exists to avoid.
+      placeholder={undefined}
+      className={className}
+      elementRef={attach}
+      fadeIn
+      registered
+      onFailed={onFailed}
+    />
+  )
 }
 
 /**
@@ -425,6 +568,7 @@ function PreviewTranscodeLayer({
   indexDb,
   userDataDb,
   duration,
+  outroCutSec,
   poster,
   alt,
   className,
@@ -439,6 +583,8 @@ function PreviewTranscodeLayer({
   indexDb: string | null
   userDataDb: string | null
   duration?: number | null
+  /** `previewOutroCut`'s verdict: non-null names the cut in the request. */
+  outroCutSec: number | null
   poster: string
   alt: string
   className?: string
@@ -450,10 +596,10 @@ function PreviewTranscodeLayer({
   /** The released flag's writer — see the caller. */
   elementRef: (element: HTMLElement | null) => void
 }) {
-  // The 16 s cap, and the key it produces. Both are pure functions of the row
-  // (lib/videoPreview.ts), so the key is a value this component holds rather
-  // than something it has to be told.
-  const request = previewRequest({ duration }, rung)
+  // The 16 s cap, the named outro cut, and the key they produce. All pure
+  // functions of the row (lib/videoPreview.ts), so the key is a value this
+  // component holds rather than something it has to be told.
+  const request = previewRequest({ duration }, rung, outroCutSec)
   const key = previewKey(sha256, request)
   useEffect(() => {
     startPreviewTranscode({
@@ -495,17 +641,16 @@ function PreviewTranscodeLayer({
   }, [jobFailed, onJobFailed])
   if (state.state !== "done") return null
   return (
-    <LoopVideo
+    <PreviewCutVideo
       src={state.artifactUrl}
       poster={poster}
       alt={alt}
-      // The frame underneath is the placeholder — see the rung-0 layer.
-      placeholder={undefined}
       className={className}
       elementRef={elementRef}
-      fadeIn
-      registered
       onFailed={onArtifactFailed}
+      // The copy can run a frame or two past the cut (see the layer); the
+      // re-encode cannot, and passes no cut at all.
+      cutSec={rung === "trim" ? outroCutSec : null}
     />
   )
 }

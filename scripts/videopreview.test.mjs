@@ -36,6 +36,7 @@ const {
   PREVIEW_MAX_SECONDS,
   PREVIEW_PRESET,
   PREVIEW_TRIM_PRESET,
+  PREVIEW_CUT_OUTRO,
   cellPreviewLadder,
   cellPreviewRung,
   clearPreviewRungFailures,
@@ -47,6 +48,7 @@ const {
   previewRung,
   previewArmLadder,
   previewRungFailures,
+  previewOutroCut,
   previewSliceBytes,
   rungAtStep,
   shouldRecordFailure,
@@ -628,6 +630,90 @@ console.log("\n== the preview request (V3) ==")
     transcodeKey("sha", "playback") === "sha:playback"
       && transcodeKey("sha", "playback", null) === "sha:playback"
       && transcodeKey("sha", "playback", 1600) === "sha:playback:e1600")
+}
+
+// ---------------------------------------------------------------------------
+// The outro cut: where docs/video-outro-skip-design.md meets the preview
+// ---------------------------------------------------------------------------
+
+console.log("\n== the outro cut ==")
+{
+  // A 12 s TikTok whose content ends at 8.005 s. The player cuts it at
+  // round((8005 − 60) / 10) / 100 = 7.95 s; the server FLOORS the same
+  // arithmetic to 7.94 — that one-centisecond disagreement is why the cut is
+  // NAMED on the wire rather than sent as a number.
+  const tiktok = { content_end_ms: 8005, duration: 12 }
+  check("the preference off names no cut, whatever the row",
+    previewOutroCut(tiktok, false) === null)
+  check("an eligible row cuts where the player would",
+    previewOutroCut(tiktok, true) === 7.95, String(previewOutroCut(tiktok, true)))
+  check("no boundary, no cut",
+    previewOutroCut({ content_end_ms: null, duration: 12 }, true) === null
+      && previewOutroCut({ duration: 12 }, true) === null)
+  // The server's `usable_outro_cut_cs`, mirrored: a boundary at or past the
+  // end of the item leaves no card to cut, and naming one would be a 404.
+  check("a boundary at or past the end of the item is no card to cut",
+    previewOutroCut({ content_end_ms: 12_000, duration: 12 }, true) === null
+      && previewOutroCut({ content_end_ms: 13_000, duration: 12 }, true) === null)
+  check("...but an unknown duration takes the boundary at face value, as the server does",
+    previewOutroCut({ content_end_ms: 8005, duration: null }, true) === 7.95
+      && previewOutroCut({ content_end_ms: 8005, duration: 0 }, true) === 7.95)
+  check("a boundary inside the guard-and-freeze band is no cut",
+    previewOutroCut({ content_end_ms: 60, duration: 12 }, true) === null
+      && previewOutroCut({ content_end_ms: 80, duration: 12 }, true) === null)
+
+  // THE REQUEST: the cut rides ALONGSIDE the window rule, never instead of it.
+  check("a short file with a cut names the cut and no window",
+    shape(previewRequest({ duration: 12 }, "transcode", 7.95))
+      === shape({ preset: PREVIEW_PRESET, cut: PREVIEW_CUT_OUTRO }))
+  check("a long file with a cut names both — the server takes the earlier",
+    shape(previewRequest({ duration: 30 }, "trim", 26))
+      === shape({ preset: PREVIEW_TRIM_PRESET, end_cs: PREVIEW_MAX_CS,
+        cut: PREVIEW_CUT_OUTRO }))
+  check("no cut is byte-identical to the request that shipped before",
+    shape(previewRequest({ duration: 30 }, "trim", null))
+      === shape(previewRequest({ duration: 30 }, "trim"))
+      && shape(previewRequest({ duration: 12 }, "transcode", null))
+        === shape(previewRequest({ duration: 12 })))
+  check("the cut is its own key segment, after the bound",
+    previewKey("sha", previewRequest({ duration: 30 }, "trim", 26))
+      === "sha:preview-trim:e1600:outro"
+      && previewKey("sha", previewRequest({ duration: 12 }, "transcode", 7.95))
+        === "sha:preview:outro")
+  check("...so flipping the preference lands on a different slot",
+    previewKey("sha", previewRequest({ duration: 30 }, "trim", 26))
+      !== previewKey("sha", previewRequest({ duration: 30 }, "trim", null)))
+
+  // THE COPY RUNG'S ESTIMATE is measured over the shorter window.
+  check("the slice estimate shrinks to the cut",
+    previewSliceBytes(12_000_000, 12, 8) === 8_000_000
+      && previewSliceBytes(40_000_000, 64, 8) === 5_000_000)
+  check("a cut past the window changes nothing",
+    previewSliceBytes(40_000_000, 64, 26) === previewSliceBytes(40_000_000, 64))
+  check("no cut is the old estimate",
+    previewSliceBytes(12_000_000, 12, null) === 12_000_000
+      && previewSliceBytes(12_000_000, 12) === 12_000_000)
+  // A 20 MB twelve-second TikTok with an 8 s cut against the 16 MiB cap:
+  // whole, it is over; two thirds of it (13.3 MB) is not — the copy opens.
+  const heavyTiktok = { size: 20_000_000, duration: 12 }
+  check("a short file over the cap reaches the copy through its cut",
+    previewLadder({ playability: "playable", mp4Playable: true, ...heavyTiktok },
+      can(true, true, true)).join(">") === "transcode"
+      && previewLadder({ playability: "playable", mp4Playable: true,
+        ...heavyTiktok, outroCutSec: 8 }, can(true, true, true)).join(">")
+        === "trim>transcode")
+  clearPreviewRungFailures()
+  const row = {
+    sha256: "fff", type: "video/mp4", video_codec: "h264", audio_codec: "aac",
+    size: 20_000_000, duration: 12, content_end_ms: 8005,
+  }
+  check("cellPreviewLadder reads the row's boundary under the preference",
+    cellPreviewLadder(row, can(true, true, true), chrome, true).join(">")
+      === "trim>transcode"
+      && cellPreviewLadder(row, can(true, true, true), chrome, false).join(">")
+        === "transcode")
+  check("...and a host that says nothing plans the ladder it always did",
+    cellPreviewLadder(row, can(true, true, true), chrome).join(">") === "transcode")
 }
 
 // ---------------------------------------------------------------------------

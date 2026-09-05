@@ -1619,7 +1619,7 @@ export interface paths {
         put?: never;
         /**
          * Create or join a transcode job
-         * @description Resolves the item, validates the preset and trim bounds, and either answers from the artifact cache (200, `outcome: "hit"`) or creates/joins a job (202). `cut: "outro"` ends the clip at the item's detected outro boundary: it excludes `end_cs`, composes with `start_cs`, and is resolved to explicit centiseconds here, so it shares its cache entry with the identical explicit trim. An item with no detected outro — including one whose index database has `detect_outros` off — is a 404.
+         * @description Resolves the item, validates the preset and trim bounds, and either answers from the artifact cache (200, `outcome: "hit"`) or creates/joins a job (202). `cut: "outro"` ends the clip at the item's detected outro boundary: it composes with `start_cs`, and with `end_cs` as a cap (the clip ends at whichever of the two comes first), and is resolved to explicit centiseconds here, so it shares its cache entry with the identical explicit trim. An item with no detected outro — including one whose index database has `detect_outros` off — is a 404, whether or not a cap was sent.
          */
         post: operations["video_transcode"];
         delete?: never;
@@ -2440,6 +2440,11 @@ export interface components {
              *     it, the client estimates the 16 s slice as `size * min(16, duration) /
              *     duration` and takes rung 1 when that fits, rung 2 otherwise. An item
              *     with no known duration cannot be estimated and never takes rung 1.
+             *
+             *     So is an item of 16 s or less: its estimate is the whole file, which
+             *     is over the cap by the time this step is reached, and it goes straight
+             *     to the re-encode. The trim rung only ever serves items *longer* than
+             *     the window.
              */
             max_bytes: number;
             /**
@@ -4534,11 +4539,14 @@ export interface components {
         TranscodeRequest: {
             /**
              * @description `"outro"` to end the clip at this item's detected outro boundary,
-             *     resolved server-side. Excludes `end_cs` (the two are the same bound
-             *     asked for two ways), composes with `start_cs`, and is a 404 when the
-             *     item has no detected outro or the index database has detection off.
-             *     Any other value is rejected rather than ignored: a client that sent one
-             *     and got a full-length file would have no way to notice.
+             *     resolved server-side. Composes with `start_cs`, and with `end_cs` as
+             *     a cap: when both are present the clip ends at whichever comes first,
+             *     so a bounded preview of an item whose outro lies past the bound keeps
+             *     the bound (and its cache key) while one whose outro lies inside it is
+             *     cut there. A 404 when the item has no detected outro or the index
+             *     database has detection off, cap or no cap. Any other value is rejected
+             *     rather than ignored: a client that sent one and got a full-length file
+             *     would have no way to notice.
              */
             cut?: string | null;
             /**
@@ -7806,7 +7814,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Unknown preset, an unusable trim window (bounds that name a freeze frame rather than a clip, a start bound past the end of the item, or a start bound at or past the resolved outro cut), an unknown/conflicting `cut`, or an animated-image preset asked for more than `max_animated_image_seconds` of output (including an unbounded one on an item with no recorded duration) */
+            /** @description Unknown preset, an unusable trim window (bounds that name a freeze frame rather than a clip, a start bound past the end of the item, or a start bound at or past the resolved outro cut), an unknown `cut`, or an animated-image preset asked for more than `max_animated_image_seconds` of output (including an unbounded one on an item with no recorded duration) */
             422: {
                 headers: {
                     [name: string]: unknown;

@@ -234,6 +234,7 @@ export const SearchResultImage = memo(function SearchResultImage({
     animateMode = "always",
     hoverPreview = HOVER_PREVIEW_OFF,
     previewTrigger = "card",
+    outroSkip = false,
 }: {
     result: SearchResult,
     index: number,
@@ -342,6 +343,15 @@ export const SearchResultImage = memo(function SearchResultImage({
      */
     hoverPreview?: HoverPreviewCapability
     /**
+     * The viewer's outro-skip preference (`useOutroSkipEnabled`) — read once
+     * by the host, like the props around it. With it on, a video cell's
+     * preview ends at the item's detected outro (docs/video-outro-skip-
+     * design.md): the job rungs name the cut for the server, the direct rung
+     * loops at it in the browser. False when omitted, so a surface that says
+     * nothing previews exactly what it always did.
+     */
+    outroSkip?: boolean
+    /**
      * WHERE THE POINTER HAS TO REST for a video cell to preview (T1) — read
      * once by the host, like the four props above it, and never per card.
      *
@@ -397,7 +407,7 @@ export const SearchResultImage = memo(function SearchResultImage({
     // probe for every row that is not a video and on every surface where
     // previews are off, so a grid of stills pays one string comparison for the
     // feature existing.
-    const previewRungs = cellPreviewLadder(result, hoverPreview)
+    const previewRungs = cellPreviewLadder(result, hoverPreview, undefined, outroSkip)
     const plan = planCellPicture(result, dbs, tierRef.current, {
         animatedFloor,
         displayLoopTrigger,
@@ -581,6 +591,8 @@ export const SearchResultImage = memo(function SearchResultImage({
                             indexDb={dbs.index_db}
                             userDataDb={dbs.user_data_db}
                             duration={result.duration}
+                            contentEndMs={result.content_end_ms}
+                            outroSkip={outroSkip}
                             onPreviewFeedback={setPreview}
                             previewTrigger={previewTrigger}
                             armPhase={arm.phase}
@@ -621,6 +633,8 @@ export const SearchResultImage = memo(function SearchResultImage({
                             indexDb={dbs.index_db}
                             userDataDb={dbs.user_data_db}
                             duration={result.duration}
+                            contentEndMs={result.content_end_ms}
+                            outroSkip={outroSkip}
                             alt={`Result ${result.path}`}
                             placeholder={placeholder}
                             disabled={!!showLoadingSpinner}
@@ -737,6 +751,8 @@ function ExtremeAspectPicture({
     indexDb,
     userDataDb,
     duration,
+    contentEndMs,
+    outroSkip,
     onPreviewFeedback,
     previewTrigger,
     armPhase,
@@ -768,6 +784,8 @@ function ExtremeAspectPicture({
     indexDb: string | null
     userDataDb: string | null
     duration?: number | null
+    contentEndMs?: number | null
+    outroSkip: boolean
     onPreviewFeedback: (feedback: PreviewFeedback | null) => void
     /** The trigger and its countdown, straight through — see VideoHoverPicture. */
     previewTrigger: HoverPreviewTrigger
@@ -921,6 +939,8 @@ function ExtremeAspectPicture({
                     indexDb={indexDb}
                     userDataDb={userDataDb}
                     duration={duration}
+                    contentEndMs={contentEndMs}
+                    outroSkip={outroSkip}
                     alt={alt}
                     placeholder={placeholder}
                     disabled={disabled}
