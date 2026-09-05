@@ -420,6 +420,7 @@ function PreviewArm({
         indexDb={indexDb}
         userDataDb={userDataDb}
         duration={duration}
+        contentEndMs={contentEndMs}
         outroCutSec={outroCutSec}
         poster={picture.frame}
         alt={alt}
@@ -456,10 +457,16 @@ function PreviewArm({
  *     output-side `-t` on a B-frame source kept two frames past the bound
  *     (241 frames / 8.03 s for `-t 7.94` at 30 fps — reordering, not the
  *     GOP), which is a frame or two of end card at every loop seam. The
- *     copy keeps the source's timestamps, so the same cut in the same
- *     timeline seeks back before those frames play. The element's own
- *     duration is no anchor here — it is the artifact's, not the file's, and
- *     `outroCutPoint` would rightly read the disagreement as two files.
+ *     copy's raw packet timestamps are the source's, but it is written with
+ *     `-avoid_negative_ts make_zero` and its edit list no longer compensates
+ *     the B-frame CTS offset, so on an engine that honours edit lists its
+ *     frames PRESENT about one reorder delay LATER than the source's (~66 ms
+ *     at 30 fps with three B-frames). The client's cut therefore fires that
+ *     much EARLY — into content, never into the card — which is the safe
+ *     direction, and why the unrefined start-anchored cut is acceptable
+ *     here. The element's own duration is no anchor — it is the artifact's,
+ *     not the file's, and `outroCutPoint` would rightly read the
+ *     disagreement as two files.
  *
  * The re-encode rung needs none of this: a decoded stream is cut on the
  * frame, so its artifact simply ends where the cut is and native loop wraps.
@@ -568,6 +575,7 @@ function PreviewTranscodeLayer({
   indexDb,
   userDataDb,
   duration,
+  contentEndMs,
   outroCutSec,
   poster,
   alt,
@@ -583,6 +591,13 @@ function PreviewTranscodeLayer({
   indexDb: string | null
   userDataDb: string | null
   duration?: number | null
+  /**
+   * The row's `content_end_ms`, for the KEY only (`previewKey`): the slot is
+   * named after the boundary so a boundary that moves in-session lands on a
+   * fresh slot instead of replaying the old artifact. The wire still names
+   * the cut as `"outro"` and lets the server resolve it.
+   */
+  contentEndMs?: number | null
   /** `previewOutroCut`'s verdict: non-null names the cut in the request. */
   outroCutSec: number | null
   poster: string
@@ -600,12 +615,13 @@ function PreviewTranscodeLayer({
   // functions of the row (lib/videoPreview.ts), so the key is a value this
   // component holds rather than something it has to be told.
   const request = previewRequest({ duration }, rung, outroCutSec)
-  const key = previewKey(sha256, request)
+  const key = previewKey(sha256, request, contentEndMs)
   useEffect(() => {
     startPreviewTranscode({
       sha256,
       dbs: { index_db: indexDb, user_data_db: userDataDb },
       request,
+      contentEndMs,
     })
     // THE CANCEL (V4). Guarded on identity inside — by the time this runs, the
     // slot may already belong to the cell the pointer moved to.

@@ -273,11 +273,20 @@ check(
     transcodeKey("abc", "playback") !== transcodeKey("abc", "clip")
 )
 check(
-  "a named cut is its own segment after the bound, and absent when not asked",
+  "the cut's key segment is its own segment after the bound, and absent when not asked",
   transcodeKey("abc", "preview", 1600, "outro") === "abc:preview:e1600:outro" &&
     transcodeKey("abc", "preview", null, "outro") === "abc:preview:outro" &&
     transcodeKey("abc", "preview", 1600, null) === "abc:preview:e1600" &&
     transcodeKey("abc", "preview", 1600) === "abc:preview:e1600"
+)
+check(
+  "the segment is the caller's spelling — a boundary-bearing one is its own key",
+  transcodeKey("abc", "preview", 1600, "outro8005") === "abc:preview:e1600:outro8005" &&
+    transcodeKey("abc", "preview", null, "outro8005") === "abc:preview:outro8005" &&
+    transcodeKey("abc", "preview", null, "outro8005") !==
+      transcodeKey("abc", "preview", null, "outro7950") &&
+    transcodeKey("abc", "preview", null, "outro8005") !==
+      transcodeKey("abc", "preview", null, "outro")
 )
 check(
   "a fresh key reads idle without being written first",

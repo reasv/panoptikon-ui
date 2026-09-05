@@ -55,7 +55,7 @@ import {
   type TranscodeState,
 } from "./videoTranscode"
 import type { HoverPreviewCapability } from "./state/hoverPreviewPref"
-import { outroCutPoint } from "./videoTrim"
+import { FREEZE_EPS, OUTRO_GUARD_MS, outroCutPoint } from "./videoTrim"
 
 /** The re-encode rung's preset (V3, backend B1). */
 export const PREVIEW_PRESET = "preview"
@@ -247,14 +247,34 @@ export function previewSliceBytes(
  * WHERE THE OUTRO CUTS THIS ITEM FOR A PREVIEW, in seconds — or null when
  * nothing about the row lets the outro govern.
  *
- * The client's HALF of the server's `usable_outro_cut_cs` rule
- * (`api/video.rs`), asked BEFORE the request so that naming an outro the
- * server would 404 is a stale-row race and not a routine: no recorded
- * boundary, a boundary at or past the end of the item (no card to cut), or a
- * cut inside the guard-and-freeze band (`outroCutPoint`'s own floor) all
- * answer null, and null means the request names no cut at all. The
+ * The client's HALF of the server's rule (`api/video.rs`), asked BEFORE the
+ * request so that naming an outro the server would 404 is a stale-row race
+ * and not a routine. The server's three refusals, MIRRORED EXACTLY, in its
+ * order:
+ *
+ *   1. `usable_outro_cut_cs`: no recorded boundary, or a boundary at or past
+ *      the item's duration (no card to cut). The server compares against ANY
+ *      recorded duration — `Some(0.0)` and a negative included, which every
+ *      boundary is "at or past" — and takes the boundary at face value only
+ *      when the row has none. So does this: a `duration` of 0 answers null
+ *      here even though `outroCutPoint` would have treated it as unknown;
+ *   2. `outro_cut_cs`: `floor((content_end_ms − 60) / 10)` — a FLOOR, where
+ *      the player's own arithmetic rounds;
+ *   3. `validate_bounds(None, Some(cut))`: that centisecond must be more than
+ *      `FREEZE_GUARD_CS` (2) past a start of zero, or the clip is a freeze
+ *      frame and the handler 404s. A boundary of 85..89 ms rounds to 3 cs on
+ *      the client and floors to 2 on the server — a cut the client would have
+ *      named and the server refused, which is exactly the routine this
+ *      function exists to prevent.
+ *
+ * Null from any of them means the request names no cut at all. The
  * preference gates it first, so a viewer who turned outro skip off previews
  * the card exactly as the gallery would play it.
+ *
+ * THE NUMBER RETURNED IS STILL THE CLIENT'S: `outroCutPoint`'s rounded,
+ * start-anchored cut (and its own freeze-band verdict stands too). That is
+ * what the copy rung's size estimate and the browser-side loop consume; the
+ * server's floored centisecond is computed here only to predict its answer.
  *
  * START-ANCHORED ON PURPOSE. At plan time there is no element, so no browser
  * duration to split the difference with; the number is used for the copy
@@ -272,16 +292,34 @@ export function previewOutroCut(
     return null
   }
   const duration = row.duration
+  // Any recorded duration, zero and negative included — the server's
+  // `is_some_and`, not `outroCutPoint`'s "zero is unknown".
   if (
     typeof duration === "number" &&
-    Number.isFinite(duration) &&
-    duration > 0 &&
+    !Number.isNaN(duration) &&
     contentEndMs / 1000 >= duration
   ) {
     return null
   }
+  if (serverOutroCutCs(contentEndMs) <= SERVER_FREEZE_GUARD_CS) return null
   return outroCutPoint(contentEndMs, duration)
 }
+
+/**
+ * The centisecond the SERVER will cut at for this boundary — `outro_cut_cs` in
+ * `api/video.rs`, guard then floor. `Math.floor` is `div_euclid` for a
+ * positive divisor, negatives included.
+ */
+function serverOutroCutCs(contentEndMs: number): number {
+  return Math.floor((contentEndMs - OUTRO_GUARD_MS) / 10)
+}
+
+/**
+ * The server's `FREEZE_GUARD_CS`, which its own doc derives from the player's
+ * `FREEZE_EPS` (0.02 s → 2 cs) — derived the same way here so the two cannot
+ * drift apart silently. `validate_bounds` refuses a window at or below it.
+ */
+const SERVER_FREEZE_GUARD_CS = Math.round(FREEZE_EPS * 100)
 
 /**
  * WHAT THE CELL POSTS.
@@ -335,14 +373,54 @@ export function previewRequest(
  * client has to tell a capped-and-cut request from a merely capped one
  * before any answer arrives — and the preference flipping must land the next
  * hover on a different slot, not on the other setting's job.
+ *
+ * THE CUT SEGMENT CARRIES THE ROW'S BOUNDARY, not the wire's literal:
+ * `sha:preview-trim:e1600:outro8005`, `sha:preview:outro8005`. Two reasons,
+ * both about the slot outliving the row:
+ *
+ *   - a `done` slot is never forgotten this session, and the server resolves
+ *     `"outro"` against the row it holds at request time. A boundary that
+ *     MOVES in-session — re-detection, a re-search after the detector ran —
+ *     would mint a new key on the server but, under a literal-only segment,
+ *     replay the old artifact from the client's slot without ever asking. The
+ *     boundary in the segment makes the change a fresh request;
+ *   - `sha:preview:outro` is byte for byte `clipStoreKey(sha, "preview",
+ *     {cut: "outro"})` (lib/videoClip.ts), and the two namespaces share one
+ *     store on the promise that they never meet (lib/videoTranscode.ts, the
+ *     seam's header). With the boundary appended they cannot.
+ *
+ * The raw `content_end_ms` and not the derived cut, because it is the row
+ * value that changes when the detector's answer does; and no segment at all
+ * without a cut, so an uncut request's key is byte-identical to the one it
+ * had before the outro feature existed. The wire body is untouched by any of
+ * this: it still says `cut: "outro"` and lets the server resolve it.
  */
-export function previewKey(sha256: string, request: PreviewRequest): string {
+export function previewKey(
+  sha256: string,
+  request: PreviewRequest,
+  /** The row's `content_end_ms`; read only when the request names the cut. */
+  contentEndMs?: number | null
+): string {
   return transcodeKey(
     sha256,
     request.preset,
     request.end_cs ?? null,
-    request.cut ?? null
+    previewCutKey(request, contentEndMs)
   )
+}
+
+/**
+ * The cut's key segment for one request: `outro<content_end_ms>` when the
+ * request names the cut, nothing when it does not. A request that names the
+ * cut always has a finite boundary behind it (`previewOutroCut` is the only
+ * source of both), so the boundary is spelled as it comes; a caller that
+ * somehow names the cut without one still cannot land on the bare literal.
+ */
+export function previewCutKey(
+  request: PreviewRequest,
+  contentEndMs?: number | null
+): string | null {
+  return request.cut ? `${PREVIEW_CUT_OUTRO}${contentEndMs}` : null
 }
 
 /**
@@ -603,8 +681,10 @@ export function startPreviewTranscode(options: {
   sha256: string
   dbs: { index_db: string | null; user_data_db: string | null }
   request: PreviewRequest
+  /** The row's `content_end_ms` — the key's cut segment (`previewKey`). */
+  contentEndMs?: number | null
 }): string {
-  const key = previewKey(options.sha256, options.request)
+  const key = previewKey(options.sha256, options.request, options.contentEndMs)
   if (slot && slot !== key) cancelTranscode(slot)
   slot = key
   startTranscode({
@@ -612,7 +692,9 @@ export function startPreviewTranscode(options: {
     dbs: options.dbs,
     preset: options.request.preset,
     endCs: options.request.end_cs ?? null,
+    // The wire's literal, and the key's spelling of it — see `previewKey`.
     cut: options.request.cut ?? null,
+    cutKey: previewCutKey(options.request, options.contentEndMs),
   })
   return key
 }

@@ -40,6 +40,7 @@ const {
   cellPreviewLadder,
   cellPreviewRung,
   clearPreviewRungFailures,
+  currentPreviewKey,
   notePreviewRungFailure,
   previewFeedback,
   previewKey,
@@ -50,10 +51,16 @@ const {
   previewRungFailures,
   previewOutroCut,
   previewSliceBytes,
+  releasePreviewTranscode,
   rungAtStep,
   shouldRecordFailure,
+  startPreviewTranscode,
   withinPreviewCap,
 } = await import("../lib/videoPreview.ts")
+// The clip route's key minter, for the namespace check in the outro block: it
+// shares the transcode store with the preview, so the two spellings are
+// compared against the real function rather than a copied literal.
+const { clipStoreKey } = await import("../lib/videoClip.ts")
 const {
   cancelTranscode,
   createdOwnJob,
@@ -657,10 +664,27 @@ console.log("\n== the outro cut ==")
       && previewOutroCut({ content_end_ms: 13_000, duration: 12 }, true) === null)
   check("...but an unknown duration takes the boundary at face value, as the server does",
     previewOutroCut({ content_end_ms: 8005, duration: null }, true) === 7.95
-      && previewOutroCut({ content_end_ms: 8005, duration: 0 }, true) === 7.95)
+      && previewOutroCut({ content_end_ms: 8005 }, true) === 7.95
+      && previewOutroCut({ content_end_ms: 8005, duration: NaN }, true) === 7.95)
+  // The server's `is_some_and` compares against ANY recorded duration: every
+  // boundary is at or past a zero or negative one, so both are 404s there —
+  // unlike `outroCutPoint`, which reads a zero duration as unknown.
+  check("a duration of zero or less is a real duration the boundary is past, as the server reads it",
+    previewOutroCut({ content_end_ms: 8005, duration: 0 }, true) === null
+      && previewOutroCut({ content_end_ms: 8005, duration: -1 }, true) === null)
   check("a boundary inside the guard-and-freeze band is no cut",
     previewOutroCut({ content_end_ms: 60, duration: 12 }, true) === null
       && previewOutroCut({ content_end_ms: 80, duration: 12 }, true) === null)
+  // The server FLOORS `(content_end_ms − 60) / 10` and `validate_bounds`
+  // refuses a cut at or below FREEZE_GUARD_CS = 2: 85..89 floor to 2 (a 404)
+  // where the player's rounding says 3 (a cut). The client must not name a
+  // cut the server will refuse; 90 is the first boundary both accept.
+  check("a boundary the server floors into the freeze band names no cut",
+    [85, 86, 87, 88, 89].every((content_end_ms) =>
+      previewOutroCut({ content_end_ms, duration: 12 }, true) === null))
+  check("...and the first boundary past it does",
+    previewOutroCut({ content_end_ms: 90, duration: 12 }, true) === 0.03,
+    String(previewOutroCut({ content_end_ms: 90, duration: 12 }, true)))
 
   // THE REQUEST: the cut rides ALONGSIDE the window rule, never instead of it.
   check("a short file with a cut names the cut and no window",
@@ -675,14 +699,50 @@ console.log("\n== the outro cut ==")
       === shape(previewRequest({ duration: 30 }, "trim"))
       && shape(previewRequest({ duration: 12 }, "transcode", null))
         === shape(previewRequest({ duration: 12 })))
-  check("the cut is its own key segment, after the bound",
-    previewKey("sha", previewRequest({ duration: 30 }, "trim", 26))
-      === "sha:preview-trim:e1600:outro"
-      && previewKey("sha", previewRequest({ duration: 12 }, "transcode", 7.95))
-        === "sha:preview:outro")
+  // THE KEY: the cut segment is the literal PLUS the row's boundary. The
+  // wire still says `cut: "outro"` (above); the key says which boundary the
+  // slot was minted for, because a `done` slot is never forgotten and the
+  // server resolves the literal against the row it holds NOW.
+  check("the cut is its own key segment, after the bound, carrying the boundary",
+    previewKey("sha", previewRequest({ duration: 30 }, "trim", 26), 26_000)
+      === "sha:preview-trim:e1600:outro26000"
+      && previewKey("sha", previewRequest({ duration: 12 }, "transcode", 7.95), 8005)
+        === "sha:preview:outro8005")
   check("...so flipping the preference lands on a different slot",
-    previewKey("sha", previewRequest({ duration: 30 }, "trim", 26))
-      !== previewKey("sha", previewRequest({ duration: 30 }, "trim", null)))
+    previewKey("sha", previewRequest({ duration: 30 }, "trim", 26), 26_000)
+      !== previewKey("sha", previewRequest({ duration: 30 }, "trim", null), 26_000))
+  check("two boundaries are two slots — a boundary that moves in-session asks again",
+    previewKey("sha", previewRequest({ duration: 12 }, "transcode", 7.95), 8005)
+      !== previewKey("sha", previewRequest({ duration: 12 }, "transcode", 7.9), 7950))
+  check("the same boundary is one slot",
+    previewKey("sha", previewRequest({ duration: 12 }, "trim", 7.95), 8005)
+      === previewKey("sha", previewRequest({ duration: 12 }, "trim", 7.95), 8005))
+  check("no cut, no segment — whatever boundary the row carries",
+    previewKey("sha", previewRequest({ duration: 30 }, "trim", null), 26_000)
+      === "sha:preview-trim:e1600"
+      && previewKey("sha", previewRequest({ duration: 12 }, "transcode", null), 8005)
+        === "sha:preview"
+      && previewKey("sha", previewRequest({ duration: 12 }, "transcode", null))
+        === previewKey("sha", previewRequest({ duration: 12 })))
+  // The clip route mints `sha:<preset>:outro` for `{cut: "outro"}` and shares
+  // the store with the preview; a ≤16 s item's preview key used to be that
+  // exact string. `videoClip.ts` loads under the same hooks (see
+  // clipRequest.test.mjs), so the real function is asked, not a literal.
+  check("a short item's preview key is not the clip route's key for the same cut",
+    previewKey("sha", previewRequest({ duration: 12 }, "transcode", 7.95), 8005)
+      !== clipStoreKey("sha", PREVIEW_PRESET, { cut: "outro" })
+      && clipStoreKey("sha", PREVIEW_PRESET, { cut: "outro" }) === "sha:preview:outro")
+  check("startPreviewTranscode claims the boundary-bearing key",
+    startPreviewTranscode({
+      sha256: "keyed",
+      dbs: { index_db: "stdtest", user_data_db: null },
+      request: previewRequest({ duration: 12 }, "trim", 7.95),
+      contentEndMs: 8005,
+    }) === "keyed:preview-trim:outro8005"
+      && currentPreviewKey() === "keyed:preview-trim:outro8005"
+      && getTranscodeState("keyed:preview-trim:outro8005").state === "requesting"
+      && getTranscodeState("keyed:preview-trim:outro").state === "idle")
+  releasePreviewTranscode("keyed:preview-trim:outro8005")
 
   // THE COPY RUNG'S ESTIMATE is measured over the shorter window.
   check("the slice estimate shrinks to the cut",

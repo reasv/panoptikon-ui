@@ -355,15 +355,19 @@ export function transcodeKey(
   preset: string = PLAYBACK_PRESET,
   endCs?: number | null,
   /**
-   * A named cut (`"outro"`) the server resolves — see `PREVIEW_CUT_OUTRO`.
-   * Its own segment, after the bound: a capped request and a capped-and-cut
-   * one are different jobs before the server has said where the cut falls.
+   * The CUT'S KEY SEGMENT, after the bound — a capped request and a
+   * capped-and-cut one are different jobs before the server has said where
+   * the cut falls. It is the caller's spelling and NOT the wire's `cut`
+   * literal: the hover preview writes `outro<content_end_ms>` here
+   * (`previewKey` in lib/videoPreview.ts), because a `done` slot is never
+   * forgotten and a key that named only "outro" would replay the artifact of
+   * a boundary the row no longer carries.
    */
-  cut?: string | null
+  cutKey?: string | null
 ): string {
   let key = `${sha256}:${preset}`
   if (endCs != null) key += `:e${endCs}`
-  if (cut) key += `:${cut}`
+  if (cutKey) key += `:${cutKey}`
   return key
 }
 
@@ -409,6 +413,15 @@ export function getTranscodeState(key: string): TranscodeState {
 // keys with a third segment (see `clipStoreKey` there). Keys are opaque
 // strings to everything below, so the two namespaces cannot collide as long
 // as one of them always carries that extra segment.
+//
+// The hover preview's keys (`previewKey` in lib/videoPreview.ts) carry a third
+// segment too. Its `e<cs>` bound is `clipStoreKey`'s spelling ON PURPOSE (see
+// `transcodeKey`: the same bound is the same bytes). Its CUT is not: the clip
+// route writes the bare literal (`sha:<preset>:outro` for `{cut: "outro"}`),
+// the preview writes the literal WITH the row's boundary
+// (`sha:<preset>:outro8005`), so a preview slot and a clip slot for one item
+// never share a key by accident — a clip's `done` must not answer a hover,
+// nor a hover's a clip export.
 //
 // Nothing here is a second store: one map, one listener table, one SSE
 // implementation with one poll fallback.
@@ -558,14 +571,24 @@ export function startTranscode(options: {
   endCs?: number | null
   /**
    * A named cut the server resolves (`"outro"`), composing with `endCs` as
-   * the earlier of the two. In the key for the same reason the bound is.
+   * the earlier of the two. Goes on the WIRE as written; in the key it is
+   * spelled by `cutKey` below, or by itself when no `cutKey` is given.
    */
   cut?: string | null
+  /**
+   * How the cut is spelled in the KEY, when that must say more than the wire
+   * does. The preview passes `outro<content_end_ms>`: the server resolves the
+   * literal against the row it holds NOW, and a `done` slot keyed on the
+   * literal alone would replay the artifact of a boundary the row has since
+   * lost or moved (re-detection, a re-search after the detector ran) instead
+   * of asking again. Never reaches the request body.
+   */
+  cutKey?: string | null
 }): string {
   const preset = options.preset ?? PLAYBACK_PRESET
   const endCs = options.endCs ?? null
   const cut = options.cut ?? null
-  const key = transcodeKey(options.sha256, preset, endCs, cut)
+  const key = transcodeKey(options.sha256, preset, endCs, options.cutKey ?? cut)
   if (!shouldSubmit(states.get(key))) return key
   // Claimed BEFORE the state write, so a POST already on the wire for this key
   // (one a cancel invalidated a moment ago) can see that it no longer owns it.
