@@ -2542,6 +2542,11 @@ export interface components {
             external_source?: string | null;
             /** Format: int64 */
             footprints_mb: number;
+            /**
+             * @description The calibration profile keyspace for this card (`sm_120`, `gfx1100`,
+             *     `apple-m3`, `cpu`). `null` until a load report on it names one.
+             */
+            gpu_arch?: string | null;
             gpu_name: string;
             gpu_uuid: string;
             /** Format: int64 */
