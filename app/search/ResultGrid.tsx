@@ -19,6 +19,7 @@ import { useItemSelection } from "@/lib/state/itemSelection"
 import { useGridScrollAnchor } from "@/lib/state/gridScroll"
 import { useGridCellSize } from "@/lib/state/cellSize"
 import type { GridMetricsStore } from "@/lib/state/gridMetricsBox"
+import type { PageGeometry } from "@/lib/gridCellSize"
 import type { ResultsSource } from "@/lib/searchHooks"
 import { SCROLL_CHUNK_SIZE } from "@/lib/searchRequest"
 import { overscanItemsFor, topRowHighlightItem, virtualPageOf } from "@/lib/scrollMode"
@@ -114,6 +115,11 @@ function useResultGridLayout(sidebarOpen: boolean): { columns: number, rowEstima
     return layout
 }
 
+// How long the grid's geometry has to hold still after a change before that
+// change is reported as settled (see the layout-follow effect). Longer than
+// a resize tick, shorter than a person's pause between two deliberate drags.
+const LAYOUT_SETTLE_MS = 300
+
 // The virtualizer's row overscan, and the basis for how far ahead scroll mode
 // warms chunks. Shared deliberately: rows are RENDERED ahead of the viewport,
 // so the data behind them has to be ASKED FOR further ahead still, and the two
@@ -201,6 +207,7 @@ export function ResultGrid({
     savedScrollOffsetRef,
     updateRibbonVisible = false,
     metricsStore,
+    onLayoutSettled,
 }: {
     source: ResultsSource,
     mode?: ViewMode,
@@ -235,6 +242,14 @@ export function ResultGrid({
      * it just cannot seed a slider that has not been given the box.
      */
     metricsStore?: GridMetricsStore,
+    /**
+     * Scroll mode only: called once a burst of layout changes the grid did
+     * not ask for — a window resize, a breakpoint crossing, the sidebar —
+     * has settled, with the page geometry the burst started from and the one
+     * it ended on, so the host can keep `page_size` (k) a page of the same
+     * height (design §9, `coWrittenPageSize`). Must be referentially stable.
+     */
+    onLayoutSettled?: (from: PageGeometry, to: PageGeometry) => void,
 }) {
     // TanStack Virtual v3 triggers re-renders by mutating internal state,
     // which the React Compiler's memoization breaks — same as the gallery view.
@@ -486,6 +501,64 @@ export function ResultGrid({
         metricsStore, cellWidth, columns, laidOutRowHeight, containerWidth,
         autoLayout.columns, autoLayout.rowEstimate,
     ])
+    // A LAYOUT CHANGE THE GRID DID NOT ASK FOR, reported once it has settled
+    // (scroll mode only). The size slider co-writes `page_size` with its own
+    // layout change so a page stays the same height on screen (design §9);
+    // a window resize, a breakpoint crossing or the sidebar opening changes
+    // the same geometry — the columns and the row pitch — without any such
+    // write, and in scroll mode k is a free relabel (§4), so the same rule
+    // is applied here, by the host, through `onLayoutSettled`.
+    //
+    // DEBOUNCED over the burst a live drag produces, and the geometry handed
+    // over is the one the burst STARTED from, not the previous tick's: each
+    // rewrite rounds to whole rows, and rounding tick by tick would random-
+    // walk k across a drag, whereas one write from the settled start to the
+    // settled end is within half a row of exact.
+    //
+    // SKIPPED when `pageSize` moved in the same commit as the geometry: that
+    // is a slider commit landing (cell size and page size arrive in one URL
+    // update, so one render), and its co-write has already accounted for this
+    // layout — following it again would scale the page size twice. A page
+    // size the user changes by hand moves without any geometry change and is
+    // simply the new base.
+    //
+    // Never on the first measurement (no geometry to follow from), never in
+    // pages mode (where k is a fetch size and a resize is not permission to
+    // refetch), and never through the pageSize the burst started with — the
+    // value read at fire time is the current one.
+    const layoutFollow = useRef({ columns, rowHeight: laidOutRowHeight, pageSize })
+    const layoutBurst = useRef<{
+        from: PageGeometry
+        timer: ReturnType<typeof setTimeout>
+    } | null>(null)
+    useEffect(() => {
+        const previous = layoutFollow.current
+        layoutFollow.current = { columns, rowHeight: laidOutRowHeight, pageSize }
+        if (!scroll || !onLayoutSettled) return
+        if (previous.pageSize !== pageSize) {
+            if (layoutBurst.current) clearTimeout(layoutBurst.current.timer)
+            layoutBurst.current = null
+            return
+        }
+        if (previous.columns === columns && previous.rowHeight === laidOutRowHeight) return
+        if (!(previous.columns > 0) || !(previous.rowHeight > 0)) return
+        if (!(columns > 0) || !(laidOutRowHeight > 0)) return
+        const from = layoutBurst.current?.from
+            ?? { columns: previous.columns, rowHeight: previous.rowHeight }
+        if (layoutBurst.current) clearTimeout(layoutBurst.current.timer)
+        const to = { columns, rowHeight: laidOutRowHeight }
+        const timer = setTimeout(() => {
+            layoutBurst.current = null
+            onLayoutSettled(from, to)
+        }, LAYOUT_SETTLE_MS)
+        layoutBurst.current = { from, timer }
+    }, [scroll, columns, laidOutRowHeight, pageSize, onLayoutSettled])
+    // A burst still pending when the grid unmounts is dropped, not fired: the
+    // host would be writing a page size for a grid that no longer exists.
+    useEffect(() => () => {
+        if (layoutBurst.current) clearTimeout(layoutBurst.current.timer)
+        layoutBurst.current = null
+    }, [])
 
     // KNOWN LIMIT, accepted for this release. Scroll mode gives the spacer div
     // below a real pixel height for the WHOLE result set, and browsers cap how
@@ -728,7 +801,21 @@ export function ResultGrid({
             if (restorePending.current) return
             const startRow = highlightedRow ?? virtualizer.range?.startIndex ?? 0
             const anchor = startRow > 0 ? startRow * columns : null
-            if (anchor === lastWrittenAnchor.current) return
+            const written = lastWrittenAnchor.current
+            if (anchor === written) return
+            // SAME ROW, FINER ANCHOR: nothing to say. After a layout change
+            // the grid is put back on the row CONTAINING the URL's anchor
+            // (`floor(anchor / columns)`), and if the anchor is not a
+            // multiple of the new column count that row's first item is a
+            // smaller index than the anchor itself. Re-publishing the row's
+            // first item here would be a write that loses information on
+            // every crossing — measured as `top` walking 210 -> 208 -> 205 ->
+            // 204 -> 200 -> ... -> 192 across a dozen column changes of a
+            // window drag, one partial row each — so the finer anchor stands
+            // while the top row is still the row it names. A real scroll
+            // moves to another row and writes as before.
+            if (written !== null && written > 0
+                && Math.floor(written / columns) === startRow) return
             lastWrittenAnchor.current = anchor
             setScrollAnchor(anchor)
         }

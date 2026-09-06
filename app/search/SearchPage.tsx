@@ -38,6 +38,8 @@ import { components } from "@/lib/panoptikon"
 import { GRID_SCROLL_ANCHOR_KEY, useGridScrollAnchor } from "@/lib/state/gridScroll"
 import { createDerivedPageStore } from "@/lib/state/derivedPage"
 import { createGridMetricsStore } from "@/lib/state/gridMetricsBox"
+import { coWrittenPageSize, type PageGeometry } from "@/lib/gridCellSize"
+import { useCellSizePageLock } from "@/lib/state/cellSizePageLock"
 import { useGridCellSize } from "@/lib/state/cellSize"
 import { GridCellSizeControl } from "@/components/GridCellSizeControl"
 import { DesktopUpdateRibbon } from "@/components/DesktopUpdateRibbon"
@@ -974,6 +976,26 @@ export function GridPanel({
     // the way (lib/state/gridMetricsBox.ts). Per mount, never a module
     // singleton — the derived-page box's rule, for its reason.
     const [metricsStore] = useState(() => createGridMetricsStore())
+    // The scroll grid's resize follow (design §9): when a layout change the
+    // grid did not ask for has settled, keep k a page of the same height on
+    // screen — the rule the size slider's co-write applies, under the same
+    // lock, written the way that hook's scroll branch writes it (a pure
+    // relabel, "replace", no position or request touched). A plain
+    // `page_size` setter rather than useCommitPageSize: only scroll mode
+    // ever reaches this, and the hook's scroll branch is exactly this write.
+    // Stable by construction — the grid's effect depends on it — with every
+    // value it reads taken through a ref at fire time.
+    const setPageSizeRaw = usePageSizeRaw()[1]
+    const pageSizeLocked = useCellSizePageLock((state) => state.locked)
+    const layoutFollow = useRef({ setPageSizeRaw, pageSizeLocked, pageSize })
+    layoutFollow.current = { setPageSizeRaw, pageSizeLocked, pageSize }
+    const onLayoutSettled = useCallback((from: PageGeometry, to: PageGeometry) => {
+        const current = layoutFollow.current
+        if (current.pageSizeLocked) return
+        const next = coWrittenPageSize(current.pageSize, from, to)
+        if (next === null) return
+        void current.setPageSizeRaw(next, { history: "replace" })
+    }, [])
     const [pinboardTab, setPinboardTab] = useGridPinboardTab()
     const [libraryTab, setLibraryTab] = useGridLibraryTab()
     const [fs, setFs] = useGalleryFullscreen()
@@ -1153,6 +1175,7 @@ export function GridPanel({
                     savedScrollOffsetRef={savedScrollOffsetRef}
                     updateRibbonVisible={updateRibbonVisible}
                     metricsStore={metricsStore}
+                    onLayoutSettled={mode === "scroll" ? onLayoutSettled : undefined}
                 />
             )}
         </div>
