@@ -2042,6 +2042,13 @@ export interface components {
             epoch: number;
             /**
              * Format: int32
+             * @description The per-item **token window** this model's inputs are priced against
+             *     (`metadata.cost.max_tokens`, or the `max_seq_length` the model's own
+             *     load report carried), or `null` for uncapped.
+             */
+            max_tokens?: number | null;
+            /**
+             * Format: int32
              * @description First-touch batch before calibration; absent for the `none` class.
              */
             seed_units?: number | null;
