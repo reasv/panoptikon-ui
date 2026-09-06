@@ -2484,16 +2484,18 @@ export interface components {
         FitHealth: {
             /** Format: double */
             intercept_mb: number;
+            /**
+             * Format: double
+             * @description The reserved/allocated ratio **this process** has observed for this
+             *     (model, GPU); a grant is `slope × units × pool_margin`. Runtime-only and
+             *     never persisted — the ratio does not reproduce across runs.
+             */
+            pool_margin: number;
             /** Format: double */
             residual_mb: number;
             samples: number;
             /** Format: double */
             slope_mb_per_unit: number;
-            /**
-             * @description Warm-pool transients retained as the diagnostic/validation series.
-             *     Never used for admission.
-             */
-            transient_samples: number;
         };
         FolderValidation: {
             errors: components["schemas"]["FolderValidationIssue"][];
@@ -3099,14 +3101,14 @@ export interface components {
             knee_units?: number | null;
             /**
              * Format: int32
-             * @description Local clean high-water samples behind this model's fit, including any a
+             * @description Local clean fit samples behind this model's fit, including any a
              *     local calibration profile restored. Below `LOCAL_CONFIRMATION_SAMPLES`
              *     the effective margin is widened.
              */
             local_samples: number;
             /**
              * Format: int64
-             * @description Ratchet anchor: largest locally measured clean high-water batch.
+             * @description Ratchet anchor: largest locally measured clean priced batch.
              */
             max_units_measured: number;
             /** @description Demand signal behind the contention split. */
@@ -4062,6 +4064,11 @@ export interface components {
          *     are system RAM and Metal's budget.
          */
         ReplicaTelemetryHealth: {
+            /**
+             * Format: int64
+             * @description Live tensor bytes at load: the baseline the cost fit prices over.
+             */
+            allocated_at_load_mb?: number | null;
             /** Format: int64 */
             allocated_mb?: number | null;
             /**
