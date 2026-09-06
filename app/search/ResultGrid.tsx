@@ -419,19 +419,6 @@ export function ResultGrid({
     useLayoutEffect(() => {
         rowContainerRef.current?.style.setProperty("--cell-px", String(Math.round(cellWidth)))
     }, [cellWidth])
-    // Published for the size slider: the width seeds its thumb (so the first
-    // drag off "auto" continues from what the user is looking at), and the
-    // container width and column count are what let it compute the layout a
-    // candidate size WOULD produce — which is what its page-size co-write has
-    // to be measured against, and what that page size must stay a multiple of.
-    // A box write, so this costs the panel no render.
-    useEffect(() => {
-        metricsStore?.set({
-            cellWidth: Math.round(cellWidth),
-            columns,
-            containerWidth: Math.round(containerWidth),
-        })
-    }, [metricsStore, cellWidth, columns, containerWidth])
     const scroll = mode === "scroll"
     // The navigable extent. In pages mode this IS `results.length` (the source
     // wraps the page's array); in scroll mode it is the count query's answer,
@@ -473,6 +460,32 @@ export function ResultGrid({
         if (!scroll) return
         setMeasuredRowHeight(null)
     }, [scroll, rowEstimate])
+    // Published for the size slider (lib/state/gridMetricsBox.ts): the width
+    // seeds its thumb (so the first drag off "auto" continues from what the
+    // user is looking at); the container width is what lets it compute the
+    // layout a candidate size WOULD produce; the column count and row pitch
+    // are the page geometry its page-size co-write scales FROM (and what the
+    // written page size must stay a multiple of); and the AUTO layout's pair,
+    // published whatever mode this grid is in, is the geometry the "Use
+    // automatic size" reset scales TO. The row pitch is the one the
+    // virtualizer sizes rows with — the measured first row in scroll mode once
+    // it has one, the estimate otherwise — which is why this sits after the
+    // measurement it reads rather than up with the layout it describes. A box
+    // write, so this costs the panel no render.
+    const laidOutRowHeight = scroll ? measuredRowHeight ?? rowEstimate : rowEstimate
+    useEffect(() => {
+        metricsStore?.set({
+            cellWidth: Math.round(cellWidth),
+            columns,
+            rowHeight: laidOutRowHeight,
+            containerWidth: Math.round(containerWidth),
+            autoColumns: autoLayout.columns,
+            autoRowHeight: autoLayout.rowEstimate,
+        })
+    }, [
+        metricsStore, cellWidth, columns, laidOutRowHeight, containerWidth,
+        autoLayout.columns, autoLayout.rowEstimate,
+    ])
 
     // KNOWN LIMIT, accepted for this release. Scroll mode gives the spacer div
     // below a real pixel height for the WHOLE result set, and browsers cap how

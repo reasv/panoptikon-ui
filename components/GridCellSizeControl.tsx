@@ -19,6 +19,8 @@ import {
     clampCellWidth,
     coWrittenPageSize,
     columnsForCellWidth,
+    rowHeightForCellWidth,
+    type PageGeometry,
 } from "@/lib/gridCellSize"
 import { MAX_CELL_WIDTH, MIN_CELL_WIDTH } from "@/lib/searchLimits"
 import { type AnimateMode } from "@/lib/thumbnailTier"
@@ -64,10 +66,14 @@ import { usePageSize } from "@/lib/state/searchQuery/clientHooks"
  * one drag cannot mint a pile of history entries for Back to replay.
  *
  * A commit also co-writes `page_size` by default, so the screen-to-items ratio
- * survives the change (coWrittenPageSize). The lock switch turns that off for
- * someone who picked a page size deliberately; it is a stored preference
- * rather than URL state, because it decides what a FUTURE drag writes rather
- * than what this view is.
+ * survives the change (coWrittenPageSize) — and so does the Auto button, which
+ * is a layout change like any other and used to be the one that did not: the
+ * page size it left behind was the one some explicit width had scaled UP to,
+ * so every auto→explicit→auto round trip multiplied it by the shrink and never
+ * divided it back. The lock switch turns the co-write off for someone who
+ * picked a page size deliberately; it is a stored preference rather than URL
+ * state, because it decides what a FUTURE change writes rather than what this
+ * view is.
  */
 export function GridCellSizeControl({ metricsStore }: {
     metricsStore?: GridMetricsStore
@@ -109,37 +115,66 @@ export function GridCellSizeControl({ metricsStore }: {
         setPending(effective)
     }, [effective])
 
-    const commit = async (next: number) => {
-        const target = clampCellWidth(next)
-        if (target === cellSize) return
-        // ONE TICK for the whole change (design §9). The cell-size write is
-        // handed to the page-size commit as its `alongside` write rather than
-        // awaited first, because two ticks are observably wrong in pages mode:
-        // `cs` alone re-lays the grid out at the OLD page size, and the
-        // scroll-stop anchor that layout produces lands after — and on top of
-        // — the position this commit remapped.
-        const writeCellSize = () => setCellSize(target, { history: "replace" })
-        // The RATIO is measured between the widths actually LAID OUT, not
-        // between the targets: a target of 500px in a 2473px row lays out as
-        // four 611px cells, and it is the 611 that decides how many cells a
-        // screen holds. The new column count comes from the same expression
-        // the grid will run on the width it has already published.
-        const container = metrics.containerWidth
-        const nextColumns = columnsForCellWidth(container, target, GRID_GAP_PX)
-        const nextWidth = cellWidthForColumns(container, nextColumns, GRID_GAP_PX) || target
-        // The width the ratio is measured FROM: the laid-out width the grid is
-        // showing right now. On the auto→explicit switch that is the whole
-        // point — the page size follows the change the user just made, not a
-        // change from some notional default.
-        const previous = metrics.cellWidth || cellSize || target
+    // ONE TICK for the whole change (design §9), for the slider and the Auto
+    // button alike. The cell-size write is handed to the page-size commit as
+    // its `alongside` write rather than awaited first, because two ticks are
+    // observably wrong in pages mode: `cs` alone re-lays the grid out at the
+    // OLD page size, and the scroll-stop anchor that layout produces lands
+    // after — and on top of — the position this commit remapped.
+    //
+    // The page size is scaled between the geometries actually LAID OUT — the
+    // column count and row pitch the grid is showing now, and the pair the
+    // new size will produce — never between the widths the slider names: a
+    // target of 500px in a 2473px row lays out as four 611px cells, and it is
+    // the four and the 611 that decide how many cells a screen holds. An
+    // unmeasured grid (a control opened in the very first frame) has no
+    // geometry to scale from, and then the page size is simply left alone.
+    const commitLayout = async (
+        writeCellSize: () => Promise<unknown>,
+        next: PageGeometry
+    ) => {
         const nextPageSize = locked
             ? null
-            : coWrittenPageSize(pageSize, previous, nextWidth, nextColumns)
+            : coWrittenPageSize(
+                pageSize,
+                { columns: metrics.columns, rowHeight: metrics.rowHeight },
+                next
+            )
         if (nextPageSize === null) {
             await writeCellSize()
             return
         }
         await commitPageSize(nextPageSize, writeCellSize)
+    }
+
+    const commit = async (next: number) => {
+        const target = clampCellWidth(next)
+        if (target === cellSize) return
+        // The layout this target produces, from the same expressions the grid
+        // will run on the container width it has already published: the
+        // columns that fit, the width they then share, and the square-box row
+        // that width implies.
+        const container = metrics.containerWidth
+        const nextColumns = columnsForCellWidth(container, target, GRID_GAP_PX)
+        const nextWidth = cellWidthForColumns(container, nextColumns, GRID_GAP_PX)
+        await commitLayout(
+            () => setCellSize(target, { history: "replace" }),
+            { columns: nextColumns, rowHeight: rowHeightForCellWidth(nextWidth) }
+        )
+    }
+
+    // The only way back to the automatic policy: an explicit cell size
+    // REPLACES it rather than adjusting it, so "auto" is not a position on
+    // the track. The layout auto will produce is not a guess — it is a
+    // function of the window's media queries and the sidebar, which the grid
+    // evaluates in both modes and publishes as the auto pair — so the page
+    // size is scaled to it exactly as a slider commit scales to its target.
+    const reset = async () => {
+        if (auto) return
+        await commitLayout(
+            () => setCellSize(null, { history: "replace" }),
+            { columns: metrics.autoColumns, rowHeight: metrics.autoRowHeight }
+        )
     }
 
     return (
@@ -181,18 +216,12 @@ export function GridCellSizeControl({ metricsStore }: {
                     className="mt-4"
                     aria-label="Cell width in pixels"
                 />
-                {/* The only way back to the automatic policy: an explicit cell
-                    size REPLACES it rather than adjusting it, so "auto" is not
-                    a position on the track. Page size is deliberately left
-                    alone here — the width auto will produce is not known until
-                    the grid has re-laid-out, so there is no ratio to preserve
-                    it against. */}
                 <Button
                     variant="outline"
                     size="sm"
                     className="mt-3 w-full"
                     disabled={auto}
-                    onClick={() => void setCellSize(null)}
+                    onClick={() => void reset()}
                 >
                     Use automatic size
                 </Button>
