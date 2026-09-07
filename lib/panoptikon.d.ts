@@ -1747,6 +1747,11 @@ export interface components {
         BatchHealth: {
             /** Format: int64 */
             age_ms: number;
+            /**
+             * Format: int64
+             * @description Allocator retries this batch caused; `None` off CUDA.
+             */
+            alloc_retries?: number | null;
             /** Format: int64 */
             allocated_before_mb?: number | null;
             /** Format: double */
@@ -3066,6 +3071,17 @@ export interface components {
         JobType: "data_extraction" | "data_deletion" | "folder_rescan" | "folder_update" | "job_data_deletion" | "vector_quant_reconcile" | "db_maintenance" | "test_sleep" | "test_panic" | "test_report";
         /** @description One resident replica's ledger state. */
         LedgerWorkerHealth: {
+            /**
+             * Format: int64
+             * @description Allocator retries the last window that **reported** the counter, and
+             *     this replica's running total. Both absent off CUDA, which keeps no such
+             *     counter: absent is not zero — a replica reading 0 was measured and was
+             *     never short of memory. A window that stretched with no retry was not
+             *     short of memory either.
+             */
+            alloc_retries_last_window?: number | null;
+            /** Format: int64 */
+            alloc_retries_total?: number | null;
             /** Format: int64 */
             base_mb?: number | null;
             /**
@@ -3111,6 +3127,20 @@ export interface components {
              *     memory allows. `None` until one is fitted or seeded from a profile.
              */
             knee_units?: number | null;
+            /** Format: double */
+            last_regrow_batch_ms?: number | null;
+            /**
+             * Format: int64
+             * @description The first batch after a release **the host asked for**: the MiB it grew
+             *     the pool back by, and that batch's whole duration. Not a re-grow time —
+             *     the `cudaMalloc`s run inside `predict`. The diagnosis path for a search
+             *     query that suddenly got slower.
+             */
+            last_regrow_mb?: number | null;
+            /** Format: int64 */
+            last_release_mb?: number | null;
+            /** Format: double */
+            last_release_ms?: number | null;
             /**
              * Format: int32
              * @description Local clean fit samples behind this model's fit, including any a
@@ -3125,6 +3155,14 @@ export interface components {
             max_units_measured: number;
             /** @description Demand signal behind the contention split. */
             pending_requests: number;
+            /**
+             * Format: int64
+             * @description Trim replies that handed memory back (`released_mb > 0`), and what the
+             *     most recent release measured: MiB returned and the `empty_cache()`
+             *     call's own wall time. Absent on a replica whose pool cannot be
+             *     measured, which is every replica off CUDA and MPS.
+             */
+            pool_releases?: number | null;
             /**
              * Format: int32
              * @description Doublings earned by clean windows.
