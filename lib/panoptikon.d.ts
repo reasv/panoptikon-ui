@@ -3115,6 +3115,14 @@ export interface components {
             /** Format: int64 */
             grants_mb: number;
             grants_outstanding: number;
+            /**
+             * @description Whether the ring certified that rung: a knee or a measured plateau is a
+             *     hold on evidence, and only that kind of hold says the calibration
+             *     learned where this replica stands. `false` whenever nothing is held.
+             */
+            held_certified: boolean;
+            /** Format: int64 */
+            held_units?: number | null;
             inference_id: string;
             /**
              * @description Whether that knee was fitted on this machine (as opposed to seeded
@@ -3163,6 +3171,12 @@ export interface components {
              *     measured, which is every replica off CUDA and MPS.
              */
             pool_releases?: number | null;
+            /**
+             * @description The throughput brake: the last clean window refused this replica its next
+             *     doubling, and the rung the hold was declared on. Without them a held
+             *     replica is indistinguishable from an idle one — a frozen `unit_budget`.
+             */
+            ramp_held: boolean;
             /**
              * Format: int32
              * @description Doublings earned by clean windows.
