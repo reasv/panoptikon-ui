@@ -19,11 +19,28 @@ import {
     clampCellWidth,
     coWrittenPageSize,
     columnsForCellWidth,
+    rowHeightForCellWidth,
+    type PageGeometry,
 } from "@/lib/gridCellSize"
 import { MAX_CELL_WIDTH, MIN_CELL_WIDTH } from "@/lib/searchLimits"
 import { type AnimateMode } from "@/lib/thumbnailTier"
 import { cellRange, setAnimateSlot, type CellRange } from "@/lib/state/animatePref"
 import { useAnimateModeForRange } from "@/hooks/useAnimateMode"
+import {
+    hoverPreviewChoice,
+    setHoverPreviewChoice,
+    type HoverPreviewCapability,
+    type HoverPreviewChoice,
+} from "@/lib/state/hoverPreviewPref"
+import {
+    HOVER_PREVIEW_TRIGGER_LABELS,
+    hoverPreviewLead,
+    hoverPreviewTriggerHint,
+    setHoverPreviewTrigger,
+    type HoverPreviewTrigger,
+} from "@/lib/state/hoverPreviewTrigger"
+import { useHoverPreviewTrigger } from "@/hooks/useHoverPreviewTrigger"
+import { useHoverPreview, useHoverPreviewCapability } from "@/lib/useClientConfig"
 import { useGridCellSize } from "@/lib/state/cellSize"
 import { useCellSizePageLock } from "@/lib/state/cellSizePageLock"
 import { EMPTY_GRID_METRICS, type GridMetricsStore } from "@/lib/state/gridMetricsBox"
@@ -49,10 +66,14 @@ import { usePageSize } from "@/lib/state/searchQuery/clientHooks"
  * one drag cannot mint a pile of history entries for Back to replay.
  *
  * A commit also co-writes `page_size` by default, so the screen-to-items ratio
- * survives the change (coWrittenPageSize). The lock switch turns that off for
- * someone who picked a page size deliberately; it is a stored preference
- * rather than URL state, because it decides what a FUTURE drag writes rather
- * than what this view is.
+ * survives the change (coWrittenPageSize) — and so does the Auto button, which
+ * is a layout change like any other and used to be the one that did not: the
+ * page size it left behind was the one some explicit width had scaled UP to,
+ * so every auto→explicit→auto round trip multiplied it by the shrink and never
+ * divided it back. The lock switch turns the co-write off for someone who
+ * picked a page size deliberately; it is a stored preference rather than URL
+ * state, because it decides what a FUTURE change writes rather than what this
+ * view is.
  */
 export function GridCellSizeControl({ metricsStore }: {
     metricsStore?: GridMetricsStore
@@ -94,37 +115,66 @@ export function GridCellSizeControl({ metricsStore }: {
         setPending(effective)
     }, [effective])
 
-    const commit = async (next: number) => {
-        const target = clampCellWidth(next)
-        if (target === cellSize) return
-        // ONE TICK for the whole change (design §9). The cell-size write is
-        // handed to the page-size commit as its `alongside` write rather than
-        // awaited first, because two ticks are observably wrong in pages mode:
-        // `cs` alone re-lays the grid out at the OLD page size, and the
-        // scroll-stop anchor that layout produces lands after — and on top of
-        // — the position this commit remapped.
-        const writeCellSize = () => setCellSize(target, { history: "replace" })
-        // The RATIO is measured between the widths actually LAID OUT, not
-        // between the targets: a target of 500px in a 2473px row lays out as
-        // four 611px cells, and it is the 611 that decides how many cells a
-        // screen holds. The new column count comes from the same expression
-        // the grid will run on the width it has already published.
-        const container = metrics.containerWidth
-        const nextColumns = columnsForCellWidth(container, target, GRID_GAP_PX)
-        const nextWidth = cellWidthForColumns(container, nextColumns, GRID_GAP_PX) || target
-        // The width the ratio is measured FROM: the laid-out width the grid is
-        // showing right now. On the auto→explicit switch that is the whole
-        // point — the page size follows the change the user just made, not a
-        // change from some notional default.
-        const previous = metrics.cellWidth || cellSize || target
+    // ONE TICK for the whole change (design §9), for the slider and the Auto
+    // button alike. The cell-size write is handed to the page-size commit as
+    // its `alongside` write rather than awaited first, because two ticks are
+    // observably wrong in pages mode: `cs` alone re-lays the grid out at the
+    // OLD page size, and the scroll-stop anchor that layout produces lands
+    // after — and on top of — the position this commit remapped.
+    //
+    // The page size is scaled between the geometries actually LAID OUT — the
+    // column count and row pitch the grid is showing now, and the pair the
+    // new size will produce — never between the widths the slider names: a
+    // target of 500px in a 2473px row lays out as four 611px cells, and it is
+    // the four and the 611 that decide how many cells a screen holds. An
+    // unmeasured grid (a control opened in the very first frame) has no
+    // geometry to scale from, and then the page size is simply left alone.
+    const commitLayout = async (
+        writeCellSize: () => Promise<unknown>,
+        next: PageGeometry
+    ) => {
         const nextPageSize = locked
             ? null
-            : coWrittenPageSize(pageSize, previous, nextWidth, nextColumns)
+            : coWrittenPageSize(
+                pageSize,
+                { columns: metrics.columns, rowHeight: metrics.rowHeight },
+                next
+            )
         if (nextPageSize === null) {
             await writeCellSize()
             return
         }
         await commitPageSize(nextPageSize, writeCellSize)
+    }
+
+    const commit = async (next: number) => {
+        const target = clampCellWidth(next)
+        if (target === cellSize) return
+        // The layout this target produces, from the same expressions the grid
+        // will run on the container width it has already published: the
+        // columns that fit, the width they then share, and the square-box row
+        // that width implies.
+        const container = metrics.containerWidth
+        const nextColumns = columnsForCellWidth(container, target, GRID_GAP_PX)
+        const nextWidth = cellWidthForColumns(container, nextColumns, GRID_GAP_PX)
+        await commitLayout(
+            () => setCellSize(target, { history: "replace" }),
+            { columns: nextColumns, rowHeight: rowHeightForCellWidth(nextWidth) }
+        )
+    }
+
+    // The only way back to the automatic policy: an explicit cell size
+    // REPLACES it rather than adjusting it, so "auto" is not a position on
+    // the track. The layout auto will produce is not a guess — it is a
+    // function of the window's media queries and the sidebar, which the grid
+    // evaluates in both modes and publishes as the auto pair — so the page
+    // size is scaled to it exactly as a slider commit scales to its target.
+    const reset = async () => {
+        if (auto) return
+        await commitLayout(
+            () => setCellSize(null, { history: "replace" }),
+            { columns: metrics.autoColumns, rowHeight: metrics.autoRowHeight }
+        )
     }
 
     return (
@@ -144,7 +194,7 @@ export function GridCellSizeControl({ metricsStore }: {
                     <LayoutGrid className="h-5 w-5" />
                 </Button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-80">
+            <PopoverContent align="end" className="w-96">
                 <div className="flex items-center justify-between">
                     <Label className="text-base">Cell Size</Label>
                     {/* tabular-nums and a reserved width so the row does not
@@ -166,6 +216,15 @@ export function GridCellSizeControl({ metricsStore }: {
                     className="mt-4"
                     aria-label="Cell width in pixels"
                 />
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3 w-full"
+                    disabled={auto}
+                    onClick={() => void reset()}
+                >
+                    Use automatic size
+                </Button>
                 <div className="mt-4 flex items-center justify-between">
                     <div className="pr-4">
                         <Label className="text-sm">Keep page size</Label>
@@ -180,55 +239,70 @@ export function GridCellSizeControl({ metricsStore }: {
                         aria-label="Keep page size when the cell size changes"
                     />
                 </div>
-                <div className="mt-4 flex items-center justify-between">
-                    <div className="pr-4">
-                        <Label className="text-sm">Animate</Label>
-                        {/* WHICH RANGE this writes is the one thing the
-                            control has to say out loud (D4): the same popover
-                            shows a different value once the slider crosses the
-                            threshold, and without this that reads as the
-                            toggle having flipped itself. */}
-                        <p className="text-xs text-muted-foreground">
-                            {range === "below"
-                                ? `For cells under ${SMALL_CELL_THRESHOLD_PX}px wide. Larger cells keep their own setting.`
-                                : `For cells ${SMALL_CELL_THRESHOLD_PX}px wide and over. Smaller cells keep their own setting.`}
-                        </p>
-                    </div>
-                    <AnimateModeSegment mode={animateMode} range={range} />
-                </div>
-                {/* The only way back to the automatic policy: an explicit cell
-                    size REPLACES it rather than adjusting it, so "auto" is not
-                    a position on the track. Page size is deliberately left
-                    alone here — the width auto will produce is not known until
-                    the grid has re-laid-out, so there is no ratio to preserve
-                    it against. */}
-                <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-4 w-full"
-                    disabled={auto}
-                    onClick={() => void setCellSize(null)}
-                >
-                    Use automatic size
-                </Button>
+                {/* Two groups, one rule: everything above the line is about
+                    how big a card is (the slider, its reset, and the page
+                    lock that rides along with size changes); everything below
+                    is about what a card does once it is on screen. Without
+                    the line the reset used to sit at the very bottom, four
+                    unrelated controls away from the slider it belongs to. */}
+                <div className="my-4 border-t border-border" />
+                <AnimatedImagesRow mode={animateMode} range={range} />
+                <HoverPreviewRow />
+                <PreviewTriggerRow />
             </PopoverContent>
         </Popover>
     )
 }
 
 /**
- * The animate toggle (D4): two segments showing the EFFECTIVE mode for the
- * range on screen, and writing only that range's slot.
+ * The animated-images setting (D4), laid out VERTICALLY: the name and one
+ * sentence saying what the setting IS, the control at full width, and under
+ * it one sentence saying what the CURRENT choice does — plus which size band
+ * it is for, which is the one thing this control must say out loud: the same
+ * popover shows a different value once the slider crosses the threshold, and
+ * without it that reads as the toggle having flipped itself.
  *
- * Not a `Switch` like its neighbour, because the two states are named
- * behaviours rather than an on/off of one: "on hover" is not the absence of
- * "always", and a switch labelled with either one reads as the wrong question.
- * `radiogroup`/`radio` rather than a listbox for the same reason a segmented
- * control is not a select — both options are visible and one is chosen.
+ * Named "Animated images" rather than "Animate" so it cannot be confused with
+ * the video-preview setting under it: this one is about GIFs and the other
+ * animated pictures, which have no player and simply run; that one is about
+ * video files, which need a player and a request to start.
  *
  * The write goes STRAIGHT to the preference box (lib/state/animatePref.ts):
  * nothing here touches the URL or the creation-defaults layer, which is the
  * rule the preference exists under (D3).
+ */
+function AnimatedImagesRow({ mode, range }: {
+    mode: AnimateMode
+    range: CellRange
+}) {
+    return (
+        <div>
+            <Label className="text-sm">Animated images</Label>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+                How GIFs and other animated pictures play in the grid.
+            </p>
+            <AnimateModeSegment mode={mode} range={range} />
+            <p className="mt-1.5 text-xs text-muted-foreground">
+                {mode === "always"
+                    ? "Playing as soon as they are on screen. "
+                    : "Still until you rest the pointer on one. "}
+                {range === "below"
+                    ? `Applies to the current cell size range (under ${SMALL_CELL_THRESHOLD_PX}px).`
+                    : `Applies to the current cell size range (${SMALL_CELL_THRESHOLD_PX}px and up).`}
+            </p>
+        </div>
+    )
+}
+
+/**
+ * The two segments show the EFFECTIVE mode for the range on screen, and write
+ * only that range's slot.
+ *
+ * Not a `Switch` like the page-size row, because the two states are named
+ * behaviours rather than an on/off of one: "on hover" is not the absence of
+ * "always", and a switch labelled with either one reads as the wrong question.
+ * `radiogroup`/`radio` rather than a listbox for the same reason a segmented
+ * control is not a select — both options are visible and one is chosen.
  */
 function AnimateModeSegment({ mode, range }: {
     mode: AnimateMode
@@ -241,7 +315,7 @@ function AnimateModeSegment({ mode, range }: {
             aria-checked={mode === value}
             onClick={() => setAnimateSlot(range, value === "always")}
             className={cn(
-                "rounded-sm px-2 py-1 text-xs transition-colors",
+                "flex-1 rounded-sm px-2 py-1 text-xs transition-colors",
                 mode === value
                     ? "bg-background text-foreground shadow-xs"
                     : "text-muted-foreground hover:text-foreground"
@@ -253,11 +327,205 @@ function AnimateModeSegment({ mode, range }: {
     return (
         <div
             role="radiogroup"
-            aria-label="When animated results play"
-            className="flex shrink-0 items-center gap-0.5 rounded-md bg-muted p-0.5"
+            aria-label="When animated images play"
+            className="mt-2 flex w-full items-center gap-0.5 rounded-md bg-muted p-0.5"
         >
             {segment("always", "Always")}
             {segment("hover", "On hover")}
+        </div>
+    )
+}
+
+/**
+ * The video-preview toggle (A6): what a hovered video cell is allowed to do
+ * on this browser (docs/video-hover-preview-implementation.md V7).
+ *
+ * ITS OWN COMPONENT so that the two client-config reads below live behind the
+ * popover rather than in the header button that opens it: this whole control
+ * mounts once and only while the popover is open, and the strict rule the
+ * package is under is about the GRID's cards, not about a panel.
+ *
+ * THREE POSITIONS ON ONE SCALE, so a segmented control rather than two
+ * switches — "Originals" is not "All minus something", it is the middle of a
+ * range from "spend nothing" to "spend a server encode". Same `radiogroup`
+ * shape and the same straight-to-localStorage write as the Animate toggle
+ * above it; nothing here touches the URL or the creation-defaults layer.
+ *
+ * WHAT THE SEGMENTS SHOW is the EFFECTIVE answer, D4's rule: a stored "All"
+ * against a policy that denies the preview encode lights "Originals" and greys
+ * "All" beside it, rather than lighting a segment that does nothing.
+ */
+function HoverPreviewRow() {
+    // The RESOLVED answer (server ∧ preference), which is what the grid is
+    // actually doing, and the SERVER's half alone, which is what decides
+    // whether a segment is offered at all. Two reads of one cached query.
+    const resolved = useHoverPreview()
+    const server = useHoverPreviewCapability()
+    const choice = hoverPreviewChoice(resolved)
+    // THE SENTENCE FOLLOWS THE TRIGGER (T8). This row is about what a preview
+    // may COST, and the row under it about the gesture that starts one — but
+    // the first thing this row's sentence has to do is name that gesture, and
+    // a fixed one would describe a grid the user may no longer have.
+    const trigger = useHoverPreviewTrigger()
+    return (
+        <div className="mt-4">
+            <Label className="text-sm">Video previews</Label>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+                {hoverPreviewLead(trigger)}
+            </p>
+            <HoverPreviewSegment choice={choice} server={server} />
+            <p className="mt-1.5 text-xs text-muted-foreground">
+                {hoverPreviewHint(choice, server)}
+            </p>
+        </div>
+    )
+}
+
+/**
+ * WHAT THE CURRENT CHOICE DOES, in a sentence — never the whole menu. The
+ * text under the control describes the lit segment; the only time it talks
+ * about another segment is to say why that one is greyed out, because "your
+ * server will not do this" and "you turned this off" are the same picture
+ * otherwise.
+ */
+function hoverPreviewHint(
+    choice: HoverPreviewChoice,
+    server: HoverPreviewCapability | null
+): string {
+    if (!server) {
+        return "This server does not offer video previews."
+    }
+    if (!server.direct && !server.trim) {
+        return "Video previews are turned off for this server."
+    }
+    // The two own-bytes rungs are one thing to a person — "play the file
+    // itself" — so the sentence names what that means rather than which of
+    // them a given file will take (docs/video-hover-preview-implementation.md).
+    const noEncode = server.transcode
+        ? ""
+        : " This server does not convert the ones your browser cannot play, so “All” is unavailable."
+    switch (choice) {
+        case "off":
+            return `Videos show a still frame; nothing plays until you open one.${noEncode}`
+        case "originals":
+            return `Plays the file itself, trimmed to its first 16 seconds when it is large. Videos your browser cannot play stay still.${noEncode}`
+        case "all":
+            return "Plays the file itself, and asks the server for a short converted preview of the ones your browser cannot play."
+    }
+}
+
+function HoverPreviewSegment({ choice, server }: {
+    choice: HoverPreviewChoice
+    server: HoverPreviewCapability | null
+}) {
+    const segment = (
+        value: HoverPreviewChoice,
+        label: string,
+        available: boolean
+    ) => (
+        <button
+            type="button"
+            role="radio"
+            aria-checked={choice === value}
+            disabled={!available}
+            // The SERVER's half goes with the write: a slot is only recorded
+            // for a rung this server offered, or clicking the already-lit
+            // "Originals" beside a disabled "All" would silently freeze the
+            // encode rung off forever (see `withHoverPreviewSlot`).
+            onClick={() => setHoverPreviewChoice(value, server)}
+            className={cn(
+                "flex-1 rounded-sm px-2 py-1 text-xs transition-colors",
+                !available && "opacity-40 cursor-not-allowed",
+                choice === value
+                    ? "bg-background text-foreground shadow-xs"
+                    : "text-muted-foreground",
+                available && choice !== value && "hover:text-foreground"
+            )}
+        >
+            {label}
+        </button>
+    )
+    // "Off" is always available: turning the feature off is a decision the
+    // browser is entitled to whatever the server says — and it is the only
+    // segment that means anything when the server offers nothing at all.
+    return (
+        <div
+            role="radiogroup"
+            aria-label="Video previews on hover"
+            className="mt-2 flex w-full items-center gap-0.5 rounded-md bg-muted p-0.5"
+        >
+            {segment("off", "Off", true)}
+            {/* Offered as soon as EITHER own-bytes rung is: they are one
+                position on this control, and which of the two a given file
+                takes is arithmetic on its size. */}
+            {segment("originals", "Originals", !!server && (server.direct || server.trim))}
+            {segment("all", "All", !!server?.transcode)}
+        </div>
+    )
+}
+
+/**
+ * WHERE THE POINTER HAS TO REST for a video preview to start (T8), laid out
+ * like every other setting in this popover: the name, one sentence saying what
+ * the setting is, the control at full width, and under it one sentence saying
+ * what the current choice does.
+ *
+ * BESIDE "Video previews" RATHER THAN INSIDE IT, because they are different
+ * questions with different owners: that one is a negotiation with the server
+ * about what a preview may cost and its segments grey out when a policy denies
+ * a rung; this one is about a gesture, is nobody's business but the browser's,
+ * and is always available — including when previews are off, where it is
+ * simply the answer that applies when they are turned back on.
+ *
+ * The write goes STRAIGHT to the preference box
+ * (lib/state/hoverPreviewTrigger.ts): nothing here touches the URL or the
+ * creation-defaults layer.
+ */
+function PreviewTriggerRow() {
+    const trigger = useHoverPreviewTrigger()
+    return (
+        <div className="mt-4">
+            <Label className="text-sm">Start on</Label>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+                What the pointer has to be over for a video preview to begin.
+            </p>
+            <PreviewTriggerSegment trigger={trigger} />
+            <p className="mt-1.5 text-xs text-muted-foreground">
+                {hoverPreviewTriggerHint(trigger)}
+            </p>
+        </div>
+    )
+}
+
+/**
+ * Two named behaviours rather than an on/off, so the same `radiogroup`
+ * segmented shape as its two neighbours — and no disabled state anywhere in
+ * it: there is no server half to deny either position.
+ */
+function PreviewTriggerSegment({ trigger }: { trigger: HoverPreviewTrigger }) {
+    return (
+        <div
+            role="radiogroup"
+            aria-label="Where a video preview starts"
+            className="mt-2 flex w-full items-center gap-0.5 rounded-md bg-muted p-0.5"
+        >
+            {HOVER_PREVIEW_TRIGGER_LABELS.map(([value, label]) => (
+                <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={trigger === value}
+                    onClick={() => setHoverPreviewTrigger(value)}
+                    className={cn(
+                        "flex-1 rounded-sm px-2 py-1 text-xs transition-colors",
+                        trigger === value
+                            ? "bg-background text-foreground shadow-xs"
+                            : "text-muted-foreground hover:text-foreground"
+                    )}
+                >
+                    {label}
+                </button>
+            ))}
         </div>
     )
 }

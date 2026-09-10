@@ -1,10 +1,12 @@
-// Type-only, both of them. `@/lib/panoptikon` is a .d.ts, so a VALUE import of
+// Type-only, all of them. `@/lib/panoptikon` is a .d.ts, so a VALUE import of
 // it is a runtime module the node test scripts cannot resolve (the rule
-// lib/videoTranscode.ts documents) — and with both erased this module has NO
-// runtime imports at all, which is what lets scripts/displayloop.test.mjs
-// execute `deriveClientConfig` under plain node.
+// lib/videoTranscode.ts documents) — and with them all erased this module has
+// NO runtime imports at all, which is what lets scripts/displayloop.test.mjs
+// and scripts/videopreview.test.mjs execute `deriveClientConfig` under plain
+// node.
 import type { components } from "@/lib/panoptikon"
 import type { AnimatedFloor, DisplayLoopTrigger } from "@/lib/thumbnailTier"
+import type { HoverPreviewCapability } from "@/lib/state/hoverPreviewPref"
 
 // The gateway's GET /api/client-config response: the name of the policy that
 // matched the request, capability booleans derived from that policy's
@@ -53,6 +55,19 @@ export interface ClientConfig {
    * display size is always an image", i.e. today's element.
    */
   displayLoopTrigger: DisplayLoopTrigger | null
+  /**
+   * What THIS POLICY and this deployment allow a hovered video cell to do
+   * (`hover_preview`, docs/video-hover-preview-implementation.md V8): the
+   * server's own conjunction of the policy override, the `[transcode]`
+   * default, the transcode capability and the preset filter. The UI never
+   * re-derives it — it only ever subtracts the browser preference from it
+   * (lib/state/hoverPreviewPref.ts `resolveHoverPreview`).
+   *
+   * Null when the server reports nothing usable: a Server older than the
+   * feature, and the window while the config request is in flight. Both read
+   * as "no previews", which is exactly today's grid.
+   */
+  hoverPreview: HoverPreviewCapability | null
 }
 
 // [policies.client] keys are free-form; these are the by-convention keys the
@@ -113,6 +128,12 @@ export function deriveClientConfig(response: ClientConfigResponse): ClientConfig
     // Top-level for the same reason as the floor above: it is a property of
     // what the scan wrote, identical for every policy.
     displayLoopTrigger: normalizeDisplayLoopTrigger(response.display_loop_trigger),
+    // Top-level, but unlike the two above it is POLICY-DEPENDENT: it is the
+    // server's resolved answer for the request that fetched this config, so a
+    // restricted policy and an unrestricted one see different values at the
+    // same URL. Normalized all-or-nothing, exactly as the two bounds objects
+    // are and for the same reason (see `wireBooleans`).
+    hoverPreview: normalizeHoverPreview(response.hover_preview),
   }
 }
 
@@ -148,6 +169,64 @@ function wireNumbers(
     values.push(value)
   }
   return values
+}
+
+/**
+ * The same all-or-nothing rule as `wireNumbers`, for a record of BOOLEANS.
+ *
+ * A half-reported capability is not a rung that quietly stays off — it is a
+ * rung whose answer this client cannot see, and guessing either way is a
+ * request the policy may refuse or a preview the user was entitled to and did
+ * not get. Everything short of complete reads as "not reported", which every
+ * consumer answers with today's still cell.
+ */
+function wireBooleans(obj: unknown, keys: readonly string[]): boolean[] | null {
+  if (!obj || typeof obj !== "object") return null
+  const record = obj as Record<string, unknown>
+  const values: boolean[] = []
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value !== "boolean") return null
+    values.push(value)
+  }
+  return values
+}
+
+/** One wire member as a finite, non-negative number, or null. */
+function wireNumber(obj: unknown, key: string): number | null {
+  const values = wireNumbers(obj, [key])
+  return values ? values[0] : null
+}
+
+/**
+ * `hover_preview` as the two rungs, or null.
+ *
+ * STILL NORMALIZED NOW THAT THE GENERATED TYPE CARRIES THE FIELD, on the rule
+ * `wireNumbers` states for the two bounds objects: the value crosses the wire
+ * from a Server whose version this client does not pin, and one older than the
+ * hover-preview package sends nothing at all. The generated type says what the
+ * CURRENT server promises, not what arrived.
+ *
+ * A plain object rather than one of lib/state/hoverPreviewPref.ts's interned
+ * constants, and that is what keeps this module free of RUNTIME imports (see
+ * its header): the value never reaches a memoized card from here — the hook
+ * resolves it against the browser preference first, and that resolution is
+ * what returns an interned answer.
+ */
+function normalizeHoverPreview(
+  hoverPreview: unknown
+): HoverPreviewCapability | null {
+  // ALL FOUR MEMBERS OR NOTHING. A cap this client cannot read is the case
+  // that matters: with `max_bytes` missing there is no number to measure a
+  // file against, and both own-bytes rungs would either be refused outright or
+  // pull whatever the file happens to weigh — which is the defect the cap
+  // exists to fix.
+  const flags = wireBooleans(hoverPreview, ["direct", "trim", "transcode"])
+  if (!flags) return null
+  const maxBytes = wireNumber(hoverPreview, "max_bytes")
+  if (maxBytes === null) return null
+  const [direct, trim, transcode] = flags
+  return { direct, trim, transcode, maxBytes }
 }
 
 function normalizeDisplayLoopTrigger(

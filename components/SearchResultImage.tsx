@@ -8,11 +8,12 @@ import { ItemMetaLine } from "@/components/ItemMetaLine";
 import { PlayableBadge } from "@/components/PlayableBadge";
 import { OpenDetailsButton } from "@/components/OpenFileDetails";
 import { PinButton } from './gallery/PinButton';
-import { blurHashToDataURL, type PlaceholderDataURL } from '@/lib/state/blurHashDataURL';
+import { cellPlaceholder, clearPlaceholderColour, isPlaceholderColour, type CellPlaceholder } from '@/lib/state/blurHashDataURL';
 import { useCellCallbacks, useCellFlags } from '@/lib/state/cellActions';
 import { PIN_SHA_PREFIX_LENGTH } from '@/lib/pinboardCrop';
 import {
     animatedCellMode,
+    placeholderForTier,
     showsMotionBadge,
     type AnimateMode,
     type AnimatedFloor,
@@ -21,12 +22,23 @@ import {
 } from '@/lib/thumbnailTier';
 import {
     cellTierForRow,
+    extremeCropArmsHover,
     planCellPicture,
     type CellCrop,
+    type CellVideoPicture,
 } from '@/lib/cellPicture';
 import { isSmallCell } from '@/lib/gridCellSize';
 import { LoopVideo } from '@/components/LoopVideo';
 import { CELL_HOVER_ROOT_ATTR, useArmedHover } from '@/hooks/useArmedHover';
+import {
+    HOVER_PREVIEW_OFF,
+    type HoverPreviewCapability,
+} from '@/lib/state/hoverPreviewPref';
+import { cellPreviewLadder, type PreviewFeedback } from '@/lib/videoPreview';
+import { VideoHoverPicture } from '@/components/VideoHoverPicture';
+import { usePreviewTriggerArm } from '@/hooks/usePreviewTriggerArm';
+import type { CountdownPhase } from '@/lib/previewCountdown';
+import type { HoverPreviewTrigger } from '@/lib/state/hoverPreviewTrigger';
 
 // The marker the extreme-aspect swap and the hover arming bind their listeners
 // to. It is the element that carries `group`, so the JS hover regions and the
@@ -55,33 +67,61 @@ const HOVER_ROOT_ATTR = CELL_HOVER_ROOT_ATTR
  * through (plain `background-image: url(<png>)`, no SVG, no Document)
  * Documents hold at 1 and the curve is flat.
  *
- * The TYPE of `blurDataURL` (`data:image/png;base64,…` template literal) is
+ * The TYPE of `placeholder` (`data:image/png;base64,…` template literal) is
  * the real guard: next/image only validates the placeholder string in dev
  * builds — in production an invalid string silently becomes a garbage
  * background. `?? 'empty'` is equivalent to omitting the prop; it is kept as
  * documentation.
+ *
+ * THE `"colour"` RUNG TAKES THE OTHER PATH. A flat `rgb()` is not a picture
+ * and must never reach next/image's `placeholder` (it is not a data URL, and
+ * in a production build that is a silent garbage background) — it is one
+ * inline `background-color` on the `<img>` itself, which under `fill` IS the
+ * picture box: `position:absolute; inset:0`, the same box next/image paints
+ * its own blur into. That is the whole of the rung's cost — no ref, no state,
+ * no effect, no second element (see `clearPlaceholderColour`).
+ *
+ * ON THE <img> AND NOT ON A WRAPPER, and it is not only tidiness. next/image
+ * already writes an inline `style` on this element (position, inset,
+ * object-fit, `color: transparent`), so the colour is one more property on an
+ * attribute that exists; put on the card's box instead it is a style attribute
+ * on an element that had none, and the browser charges for that. Measured on
+ * this build at `cs=140`, 8 s / 32,100 px: RecalcStyleDuration 251 ms against
+ * the 479 ms of the 32x32 raster it replaces — where the wrapper-hosted
+ * version of the same colour had measured ~260 ms MORE style recalc than
+ * painting nothing at all. It also puts the colour in the one box the picture
+ * is guaranteed to cover, rather than in a wrapper that is taller than the
+ * picture by its own margin.
  */
 function CellStillImage({
     src,
     alt,
-    blurDataURL,
+    placeholder,
     className,
     elementRef,
 }: {
     src: string
     alt: string
     /** Omitted (not null) where the layer underneath IS the placeholder. */
-    blurDataURL?: PlaceholderDataURL
+    placeholder?: CellPlaceholder
     className?: string
     elementRef?: (element: HTMLImageElement | null) => void
 }) {
+    const colour = isPlaceholderColour(placeholder)
     return (
         <Image
             ref={elementRef}
             src={src}
             alt={alt}
             fill
-            placeholder={blurDataURL ?? 'empty'}
+            placeholder={colour ? 'empty' : (placeholder ?? 'empty')}
+            style={colour ? { backgroundColor: placeholder } : undefined}
+            // ONLY at the colour rung, so no other tier pays for a listener it
+            // would never use — `load` is one of the events React attaches to
+            // the element itself rather than delegating, so an unconditional
+            // handler here would be a real `addEventListener` on every cell
+            // the grid ever mounts.
+            onLoad={colour ? clearPlaceholderColour : undefined}
             className={className}
             unoptimized
         />
@@ -192,6 +232,9 @@ export const SearchResultImage = memo(function SearchResultImage({
     animatedFloor,
     displayLoopTrigger,
     animateMode = "always",
+    hoverPreview = HOVER_PREVIEW_OFF,
+    previewTrigger = "card",
+    outroSkip = false,
 }: {
     result: SearchResult,
     index: number,
@@ -286,6 +329,38 @@ export const SearchResultImage = memo(function SearchResultImage({
      * knows nothing about this feature keeps the cells it always had.
      */
     animateMode?: AnimateMode
+    /**
+     * WHAT A HOVERED VIDEO CELL MAY DO here (V7/V8): the server's answer with
+     * the browser preference already subtracted, resolved ONCE by the host
+     * (`useHoverPreview`) and handed down on the same rule as the animated
+     * floor above — never a hook per card, which is what the whole feature's
+     * "costs nothing un-hovered" claim rests on.
+     *
+     * One of four interned constants, so it is memo-safe as a prop. Omitted is
+     * `HOVER_PREVIEW_OFF`: a surface that knows nothing about previews (the
+     * similarity sidebar, the similar-items view) keeps exactly the cells it
+     * always had, and so does this one while the client config is in flight.
+     */
+    hoverPreview?: HoverPreviewCapability
+    /**
+     * The viewer's outro-skip preference (`useOutroSkipEnabled`) — read once
+     * by the host, like the props around it. With it on, a video cell's
+     * preview ends at the item's detected outro (docs/video-outro-skip-
+     * design.md): the job rungs name the cut for the server, the direct rung
+     * loops at it in the browser. False when omitted, so a surface that says
+     * nothing previews exactly what it always did.
+     */
+    outroSkip?: boolean
+    /**
+     * WHERE THE POINTER HAS TO REST for a video cell to preview (T1) — read
+     * once by the host, like the four props above it, and never per card.
+     *
+     * `"card"` is the default because a surface that does not pass it is a
+     * surface with previews off (it passes no capability either), and that is
+     * the behaviour it has always had. The two surfaces V9 names — the result
+     * grid and the gallery filmstrip — both pass the real answer.
+     */
+    previewTrigger?: HoverPreviewTrigger
 }) {
     const fileUrl = overrideURL ? overrideURL : originalFileURL(dbs, result.sha256)
     // THE TIER, LATCHED AT MOUNT, and that is the whole of the no-flash rule
@@ -325,6 +400,14 @@ export const SearchResultImage = memo(function SearchResultImage({
     // fields the row already carries and two stable props, and a static card
     // leaves here with `"still"` having mounted no hook, no listener and no
     // second element — exactly as before any of this existed.
+    //
+    // THE PREVIEW LADDER, which is the plan's fifth input and the only one that
+    // depends on what this BROWSER can decode and how big the file is
+    // (lib/videoPreview.ts). Short-circuited to the empty ladder before any
+    // probe for every row that is not a video and on every surface where
+    // previews are off, so a grid of stills pays one string comparison for the
+    // feature existing.
+    const previewRungs = cellPreviewLadder(result, hoverPreview, undefined, outroSkip)
     const plan = planCellPicture(result, dbs, tierRef.current, {
         animatedFloor,
         displayLoopTrigger,
@@ -332,7 +415,7 @@ export const SearchResultImage = memo(function SearchResultImage({
         // constant (lib/gridCellSize.ts), on a value it already has. A host
         // that measures its box has already said everything this needs.
         smallCell: isSmallCell(cellWidth),
-    })
+    }, previewRungs)
     // The badge rule's input, and the ONLY thing outside the plan that still
     // needs the three-way mode: `"still"` and `"static"` paint the same element
     // and differ only in what the badge means over them (D8).
@@ -352,7 +435,25 @@ export const SearchResultImage = memo(function SearchResultImage({
             onImageClick(index)
         }
     }, [onImageClick, index])
-    const blurDataURL = useMemo(() => result.blurhash ? blurHashToDataURL(result.blurhash) : undefined, [result.blurhash])
+    // THE PLACEHOLDER, from the card's own LATCHED tier — the same value the
+    // picture's `src` was built from, so the two can never disagree about how
+    // big this cell is. Latched, not live, for exactly the reason the tier is
+    // latched at all (see `tierRef` above): recomputing it would swap what is
+    // painted under a mounted <img>, i.e. re-introduce across every visible
+    // card the viewport-wide flash the latch exists to prevent. `tierRef` is
+    // written once at mount, so the hash-only dep list is honest rather than a
+    // stale closure.
+    //
+    // ONE VALUE, either form: at this card's tier `cellPlaceholder` answers a
+    // blurhash PNG data URL, a flat `rgb()` (the DC term, no raster) or
+    // nothing at all, and everything below simply paints what it is handed.
+    // The rung is never tested here — the whole point of the cheap rungs is
+    // that no raster is built, and one switch (lib/state/blurHashDataURL.ts)
+    // is what keeps that true at every call site.
+    const rung = placeholderForTier(tierRef.current)
+    const placeholder = useMemo(
+        () => cellPlaceholder(result.blurhash, rung),
+        [result.blurhash, rung])
     // The one refresh for the anchor's href — see the comment on the anchor.
     const refreshHref = galleryLink
         ? (event: React.SyntheticEvent<HTMLAnchorElement>) => {
@@ -373,6 +474,29 @@ export const SearchResultImage = memo(function SearchResultImage({
     // React no-op, so repeated entries cost nothing.
     const [overlayActive, setOverlayActive] = useState(false)
     const armOverlay = () => setOverlayActive(true)
+    // WHAT THE BADGE SAYS WHILE A PREVIEW TRANSCODE IS PENDING (V11). Local
+    // state written by the previewing picture below, for the same reason the
+    // overlay latch is local: the card's memo holds only while it renders from
+    // stable props, and a store subscription here would re-render every
+    // visible card. The SUBSCRIPTION to the job lives one level further in,
+    // inside a component that exists only while this cell is previewing — so
+    // no other cell hears about the job at all.
+    //
+    // It reaches the badge rather than being drawn beside the picture because
+    // the badge IS the affordance the progress belongs on: it is already the
+    // thing that says "this one plays", already centred on the frame, and
+    // already scaled to the cell.
+    const [preview, setPreview] = useState<PreviewFeedback | null>(null)
+    // THE BADGE'S OWN ARM (T3), mounted here rather than inside the picture
+    // because the badge and the picture are SIBLINGS: the badge is drawn over
+    // the anchor's whole box, the picture inside it, and the arm has to reach
+    // both — the badge for the ring it fills, the picture for the start and
+    // the frame swap. Enabled only where there is something to start: the
+    // `"button"` trigger AND a plan that can actually preview (`"video"` is
+    // the plan a video gets when its ladder is non-empty), so every other card
+    // in the grid pays one comparison and binds nothing.
+    const buttonTrigger = previewTrigger === "button" && plan.kind === "video"
+    const arm = usePreviewTriggerArm(buttonTrigger)
     return (
         <div className={cn("border rounded p-2", className)}>
             <div className={cn("overflow-hidden relative w-full pb-full mb-2",
@@ -459,17 +583,26 @@ export const SearchResultImage = memo(function SearchResultImage({
                             crop={plan.crop}
                             displaySrc={plan.displaySrc}
                             alt={`Result ${result.path}`}
-                            blurDataURL={blurDataURL}
+                            placeholder={placeholder}
                             imageClassName={imageClassName}
                             disabled={!!showLoadingSpinner}
                             animateMode={animateMode}
+                            sha256={result.sha256}
+                            indexDb={dbs.index_db}
+                            userDataDb={dbs.user_data_db}
+                            duration={result.duration}
+                            contentEndMs={result.content_end_ms}
+                            outroSkip={outroSkip}
+                            onPreviewFeedback={setPreview}
+                            previewTrigger={previewTrigger}
+                            armPhase={arm.phase}
                         />
                     ) : plan.kind === "loop" ? (
                         <CellLoopPicture
                             src={plan.src}
                             poster={plan.poster}
                             alt={`Result ${result.path}`}
-                            blurDataURL={blurDataURL}
+                            placeholder={placeholder}
                             mode={animateMode}
                             // The still card's classes, verbatim, so a loop
                             // cell is indistinguishable from the picture it
@@ -486,8 +619,28 @@ export const SearchResultImage = memo(function SearchResultImage({
                             src={plan.frame}
                             mosaicSrc={plan.mosaic}
                             alt={`Result ${result.path}`}
-                            blurDataURL={blurDataURL}
+                            placeholder={placeholder}
                             disabled={!!showLoadingSpinner}
+                            className={cn(
+                                "object-cover object-top",
+                                showLoadingSpinner ? "" : "group-hover:object-contain group-hover:object-center",
+                                imageClassName)}
+                        />
+                    ) : plan.kind === "video" ? (
+                        <VideoHoverPicture
+                            picture={plan}
+                            sha256={result.sha256}
+                            indexDb={dbs.index_db}
+                            userDataDb={dbs.user_data_db}
+                            duration={result.duration}
+                            contentEndMs={result.content_end_ms}
+                            outroSkip={outroSkip}
+                            alt={`Result ${result.path}`}
+                            placeholder={placeholder}
+                            disabled={!!showLoadingSpinner}
+                            onFeedback={setPreview}
+                            trigger={previewTrigger}
+                            armPhase={arm.phase}
                             className={cn(
                                 "object-cover object-top",
                                 showLoadingSpinner ? "" : "group-hover:object-contain group-hover:object-center",
@@ -497,7 +650,7 @@ export const SearchResultImage = memo(function SearchResultImage({
                         <CellStillImage
                             src={plan.src}
                             alt={`Result ${result.path}`}
-                            blurDataURL={blurDataURL}
+                            placeholder={placeholder}
                             className={cn(
                                 "object-cover object-top",
                                 showLoadingSpinner ? "" : "group-hover:object-contain group-hover:object-center",
@@ -515,7 +668,27 @@ export const SearchResultImage = memo(function SearchResultImage({
                         pointer events, so the click and the drag still belong
                         to the anchor. */}
                     {showsMotionBadge(result, animated, animateMode)
-                        && <PlayableBadge />}
+                        && <PlayableBadge
+                            // THE JOB'S RING WINS OVER THE COUNTDOWN'S, and
+                            // they cannot overlap anyway: the countdown ends at
+                            // the same instant the preview starts, which is the
+                            // earliest a job can exist. The fallthrough is what
+                            // makes the ring one continuous object — it fills
+                            // for the trigger, then fills again for the encode
+                            // — rather than two chrome elements taking turns.
+                            progress={preview?.progress ?? arm.progress ?? null}
+                            caption={preview?.caption ?? null}
+                            countdown={preview == null && arm.progress != null}
+                            // THE TARGET, until the moment it starts something
+                            // (T6): from the start the badge is an ordinary
+                            // badge again, so the card's hover fade hides it —
+                            // which is exactly what the `"card"` trigger does
+                            // at the same point, and why the two modes are
+                            // indistinguishable once a preview is playing.
+                            interactive={buttonTrigger && arm.phase !== "started"}
+                            elementRef={buttonTrigger ? arm.attach : undefined}
+                            onActivate={buttonTrigger ? arm.click : undefined}
+                        />}
                 </a>
                 {showLoadingSpinner && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-white bg-opacity-50">
@@ -570,10 +743,19 @@ function ExtremeAspectPicture({
     crop,
     displaySrc,
     alt,
-    blurDataURL,
+    placeholder,
     imageClassName,
     disabled,
     animateMode,
+    sha256,
+    indexDb,
+    userDataDb,
+    duration,
+    contentEndMs,
+    outroSkip,
+    onPreviewFeedback,
+    previewTrigger,
+    armPhase,
 }: {
     /**
      * The stored grid rendition — a still crop, or the CROPPED LOOP when the
@@ -591,12 +773,23 @@ function ExtremeAspectPicture({
      */
     displaySrc: string | null
     alt: string
-    blurDataURL: PlaceholderDataURL | undefined
+    placeholder: CellPlaceholder | undefined
     imageClassName?: string
     /** The loading-spinner state, where the card shows no hover at all. */
     disabled: boolean
     /** Passed through to the crop when it is a loop — see CellLoopPicture. */
     animateMode: AnimateMode
+    /** Passed through to the crop when it PREVIEWS — see VideoHoverPicture. */
+    sha256: string
+    indexDb: string | null
+    userDataDb: string | null
+    duration?: number | null
+    contentEndMs?: number | null
+    outroSkip: boolean
+    onPreviewFeedback: (feedback: PreviewFeedback | null) => void
+    /** The trigger and its countdown, straight through — see VideoHoverPicture. */
+    previewTrigger: HoverPreviewTrigger
+    armPhase: CountdownPhase
 }) {
     // A CALLBACK ref rather than a typed object ref, because the crop layer is
     // an <img> for a still item and a <video> for an animated one and this only
@@ -687,7 +880,7 @@ function ExtremeAspectPicture({
                     src={crop.src}
                     poster={crop.poster}
                     alt={alt}
-                    blurDataURL={blurDataURL}
+                    placeholder={placeholder}
                     mode={animateMode}
                     className={cropClassName}
                     elementRef={attachCrop}
@@ -696,39 +889,73 @@ function ExtremeAspectPicture({
                     // takes it out of the playing set for as long as that
                     // holds, and gives its cap slot to a cell on screen.
                     occluded={showDisplay}
-                    // NO HOVER ARM ON THIS CARD, in either sense — no dwell,
-                    // no <video>, no loop fetch. THE HOVER IS ALREADY SPOKEN
-                    // FOR: this card's own gesture swaps to the `display`
-                    // rendition, which is the ORIGINAL FILE and animates
-                    // natively in its <img>. Arming as well meant a cell that
-                    // fetched a loop, mounted it, and then unmounted it again
-                    // the moment the swap landed — a request and a decode
-                    // session spent on a picture that was replaced by an
-                    // animating one. The badge rule is untouched (D8): the
-                    // crop under the swap is still a static poster, so it
-                    // still says so.
+                    // ARMED EXACTLY WHEN NO SWAP OWNS THE HOVER. The rule
+                    // itself is `extremeCropArmsHover` (lib/cellPicture.ts),
+                    // named there because it is the plan's question and a pure
+                    // one — scripts/hoveranimate.test.mjs pins it.
                     //
-                    // AND WHEN THERE IS NO SWAP EITHER — an animated strip
-                    // past the display-loop bounds, whose `displaySrc` is null
-                    // (see the call site) — THIS CARD HAS NO MOTION PATH IN
-                    // HOVER MODE AT ALL. Said plainly because it is a
-                    // deliberate choice and reads like an oversight: in hover
-                    // mode such a cell is a static top-crop that the pointer
-                    // does nothing to. The alternative is arming the crop loop
-                    // here, i.e. a multi-megabyte H.264 fetch on dwell over a
-                    // cell that shows a 2:1 sliver of a webtoon — the cost
-                    // hover mode exists to avoid, spent on the least
-                    // legible cell in the grid. ALWAYS mode is unaffected: the
-                    // crop loop is the picture there and plays under the
-                    // director like every other loop cell.
-                    armable={false}
+                    // WITH A SWAP (`displaySrc` non-null) THE HOVER IS ALREADY
+                    // SPOKEN FOR: this card's own gesture swaps to the
+                    // `display` rendition, which is the ORIGINAL FILE and
+                    // animates natively in its <img>. Arming as well meant a
+                    // cell that fetched a loop, mounted it, and then unmounted
+                    // it again the moment the swap landed — a request and a
+                    // decode session spent on a picture that was replaced by an
+                    // animating one.
+                    //
+                    // WITH NO SWAP — an animated strip past the display-loop
+                    // bounds, whose `displaySrc` is null (see the call site) —
+                    // nothing else wants the gesture, so the crop loop ARMS and
+                    // hover-plays through the same director, the same dwell and
+                    // the same cap as every other loop cell. It is the only
+                    // motion path such a card has: un-armed, the pointer did
+                    // nothing whatever to a cell the grid had just badged as
+                    // playable, while every ordinary animated cell beside it
+                    // played. The swap's own mouseenter/mouseleave pair above
+                    // bails on a null `displaySrc`, so the hover root belongs
+                    // to the arming alone and no second listener competes for
+                    // it.
+                    //
+                    // The badge rule is untouched (D8): the crop paints a
+                    // static poster until something plays it — under a swap or
+                    // under an arm alike — so it still says so, and an armed
+                    // crop loop is just a hover-mode loop cell, which is the
+                    // case the predicate already answers. ALWAYS mode is
+                    // unaffected either way: the crop loop is the picture there
+                    // and plays under the director like every other loop cell.
+                    armable={extremeCropArmsHover(crop, displaySrc)}
+                />
+            ) : crop.kind === "video" ? (
+                // A STRIP-SHAPED VIDEO WITH PREVIEWS ON. The plan makes
+                // `displaySrc` null for exactly this case (lib/cellPicture.ts),
+                // so the swap above binds no listeners and the hover belongs to
+                // the preview alone — the same one-owner rule
+                // `extremeCropArmsHover` states for the loop crop, decided
+                // there rather than here because it is a question about the
+                // plan.
+                <VideoHoverPicture
+                    picture={crop}
+                    sha256={sha256}
+                    indexDb={indexDb}
+                    userDataDb={userDataDb}
+                    duration={duration}
+                    contentEndMs={contentEndMs}
+                    outroSkip={outroSkip}
+                    alt={alt}
+                    placeholder={placeholder}
+                    disabled={disabled}
+                    onFeedback={onPreviewFeedback}
+                    trigger={previewTrigger}
+                    armPhase={armPhase}
+                    className={cropClassName}
+                    elementRef={attachCrop}
                 />
             ) : (
                 <CellStillImage
                     elementRef={attachCrop}
                     src={crop.src}
                     alt={alt}
-                    blurDataURL={blurDataURL}
+                    placeholder={placeholder}
                     className={cropClassName}
                 />
             )}
@@ -783,7 +1010,7 @@ function AnimatedCellPicture({
     src,
     poster,
     alt,
-    blurDataURL,
+    placeholder,
     className,
     elementRef,
     occluded,
@@ -795,7 +1022,7 @@ function AnimatedCellPicture({
                 elementRef={elementRef}
                 src={poster}
                 alt={alt}
-                blurDataURL={blurDataURL}
+                placeholder={placeholder}
                 className={className}
             />
         )
@@ -810,7 +1037,7 @@ function AnimatedCellPicture({
             // loop cell has the same something-shaped-like-the-picture behind
             // it as its neighbours in the moment before the poster paints.
             // Never an SVG wrapper: see the settled law on CellStillImage.
-            blurDataURL={blurDataURL}
+            placeholder={placeholder}
             className={className}
             elementRef={elementRef}
             registered={!occluded}
@@ -849,7 +1076,7 @@ function HoverLoopPicture({
     src,
     poster,
     alt,
-    blurDataURL,
+    placeholder,
     className,
     elementRef,
     occluded,
@@ -870,7 +1097,7 @@ function HoverLoopPicture({
                 elementRef={attach}
                 src={poster}
                 alt={alt}
-                blurDataURL={blurDataURL}
+                placeholder={placeholder}
                 className={className}
             />
             {hover.active && (
@@ -881,7 +1108,7 @@ function HoverLoopPicture({
                     // NO blurhash background: the poster underneath is the
                     // placeholder, and a blur behind a layer fading in over a
                     // painted picture is the flash this construction avoids.
-                    blurDataURL={undefined}
+                    placeholder={undefined}
                     className={className}
                     fadeIn
                     registered
@@ -899,7 +1126,7 @@ interface LoopPictureProps {
     /** The same tier with `still=true`: the loop's poster, and the fallback. */
     poster: string
     alt: string
-    blurDataURL: PlaceholderDataURL | undefined
+    placeholder: CellPlaceholder | undefined
     /** The card's object-fit/opacity classes, applied to whichever paints. */
     className?: string
     /** The extreme-aspect swap's anchor, when this loop is inside one. */
@@ -913,9 +1140,10 @@ interface LoopPictureProps {
      */
     occluded?: boolean
     /**
-     * May this cell arm a hover play at all? False on the extreme-aspect card,
-     * whose hover already means something else — see the site there. Distinct
-     * from `occluded`, which is about a moment; this is about the card.
+     * May this cell arm a hover play at all? False on an extreme-aspect card
+     * whose hover already means something else — the swap to the whole-image
+     * rendition; see `extremeCropArmsHover` and the site there. Distinct from
+     * `occluded`, which is about a moment; this is about the card.
      */
     armable?: boolean
 }
@@ -963,7 +1191,7 @@ function VideoStillPicture({
     src,
     mosaicSrc,
     alt,
-    blurDataURL,
+    placeholder,
     className,
     disabled,
 }: {
@@ -972,7 +1200,7 @@ function VideoStillPicture({
     /** The 2×2 mosaic: the same tier with the parameter left off. */
     mosaicSrc: string
     alt: string
-    blurDataURL: PlaceholderDataURL | undefined
+    placeholder: CellPlaceholder | undefined
     className?: string
     /** The loading-spinner state, where the card shows no hover at all. */
     disabled: boolean
@@ -1010,7 +1238,7 @@ function VideoStillPicture({
                 elementRef={attachFrame}
                 src={src}
                 alt={alt}
-                blurDataURL={blurDataURL}
+                placeholder={placeholder}
                 className={cn(
                     (requested || showMosaic) && "transition-opacity duration-150",
                     showMosaic ? "opacity-0" : "opacity-100",
@@ -1035,3 +1263,4 @@ function VideoStillPicture({
         </>
     )
 }
+

@@ -288,27 +288,53 @@ export function rowHeightForCellWidth(cellWidth: number): number {
 }
 
 /**
- * The page size that preserves the screen-to-items ratio across a cell-size
- * change — the slider's default co-write (design §9), which the lock toggle
- * turns off.
+ * The laid-out shape a page size is measured against: how many cells share a
+ * row, and how tall a row is in CSS pixels. Both modes have one — the auto
+ * policy's comes from its breakpoint (`useResultGridLayout`), an explicit
+ * width's from `columnsForCellWidth` and `rowHeightForCellWidth` — and it is
+ * the ONLY thing the co-write below needs to know about either.
+ */
+export interface PageGeometry {
+  /** Cells per row; 0 means "not laid out yet". */
+  columns: number
+  /** The row pitch in CSS pixels; 0 means "not measured yet". */
+  rowHeight: number
+}
+
+/**
+ * The page size that preserves the screen-to-items ratio across a layout
+ * change — the slider's default co-write and the Auto button's (design §9),
+ * which the lock toggle turns off.
  *
- * Items per screenful is `columns × rows`, and BOTH scale inversely with the
- * cell width (the width sets the columns, and the row height derives from the
- * width), so the ratio is preserved by scaling the page size with the SQUARE
- * of the width ratio. In scroll mode that is free relabelling and keeps "a
- * virtual page is one screenful" true through the change; in pages mode it
- * rides useCommitPageSize, which remaps the position onto the new size.
+ * A page of k items over c columns is k/c rows tall, i.e. `k/c × rowHeight`
+ * CSS pixels; a screenful is `viewport / rowHeight` rows. The screenfuls per
+ * page therefore equal the page's PIXEL HEIGHT divided by the viewport, and
+ * the viewport does not move when a cell size does — so preserving the
+ * screen-to-items ratio is exactly preserving that pixel height:
  *
- * ROUNDED TO A WHOLE NUMBER OF ROWS at the column count the new cell size lays
- * out, and that rounding is load-bearing rather than cosmetic. The pagination
- * bar highlights the virtual page of the top row's LAST item while the URL
- * anchor records its FIRST (design §4, `topRowHighlightItem`), and the two
- * name the same page only while no row straddles a k-boundary — i.e. while
+ *     rows' = (k / c) × (rowHeight / rowHeight')      k' = rows' × c'
+ *
+ * Written in terms of the geometry the grid LAYS OUT rather than the widths
+ * the slider names, and that is the whole correction over the `(prev/next)²`
+ * this used to be. That form assumed the row height scales with the cell
+ * width, which is false twice over: an explicit row is the picture box plus
+ * a CONSTANT `CELL_CHROME_PX` (a 600→150 shrink is a 16x by the square and
+ * an 11.6x in fact — a 38% overshoot), and the auto layout's row height is a
+ * breakpoint constant that does not follow the width at all (an auto grid
+ * whose cells happen to be 300px wide sits on 470px rows, and the "same"
+ * explicit 300px sits on 386 — a 22% change the square called zero). It was
+ * also why the AUTO button could not co-write: it had no width ratio to
+ * name, but it has always had a geometry.
+ *
+ * ROUNDED TO A WHOLE NUMBER OF ROWS at the column count the new layout has,
+ * and that rounding is load-bearing rather than cosmetic. The pagination bar
+ * highlights the virtual page of the top row's LAST item while the URL anchor
+ * records its FIRST (design §4, `topRowHighlightItem`), and the two name the
+ * same page only while no row straddles a k-boundary — i.e. while
  * `k % columns === 0`. The shipped default (k = 10 over 5 columns) is such a
  * multiple, which is why the mismatch has never been visible; an arbitrary
- * co-written k is not, and would leave the bar disagreeing with the URL it had
- * just written on most rows. Snapping k to the nearest whole row keeps the
- * `(prev / next)²` intent to within half a row and restores the invariant.
+ * co-written k is not, and would leave the bar disagreeing with the URL it
+ * had just written on most rows.
  *
  * THE ALIGNMENT HOLDS AT COMMIT TIME ONLY, and that residual is accepted
  * deliberately. `columns` is a property of the window, not of the page size:
@@ -316,47 +342,46 @@ export function rowHeightForCellWidth(cellWidth: number): number {
  * `page_size` stays where this put it, and k stops being a multiple again. The
  * symptom is the one this rounding removes at the moment of the commit — the
  * pagination bar and the URL anchor disagreeing by one page on rows that
- * straddle a k-boundary — and it returns until the next slider commit
- * re-derives k.
+ * straddle a k-boundary — and it returns until the next commit re-derives k.
  *
  * The alternative is worse and was rejected: re-writing `page_size` on every
  * resize would mean a window drag silently renumbering the user's pagination,
  * changing what a shared link means, and re-keying the search request mid-drag.
  * A page size is a value the user set; a resize is not permission to change it.
  *
- * Returns null when there is nothing to write: an unchanged result, an
- * unusable input, or a `page_size` below 1 — which means "no LIMIT" rather
- * than a small page, and scaling it would silently impose one.
+ * Returns null when there is nothing to write: an unchanged result, a
+ * geometry that has not been laid out or measured on either side (there is
+ * no ratio to preserve against a grid nobody has seen), or a `page_size`
+ * below 1 — which means "no LIMIT" rather than a small page, and scaling it
+ * would silently impose one.
  */
 export function coWrittenPageSize(
   pageSize: number,
-  prevCellWidth: number,
-  nextCellWidth: number,
-  /**
-   * The column count the NEW cell size lays out — the one the written page
-   * size has to divide by. 0 (nothing measured) falls back to the unrounded
-   * clamp, which is a coarser answer rather than a wrong one.
-   */
-  columns: number = 0
+  prev: PageGeometry,
+  next: PageGeometry
 ): number | null {
   if (!Number.isFinite(pageSize) || pageSize < MIN_PAGE_SIZE) return null
-  if (!(prevCellWidth > 0) || !(nextCellWidth > 0)) return null
-  const ratio = prevCellWidth / nextCellWidth
-  const scaled = pageSize * ratio * ratio
-  const usable =
-    Number.isFinite(columns) && columns >= 1 && columns <= MAX_PAGE_SIZE
-  let next: number
-  if (usable) {
-    const perRow = Math.floor(columns)
-    // The ROW count is what gets clamped, not the item count: clamping the
-    // items would hand back a ceiling that is not a multiple of anything, and
-    // the whole point is that the result divides evenly by the columns. At
-    // least one row, and never more rows than the page-size ceiling holds.
-    const maxRows = Math.max(1, Math.floor(MAX_PAGE_SIZE / perRow))
-    const rows = Math.min(Math.max(1, Math.round(scaled / perRow)), maxRows)
-    next = rows * perRow
-  } else {
-    next = Math.min(MAX_PAGE_SIZE, Math.max(MIN_PAGE_SIZE, Math.round(scaled)))
-  }
-  return next === pageSize ? null : next
+  if (!usableGeometry(prev) || !usableGeometry(next)) return null
+  if (next.columns > MAX_PAGE_SIZE) return null
+  const perRow = Math.floor(next.columns)
+  // The page's height in CSS pixels today, re-expressed in rows of the new
+  // pitch. The ROW count is what gets clamped, not the item count: clamping
+  // the items would hand back a ceiling that is not a multiple of anything,
+  // and the whole point is that the result divides evenly by the columns. At
+  // least one row, and never more rows than the page-size ceiling holds.
+  const pageHeightPx = (pageSize / Math.floor(prev.columns)) * prev.rowHeight
+  const maxRows = Math.max(1, Math.floor(MAX_PAGE_SIZE / perRow))
+  const rows = Math.min(
+    Math.max(1, Math.round(pageHeightPx / next.rowHeight)),
+    maxRows
+  )
+  const result = rows * perRow
+  return result === pageSize ? null : result
+}
+
+function usableGeometry(geometry: PageGeometry | null | undefined): boolean {
+  return !!geometry
+    && usableLength(geometry.columns)
+    && geometry.columns >= 1
+    && usableLength(geometry.rowHeight)
 }

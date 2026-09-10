@@ -75,7 +75,11 @@ export function trimWithBound(
 // with the cut end-anchored (below) and drag-adjustable per video there is
 // no systematic error left for it to absorb. Worst case at 60 ms is ~one
 // rAF tick of bang transient on a max-lead file.
-const OUTRO_GUARD_MS = 60
+//
+// Exported for lib/videoPreview.ts, which mirrors the server's export-cut
+// arithmetic (`api/video.rs` `OUTRO_EXPORT_GUARD_MS`, the same 60) to predict
+// whether the server will accept a named cut — one constant, not two copies.
+export const OUTRO_GUARD_MS = 60
 
 // The item's outro cut point in seconds, or null when the item is not
 // eligible: no `content_end_ms` (never examined, no outro, or the index DB

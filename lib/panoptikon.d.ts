@@ -1534,6 +1534,8 @@ export interface paths {
         /**
          * Create or join a composition job
          * @description Renders a composition document — a canvas, a frame rate, an output length policy and a list of placed items — into one animated artifact. A sibling of `/api/video/transcode` rather than a variant of it: a composition is addressed by the hash of its document, not by an item, and is strictly heavier work, so a policy can allow one and deny the other. The response envelope, the jobs/SSE routes and the artifact route are identical to the single-file path; a single-item save is simply a composition with one item.
+         *
+         *     An item whose time is `outro_span` asks the server to end that span at the item's detected outro, the composition's spelling of the clip route's `cut=outro` and resolved here for the same reason: the boundary belongs to the file's own timeline, not the browser's. Its `end_cs` is the client's own estimate of that boundary, used unchanged when this item has no usable outro — one pin's missing outro never fails the document.
          */
         post: operations["video_compose"];
         delete?: never;
@@ -1617,7 +1619,7 @@ export interface paths {
         put?: never;
         /**
          * Create or join a transcode job
-         * @description Resolves the item, validates the preset and trim bounds, and either answers from the artifact cache (200, `outcome: "hit"`) or creates/joins a job (202). `cut: "outro"` ends the clip at the item's detected outro boundary: it excludes `end_cs`, composes with `start_cs`, and is resolved to explicit centiseconds here, so it shares its cache entry with the identical explicit trim. An item with no detected outro — including one whose index database has `detect_outros` off — is a 404.
+         * @description Resolves the item, validates the preset and trim bounds, and either answers from the artifact cache (200, `outcome: "hit"`) or creates/joins a job (202). `cut: "outro"` ends the clip at the item's detected outro boundary: it composes with `start_cs`, and with `end_cs` as a cap (the clip ends at whichever of the two comes first), and is resolved to explicit centiseconds here, so it shares its cache entry with the identical explicit trim. An item with no detected outro — including one whose index database has `detect_outros` off — is a 404, whether or not a cap was sent.
          */
         post: operations["video_transcode"];
         delete?: never;
@@ -1896,8 +1898,10 @@ export interface components {
             /**
              * @description The policy's `[policies.client]` table, verbatim (empty object when
              *     unset). Free-form; recognized-by-convention keys include
-             *     `search_throttle_ms`, `disable_backend_open`, and `relay_enabled`
-             *     (Relay is enabled when the key is absent).
+             *     `search_throttle_ms`, `disable_backend_open`, `relay_enabled`
+             *     (Relay is enabled when the key is absent), `transcode_presets`, and
+             *     `hover_preview` (see the resolved `hover_preview` field below, which
+             *     is what a client should read).
              */
             client: unknown;
             /**
@@ -1911,6 +1915,7 @@ export interface components {
              */
             desktop_shell_available: boolean;
             display_loop_trigger?: null | components["schemas"]["DisplayLoopTrigger"];
+            hover_preview?: null | components["schemas"]["HoverPreview"];
             /** @description Name of the policy that matched this request. */
             policy: string;
         };
@@ -2693,6 +2698,74 @@ export interface components {
              */
             vram: components["schemas"]["GpuBudgetHealth"][];
         };
+        /**
+         * @description The server's resolved answer to "may this client preview a video on
+         *     hover?", for the three rungs of the ladder
+         *     (docs/video-hover-preview-implementation.md §2).
+         *
+         *     Resolved here rather than derived client-side: each rung is a conjunction
+         *     of facts the client cannot see (the policy's own switch, the `[transcode]
+         *     hover_preview` server default, whether this policy may POST a transcode at
+         *     all, and whether the preset each rung needs survives that policy's
+         *     `transcode_presets` limit).
+         *
+         *     The client picks a rung per item against `max_bytes`; the server only says
+         *     which rungs exist and where the line is.
+         *
+         *     The three flags are independent answers, not a scale. Each names its own
+         *     conjunction, and the only thing they share is the policy switch
+         *     (`[policies.client] hover_preview`), which is a negative override on all
+         *     three — so a `direct: false` answer does mean the whole feature is off for
+         *     this policy, but no other pair of members implies anything about each
+         *     other. A policy can perfectly well offer the re-encode and not the remux
+         *     (`transcode_presets` listing `preview` alone), or the reverse.
+         */
+        HoverPreview: {
+            /**
+             * @description Rung 0: mount a muted `<video>` on the item's own file, for a file at
+             *     or under `max_bytes` the browser can already decode.
+             *
+             *     Requires nothing but the policy switch: the rung costs the server only
+             *     Range reads, needs no job and no preset, so there is nothing else that
+             *     could withhold it.
+             */
+            direct: boolean;
+            /**
+             * Format: int64
+             * @description The byte cap the ladder turns on (`[transcode]
+             *     hover_preview_max_bytes`). A file at or under it plays directly; over
+             *     it, the client estimates the 16 s slice as `size * min(16, duration) /
+             *     duration` and takes rung 1 when that fits, rung 2 otherwise. An item
+             *     with no known duration cannot be estimated and never takes rung 1.
+             *
+             *     So is an item of 16 s or less: its estimate is the whole file, which
+             *     is over the cap by the time this step is reached, and it goes straight
+             *     to the re-encode. The trim rung only ever serves items *longer* than
+             *     the window.
+             */
+            max_bytes: number;
+            /**
+             * @description Rung 2: request the 480p `preview` re-encode for an item neither
+             *     cheaper rung can serve.
+             *
+             *     Requires the policy switch, the `[transcode] hover_preview` server
+             *     default, permission to `POST /api/video/transcode`, and `preview`
+             *     surviving that policy's `transcode_presets` limit.
+             */
+            transcode: boolean;
+            /**
+             * @description Rung 1: request the `preview-trim` rendition — the source's own
+             *     packets remuxed, no decode and no encode — when the estimated 16 s
+             *     slice fits under `max_bytes`.
+             *
+             *     Requires the policy switch, permission to `POST /api/video/transcode`,
+             *     and `preview-trim` surviving that policy's `transcode_presets` limit.
+             *     Deliberately **not** gated on the hardware-encoder probe or on
+             *     `[transcode] hover_preview`: there is no encoder in this rung to have
+             *     an opinion about.
+             */
+            trim: boolean;
+        };
         InBookmarks: components["schemas"]["SortableOptions"] & {
             /**
              * @description Restrict search to Bookmarks
@@ -2958,6 +3031,13 @@ export interface components {
             end_cs: number;
             /** @enum {string} */
             kind: "span";
+            /** Format: int64 */
+            start_cs: number;
+        } | {
+            /** Format: int64 */
+            end_cs: number;
+            /** @enum {string} */
+            kind: "outro_span";
             /** Format: int64 */
             start_cs: number;
         } | {
@@ -4908,7 +4988,7 @@ export interface components {
          *     user-declared profile appears in the right dropdowns with no client change.
          * @enum {string}
          */
-        Surface: "playback" | "clip" | "mosaic";
+        Surface: "playback" | "clip" | "mosaic" | "preview";
         SystemConfig: {
             continuous_filescan?: components["schemas"]["ContinuousFilescanConfig"];
             cron_jobs?: components["schemas"]["CronJob"][];
@@ -5162,11 +5242,14 @@ export interface components {
         TranscodeRequest: {
             /**
              * @description `"outro"` to end the clip at this item's detected outro boundary,
-             *     resolved server-side. Excludes `end_cs` (the two are the same bound
-             *     asked for two ways), composes with `start_cs`, and is a 404 when the
-             *     item has no detected outro or the index database has detection off.
-             *     Any other value is rejected rather than ignored: a client that sent one
-             *     and got a full-length file would have no way to notice.
+             *     resolved server-side. Composes with `start_cs`, and with `end_cs` as
+             *     a cap: when both are present the clip ends at whichever comes first,
+             *     so a bounded preview of an item whose outro lies past the bound keeps
+             *     the bound (and its cache key) while one whose outro lies inside it is
+             *     cut there. A 404 when the item has no detected outro or the index
+             *     database has detection off, cap or no cap. Any other value is rejected
+             *     rather than ignored: a client that sent one and got a full-length file
+             *     would have no way to notice.
              */
             cut?: string | null;
             /**
@@ -8455,7 +8538,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Unknown preset, an unusable trim window (bounds that name a freeze frame rather than a clip, a start bound past the end of the item, or a start bound at or past the resolved outro cut), an unknown/conflicting `cut`, or an animated-image preset asked for more than `max_animated_image_seconds` of output (including an unbounded one on an item with no recorded duration) */
+            /** @description Unknown preset, an unusable trim window (bounds that name a freeze frame rather than a clip, a start bound past the end of the item, or a start bound at or past the resolved outro cut), an unknown `cut`, or an animated-image preset asked for more than `max_animated_image_seconds` of output (including an unbounded one on an item with no recorded duration) */
             422: {
                 headers: {
                     [name: string]: unknown;

@@ -46,7 +46,7 @@ const {
   rowHeightForImageBox,
 } = await import("../lib/gridCellSize.ts")
 // The URL-domain bounds those helpers clamp into, from their single source.
-const { MAX_CELL_WIDTH, MIN_CELL_WIDTH } = await import("../lib/searchLimits.ts")
+const { MAX_CELL_WIDTH, MAX_PAGE_SIZE, MIN_CELL_WIDTH } = await import("../lib/searchLimits.ts")
 // The pin button's record algebra, extracted out of CellActionsHost so the
 // five-string splice arithmetic below can be asserted at all.
 const { togglePinRecords } = await import("../lib/pinboardPlace.ts")
@@ -530,34 +530,75 @@ console.log("\n== columns and row height from an explicit cell width (§9) ==")
 
 console.log("\n== the page-size co-write (§9) ==")
 {
-  // Items per screenful scale with the SQUARE of the width ratio: the width
-  // sets the columns, and the row height derives from the width.
-  check("halving the cell width quadruples the page size",
-    coWrittenPageSize(10, 400, 200) === 40)
-  check("doubling it quarters the page size",
-    coWrittenPageSize(40, 200, 400) === 10)
-  check("a 1.5x shrink scales by 2.25",
-    coWrittenPageSize(100, 600, 400) === 225)
-  check("an unchanged width writes nothing",
-    coWrittenPageSize(10, 400, 400) === null)
+  // A page is `k / columns` rows of `rowHeight` pixels, and a screenful is a
+  // fixed number of pixels, so "the same number of screenfuls" means the same
+  // PIXEL HEIGHT. Every case below is stated in the geometry the grid lays
+  // out — columns and row pitch — never in slider widths.
+  const G = (columns, rowHeight) => ({ columns, rowHeight })
+  // The auto layout at the xl band: five columns on 470px rows (a 384px box
+  // plus the 86px chrome). Ten items is two rows, 940px.
+  const auto5 = G(5, rowHeightForImageBox(AUTO_IMAGE_BOX_HEIGHT_PX))
+  // What a 200px target lays out in a 2473px container: eleven columns of
+  // 210px, on square-box rows of 210 + 86.
+  const explicit = (target, container = 2473) => {
+    const columns = columnsForCellWidth(container, target, GRID_GAP_PX)
+    const width = cellWidthForColumns(container, columns, GRID_GAP_PX)
+    return G(columns, rowHeightForCellWidth(width))
+  }
+  const px200 = explicit(200)
+  check("the 200px target lays out eleven 296px rows",
+    px200.columns === 11 && px200.rowHeight === 296,
+    JSON.stringify(px200))
+  // 940px of page re-expressed in 296px rows is 3.18 rows: three, so 33.
+  check("auto (5 x 470) -> 200px (11 x 296) keeps the page's pixel height",
+    coWrittenPageSize(10, auto5, px200) === 33)
+  // The same geometry on both sides is nothing to write.
+  check("an unchanged geometry writes nothing",
+    coWrittenPageSize(10, auto5, auto5) === null)
+  // THE ROW HEIGHT ALONE moves it. An auto grid whose cells happen to be
+  // 300px wide sits on 470px rows; the "same" explicit 300px sits on 386. The
+  // width ratio is 1 — the old square-of-widths rule wrote nothing here.
+  const px300 = G(5, rowHeightForCellWidth(300))
+  check("a 300px explicit row is 386px",
+    px300.rowHeight === 386)
+  check("same columns, shorter rows: the page size grows to match",
+    coWrittenPageSize(50, auto5, px300) === 60)
+  // THE CHROME IS CONSTANT, so the row pitch does not scale with the width:
+  // 600px -> 150px is a 16x by the square of the widths and ~10.5x in fact.
+  const px600 = explicit(600)
+  const px150 = explicit(150)
+  const squareAnswer = 8 * (600 / 150) ** 2
+  const k = coWrittenPageSize(8, px600, px150)
+  check("600px -> 150px scales by the laid-out geometry, not the width squared",
+    k === 84 && k < squareAnswer,
+    `${k} vs square ${squareAnswer}`)
+  // THE ROUND TRIP RETURNS: auto -> explicit -> auto lands back on the page
+  // size it left, which is what the Auto button's co-write exists for.
+  check("auto -> 200px -> auto returns to the original page size",
+    coWrittenPageSize(33, px200, auto5) === 10)
   // A `page_size` below 1 means "no LIMIT", not a small page: scaling it
   // would silently impose one.
   check("a no-LIMIT page size is left alone",
-    coWrittenPageSize(0, 400, 200) === null
-      && coWrittenPageSize(-1, 400, 200) === null)
-  check("unusable widths write nothing",
-    coWrittenPageSize(10, 0, 200) === null
-      && coWrittenPageSize(10, 400, 0) === null
-      && coWrittenPageSize(10, NaN, 200) === null)
+    coWrittenPageSize(0, auto5, px200) === null
+      && coWrittenPageSize(-1, auto5, px200) === null)
+  // Nothing measured on either side is nothing to scale against.
+  check("an unmeasured geometry writes nothing",
+    coWrittenPageSize(10, G(0, 470), px200) === null
+      && coWrittenPageSize(10, G(5, 0), px200) === null
+      && coWrittenPageSize(10, auto5, G(0, 296)) === null
+      && coWrittenPageSize(10, auto5, G(11, 0)) === null
+      && coWrittenPageSize(10, auto5, G(NaN, 296)) === null
+      && coWrittenPageSize(10, G(5, NaN), px200) === null)
   check("the result stays inside the page-size bounds",
-    coWrittenPageSize(9000, 1200, 140) === 10000)
-  // Clamped to 1 and ALREADY 1, which is "nothing to write" — the null the
-  // unchanged case returns, not a redundant write of the same value.
-  check("a page size of 1 shrinking further writes nothing",
-    coWrittenPageSize(1, 140, 1200) === null)
+    coWrittenPageSize(9000, px600, px150) === Math.floor(10000 / px150.columns) * px150.columns)
   // Rounding must never produce a zero-item page out of a legal one.
-  check("a heavy enlargement still leaves at least one item",
-    coWrittenPageSize(2, MIN_CELL_WIDTH, MAX_CELL_WIDTH) === 1)
+  check("a heavy enlargement still leaves at least one row",
+    coWrittenPageSize(2, px150, px600) === px600.columns)
+  // Clamped to one row and ALREADY one row, which is "nothing to write".
+  check("a one-row page shrinking further writes nothing",
+    coWrittenPageSize(4, px150, px600) === null)
+  check("more columns than the page-size ceiling writes nothing",
+    coWrittenPageSize(10, auto5, G(MAX_PAGE_SIZE + 1, 100)) === null)
 }
 
 console.log("\n== the co-write snaps to whole rows (design §4's row invariant) ==")
@@ -566,43 +607,43 @@ console.log("\n== the co-write snaps to whole rows (design §4's row invariant) 
   // its FIRST, so the two name the same virtual page only while no row
   // straddles a k-boundary — i.e. while k is a multiple of the column count.
   // Every co-written page size must therefore be one.
+  const G = (columns, rowHeight) => ({ columns, rowHeight })
+  const cases = [
+    [10, G(5, 470), G(11, 296)], [10, G(5, 470), G(17, 232)],
+    [50, G(8, 386), G(3, 780)], [7, G(6, 500), G(6, 501)],
+    [100, G(9, 336), G(2, 1166)], [3, G(2, 1286), G(17, 226)],
+    [10, G(4, 700), G(12, 300)],
+  ]
   for (const columns of [1, 2, 3, 5, 7, 9, 12, 17, 24, 49]) {
-    for (const [size, prev, next] of [
-      [10, 584, 292], [10, 584, 140], [50, 300, 700], [7, 400, 401],
-      [100, 250, 1000], [3, 1200, 140], [10, 742, 207],
-    ]) {
-      const k = coWrittenPageSize(size, prev, next, columns)
+    for (const [size, prev, next] of cases) {
+      const target = G(columns, next.rowHeight)
+      const k = coWrittenPageSize(size, prev, target)
       if (k === null) continue
       if (!check(
-        `k=${k} is a whole number of ${columns}-wide rows (${size} @ ${prev}->${next})`,
+        `k=${k} is a whole number of ${columns}-wide rows (${size} @ ${prev.columns}x${prev.rowHeight} -> ${columns}x${next.rowHeight})`,
         k % columns === 0 && k >= columns,
         `${k} % ${columns} = ${k % columns}`
       )) break
     }
   }
   // The rounding is a snap, not a redefinition: it stays within half a row of
-  // the (prev/next)^2 intent.
-  for (const columns of [3, 5, 9, 17]) {
-    const exact = 10 * (584 / 207) ** 2
-    const k = coWrittenPageSize(10, 584, 207, columns)
+  // the pixel height it preserves.
+  for (const [size, prev, next] of cases) {
+    const k = coWrittenPageSize(size, prev, next) ?? size
+    const before = (size / prev.columns) * prev.rowHeight
+    const after = (k / next.columns) * next.rowHeight
     check(
-      `the ${columns}-column snap stays within half a row of the intent`,
-      Math.abs(k - exact) <= columns / 2 + 1e-9,
-      `${k} vs ${exact.toFixed(2)}`
+      `${size} @ ${prev.columns}x${prev.rowHeight} -> ${next.columns}x${next.rowHeight}: k=${k} is within half a row of the page's height`,
+      Math.abs(after - before) <= next.rowHeight / 2 + 1e-9,
+      `${after}px vs ${before}px`
     )
   }
-  check("at least one whole row survives an extreme enlargement",
-    coWrittenPageSize(2, MIN_CELL_WIDTH, MAX_CELL_WIDTH, 9) === 9)
   check("the ceiling is still a whole number of rows",
-    coWrittenPageSize(9000, 1200, 140, 7) === Math.floor(10000 / 7) * 7)
-  // The verifier's own case: 5 columns, a co-written 38 was the misalignment.
-  check("the k=38-over-9-columns straddle cannot be written any more",
-    coWrittenPageSize(10, 584, 292, 9) % 9 === 0)
-  // An unusable column count is the pre-existing unrounded answer, not a crash.
-  check("no column count falls back to the unrounded clamp",
-    coWrittenPageSize(10, 400, 200, 0) === 40
-      && coWrittenPageSize(10, 400, 200, NaN) === 40
-      && coWrittenPageSize(10, 400, 200, -3) === 40)
+    coWrittenPageSize(9000, G(4, 692), G(7, 300)) === Math.floor(10000 / 7) * 7)
+  // The verifier's own case: a co-written 38 over 9 columns was the
+  // misalignment.
+  check("a k that straddles rows cannot be written any more",
+    coWrittenPageSize(10, G(5, 470), G(9, 350)) % 9 === 0)
 }
 
 // ---- the pin button's record algebra ------------------------------------
