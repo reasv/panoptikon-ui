@@ -2540,6 +2540,13 @@ export interface components {
              */
             charges_mb: number;
             /**
+             * @description Which kind of device this row is: `"cuda"`, `"rocm"`, `"mps"` or
+             *     `"cpu"`. Every host carries the CPU device beside its accelerators, and
+             *     a replica is admitted against the device its own load report named, so
+             *     one `/health` can hold rows of more than one kind.
+             */
+            device_kind: string;
+            /**
              * @description False when no free-memory reading is known yet, in which case
              *     `external_mb` is 0 by assumption rather than by measurement.
              */
@@ -2547,6 +2554,9 @@ export interface components {
             /**
              * Format: int64
              * @description `max(0, total − free − Σ our footprints)`: what other processes hold.
+             *     On a unified-memory host the footprints are the whole RAM domain's —
+             *     this device's and its peer's alike, since the Metal device and the CPU
+             *     device read one pool of physical RAM.
              */
             external_mb: number;
             /** Format: int64 */
@@ -2569,7 +2579,13 @@ export interface components {
             /** Format: int64 */
             grants_mb: number;
             grants_outstanding: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description `limit − Σ charges − Σ load reservations`, and on a unified-memory
+             *     host those of the **pair**: the Metal device and the CPU device spend
+             *     one pool of RAM, so each charges the other's residents. `limit_mb`
+             *     stays this device's own ceiling.
+             */
             headroom_mb: number;
             /**
              * Format: int64
@@ -2622,7 +2638,11 @@ export interface components {
              * Format: int32
              * @description Enumeration index: nvidia-smi's on CUDA, the position within the
              *     openable KFD-node set on ROCm (which is the HIP device index). Only
-             *     for resolving registry `devices = ["3"]` pins; never an identity.
+             *     for resolving registry `devices = ["3"]` pins; never an identity, and
+             *     **not unique across the rows** — the CPU device every host carries
+             *     reports 0 like every other synthetic device. A pin resolves against
+             *     the accelerators alone, so `0` always names GPU 0 and the CPU device
+             *     is named by its key (`cpu`).
              */
             index: number;
             /**
@@ -3363,9 +3383,12 @@ export interface components {
             other_files: number;
             /**
              * @description How the job ended: `completed`, `partial`, `failed`, `cancelled`, or
-             *     `running` for a job still in flight (and for every row written before
-             *     the column existed, which is the same thing as far as a reader is
-             *     concerned: nothing recorded an ending).
+             *     `running` for a job still in flight. A row written before the column
+             *     existed carries `''` and is derived ([`OUTCOME_SQL`]) from the three
+             *     facts master did record — `data_log.completed`, the presence of a
+             *     `job_id`, and the job row's own `completed` — so such a row reads as
+             *     finished where one of them says it is, and as `running` only where
+             *     none of them does.
              *
              *     `partial` is the value that did not exist before run1 finding F7: a
              *     job that lost a whole in-flight window of items to one worker death
@@ -6335,13 +6358,13 @@ export interface operations {
                     "application/json": components["schemas"]["InferenceErrorBody"];
                 };
             };
-            /** @description The request body is larger than this server will read. Send fewer inputs per request; re-sending the same body will get the same answer. */
+            /** @description The request body is larger than this server will read, carrying `kind = "request_too_large"`. Nothing was parsed, so the items are untouched; send fewer inputs per request, because re-sending the same body will get the same answer. */
             413: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorBody"];
+                    "application/json": components["schemas"]["InferenceErrorBody"];
                 };
             };
             /** @description Missing required `data` form field */
