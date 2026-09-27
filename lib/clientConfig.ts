@@ -76,10 +76,10 @@ export interface ClientConfig {
 //   disables throttling entirely.
 // - disable_backend_open (bool): degrade Open File / Show in Folder even if
 //   the ruleset would technically allow /api/open/*.
-// - home_redirect (string path, e.g. "/search"): send the landing page ("/")
-//   there instead of showing the getting-started guide; absent = no redirect.
-//   Guarded by normalizeHomeRedirect below: non-path and self ("/") targets
-//   are dropped (treated as unset).
+// - home_redirect (string path, e.g. "/pinboards"): where the site root ("/")
+//   redirects; absent = "/search" (app/page.tsx). Guarded by
+//   normalizeHomeRedirect below: non-path and self ("/") targets are dropped
+//   (treated as unset).
 // Unknown keys are passthrough and simply ignored here.
 export function deriveClientConfig(response: ClientConfigResponse): ClientConfig {
   const client = (response.client ?? {}) as Record<string, unknown>
@@ -251,7 +251,7 @@ function normalizeAnimatedFloor(
 // not a security boundary — it just catches misconfigurations cheaply:
 // - only same-app paths: must start with "/" but not "//" (browsers treat
 //   "//host" as protocol-relative, i.e. an accidental external redirect);
-// - never "/": the landing page redirecting to itself would loop forever.
+// - never "/": the site root redirecting to itself would loop forever.
 // Anything rejected behaves exactly like an unset home_redirect.
 function normalizeHomeRedirect(value: unknown): string | null {
   if (typeof value !== "string") return null

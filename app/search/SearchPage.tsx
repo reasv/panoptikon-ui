@@ -47,6 +47,7 @@ import { FindNavigator } from "@/components/gallery/FindButton"
 import { SearchMetricsHoverCard } from "@/components/SearchMetricsCard"
 import { $api } from "@/lib/api"
 import { useClientConfig } from "@/lib/useClientConfig"
+import { EmptyIndexPanel, type EmptyIndexAudience } from "@/components/EmptyIndexPanel"
 
 export function SearchPageContent({ initialQuery, isRestrictedMode }:
     { initialQuery: SearchQueryArgs, isRestrictedMode: boolean }) {
@@ -337,28 +338,47 @@ function useSearchCreationStamp({ urlParams, setViewMode, setPageSizeRaw, setCel
     // for the same reason: this decision is about the URL the session STARTED
     // on, and every later value of it is a navigation this must not act on.
     const freshSession = useRef(isFreshSession(urlParams))
-    const stampedDefaults = useRef(false)
     useEffect(() => {
-        if (stampedDefaults.current) return
-        stampedDefaults.current = true
         if (!freshSession.current) return
-        // Belt to that brace, and it can only ever SUPPRESS a stamp: the
-        // snapshot above is React's view of the URL on the first render, while
-        // this is the browser's own, read at the only moment the two could
-        // have diverged. Stamping over a URL that turns out to carry a
-        // presentation is the one failure mode here that loses something the
-        // user asked for (a shared `?page=3` opening on page 1), and the
-        // design's rule for every ambiguous case is that conservative is
-        // correct.
-        if (!isFreshSession(new URLSearchParams(window.location.search))) return
-        const stamp = creationStamp(effectiveCreationDefaults())
-        const replace = { history: "replace" as const }
-        if (stamp.vm !== undefined) setViewMode(stamp.vm, replace)
-        if (stamp.page_size !== undefined) setPageSizeRaw(stamp.page_size, replace)
-        // Never `null` here — creationStamp only carries keys that DIFFER from
-        // the codec default, and `cs`'s codec default is null (auto). So this
-        // stamps a width or nothing at all.
-        if (stamp.cs != null) setCellSize(stamp.cs, replace)
+        // DEFERRED ONE TASK, or a client-side navigation loses the stamp. On a
+        // soft navigation into /search (the landing page's Search link, the
+        // scan page's redirect) Next pushes the new URL from an insertion
+        // effect of the same commit that mounts this page, and nuqs answers
+        // every pushState that is not its own by queueing a microtask that
+        // aborts its whole update queue (patchHistory in nuqs's next/app
+        // adapter — meant to drop the previous page's pending writes). React
+        // flushes this passive effect inside that same task, so a write made
+        // here is enqueued BEFORE the abort microtask runs and is silently
+        // dropped. A full page load has no such pushState, which is why a
+        // typed /search always stamped and a clicked one never did. A timeout
+        // runs after the task's microtasks, so the queue it writes into has
+        // already been reset.
+        //
+        // Cleared on unmount rather than guarded by a once-ref: StrictMode's
+        // mount-unmount-mount in development cancels the first timer and the
+        // second effect run schedules the only one that fires. Re-running is
+        // harmless anyway, because the live re-check below turns a second
+        // stamp into a no-op.
+        const timer = window.setTimeout(() => {
+            // Belt to the snapshot's brace, and it can only ever SUPPRESS a
+            // stamp: the snapshot is React's view of the URL on the first
+            // render, while this is the browser's own, read at the only moment
+            // the two could have diverged. Stamping over a URL that turns out
+            // to carry a presentation is the one failure mode here that loses
+            // something the user asked for (a shared `?page=3` opening on page
+            // 1), and the design's rule for every ambiguous case is that
+            // conservative is correct.
+            if (!isFreshSession(new URLSearchParams(window.location.search))) return
+            const stamp = creationStamp(effectiveCreationDefaults())
+            const replace = { history: "replace" as const }
+            if (stamp.vm !== undefined) setViewMode(stamp.vm, replace)
+            if (stamp.page_size !== undefined) setPageSizeRaw(stamp.page_size, replace)
+            // Never `null` here — creationStamp only carries keys that DIFFER
+            // from the codec default, and `cs`'s codec default is null (auto).
+            // So this stamps a width or nothing at all.
+            if (stamp.cs != null) setCellSize(stamp.cs, replace)
+        }, 0)
+        return () => window.clearTimeout(timer)
         // Mount-only, exactly like the normalization effect above: the
         // decision is taken from the snapshot, and the setters churn identity.
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1029,6 +1049,16 @@ export function GridPanel({
         }
     )
     const libraryHasBoards = (library.data?.pinboards?.length ?? 0) > 0
+    // An index with no files gets the getting-started panel instead of an
+    // empty grid (see EmptyIndexPanel). The same key the page prefetch seeds,
+    // so this is answered from the hydrated cache with no request of its own.
+    // Only a settled `total === 0` counts: while loading, or on an error, the
+    // grid renders as it always has.
+    const stats = $api.useQuery("get", "/api/search/stats", { params: { query: dbs } })
+    const indexIsEmpty = stats.data?.files.total === 0
+    const emptyIndexAudience: EmptyIndexAudience = clientConfig.data?.desktopManaged
+        ? "desktop"
+        : clientConfig.data?.restrictedMode ? "restricted" : "server"
     // The tab choice only matters on a non-empty board (the tabs don't
     // render otherwise). The length guard still matters for a ?pbl link:
     // gpb=true arrives before the loader has resolved the layout, and the
@@ -1161,6 +1191,8 @@ export function GridPanel({
                     showPagination={showPagination}
                     updateRibbonVisible={updateRibbonVisible}
                 />
+            ) : indexIsEmpty ? (
+                <EmptyIndexPanel audience={emptyIndexAudience} />
             ) : (
                 <ResultGrid
                     source={source}
