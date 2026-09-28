@@ -1537,6 +1537,17 @@ export function packRowsAroundObstacles({
 // The reroll cycles that ranking, and the choice sticks as a cell ASPECT
 // rather than a rank index — an index would teleport the shape whenever a
 // different item count reshuffles the list.
+//
+// fill "auto" is the mosaic's rule applied per cell: with nothing below the
+// fold to hold back, a cell whose fold-derived shape is more than 35% off
+// the items' own best aspect renders AT that aspect instead — the largest
+// such cell inside its share of the fold, so the block comes out full
+// width and shorter (top-aligned) or full height and narrower (centered).
+// Forcing the fold there is what made one or two items unusable: a single
+// portrait on a landscape fold has exactly one factorization, and it is
+// the whole fold. The ranking then maximizes usable image area (cell area
+// times per-item fidelity), since a cell that doesn't fill no longer costs
+// crop but costs size.
 
 export interface UniformFactorization {
     cols: number
@@ -1544,8 +1555,38 @@ export interface UniformFactorization {
     // Ideal (fractional) cell pixel aspect at this factorization, margins
     // included
     cellAspect: number
-    // Summed cover-crop loss over the items: 1 - min(r,c)/max(r,c) each
+    // Summed cover-crop loss over the items: 1 - min(r,c)/max(r,c) each,
+    // at the aspect the cell actually renders with
     loss: number
+    // fill "auto" only: the aspect the cell renders at when the fold
+    // shape is too far off to stretch to (null: it fills its fold share)
+    fitAspect: number | null
+    // fill "auto" only: whether the fitted cell is bound by its share of
+    // the fold's width (block full width and shorter) rather than height
+    widthBound: boolean
+}
+
+// Beyond this much aspect mismatch an auto fill stops stretching onto the
+// fold — the mosaic's threshold, so both algorithms give up on the fold at
+// the same point
+const UNIFORM_STRETCH_LIMIT = Math.log(1.35)
+
+const uniformLoss = (items: PackItem[], c: number) => items.reduce((acc, it) => {
+    const r = ratio(it)
+    return acc + 1 - Math.min(r, c) / Math.max(r, c)
+}, 0)
+
+// The cell aspect the items fit best. Each item's loss is concave in the
+// log-distance from its own ratio, so the summed minimum sits on one of
+// the item ratios — the candidates are exactly those.
+function bestUniformAspect(items: PackItem[]): number {
+    let best = ratio(items[0])
+    let bestLoss = Infinity
+    for (const it of items) {
+        const l = uniformLoss(items, ratio(it))
+        if (l < bestLoss) { bestLoss = l; best = ratio(it) }
+    }
+    return best
 }
 
 // The lattice one factorization produces: column/row spans apportioned to
@@ -1617,6 +1658,7 @@ export function rankUniformFactorizations({
     totalGridRows,
     minW = 1,
     minH = 1,
+    fill = "force",
 }: {
     items: PackItem[],
     obstacles?: GridRect[],
@@ -1625,6 +1667,9 @@ export function rankUniformFactorizations({
     totalGridRows: number,
     minW?: number,
     minH?: number,
+    // "force": every cell fills its share of the fold (the wall against a
+    // cutting board below it). "auto": see the section comment.
+    fill?: "force" | "auto",
 }): UniformFactorization[] {
     const n = items.length
     if (n === 0) return []
@@ -1635,7 +1680,8 @@ export function rankUniformFactorizations({
     const effMinW = Math.max(1, minW)
     const effMinH = Math.max(1, minH)
     const clipped = clipUniformObstacles(obstacles, grid.columns, total)
-    const out: UniformFactorization[] = []
+    const out: (UniformFactorization & { useful: number })[] = []
+    const fitTo = fill === "auto" ? bestUniformAspect(items) : null
     // Obstacles consume lattice cells, so the sweep can't stop at n
     // columns: a free strip narrower than the item count still tiles once
     // the fold is cut finer than the items alone would need — the extra
@@ -1669,14 +1715,31 @@ export function rankUniformFactorizations({
         const cellH = (total / rows) * rowStep(grid) - grid.margin
         if (cellW <= 0 || cellH <= 0) continue
         const c = cellW / cellH
-        const loss = items.reduce((acc, it) => {
-            const r = ratio(it)
-            return acc + 1 - Math.min(r, c) / Math.max(r, c)
-        }, 0)
-        out.push({ cols, rows, cellAspect: c, loss })
+        if (fitTo == null || Math.abs(Math.log(c / fitTo)) <= UNIFORM_STRETCH_LIMIT) {
+            const loss = uniformLoss(items, c)
+            out.push({
+                cols, rows, cellAspect: c, loss, fitAspect: null,
+                widthBound: false, useful: cellW * cellH * (n - loss),
+            })
+            continue
+        }
+        // Too far off to stretch: the largest fitTo-shaped cell inside the
+        // fold share
+        const widthBound = cellH * fitTo >= cellW
+        const fitW = widthBound ? cellW : cellH * fitTo
+        const fitH = widthBound ? cellW / fitTo : cellH
+        const loss = uniformLoss(items, fitTo)
+        out.push({
+            cols, rows, cellAspect: c, loss, fitAspect: fitTo, widthBound,
+            useful: fitW * fitH * (n - loss),
+        })
     }
-    out.sort((a, b) => a.loss - b.loss || a.cols - b.cols)
-    return out
+    if (fill === "auto") {
+        out.sort((a, b) => b.useful - a.useful || a.loss - b.loss || a.cols - b.cols)
+    } else {
+        out.sort((a, b) => a.loss - b.loss || a.cols - b.cols)
+    }
+    return out.map(({ useful: _useful, ...f }) => f)
 }
 
 // Which ranked factorization renders closest to a chosen cell aspect —
@@ -1709,12 +1772,16 @@ export function packUniform({
     minW = 1,
     minH = 1,
     chosenAspect = null,
+    fill = "force",
 }: {
     items: PackItem[],
     obstacles?: GridRect[],
     grid: GridParams,
     columnWidth: number,
     totalGridRows: number,
+    // As rankUniformFactorizations; callers pass the same value to both so
+    // the reroll ranks what gets packed
+    fill?: "force" | "auto",
     // Minimum cell size in grid units — a refusal bound here, never
     // relaxed (see rankUniformFactorizations)
     minW?: number,
@@ -1729,14 +1796,42 @@ export function packUniform({
     const total = Math.max(1, totalGridRows)
     const ranked = rankUniformFactorizations({
         items, obstacles, grid, columnWidth, totalGridRows: total, minW, minH,
+        fill,
     })
     if (ranked.length === 0) return []
     const pick = ranked[chosenAspect == null
         ? 0 : nearestUniformIndex(ranked, chosenAspect)]
     // The ranking's feasibility gate proved the minimums attainable, so
     // they enter the lattice apportionment un-clamped too
+    const effMinW = Math.max(1, minW)
+    const effMinH = Math.max(1, minH)
     const lattice = uniformLattice(pick.cols, pick.rows, grid.columns, total,
-        Math.max(1, minW), Math.max(1, minH))
+        effMinW, effMinH)
+    let x0 = 0
+    if (pick.fitAspect != null) {
+        // Undistorted cells: the binding axis keeps its exact apportioned
+        // span, the other takes one repeated integer size — the fitted
+        // cell's pixel extent snapped to the lattice, floored at the
+        // minimum and capped at the equal share (both proven feasible)
+        const step = rowStep(grid)
+        if (pick.widthBound) {
+            const shareW = (grid.columns / pick.cols) * (columnWidth + grid.margin) - grid.margin
+            const hPx = shareW / pick.fitAspect
+            const h = Math.max(effMinH, Math.min(Math.floor(total / pick.rows),
+                Math.round((hPx + grid.margin) / step)))
+            lattice.heights = new Array<number>(pick.rows).fill(h)
+            lattice.ys = lattice.heights.map((_, i) => i * h)
+        } else {
+            const shareH = (total / pick.rows) * step - grid.margin
+            const wPx = shareH * pick.fitAspect
+            const w = Math.max(effMinW, Math.min(Math.floor(grid.columns / pick.cols),
+                Math.round((wPx + grid.margin) / (columnWidth + grid.margin))))
+            lattice.widths = new Array<number>(pick.cols).fill(w)
+            lattice.xs = lattice.widths.map((_, i) => i * w)
+            // Centered, like the mosaic's narrower-than-the-fold box
+            x0 = Math.floor((grid.columns - pick.cols * w) / 2)
+        }
+    }
     // The ranking already proved this factorization has n free cells
     const free = uniformFreeCells(
         lattice, clipUniformObstacles(obstacles, grid.columns, total))
@@ -1745,7 +1840,7 @@ export function packUniform({
         const { ci, ri } = free[k]
         layout.push({
             i: items[k].key,
-            x: lattice.xs[ci], y: lattice.ys[ri],
+            x: x0 + lattice.xs[ci], y: lattice.ys[ri],
             w: lattice.widths[ci], h: lattice.heights[ri],
         })
     }

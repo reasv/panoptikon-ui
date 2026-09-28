@@ -440,11 +440,15 @@ export function usePinboardLayoutActions({
             // Identical cells, flowing around the obstacle rects by
             // skipping their cells. Weights don't apply — every cell is
             // the same by definition, so "keep proportions" has nothing
-            // to keep here.
+            // to keep here. Same fill rule as the mosaic below: stop
+            // stretching cells onto the fold unless something beneath it
+            // needs the wall (or obstacles pin the lattice to it).
+            const uniformFill = rest.length > 0 || obstacles.length > 0
+                ? "force" : "auto"
             const ranked = rankUniformFactorizations({
                 items, obstacles, grid,
                 columnWidth: buildData.columnWidth,
-                totalGridRows: total, ...mins,
+                totalGridRows: total, fill: uniformFill, ...mins,
             })
             if (advanceUniform && ranked.length > 0) {
                 // Advance from whatever is on screen: the reroll choice if
@@ -461,7 +465,7 @@ export function usePinboardLayoutActions({
             packed = packUniform({
                 items, obstacles, grid,
                 columnWidth: buildData.columnWidth,
-                totalGridRows: total,
+                totalGridRows: total, fill: uniformFill,
                 chosenAspect: uniformAspect, ...mins,
             })
             if (packed.length > 0 && ranked.length > 0) {

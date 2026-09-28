@@ -123,6 +123,96 @@ const cellAspectOf = (cols, rows, total = TOTAL) =>
   )
 }
 
+// ---- fill "auto": cells keep the items' aspect instead of the fold's ----
+
+// Rendered pixel aspect of a placed cell
+const pxAspect = (l) =>
+  (l.w * COL_W + (l.w - 1) * G.margin) / (l.h * rowStep(G) - G.margin)
+const near = (a, b, tol = 0.08) => Math.abs(Math.log(a / b)) < tol
+
+{
+  // The pathological case: one portrait on a wide fold has exactly one
+  // factorization, and forcing it made the lone cell the whole fold
+  const layout = packUniform({
+    items: items(1, 2 / 3), grid: G, columnWidth: COL_W, totalGridRows: TOTAL,
+    fill: "auto", ...MINS,
+  })
+  const [l] = layout
+  check(
+    "auto: a lone portrait keeps its aspect, full height, centered",
+    layout.length === 1 && l.y === 0 && l.h === TOTAL &&
+      near(pxAspect(l), 2 / 3) &&
+      Math.abs(l.x - (G.columns - (l.x + l.w))) <= 1,
+    JSON.stringify(layout)
+  )
+}
+
+{
+  const layout = packUniform({
+    items: items(1, 8), grid: G, columnWidth: COL_W, totalGridRows: TOTAL,
+    fill: "auto", ...MINS,
+  })
+  const [l] = layout
+  check(
+    "auto: a lone panorama spans the width, shorter and top-aligned",
+    layout.length === 1 && l.x === 0 && l.w === G.columns && l.y === 0 &&
+      l.h < TOTAL && near(pxAspect(l), 8),
+    JSON.stringify(layout)
+  )
+}
+
+{
+  // A ~16:9 fold (the fixture's 3:1 fold is within stretch tolerance of
+  // two 16:9 cells side by side, which then rightly fill it)
+  const total = 103
+  const layout = packUniform({
+    items: items(2, 16 / 9), grid: G, columnWidth: COL_W, totalGridRows: total,
+    fill: "auto", ...MINS,
+  })
+  const inBounds = layout.every((l) =>
+    l.x >= 0 && l.x + l.w <= G.columns && l.y >= 0 && l.y + l.h <= total)
+  const [a, b] = layout
+  const overlap = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+  check(
+    "auto: two landscapes get identical 16:9 cells inside the fold",
+    layout.length === 2 && inBounds && !overlap &&
+      layout[0].w === layout[1].w && layout[0].h === layout[1].h &&
+      near(pxAspect(layout[0]), 16 / 9),
+    JSON.stringify(layout)
+  )
+}
+
+{
+  // Items already shaped like a 4x2 fold share: nothing to give up, so
+  // the auto fill still walls the fold exactly
+  const n = 7
+  const layout = packUniform({
+    items: items(n, cellAspectOf(4, 2)), grid: G, columnWidth: COL_W,
+    totalGridRows: TOTAL, fill: "auto", ...MINS,
+  })
+  check(
+    "auto: items that fit a fold share still fill the fold",
+    layout.length === n &&
+      Math.max(...layout.map((l) => l.y + l.h)) === TOTAL &&
+      rowsOf(layout)[0].length === 4,
+    JSON.stringify(layout)
+  )
+}
+
+{
+  // Force (the default, and what a cutting board below the fold gets)
+  // is untouched: the lone portrait still walls the whole rectangle
+  const layout = packUniform({
+    items: items(1, 2 / 3), grid: G, columnWidth: COL_W, totalGridRows: TOTAL,
+    fill: "force", ...MINS,
+  })
+  check(
+    "force: a lone portrait still spans the whole rectangle",
+    layout.length === 1 && layout[0].w === G.columns && layout[0].h === TOTAL,
+    JSON.stringify(layout)
+  )
+}
+
 // ---- scoring: the cell shape follows the items --------------------------
 
 {
