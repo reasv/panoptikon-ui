@@ -327,6 +327,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/desktop/sysmem-fallback-notice/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["dismiss_desktop_sysmem_fallback_notice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/desktop/update-ribbon/dismiss": {
         parameters: {
             query?: never;
@@ -5761,6 +5777,31 @@ export interface operations {
             };
         };
     };
+    dismiss_desktop_sysmem_fallback_notice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description NVIDIA sysmem fallback notice dismissed permanently */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Same-origin browser request required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     dismiss_desktop_update_ribbon: {
         parameters: {
             query?: never;
@@ -5842,7 +5883,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Desktop update awareness state */
+            /** @description Desktop update state and the NVIDIA sysmem fallback notice */
             200: {
                 headers: {
                     [name: string]: unknown;
