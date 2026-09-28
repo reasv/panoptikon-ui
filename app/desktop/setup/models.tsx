@@ -8,9 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Group, InputObject, Model, transformData } from "@/components/table/columns/models"
 import { useExternalInputs } from "@/components/external-inputs"
 
-/// Per-model wizard overrides. Batch size is deliberately absent: it is a
-/// cap now, not a target, and new databases always start on auto
-/// (docs/batch-calibration-design.md, "Batch size UX").
+// No batch size: new databases always start on auto.
 export type WizardModelSettings = Record<string, { threshold?: number }>
 
 type ModelWithDefaults = Model & {

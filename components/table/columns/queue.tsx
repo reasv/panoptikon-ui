@@ -95,9 +95,7 @@ export const jobQueueColumns: ColumnDef<components["schemas"]["JobModel"]>[] = [
         id: "batch_size",
         accessorKey: "batch_size",
         header: "Max Batch Size",
-        // Only extraction jobs run models, so only they have a batch to cap:
-        // "Auto" on a folder rescan or a maintenance pass would claim a
-        // setting that does not exist for those jobs.
+        // Only extraction jobs run models, so only they have a batch size.
         cell: ({ row }) =>
             row.original.job_type === "data_extraction"
                 ? formatMaxBatchSize(row.original.batch_size)

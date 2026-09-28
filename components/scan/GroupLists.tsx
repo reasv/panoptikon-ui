@@ -269,7 +269,7 @@ export function ExistingDataTab({ groups }: { groups: Group[] }) {
             setter,
             count,
             description,
-            // The user's cap chain only; no chain entry means auto (null).
+            // User-set caps only; none means auto (null).
             batch_size: specificConfig?.default_batch_size || groupConfig?.default_batch_size || null,
             threshold: specificConfig?.default_threshold || groupConfig?.default_threshold || groupData?.default_threshold || undefined,
         }

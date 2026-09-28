@@ -61,9 +61,7 @@ export function ModelConfig(
         },
     )
 
-    // Resolves whether the save landed: controls that show their new state
-    // before the refetch confirms it (the batch-size switch) need to be able
-    // to put it back.
+    // Resolves whether the save landed, so optimistic controls can revert.
     const setValues = async (batchSize: number | null | undefined, threshold: number | null | undefined): Promise<boolean> => {
         const { data } = await refetch()
         if (!data) return false
@@ -104,8 +102,7 @@ export function ModelConfig(
                     setConfidence={(value) => setValues(modelConfig.default_batch_size, value)}
                 />}
             </div>
-            {/* The cap is an advanced setting: auto is right for almost
-                everyone, so it stays collapsed until someone goes looking. */}
+            {/* Collapsed by default: auto suits almost everyone. */}
             <FilterContainer
                 label="Advanced"
                 description="Batch size limits for this model group"
@@ -138,8 +135,7 @@ export function useModelConfig(group: Group) {
     const config = data && data.job_settings !== undefined ? data.job_settings.filter((v) => (v.group_name === group.group_name) && !v.inference_id) : []
     return config.length > 0 ? config[0] : {
         group_name: group.group_name,
-        // Auto, not the registry's default_batch_size: that number is the
-        // inference side's own seed and was never the user's cap.
+        // Auto, not the registry's default_batch_size, which is not a user cap.
         default_batch_size: null,
         default_threshold: group.default_threshold,
     }
@@ -181,7 +177,7 @@ export function useCronJobSchedule() {
             placeholderData: keepPreviousData,
         },
     )
-    // `batch_size` omitted (or null) schedules the model on auto.
+    // An omitted or null `batch_size` schedules the model on auto.
     const addToSchedule = async (inference_ids: string[], batch_size?: number | null, threshold?: number) => {
         const { data } = await refetch()
         if (!data) return

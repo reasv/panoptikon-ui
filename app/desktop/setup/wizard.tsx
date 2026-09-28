@@ -135,8 +135,7 @@ export function DesktopSetupWizard({ mode }: { mode: DesktopSetupMode }) {
         cron_jobs: selectedModels.map((inferenceId) => {
           const settings = modelSettings[inferenceId]
           return {
-            // No batch_size: new databases always start on auto, and the
-            // cap is edited later on the Scan page if it is ever needed.
+            // No batch_size: new databases always start on auto.
             inference_id: inferenceId,
             threshold: settings?.threshold ?? null,
           }

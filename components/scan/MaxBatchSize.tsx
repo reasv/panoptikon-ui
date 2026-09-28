@@ -3,19 +3,13 @@ import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { useEffect, useState } from "react"
 
-/// The batch size the cap slider starts at when a user turns capping on.
-/// Arbitrary but conservative: it is a ceiling, not a target, and the server
-/// stays free to use anything smaller.
+// Initial cap when the user switches Auto off.
 const DEFAULT_CAP = 64
 
 /**
- * The max-batch-size control: auto by default, an optional cap when the user
- * asks for one. `null` means auto — the inference server sizes batches from
- * its own VRAM cost model, and a number only ever lowers that ceiling.
- *
- * The switch state is local and optimistic so it responds to the click
- * instead of to the save plus the refetch behind it; `setValue` resolving
- * `false` (the mutation's error path) is what takes it back.
+ * Max batch size: `null` is auto (the inference server sizes batches), a
+ * number only lowers that ceiling. The switch updates optimistically and
+ * reverts when `setValue` resolves `false`.
  */
 export function MaxBatchSize({
     value,
@@ -24,12 +18,9 @@ export function MaxBatchSize({
     value: number | null | undefined
     setValue: (value: number | null) => Promise<boolean>
 }) {
-    // The saved cap, `null` = auto. Everything below is an optimistic view of
-    // it, reconciled whenever it actually changes.
     const savedCap = typeof value === "number" && value > 0 ? value : null
     const [capped, setCapped] = useState(savedCap !== null)
-    // Remembered so toggling auto off and on again returns to the user's own
-    // number instead of silently resetting it.
+    // Kept so switching Auto off again restores the user's own cap.
     const [lastCap, setLastCap] = useState(savedCap ?? DEFAULT_CAP)
     const [slider, setSlider] = useState([savedCap ?? DEFAULT_CAP])
     useEffect(() => {
@@ -102,7 +93,6 @@ export function MaxBatchSize({
     )
 }
 
-/** Table cell / summary rendering for a max-batch-size value. */
 export function formatMaxBatchSize(value: number | null | undefined) {
     return typeof value === "number" && value > 0 ? String(value) : "Auto"
 }

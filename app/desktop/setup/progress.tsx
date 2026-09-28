@@ -47,12 +47,8 @@ export function WizardProgress({ completion }: { completion: Completion }) {
   const active = queue?.filter((job) => trackedIds.has(job.queue_id)) ?? []
   const outcomeById = new Map(outcomes.map((outcome) => [outcome.queue_id, outcome]))
   const terminalCount = completion.jobs.filter((job) => outcomeById.has(job.queue_id)).length
-  // "partial" counts here as well as "failed". A partial job ran to the end
-  // but some of the items it selected were never processed — a worker death
-  // costs a whole in-flight window — and its `error` field carries the summary
-  // of what is still owed. Treating it as a clean completion is exactly the
-  // bug the status was added to fix, so it must not reach the "complete,
-  // ready to explore" headline.
+  // A "partial" job left some selected items unprocessed (its `error` says
+  // which), so it must never be reported as complete.
   const unfinished = completion.jobs.filter((job) => {
     const status = outcomeById.get(job.queue_id)?.status
     return status === "failed" || status === "partial"
