@@ -67,8 +67,7 @@ export function DesktopUpdateRibbon({ onVisibilityChange }: { onVisibilityChange
   const visible = updateVisible || Boolean(notice?.visible)
   useEffect(() => onVisibilityChange?.(visible), [onVisibilityChange, visible])
   if (notice?.visible) {
-    return <SysmemFallbackRibbon workerPython={notice.worker_python} error={error}
-      onDismiss={() => act("/api/desktop/sysmem-fallback-notice/dismiss")} />
+    return <SysmemFallbackRibbon workerPython={notice.worker_python} onChanged={() => status.refetch()} />
   }
   if (!updateVisible || !update?.target_version) return null
 
@@ -87,17 +86,31 @@ export function DesktopUpdateRibbon({ onVisibilityChange }: { onVisibilityChange
   )
 }
 
-function SysmemFallbackRibbon({ workerPython, error, onDismiss }:
-  { workerPython: string | null, error: string | null, onDismiss: () => void }) {
+function SysmemFallbackRibbon({ workerPython, onChanged }:
+  { workerPython: string | null, onChanged: () => Promise<unknown> }) {
+  const [error, setError] = useState<string | null>(null)
+  const dismiss = async () => {
+    setError(null)
+    try {
+      await updateRequest("/api/desktop/sysmem-fallback-notice/dismiss", { method: "POST" })
+    } catch {
+      setError("Could not save this choice. Try again.")
+    } finally {
+      await onChanged()
+    }
+  }
+  const summary = "With the default NVIDIA driver settings, inference on this GPU can become several times slower."
+  // One line, so the page offsets for a one-line ribbon hold; the dialog has the full text.
   return (
     <aside className="relative z-40 flex min-h-12 shrink-0 items-center justify-center gap-3 border-b border-orange-900/70 bg-orange-950/90 px-4 py-2 text-sm text-orange-50 shadow-md" aria-label="NVIDIA driver setting">
-      <p className="text-center">
-        <span className="font-semibold">With the default NVIDIA driver settings, inference on this GPU can become several times slower.</span>
-        {error && <span className="ml-2 text-red-300" role="alert">{error}</span>}
+      <p className="min-w-0 truncate" title={error ?? summary}>
+        {error
+          ? <span className="text-red-300" role="alert">{error}</span>
+          : <span className="font-semibold">{summary}</span>}
       </p>
       <Dialog>
         <DialogTrigger asChild>
-          <Button size="sm" className="h-8 bg-orange-600 text-white hover:bg-orange-500">How to fix</Button>
+          <Button size="sm" className="h-8 shrink-0 bg-orange-600 text-white hover:bg-orange-500">How to fix</Button>
         </DialogTrigger>
         <DialogContent className="max-w-2xl">
           <DialogHeader><DialogTitle>NVIDIA sysmem fallback</DialogTitle></DialogHeader>
@@ -111,13 +124,13 @@ function SysmemFallbackRibbon({ workerPython, error, onDismiss }:
             <p>
               To make it fail cleanly instead, so that Panoptikon learns the limit, open NVIDIA Control Panel,
               go to Manage 3D Settings, set <b>CUDA - Sysmem Fallback Policy</b> to <b>Prefer No Sysmem
-              Fallback</b>, apply, and restart the Server:
+              Fallback</b>, apply, and restart Panoptikon:
             </p>
             <ul className="list-disc space-y-1 pl-5">
               <li><b>Global Settings</b> applies it to every CUDA program on this computer.</li>
               <li>
-                <b>Program Settings</b> applies it only to the program you add. Add the Python that runs
-                Panoptikon&apos;s inference workers: {workerPython
+                <b>Program Settings</b> applies it to the program you add. Add the Python interpreter that
+                runs Panoptikon&apos;s inference workers: {workerPython
                   ? <code className="break-all">{workerPython}</code>
                   : <>python.exe in the folder named on the <code>home</code> line of <code>runtime\venv\pyvenv.cfg</code> in the data folder</>}.
                 The python.exe in Panoptikon&apos;s own folder only starts that one.
@@ -128,11 +141,10 @@ function SysmemFallbackRibbon({ workerPython, error, onDismiss }:
               GPU memory to system RAM. Panoptikon also takes its own steps to avoid this and to back off when it
               happens.
             </p>
-            <p>There is nothing to turn off in Panoptikon: it does not reserve extra GPU memory for this.</p>
           </div>
         </DialogContent>
       </Dialog>
-      <button className="text-xs text-orange-200 underline underline-offset-4 hover:text-white" onClick={onDismiss}>Don&apos;t show again</button>
+      <button className="shrink-0 text-xs text-orange-200 underline underline-offset-4 hover:text-white" onClick={dismiss}>Don&apos;t show again</button>
     </aside>
   )
 }
