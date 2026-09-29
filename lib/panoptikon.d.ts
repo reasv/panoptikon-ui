@@ -247,6 +247,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/desktop/gpu-memory-setting/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["open_desktop_gpu_memory_setting"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/desktop/setup-continuous/validate": {
         parameters: {
             query?: never;
@@ -2568,8 +2584,9 @@ export interface components {
              */
             reserve_mb: number;
             /**
-             * @description `"user_margin"` (configured, uncapped) or `"capped_default"` (default
-             *     fraction, clamped).
+             * @description `"user_margin"` (configured, uncapped), `"capped_default"` (default
+             *     fraction, clamped) or `"flat_default"` (the cap itself, on a CUDA GPU
+             *     that spills to system RAM).
              */
             reserve_rule: string;
             /** Format: int64 */
@@ -2617,7 +2634,10 @@ export interface components {
         HealthReport: {
             /** @description Visible GPUs by UUID; empty when the host has no inventory. */
             gpus: components["schemas"]["GpuInfo"][];
-            /** @description Inference client transports held by this process, by base URL. */
+            /**
+             * @description Inference client transports held by this process, by base URL. A
+             *     gateway forwarding to a remote inference server reports its own here.
+             */
             inference_clients: components["schemas"]["InferenceTransportHealth"][];
             /** @description Models whose loads are failing, sorted by inference_id. */
             load_cooldowns: components["schemas"]["LoadCooldownHealth"][];
@@ -2838,7 +2858,7 @@ export interface components {
             max_concurrent_requests: number;
             /** @description Connections this client may hold; `null` under HTTP/1.1. */
             pool_connections?: number | null;
-            /** @description `h2c` | `http/1.1` | `unknown` (not contacted yet). */
+            /** @description `h2c` | `h2` (over TLS) | `http/1.1` | `unknown` (not contacted yet). */
             transport: string;
         };
         ItemBookmarks: {
@@ -5643,6 +5663,31 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Value"];
                 };
+            };
+        };
+    };
+    open_desktop_gpu_memory_setting: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Desktop settings opened at the GPU memory setting */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Same-origin browser request required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

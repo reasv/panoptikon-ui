@@ -89,6 +89,15 @@ export function DesktopUpdateRibbon({ onVisibilityChange }: { onVisibilityChange
 function SysmemFallbackRibbon({ workerPython, onChanged }:
   { workerPython: string | null, onChanged: () => Promise<unknown> }) {
   const [error, setError] = useState<string | null>(null)
+  const [openError, setOpenError] = useState(false)
+  const openSetting = async () => {
+    setOpenError(false)
+    try {
+      await updateRequest("/api/desktop/gpu-memory-setting/open", { method: "POST" })
+    } catch {
+      setOpenError(true)
+    }
+  }
   const dismiss = async () => {
     setError(null)
     try {
@@ -138,9 +147,13 @@ function SysmemFallbackRibbon({ workerPython, onChanged }:
             </ul>
             <p>
               The setting reduces these slowdowns but cannot prevent all of them, because Windows can still move
-              GPU memory to system RAM. Panoptikon also takes its own steps to avoid this and to back off when it
-              happens.
+              GPU memory to system RAM. To avoid this, Panoptikon keeps 1 GiB free on each GPU by default. You can
+              change that in the Desktop settings.
             </p>
+            <div className="flex items-center gap-3">
+              <Button size="sm" onClick={openSetting}>Open GPU memory setting</Button>
+              {openError && <span className="text-red-500" role="alert">Could not open the Desktop settings.</span>}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
