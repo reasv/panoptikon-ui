@@ -2530,7 +2530,8 @@ export interface components {
             /**
              * Format: int64
              * @description `Σ` per-worker `footprint + max(0, grants − pool growth)`; what
-             *     `headroom_mb` subtracts.
+             *     `headroom_mb` subtracts. On the CPU device it includes GPU replicas'
+             *     resident sets and RAM bookings, as `footprints_mb` and `grants_mb` do.
              */
             charges_mb: number;
             /** @description `"cuda"`, `"rocm"`, `"mps"` or `"cpu"`; a host can list several kinds. */
@@ -2585,8 +2586,9 @@ export interface components {
             reserve_mb: number;
             /**
              * @description `"user_margin"` (configured, uncapped), `"capped_default"` (default
-             *     fraction, clamped) or `"flat_default"` (the cap itself, on a CUDA GPU
-             *     that spills to system RAM).
+             *     fraction, clamped), `"flat_default"` (the cap itself, on a CUDA GPU
+             *     that spills to system RAM) or `"ram_floor"` (the CPU device's minimum:
+             *     a tenth of RAM, at most 16 GiB, at least 2 GiB or a quarter of RAM).
              */
             reserve_rule: string;
             /** Format: int64 */
@@ -2852,6 +2854,12 @@ export interface components {
             base_url: string;
             /** @description Of those, how many carry a request now; `null` under HTTP/1.1. */
             connections_in_use?: number | null;
+            /**
+             * @description RFC 3339 instant the server was declared frozen: it missed its health
+             *     checks, and its requests fail until it answers one. `null` while it
+             *     answers.
+             */
+            frozen_since?: string | null;
             /** @description Of those, how many are in flight right now. */
             in_flight_requests: number;
             /** @description Requests the gate currently admits. */
@@ -3081,6 +3089,7 @@ export interface components {
             /**
              * Format: int64
              * @description `footprint + max(0, grants − pool growth)`: this replica's charge now.
+             *     On the CPU device `footprint + grants`.
              */
             charge_mb: number;
             /**
@@ -3088,6 +3097,12 @@ export interface components {
              * @description Consecutive clean windows since the last negative sample.
              */
             clean_windows: number;
+            /**
+             * Format: int64
+             * @description Half the batch a replica of this model was running here when its
+             *     process died mid-window: caps `unit_budget` until the server restarts.
+             */
+            death_cap_units?: number | null;
             /**
              * Format: int32
              * @description Halvings currently applied by OOM / throughput-collapse deflation.
@@ -3150,6 +3165,19 @@ export interface components {
              *     time. Absent off CUDA and MPS.
              */
             pool_releases?: number | null;
+            /** Format: int64 */
+            ram_booked_mb: number;
+            ram_ceiling_binding: boolean;
+            /** Format: double */
+            ram_mb_per_unit?: number | null;
+            /**
+             * Format: int64
+             * @description A GPU replica's host RAM, booked on the CPU device: its resident set
+             *     (absent when its RAM is not booked), the MiB per unit its grants book
+             *     (absent until a batch measured it), what its outstanding grants hold
+             *     booked, and whether host RAM capped its last grant.
+             */
+            ram_resident_mb?: number | null;
             /**
              * @description The ramp is held (reported once a window ran at its budget), and the
              *     rung it is held at.
@@ -3160,7 +3188,11 @@ export interface components {
              * @description Doublings earned by clean windows.
              */
             ramp_step: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description The allocator pool at load and now; on the CPU device the replica's
+             *     resident set.
+             */
             reserved_at_load_mb?: number | null;
             /** Format: int64 */
             reserved_mb?: number | null;
@@ -5144,6 +5176,19 @@ export interface components {
             quarter_turns?: number;
         };
         /**
+         * @description The gateway's 504 to `GET /api/inference/health` when the inference server
+         *     it forwards to is declared frozen or does not answer in time.
+         */
+        UnansweredHealth: {
+            /** @description Why the server's report is missing. */
+            detail: string;
+            /**
+             * @description This gateway's clients; `frozen_since` says whether the server is
+             *     declared frozen.
+             */
+            inference_clients: components["schemas"]["InferenceTransportHealth"][];
+        };
+        /**
          * @description A replacement preview image for an existing version. Same field semantics
          *     as the preview half of [`SaveVersionRequest`]; nothing else about the
          *     version can be changed.
@@ -6120,6 +6165,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthReport"];
+                };
+            };
+            /** @description Gateway forwarding to a remote inference server only: the server is declared frozen, or did not answer in time */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnansweredHealth"];
                 };
             };
         };
