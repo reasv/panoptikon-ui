@@ -2500,8 +2500,10 @@ export interface components {
             intercept_mb: number;
             /**
              * Format: double
-             * @description Observed reserved/allocated ratio; a grant is `slope × units ×
-             *     pool_margin`. Runtime-only.
+             * @description Observed reserved/allocated ratio, raised a tenth (three times at
+             *     most) by out-of-memory windows at the limit of the device's room; a
+             *     grant is `(max(0, intercept) + slope × units) × pool_margin`.
+             *     Runtime-only.
              */
             pool_margin: number;
             /** Format: double */
@@ -2586,9 +2588,11 @@ export interface components {
             reserve_mb: number;
             /**
              * @description `"user_margin"` (configured, uncapped), `"capped_default"` (default
-             *     fraction, clamped), `"flat_default"` (the cap itself, on a CUDA GPU
-             *     that spills to system RAM) or `"ram_floor"` (the CPU device's minimum:
-             *     a tenth of RAM, at most 16 GiB, at least 2 GiB or a quarter of RAM).
+             *     fraction, clamped), `"gpu_floor"` (3 % of the card, at most 1 GiB,
+             *     where the default fraction gives less; not on Apple Silicon),
+             *     `"flat_default"` (the cap itself, on a CUDA GPU that spills to system
+             *     RAM) or `"ram_floor"` (the CPU device's minimum: a tenth of RAM, at
+             *     most 16 GiB, at least 2 GiB or a quarter of RAM).
              */
             reserve_rule: string;
             /** Format: int64 */
