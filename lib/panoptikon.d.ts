@@ -3126,16 +3126,19 @@ export interface components {
             /** Format: int64 */
             grants_mb: number;
             grants_outstanding: number;
-            /** @description Whether the knee ring certified the held rung; `false` when not held. */
-            held_certified: boolean;
-            /** Format: int64 */
-            held_units?: number | null;
             inference_id: string;
-            /** @description Whether the knee was fitted here rather than seeded from a profile. */
+            /**
+             * @description A trial on this machine measured the sizes next to `knee_units` and
+             *     moved to it or left it in place, in this run or the one that stored
+             *     it. `false` for a size seeded from a shipped profile and one this
+             *     replica opened at.
+             */
             knee_is_local: boolean;
             /**
              * Format: int64
-             * @description Throughput knee: the largest batch size admitted whatever memory allows.
+             * @description The working batch size: the smallest whose rate measured within 5 %
+             *     of the best, or the size this replica opened at until a trial has
+             *     measured the sizes next to it.
              */
             knee_units?: number | null;
             /** Format: double */
@@ -3183,16 +3186,6 @@ export interface components {
              */
             ram_resident_mb?: number | null;
             /**
-             * @description The ramp is held (reported once a window ran at its budget), and the
-             *     rung it is held at.
-             */
-            ramp_held: boolean;
-            /**
-             * Format: int32
-             * @description Doublings earned by clean windows.
-             */
-            ramp_step: number;
-            /**
              * Format: int64
              * @description The allocator pool at load and now; on the CPU device the replica's
              *     resident set.
@@ -3200,6 +3193,11 @@ export interface components {
             reserved_at_load_mb?: number | null;
             /** Format: int64 */
             reserved_mb?: number | null;
+            /**
+             * Format: int32
+             * @description Full windows at `knee_units` still to run before the next trial.
+             */
+            retest_after_windows: number;
             /** Format: int64 */
             seed_units: number;
             /**
@@ -3207,11 +3205,16 @@ export interface components {
              * @description Shape ceiling from `index_limit` clamps: caps `unit_budget`; runtime-only.
              */
             shape_ceiling_units?: number | null;
-            /** @description Samples in the knee ring (all occupancies); runtime-only. */
+            /** @description Throughput observations held (all occupancies); runtime-only. */
             throughput_samples: number;
             /**
              * Format: int64
-             * @description The ramp+ratchet-bounded unit budget as of this snapshot.
+             * @description The batch size the trial in progress runs next; absent between trials.
+             */
+            trial_units?: number | null;
+            /**
+             * Format: int64
+             * @description The unit budget as of this snapshot: the batch size under the ratchet.
              */
             unit_budget: number;
         };
