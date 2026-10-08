@@ -1792,6 +1792,11 @@ export interface components {
             duration_ms?: number | null;
             /**
              * Format: int64
+             * @description Free device memory read before the batch.
+             */
+            free_mb?: number | null;
+            /**
+             * Format: int64
              * @description Inputs in the batch, not cost-dimension units.
              */
             items?: number | null;
@@ -1799,6 +1804,11 @@ export interface components {
             peak_allocated_mb?: number | null;
             /** Format: int64 */
             peak_reserved_mb?: number | null;
+            /**
+             * @description The pool release this batch re-grew from (`"trim"`, `"shrink"`,
+             *     `"growth"` or `"spill"`), on the first batch after it only.
+             */
+            regrow_after?: string | null;
             /** Format: int64 */
             reserved_before_mb?: number | null;
             /**
@@ -1806,6 +1816,17 @@ export interface components {
              * @description Per-worker sequence number; a gap means the ring evicted samples.
              */
             seq: number;
+            /**
+             * @description The pool exceeded NVML's used memory on the GPU by more than 512 MiB
+             *     after this batch: part of it was in system RAM.
+             */
+            spilled: boolean;
+            /**
+             * Format: int64
+             * @description Size in cost-dimension units; `None` without a grant or when the batch
+             *     was unpriced.
+             */
+            units?: number | null;
         };
         /**
          * Format: binary
@@ -2543,7 +2564,13 @@ export interface components {
             /**
              * Format: int64
              * @description `max(0, total − free − Σ our footprints)`: what other processes hold.
-             *     On unified memory the footprints of both devices sharing the RAM count.
+             *     On unified memory the footprints of every device sharing the RAM
+             *     count, an APU's only beyond the carve-out it can still use. On a GPU
+             *     that spills to system RAM, while it reads full or our own memory on it
+             *     changed since its last reading, at least its value at the last reading
+             *     that was neither. An APU reports this, the reserve, the limit and the
+             *     headroom from the side that binds: its VRAM and GTT (its own memory
+             *     only) or the RAM behind it.
              */
             external_mb: number;
             /** Format: int64 */
@@ -2567,14 +2594,16 @@ export interface components {
             grants_outstanding: number;
             /**
              * Format: int64
-             * @description `limit − Σ charges − Σ load reservations`; on unified memory the
-             *     charges of both devices sharing the RAM.
+             * @description `limit_mb − charges_mb − load_reservations_mb`.
              */
             headroom_mb: number;
             /**
              * Format: int64
-             * @description The admission budget: `min(total × cap_fraction,
-             *     total − external − reserve_mb)`.
+             * @description The admission budget: `min(total × cap_fraction, room − external −
+             *     reserve_mb − the charges and load reservations of the other devices
+             *     sharing the RAM)`, an APU's only beyond the carve-out it can still
+             *     use. The room is `total`; on an APU's RAM side carve-out plus host
+             *     RAM, of which the reserve withholds at most the deliverable RAM.
              */
             limit_mb: number;
             /** Format: int64 */
@@ -2591,8 +2620,9 @@ export interface components {
              *     fraction, clamped), `"gpu_floor"` (3 % of the card, at most 1 GiB,
              *     where the default fraction gives less; not on Apple Silicon),
              *     `"flat_default"` (the cap itself, on a CUDA GPU that spills to system
-             *     RAM) or `"ram_floor"` (the CPU device's minimum: a tenth of RAM, at
-             *     most 16 GiB, at least 2 GiB or a quarter of RAM).
+             *     RAM) or `"ram_floor"` (the minimum on the CPU device, an APU and Apple
+             *     Silicon: a tenth of RAM, at most 16 GiB, at least 2 GiB or a quarter
+             *     of RAM).
              */
             reserve_rule: string;
             /** Format: int64 */
@@ -3172,6 +3202,20 @@ export interface components {
              *     time. Absent off CUDA and MPS.
              */
             pool_releases?: number | null;
+            /**
+             * Format: int64
+             * @description The batch a macOS paging episode left: caps `unit_budget` until clean
+             *     full windows double it back to the batch size admitted at normal
+             *     pressure; runtime-only.
+             */
+            pressure_cap_units?: number | null;
+            /**
+             * Format: int64
+             * @description How far `pressure_cap_units` may grow back while macOS reports
+             *     memory pressure without paging; caps `unit_budget` while the level is
+             *     above normal.
+             */
+            pressure_regrow_to_units?: number | null;
             /** Format: int64 */
             ram_booked_mb: number;
             ram_ceiling_binding: boolean;
@@ -3214,7 +3258,8 @@ export interface components {
             trial_units?: number | null;
             /**
              * Format: int64
-             * @description The unit budget as of this snapshot: the batch size under the ratchet.
+             * @description The unit budget as of this snapshot: the batch size under the ratchet,
+             *     at most the working size while macOS reports memory pressure.
              */
             unit_budget: number;
         };
